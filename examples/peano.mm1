@@ -789,13 +789,13 @@ sort nat;
 --| "for all natural numbers `x`, `p` holds",
 --| where `(p: wff x)` in the declaration indicates that `p` may contain
 --| free occurrences of variable `x` that are bound by this quantifier.
-term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
+term al {x: nat} (p: wff x): wff; prefix al: $A.$ prec 41;
 
 --| The exists quantifier. `E. x p` means
 --| "there is a natural number `x`, such that `p` holds",
 --| where `(p: wff x)` in the declaration indicates that `p` may contain
 --| free occurrences of variable `x` that are bound by this quantifier.
-def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
+def ex {x: nat} (p: wff x): wff = $ ~(A. x ~p) $;
 prefix ex: $E.$ prec 41;
 
 --| Equality of natural numbers: `a = b`
@@ -5960,9 +5960,9 @@ theorem Arrayfin: $ finite A -> finite (Array A n) $ =
 --| `append : List A -> List A -> List A`
 @_ abstract def append (l1 l2: nat): nat = $ lrec l2 (\\ x, \\ z, \ y, x : y) l1 $;
 infixr append: $++$ prec 85;
-pub theorem append0 (a: nat): $ 0 ++ a = a $ = (named 'lrec0);
-pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
-'(eqtr lrecS @ ! appslame _ $ _ <> append b $ _ x _ @
+pub theorem append0 (l: nat): $ 0 ++ l = l $ = (named 'lrec0);
+pub theorem appendS (a l r: nat): $ (a : l) ++ r = a : (l ++ r) $ =
+'(eqtr lrecS @ ! appslame _ $ _ <> append l $ _ x _ @
   !! appslamed z @ !! applamed y @ conseqd anll anr);
 
 theorem appendSi (h: $ a ++ b = c $): $ x : a ++ b = x : c $ = '(eqtr appendS @ conseq2 h);

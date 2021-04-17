@@ -339,7 +339,7 @@ notation xab {x: nat} (A: set) (B: set x): set =
 
 --| `Xp A B` is the cartesian product of sets:
 --| `(a,b) e. Xp A B` iff `a e. A` and `b e. B`.
-def Xp (A B: set) (.x .y: nat): set = $ X\ x e. A, B $;
+def Xp (A B: set) (.x: nat): set = $ X\ x e. A, B $;
 
 --| The domain of a binary relation:
 --| `x e. Dom A` if there exists `y` such that `(x,y) e. A`.

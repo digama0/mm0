@@ -3223,11 +3223,11 @@
 
 (sort nat)
 
-(term al ((x nat) (ph wff (x))) (wff ()))
+(term al ((x nat) (p wff (x))) (wff ()))
 
-(def ex ((x nat) (ph wff (x))) (wff ())
+(def ex ((x nat) (p wff (x))) (wff ())
 ()
-(not (al x (not ph))))
+(not (al x (not p))))
 
 (term eq ((a nat ()) (b nat ())) (wff ()))
 
@@ -39427,45 +39427,45 @@
 (appendeq2d ((eq _l21 _l22) l1 _l21 _l22)
   (id ((eq _l21 _l22)))))
 
-(theorem append0 ((a nat ())) ()
-  (eq (append (d0) a) a)
+(theorem append0 ((l nat ())) ()
+  (eq (append (d0) l) l)
 ((x1 nat) (x2 nat) (x3 nat))
-(:conv (eq (append (d0) a) a)
+(:conv (eq (append (d0) l) l)
   (eq
-    (:unfold append ((d0) a) (x1 x3 x2)
-      (lrec a (slam x1 (slam x2 (lam x3 (cons x1 x3)))) (d0)))
-    a)
-  (lrec0 (a (slam x1 (slam x2 (lam x3 (cons x1 x3))))))))
+    (:unfold append ((d0) l) (x1 x3 x2)
+      (lrec l (slam x1 (slam x2 (lam x3 (cons x1 x3)))) (d0)))
+    l)
+  (lrec0 (l (slam x1 (slam x2 (lam x3 (cons x1 x3))))))))
 
-(theorem appendS ((a nat ()) (b nat ()) (c nat ())) ()
-  (eq (append (cons a b) c) (cons a (append b c)))
+(theorem appendS ((a nat ()) (l nat ()) (r nat ())) ()
+  (eq (append (cons a l) r) (cons a (append l r)))
 ((x nat) (y nat) (z nat))
-(ax_mp ((eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))) (cons a (append b c))) (eq (append (cons a b) c) (cons a (append b c))))
-  (ax_mp ((eq (append (cons a b) c) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b))))) (im (eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))) (cons a (append b c))) (eq (append (cons a b) c) (cons a (append b c)))))
-    (eqtr ((append (cons a b) c) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))) (cons a (append b c))))
-    (:conv (eq (append (cons a b) c) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))))
+(ax_mp ((eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))) (cons a (append l r))) (eq (append (cons a l) r) (cons a (append l r))))
+  (ax_mp ((eq (append (cons a l) r) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l))))) (im (eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))) (cons a (append l r))) (eq (append (cons a l) r) (cons a (append l r)))))
+    (eqtr ((append (cons a l) r) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))) (cons a (append l r))))
+    (:conv (eq (append (cons a l) r) (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))))
       (eq
-        (:unfold append ((cons a b) c) (x y z)
-          (lrec c (slam x (slam z (lam y (cons x y)))) (cons a b)))
-        (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))))
-      (lrecS (c (slam x (slam z (lam y (cons x y)))) a b))))
-  (:conv (eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr b (lrec c (slam x (slam z (lam y (cons x y)))) b)))) (cons a (append b c)))
+        (:unfold append ((cons a l) r) (x y z)
+          (lrec r (slam x (slam z (lam y (cons x y)))) (cons a l)))
+        (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))))
+      (lrecS (r (slam x (slam z (lam y (cons x y)))) a l))))
+  (:conv (eq (app (slam x (slam z (lam y (cons x y)))) (pr a (pr l (lrec r (slam x (slam z (lam y (cons x y)))) l)))) (cons a (append l r)))
     (eq
       (app
         (slam x (slam z (lam y (cons x y))))
         (pr
           a
           (pr
-            b
-            (:sym (:unfold append (b c) (x y z)
-              (lrec c (slam x (slam z (lam y (cons x y)))) b))))))
-      (cons a (append b c)))
-    (appslame (a (pr b (append b c)) (cons a (append b c)) x (slam z (lam y (cons x y))))
-      (appslamed ((eq x a) b (append b c) (cons a (append b c)) z (lam y (cons x y)))
-        (applamed ((an (eq x a) (eq z b)) (append b c) (cons a (append b c)) y (cons x y))
-          (conseqd ((an (an (eq x a) (eq z b)) (eq y (append b c))) x a y (append b c))
-            (anll ((eq x a) (eq z b) (eq y (append b c))))
-            (anr ((an (eq x a) (eq z b)) (eq y (append b c)))))))))))
+            l
+            (:sym (:unfold append (l r) (x y z)
+              (lrec r (slam x (slam z (lam y (cons x y)))) l))))))
+      (cons a (append l r)))
+    (appslame (a (pr l (append l r)) (cons a (append l r)) x (slam z (lam y (cons x y))))
+      (appslamed ((eq x a) l (append l r) (cons a (append l r)) z (lam y (cons x y)))
+        (applamed ((an (eq x a) (eq z l)) (append l r) (cons a (append l r)) y (cons x y))
+          (conseqd ((an (an (eq x a) (eq z l)) (eq y (append l r))) x a y (append l r))
+            (anll ((eq x a) (eq z l) (eq y (append l r))))
+            (anr ((an (eq x a) (eq z l)) (eq y (append l r)))))))))))
 
 (local theorem appendSi ((a nat ()) (b nat ()) (c nat ()) (x nat ()))
   ((h (eq (append a b) c)))
