@@ -95,7 +95,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
         guardError "def does not match declaration" $
           vs == vs' && ret == ret' && case o of
             Nothing -> True
-            Just (ds', defn') -> ds == ds' && defn == defn'
+            Just (ds', defn') -> M.toList (M.fromList ds) == ds' && defn == defn'
       e -> throwError ("incorrect def step, found " ++ show e)
     modify $ \g' -> g' {vTerms =
       M.insert x (VTermData vs ret (Just (ds, defn))) (vTerms g')}
