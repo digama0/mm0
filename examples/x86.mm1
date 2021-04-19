@@ -3847,9 +3847,8 @@ do {
             writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
     + (<> => c =>
         {((sz ds) => (CMov v)
-          $ ifp (readCond k c)
-            (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
-            (k2 = k) $)
+          $ E. v (readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
+            writeEA k sz (destEA k ds) v k2) $)
        + ((b rm) => (SetCC v)
           $ writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $)})}}
 
@@ -4081,9 +4080,7 @@ pub theorem execXAST_T (k ast k2: nat):
     '(iand _ @ rsyl anrl @ anrd readEA_T64)
     '(iand _ @ mpi readRegSzT2 @ syl ssel @ syl Bitsss @ syl wsizeBits_le64 an3lr)
     '(iand (iand an4l @ a1i binopAddT) @ an3lr))
-  (focus 'eord -- CMov
-    '(a1i @ anwr @ eex @ anwr @ anrd writeEA_T)
-    '(exp @ mpbird (eleq1d anrr) an4l))
+  (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- CMov
   (focus '(a1i @ anrd writeEA_T)) -- SetCC
   (focus -- Jump
     '(eexda @ mpbird (eleq1d anrr) @

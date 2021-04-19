@@ -1206,10 +1206,9 @@ theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
       readEA k sz (RM_EA k rm) v /\
       writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $;
 theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
-  $ execXAST k (xastCMov c sz ds) k2 <->
-      ifp (readCond k c)
-        (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
-        (k2 = k) $;
+  $ execXAST k (xastCMov c sz ds) k2 <-> E. v (
+      readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
+      writeEA k sz (destEA k ds) v k2) $;
 theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
   $ execXAST k (xastSetCC c b rm) k2 <->
     writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $;
