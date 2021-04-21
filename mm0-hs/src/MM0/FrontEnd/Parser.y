@@ -53,7 +53,7 @@ import qualified Data.Text as T
 
 %%
 
-Spec  : list(Statement) {$1}
+Spec  : list(with_comment(Statement)) {$1}
 
 Statement : SortStmt {$1}
           | TermStmt {$1}
@@ -84,24 +84,24 @@ Ident : ident {T.pack $1}
       | theorem {T.pack "theorem"}
 
 SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
-             sort Ident ';' {Sort Nothing $6 (SortData $1 $2 $3 $4)}
+             sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
 
 TermStmt : term Ident binders(Ident_, TType) ':' ArrowType ';'
-           {unArrow (Term Nothing $2) $3 $5}
+           {unArrow (Term $2) $3 $5}
 Ident_ : Ident {LReg $1} | '_' {LAnon}
 Type : Ident list(Ident) {DepType $1 $2}
 TType : Type {TType $1}
 ArrowType : Type {arrow1 $1} | TType '>' ArrowType {arrowCons $1 $3}
 
 AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
-             {unArrow ($1 Nothing $2) $3 $5}
+             {unArrow ($1 $2) $3 $5}
 AssertKind : axiom {Axiom} | theorem {Theorem}
 Formula : formula {Formula $1}
 TypeFmla : Type {TType $1} | Formula {TFormula $1}
 FmlaArrowType : Formula {arrow1 $1}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
 
-DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def Nothing $2 $3 $5 $6}
+DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def $2 $3 $5 $6}
 OptDef : '=' Formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
@@ -136,6 +136,7 @@ list1(p) : p list(p) {$1 : $2}
 binder(p, q) : '(' list(p) ':' q ')' {($2, $4)}
              | '{' list(p) ':' q '}' {(map toBound $2, $4)}
 binders(p, q) : list(binder(p, q)) {joinBinders $1}
+with_comment(p) : p {WC Nothing $1}
 
 {
 
@@ -169,7 +170,7 @@ arrowCons ty1 (f, ty) = (Binder LAnon ty1 : f, ty)
 unArrow :: ([Binder] -> a -> b) -> [Binder] -> ArrowType a -> b
 unArrow f bs (as, ty) = f (bs ++ as) ty
 
-parse :: L.ByteString -> Either ParseError [Stmt]
+parse :: L.ByteString -> Either ParseError AST
 parse = runAlex mparse
 
 }

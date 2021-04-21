@@ -5,7 +5,7 @@ import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident)
+import MM0.Kernel.Environment (Ident, WithComment(..))
 import MM0.HOL.Types
 import MM0.Util
 
@@ -40,10 +40,10 @@ lcRVar (_, rctx) v = rctx M.!? v
 
 type ProofM = StateT (M.Map Ident GType) (Either String)
 
-checkDecls :: [HDecl] -> Either String GlobalCtx
+checkDecls :: [WithComment HDecl] -> Either String GlobalCtx
 checkDecls ds = go ds (GlobalCtx S.empty M.empty M.empty M.empty) where
   go [] gctx = return gctx
-  go (d : ds') gctx = addDecl gctx d >>= go ds'
+  go (WC _ d : ds') gctx = addDecl gctx d >>= go ds'
 
 addDecl :: GlobalCtx -> HDecl -> Either String GlobalCtx
 addDecl gctx = addDecl' where

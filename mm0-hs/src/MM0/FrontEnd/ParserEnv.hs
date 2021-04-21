@@ -100,7 +100,7 @@ matchBinders bs2 r' (bs1, r) = go bs1 bs2 where
 processLits :: TermName -> [Binder] -> [Literal] -> Maybe (Prec, Bool) ->
   StateT ParserEnv (Either String) (Bool, Token, NotaInfo)
 processLits x bis = \lits prec1 -> do
-  (llit, lits', rassoc, inf, tk, prec) <- lift $ case lits of
+  (llit, lits', rassoc, inf, tk, prec2) <- lift $ case lits of
     [] -> throwError "notation requires at least one literal"
     NConst c p : lits1 -> return (Nothing, lits1, Just True, False, c, p)
     [NVar _] -> throwError "notation requires at least one constant"
@@ -113,23 +113,23 @@ processLits x bis = \lits prec1 -> do
       n <- findVar v
       q <- bump (fromMaybe False r) p
       return (Just (n, q), lits1, r, True, c, p)
-  tk' <- processConst tk prec
+  tk' <- processConst tk prec2
   let
     go :: [Literal] -> Maybe Bool -> StateT ParserEnv (Either String) ([PLiteral], Maybe Bool)
     go [] r = return ([], r)
-    go (NConst c p : lits) r = do
-      tk <- processConst c p
-      go lits r <&> \(l, r') -> (PConst tk : l, r')
-    go (NVar v : lits) r = do
-      (q, r2) <- lift $ case lits of
+    go (NConst c p : lits'') r = do
+      tk2 <- processConst c p
+      go lits'' r <&> \(l, r') -> (PConst tk2 : l, r')
+    go (NVar v : lits'') r = do
+      (q, r2) <- lift $ case lits'' of
         [] -> do
           r2 <- fromJustError "general infix notation requires explicit associativity" $
             (r <|> (snd <$> prec1))
-          (,Just r2) <$> bump (not r2) prec
+          (,Just r2) <$> bump (not r2) prec2
         (NConst _ q : _) -> (,r) <$> bump True q
         (NVar _ : _) -> return (maxBound, r)
       n <- lift $ findVar v
-      go lits r2 <&> \(l, r') -> (PVar n q : l, r')
+      go lits'' r2 <&> \(l, r') -> (PVar n q : l, r')
   (plits, r') <- go lits' rassoc
   return (inf, tk', NotaInfo x (llit, plits) r')
   where

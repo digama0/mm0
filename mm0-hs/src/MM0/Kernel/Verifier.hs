@@ -68,8 +68,8 @@ checkNotStrict g t = do
   sd <- fromJustError "sort not found" (vSorts g M.!? t)
   guardError ("cannot bind variable; sort " ++ show t ++ " is strict") (not (sStrict sd))
 
-verify :: B.ByteString -> Environment -> [Stmt] -> Either String (Q.Seq B.ByteString)
-verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
+verify :: B.ByteString -> Environment -> [WCStmt] -> Either String (Q.Seq B.ByteString)
+verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ (\(WC _ s) -> verifyCmd s) p) env where
 
   verifyCmd :: Stmt -> GVerifyM ()
   verifyCmd (StmtSort x sd) = step >>= \case

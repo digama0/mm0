@@ -7,6 +7,7 @@ import Control.Applicative hiding (many, (<|>))
 import Control.Monad.Trans.Class
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.List
 import Data.Word8
 import Data.Void
 import Text.Megaparsec
@@ -27,27 +28,43 @@ type ParserT = ParsecT Void B.ByteString
 -- parseProofOrDie is the "pure" version, that exits the program on error,
 -- and parseProof is the monadic version, that allows actions to trigger
 -- when an error is encountered or a single statement is parsed.
-parseProofOrDie :: B.ByteString -> [Stmt]
+parseProofOrDie :: B.ByteString -> [WCStmt]
 parseProofOrDie s = f [] where
   (_, Endo f) = runWriter $ parseProof s error (tell . Endo . (:))
 
-parseProof :: Monad m => B.ByteString -> (String -> m ()) -> (Stmt -> m ()) -> m ()
+parseProof :: Monad m => B.ByteString -> (String -> m ()) -> (WCStmt -> m ()) -> m ()
 parseProof s ferr fstmt =
-  runParserT (ws *> parseStmts) "" s >>= \case
+  runParserT parseStmts "" s >>= \case
     Left err -> ferr (show err)
     Right () -> return ()
   where
-  parseStmts = (readLisp >>= lift . either ferr fstmt . readStmt >> parseStmts) <|> eof
+  parseStmts = try (do
+    c <- docComment
+    l <- readLisp
+    lift $ either ferr (fstmt . WC c) $ readStmt l
+    parseStmts) <|> (ws >> eof)
 
 data Lisp = Atom T.Text | List [Lisp] deriving (Show)
+
+fromChar :: Char -> Word8
+fromChar = toEnum . fromEnum
+
+docComment :: Monad m => ParserT m Comment
+docComment = do
+  space
+  s <- many (string "--|" *>
+    takeWhileP (Just "non-newline") (/= fromChar '\n') <* char (fromChar '\n'))
+  ws
+  pure $ if null s then Nothing else Just $
+    T.intercalate "\n" $ map (T.strip . T.decodeUtf8) s
 
 ws :: Monad m => ParserT m ()
 ws = do
   space
-  (do
-    _ <- string "--"
-    _ <- takeWhileP (Just "non-newline") (/= 10) -- 10 = \n
-    _ <- char 10
+  try (do
+    _ <- string "--" >> notFollowedBy (char $ fromChar '|')
+    _ <- takeWhileP (Just "non-newline") (/= fromChar '\n')
+    _ <- char (fromChar '\n')
     ws) <|> pure ()
 
 symbol :: Monad m => Word8 -> ParserT m ()

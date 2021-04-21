@@ -13,6 +13,8 @@ type VarName = Ident
 type Token = Ident
 type Comment = Maybe T.Text
 
+data WithComment a = WC Comment a
+
 data DepType = DepType {
   dSort :: Sort,
   dDeps :: [VarName] } deriving (Eq)
@@ -96,6 +98,15 @@ data Environment = Environment {
 
 instance Default Environment where
   def = Environment def def def
+
+showsComment :: Comment -> ShowS
+showsComment Nothing = id
+showsComment (Just s) = ("--| " ++) . flip (T.foldr replace) s . ('\n' :) where
+  replace '\n' = ("\n--| " ++)
+  replace c = (c :)
+
+instance Show a => Show (WithComment a) where
+  showsPrec _ (WC c a) = showsComment c . shows a
 
 getTerm :: Environment -> TermName -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where

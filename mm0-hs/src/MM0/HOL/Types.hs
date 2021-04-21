@@ -1,9 +1,9 @@
-module MM0.HOL.Types (module MM0.HOL.Types, Ident, Sort) where
+module MM0.HOL.Types (module MM0.HOL.Types, Ident, Sort, WithComment(..)) where
 
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, Sort)
+import MM0.Kernel.Environment (Ident, Sort, WithComment(..))
 import MM0.Util
 
 -- An SType is a type of the form s1 -> ... sn -> t where

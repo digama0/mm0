@@ -37,11 +37,11 @@ export :: Bool -> String -> Env -> IO ()
 export strip fname env =
   collectDecls env >>= buildTables env >>= exportTables strip fname
 
-exportK :: Bool -> String -> [K.Stmt] -> IO ()
+exportK :: Bool -> String -> [K.WCStmt] -> IO ()
 exportK strip fname pfs =
   exportKP strip fname $ \f -> mapM_ f pfs
 
-exportKP :: Bool -> String -> ((K.Stmt -> IO ()) -> IO ()) -> IO ()
+exportKP :: Bool -> String -> ((K.WCStmt -> IO ()) -> IO ()) -> IO ()
 exportKP strip fname ppfs = do
   buildTablesK ppfs >>= exportTables strip fname
 
@@ -241,9 +241,9 @@ buildTables env ds = buildTablesWith $ \mksort mkterm mkthm ->
         mkthm (nIdent d) $ ThmData vis (V.fromList bis) $
           ProofStmt hs ret (Just pf)
 
-buildTablesK :: ((K.Stmt -> IO ()) -> IO ()) -> IO (V.Vector Name, Tables)
+buildTablesK :: ((K.WCStmt -> IO ()) -> IO ()) -> IO (V.Vector Name, Tables)
 buildTablesK ppfs =
-  buildTablesWith $ \mksort mkterm mkthm -> ppfs $ \case
+  buildTablesWith $ \mksort mkterm mkthm -> ppfs $ \(K.WC _ stmt) -> case stmt of
     K.StmtSort s sd -> mksort s sd
     K.StmtTerm t bis ret -> mkterm t $
       TermData Public (V.fromList bis) ret Nothing

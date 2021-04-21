@@ -1,8 +1,10 @@
 module MM0.HOL.ToLean (writeLean, Axioms(..)) where
 
 import Data.Foldable
+import Data.Maybe
 import System.FilePath
 import System.IO
+import Control.Applicative ((<|>))
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
@@ -32,9 +34,24 @@ noAx :: Axioms -> Bool
 noAx (FromFile _) = True
 noAx _ = False
 
-writeLean :: Axioms -> String -> Int -> [HDecl] -> IO ()
+wrapAt :: Int -> String -> String
+wrapAt margin = \s -> fromMaybe s (go id 0 s) where
+  go f col ('\n' : s) = go (f . ('\n' :)) 0 s
+  go _ col (' ' : _) | col > margin = Nothing
+  go f col (' ' : s) = go (f . (' ' :)) (col+1) s <|> go (f . ('\n' :)) 0 s
+  go _ col (c : _) | col >= margin = Nothing
+  go f col (c : s) = go (f . (c :)) (col+1) s
+  go f col [] = Just (f [])
+
+writeLean :: Axioms -> String -> Int -> [WithComment HDecl] -> IO ()
 writeLean ax f chunkSize ds =
-  evalStateT (open (axFile ax) >> mapM_ (\d -> leanDecl ax d >> increment) ds >> close) $
+  evalStateT (do
+      open (axFile ax)
+      forM_ ds $ \(WC c d) -> do
+        forM_ c $ \s -> emit $ wrapAt 100 $ "\n/-- " ++ T.unpack s ++ " -/"
+        leanDecl ax d
+        increment
+      close) $
     LeanState 1 f undefined 0 chunkSize M.empty
 
 emit :: String -> LeanM ()

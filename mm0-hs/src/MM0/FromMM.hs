@@ -22,15 +22,13 @@ import MM0.FromMM.Emancipate
 import MM0.FromMM.Closure
 import MM0.FromMM.FindBundled
 import MM0.Kernel.Environment (Ident, DepType(..), SExpr(..), PBinder(..),
-  VarName, TermName, ThmName, Comment)
+  VarName, TermName, ThmName, Comment, WithComment(..))
 import MM0.Kernel.Types as K
 import MM0.Compiler.Export (exportKP)
 import qualified MM0.FrontEnd.AST as A
 
-type KStmt = (Comment, K.Stmt)
-
-showsK :: KStmt -> ShowS
-showsK (c, s) = A.showsComment c . shows s
+noc :: a -> WithComment a
+noc = WC Nothing
 
 write :: String -> (Handle -> IO ()) -> IO ()
 write f io = withFile f WriteMode $ \h ->
@@ -89,12 +87,12 @@ fromMM (mm : rest) = do
         (\a -> hPutStr h (shows a "\n\n")) (\_ -> return ())
     "-o" : mm0 : mmo : _ ->
       if isSuffixOf "mmb" mmo then
-        write mm0 $ \hmm0 -> exportKP False mmo $ \f ->
-          printAST db' dbf (\a -> hPutStr hmm0 (shows a "\n\n")) (f . snd)
+        write mm0 $ \hmm0 -> exportKP False mmo $
+          printAST db' dbf (\a -> hPutStr hmm0 (shows a "\n\n"))
       else write mm0 $ \hmm0 -> write mmo $ \hmmu ->
         printAST db' dbf
           (\a -> hPutStr hmm0 (shows a "\n\n"))
-          (\a -> hPutStr hmmu (showsK a "\n\n"))
+          (\a -> hPutStr hmmu (shows a "\n\n"))
     _ -> die "from-mm: too many arguments"
 
 data DBInfo = DBInfo {
@@ -135,20 +133,21 @@ runTransM m db dbf st = do
   (os, st', Endo w) <- runRWST m (db, i) st
   return (os, st', w [])
 
-_makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, [KStmt])
+_makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, [K.WCStmt])
 _makeAST db dbf = trDecls (mDecls db)
-  (A.Notation (A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) ")) :) id def where
-  trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> ([KStmt] -> [KStmt]) ->
-    TransState -> Either String (A.AST, [KStmt])
+  ((noc $ A.Notation $ A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) ")) :)
+  id def where
+  trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> ([K.WCStmt] -> [K.WCStmt]) ->
+    TransState -> Either String (A.AST, [K.WCStmt])
   trDecls Q.Empty f g _ = return (f [], g [])
   trDecls (d Q.:<| ds) f g st = do
     (os, st', _) <- runTransM (trDecl d) db dbf st
     let (ds', ps) = unzip os
     trDecls ds (f . (catMaybes ds' ++)) (g . (ps ++)) st'
 
-printAST :: MMDatabase -> DBFilter -> (A.Stmt -> IO ()) -> (KStmt -> IO ()) -> IO ()
+printAST :: MMDatabase -> DBFilter -> (A.WCStmt -> IO ()) -> (K.WCStmt -> IO ()) -> IO ()
 printAST db dbf mm0 mmu = do
-  mm0 (A.Notation $ A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) "))
+  mm0 (noc $ A.Notation $ A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) "))
   trDecls (mDecls db) def
   where
   trDecls :: Q.Seq Decl -> TransState -> IO ()
@@ -171,13 +170,13 @@ printAST db dbf mm0 mmu = do
 reorder :: [Int] -> [a] -> [a]
 reorder ns l = (l !!) <$> ns
 
-trDecl :: Decl -> TransM [(Maybe A.Stmt, KStmt)]
+trDecl :: Decl -> TransM [(Maybe A.WCStmt, K.WCStmt)]
 trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
   Sort s -> if sortMember i s then
     case mSorts db M.! s of
       (Nothing, sd) -> do
         st' <- trName s (mangle s)
-        return [(Just $ A.Sort Nothing st' sd, (Nothing, StmtSort st' sd))]
+        return [(Just $ noc $ A.Sort st' sd, noc $ StmtSort st' sd)]
       _ -> return []
     else return []
   Stmt st -> if stmtMember i st && M.notMember st (tNameMap t) then
@@ -194,8 +193,8 @@ trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
                 (mkAppBuilder rm (App st'))
                 (tBuilders m) }
             return [(
-              Just $ A.Term c st' bs1 (DepType s []),
-              (c, StmtTerm st' bs2 (DepType s [])))]
+              Just $ WC c $ A.Term st' bs1 (DepType s []),
+              WC c $ StmtTerm st' bs2 (DepType s []))]
         e -> return e
       (_, Term _ fr (_, e) (Just _)) -> splitFrame Nothing fr $ \sf -> do
         let rm = sfReord sf
@@ -222,20 +221,20 @@ trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
 
 trThmB :: Comment -> Maybe [Int] -> Bool -> Frame -> (Const, MMExpr) ->
   Maybe ([(Label, Label)], MMProof) -> ThmName ->
-  TransM ((Maybe A.Stmt, KStmt), [Int], [Int])
+  TransM ((Maybe A.WCStmt, K.WCStmt), [Int], [Int])
 trThmB c bu pub fr (_, e) p i =
   splitFrame bu fr $ \(SplitFrame bs1 bs2 hs2 pa rm vm) -> do
     e1 <- trExpr vm e
     ret <- case p of
       Nothing -> return (
-        Just $ A.Axiom c i bs1 (exprToFmla e1),
-        (c, StmtAxiom i bs2 (snd <$> hs2) e1))
+        Just $ WC c $ A.Axiom i bs1 (exprToFmla e1),
+        WC c $ StmtAxiom i bs2 (snd <$> hs2) e1)
       Just p' -> do
         t <- get
         let (ds, pr) = trProof vm t p'
         return (
-          if pub then Just $ A.Theorem c i bs1 (exprToFmla e1) else Nothing,
-          (c, StmtThm i bs2 hs2 e1 ds pr pub))
+          if pub then Just $ WC c $ A.Theorem i bs1 (exprToFmla e1) else Nothing,
+          WC c $ StmtThm i bs2 hs2 e1 ds pr pub)
     return (ret, pa, rm)
 
 mkAppBuilder :: [Int] -> ([SExpr] -> SExpr) -> Builder
@@ -451,5 +450,5 @@ findDefinitions db = M.foldlWithKey' go M.empty (mStmts db) where
     | M.member eq (snd $ mEqual $ mMeta db) = M.insert t x m
   go m _ _ = m
 
-trDefinition :: Int -> Label -> TransM [(Maybe A.Stmt, KStmt)]
+trDefinition :: Int -> Label -> TransM [(Maybe A.WCStmt, K.WCStmt)]
 trDefinition _ _ = return [] -- TODO

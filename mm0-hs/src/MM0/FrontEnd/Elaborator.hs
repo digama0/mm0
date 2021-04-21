@@ -43,23 +43,17 @@ evalSpecM m = do
   return (a, e)
 
 elabAST :: AST -> Either String Environment
-elabAST ast = snd <$> evalSpecM (elabDecls ast)
+elabAST ast = snd <$> evalSpecM (mapM_ (\(WC _ s) -> elabDecl s) ast)
 
-elabDecls :: [Stmt] -> SpecM ()
-elabDecls [] = return ()
-elabDecls (Sort _ v sd : ds) = insertSort v sd >> elabDecls ds
-elabDecls (Term _ x vs ty : ds) =
-  elabTerm x vs ty DTerm >>= insertDecl x >> elabDecls ds
-elabDecls (Axiom _ x vs ty : ds) =
-  elabAssert x vs ty DAxiom >>= insertDecl x >> elabDecls ds
-elabDecls (Theorem _ x vs ty : ds) = do
-  elabAssert x vs ty (SThm x) >>= insertSpec
-  elabDecls ds
-elabDecls (Def _ x vs ty defn : ds) =
-  elabDef x vs ty defn >>= insertDecl x >> elabDecls ds
-elabDecls (Notation n : ds) = modifyParser (addNotation n) >> elabDecls ds
-elabDecls (Inout (Input k s) : ds) = elabInout False k s >> elabDecls ds
-elabDecls (Inout (Output k s) : ds) = elabInout True k s >> elabDecls ds
+elabDecl :: Stmt -> SpecM ()
+elabDecl (Sort v sd) = insertSort v sd
+elabDecl (Term x vs ty) = elabTerm x vs ty DTerm >>= insertDecl x
+elabDecl (Axiom x vs ty) = elabAssert x vs ty DAxiom >>= insertDecl x
+elabDecl (Theorem x vs ty) = elabAssert x vs ty (SThm x) >>= insertSpec
+elabDecl (Def x vs ty defn) = elabDef x vs ty defn >>= insertDecl x
+elabDecl (Notation n) = modifyParser (addNotation n)
+elabDecl (Inout (Input k s)) = elabInout False k s
+elabDecl (Inout (Output k s)) = elabInout True k s
 
 elabTerm :: Ident -> [Binder] -> DepType -> ([PBinder] -> DepType -> a) -> SpecM a
 elabTerm x vs ty mk = do

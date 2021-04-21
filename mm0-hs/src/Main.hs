@@ -24,7 +24,7 @@ main = getArgs >>= \case
     "  mm0-hs export MMU-FILE [-S] -o MMB-FILE\n" ++
     "  mm0-hs show-bundled MM-FILE\n" ++
     "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU/MMB-FILE]\n" ++
-    "  mm0-hs to-hol MMU-FILE\n" ++
+    "  mm0-hs to-hol MMU-FILE [-o HOL-FILE]\n" ++
     "  mm0-hs to-othy MMU-FILE [-o ART-FILE]\n" ++
     "  mm0-hs to-lean MMU-FILE [-o LEAN-FILE]\n" ++
     "  mm0-hs server [--debug]\n" ++

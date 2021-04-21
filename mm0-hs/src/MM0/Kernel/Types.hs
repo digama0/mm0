@@ -1,4 +1,5 @@
-module MM0.Kernel.Types (VInoutKind(..), Stmt(..), Proof(..), Conv(..)) where
+module MM0.Kernel.Types (
+  VInoutKind(..), Stmt(..), Proof(..), Conv(..), WithComment(..), WCStmt) where
 
 import qualified Data.Text as T
 import Data.Maybe
@@ -9,6 +10,8 @@ import MM0.Kernel.Environment
 
 data VInoutKind = VIKString Bool -- ^ False for input, True for output
   deriving (Show)
+
+type WCStmt = WithComment Stmt
 
 data Stmt =
     StmtSort Ident SortData

@@ -39,14 +39,14 @@ instance Default OTState where
 
 type OTM m = ReaderT (String -> m ()) (StateT OTState m)
 
-writeOT :: Monad m => (String -> m ()) -> [HDecl] -> m ()
-writeOT f ds = evalStateT (runReaderT (preamble >> mapM_ otDecl ds >>
+writeOT :: Monad m => (String -> m ()) -> [WithComment HDecl] -> m ()
+writeOT f ds = evalStateT (runReaderT (preamble >> mapM_ (\(WC _ d) -> otDecl d) ds >>
   get >>= cleanup . otDict) f) def where
   cleanup :: Monad m => Int -> OTM m ()
   cleanup 0 = return ()
   cleanup n = app "pop" [app "remove" [emit [show (n-1)]]] >> cleanup (n-1)
 
-otToString :: [HDecl] -> [String]
+otToString :: [WithComment HDecl] -> [String]
 otToString ds = appEndo (execWriter $ writeOT (tell . Endo . (:)) ds) []
 
 emit :: Monad m => [String] -> OTM m ()

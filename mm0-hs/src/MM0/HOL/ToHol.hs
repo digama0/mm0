@@ -29,41 +29,41 @@ data ToHolState = ToHolState {
   thTerms :: M.Map TermName HTermData,
   thThms :: M.Map ThmName HThmData }
 
-type ToHolM = RWST () (Endo [HDecl]) ToHolState (Either String)
+type ToHolM = RWST () (Endo [WithComment HDecl]) ToHolState (Either String)
 
-toHol :: [Stmt] -> Either String [HDecl]
+toHol :: [WCStmt] -> Either String [WithComment HDecl]
 toHol = \pfs -> do
   (_, _, Endo f) <- runRWST (mapM_ trStmt pfs) () $
     ToHolState 0 M.empty M.empty M.empty
   return (f [])
   where
-  trStmt :: Stmt -> ToHolM ()
-  trStmt (StmtSort x sd) = do
-    tell (Endo (HDSort x :))
+  trStmt :: WCStmt -> ToHolM ()
+  trStmt (WC c (StmtSort x sd)) = do
+    tell (Endo (WC c (HDSort x) :))
     modify $ \g -> g {
       thSorts = M.insert x (sFree sd) (thSorts g) }
-  trStmt (StmtTerm x args ty) = do
-    tell (Endo (HDTerm x (translateTerm args ty) :))
+  trStmt (WC c (StmtTerm x args ty)) = do
+    tell (Endo (WC c (HDTerm x (translateTerm args ty)) :))
     modify $ \g -> g {
       thTerms = M.insert x (HTermData args ty Nothing) (thTerms g) }
-  trStmt (StmtAxiom x args hs ret) = do
+  trStmt (WC c (StmtAxiom x args hs ret)) = do
     g <- get
     let td@(TType _ hs' ret') = translateAxiom g args hs ret
-    tell (Endo (HDThm x td Nothing :))
+    tell (Endo (WC c (HDThm x td Nothing) :))
     put $ g {thThms = M.insert x (HThmData args hs' ret' ret) (thThms g)}
-  trStmt (StmtDef x vs ret ds def _) = do
+  trStmt (WC c (StmtDef x vs ret ds def _)) = do
     g <- get
     let (rv, lv, e) = translateDef g vs ret ds def
-    tell (Endo (HDDef x rv lv (dSort ret) e :))
+    tell (Endo (WC c (HDDef x rv lv (dSort ret) e) :))
     modify $ \g' -> g' {
       thTerms = M.insert x (HTermData vs ret (Just (ds, def))) (thTerms g') }
-  trStmt (StmtThm x args hs ret ds pf _) = do
+  trStmt (WC c (StmtThm x args hs ret ds pf _)) = do
     g <- get
     let (ty@(TType _ hs' ret'), p) = translateThm g args hs ret ds pf
-    tell (Endo (HDThm x ty (Just p) :))
+    tell (Endo (WC c (HDThm x ty (Just p)) :))
     modify $ \g' -> g' {
       thThms = M.insert x (HThmData args hs' ret' ret) (thThms g') }
-  trStmt (StepInout _) = return ()
+  trStmt (WC _ (StepInout _)) = return ()
 
 getLocal :: M.Map Ident PBinder -> Ident -> Sort
 getLocal m v = case m M.! v of
