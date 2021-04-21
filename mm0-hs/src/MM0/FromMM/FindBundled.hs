@@ -30,7 +30,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
   pureArgs :: M.Map Label [Int]
   pureArgs = M.mapMaybe f (mStmts db) where
     f (_, Alias x) = f (mStmts db M.! x)
-    f (_, Thm (hs, _) _ _) =
+    f (_, Thm _ (hs, _) _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
       go ((p, _):ls) n | vsPure p = n : go ls (n+1)
@@ -39,7 +39,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
 
   checkDecl :: Decl -> FindBundledM ()
   checkDecl (Stmt s) = case snd $ getStmt db s of
-    Thm fr _ (Just (_, p)) -> checkProof (s, Nothing) 0 (allDistinct fr) p
+    Thm _ fr _ (Just (_, p)) -> checkProof (s, Nothing) 0 (allDistinct fr) p
     _ -> return ()
   checkDecl _ = return ()
 
@@ -65,7 +65,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
           if not strict || M.member b m then do
               modify $ M.insert t (M.alter (Just . maybe k (min k)) b m)
               case getStmt db t of
-                (_, Thm _ _ (Just (_, p))) ->
+                (_, Thm _ _ _ (Just (_, p))) ->
                   checkProof (t, Just b) (k+1) (I.fromList (zip l b)) p
                 _ -> return ()
           else tell $ S.singleton (x, (t, b))

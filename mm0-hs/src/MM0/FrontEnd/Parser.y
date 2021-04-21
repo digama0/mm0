@@ -84,24 +84,24 @@ Ident : ident {T.pack $1}
       | theorem {T.pack "theorem"}
 
 SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
-             sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
+             sort Ident ';' {Sort Nothing $6 (SortData $1 $2 $3 $4)}
 
 TermStmt : term Ident binders(Ident_, TType) ':' ArrowType ';'
-           {unArrow (Term $2) $3 $5}
+           {unArrow (Term Nothing $2) $3 $5}
 Ident_ : Ident {LReg $1} | '_' {LAnon}
 Type : Ident list(Ident) {DepType $1 $2}
 TType : Type {TType $1}
 ArrowType : Type {arrow1 $1} | TType '>' ArrowType {arrowCons $1 $3}
 
 AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
-             {unArrow ($1 $2) $3 $5}
+             {unArrow ($1 Nothing $2) $3 $5}
 AssertKind : axiom {Axiom} | theorem {Theorem}
 Formula : formula {Formula $1}
 TypeFmla : Type {TType $1} | Formula {TFormula $1}
 FmlaArrowType : Formula {arrow1 $1}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
 
-DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def $2 $3 $5 $6}
+DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def Nothing $2 $3 $5 $6}
 OptDef : '=' Formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 

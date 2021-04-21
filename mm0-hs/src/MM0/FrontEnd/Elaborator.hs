@@ -47,15 +47,15 @@ elabAST ast = snd <$> evalSpecM (elabDecls ast)
 
 elabDecls :: [Stmt] -> SpecM ()
 elabDecls [] = return ()
-elabDecls (Sort v sd : ds) = insertSort v sd >> elabDecls ds
-elabDecls (Term x vs ty : ds) =
+elabDecls (Sort _ v sd : ds) = insertSort v sd >> elabDecls ds
+elabDecls (Term _ x vs ty : ds) =
   elabTerm x vs ty DTerm >>= insertDecl x >> elabDecls ds
-elabDecls (Axiom x vs ty : ds) =
+elabDecls (Axiom _ x vs ty : ds) =
   elabAssert x vs ty DAxiom >>= insertDecl x >> elabDecls ds
-elabDecls (Theorem x vs ty : ds) = do
+elabDecls (Theorem _ x vs ty : ds) = do
   elabAssert x vs ty (SThm x) >>= insertSpec
   elabDecls ds
-elabDecls (Def x vs ty defn : ds) =
+elabDecls (Def _ x vs ty defn : ds) =
   elabDef x vs ty defn >>= insertDecl x >> elabDecls ds
 elabDecls (Notation n : ds) = modifyParser (addNotation n) >> elabDecls ds
 elabDecls (Inout (Input k s) : ds) = elabInout False k s >> elabDecls ds

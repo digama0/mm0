@@ -56,6 +56,8 @@ The `.mmu` file format
 For demonstration purposes, this verifier accepts a text format for the proof file. (A production quality verifier should probably use a binary file format, but the information contained in the file should be about the same.) To simplify parsing, the whole file is written using lisp s-expression syntax:
 
 * Whitespace is ignored except to separate tokens
+* Line comments are written `--comment` and extend until the next `\n`;
+  line comments act like whitespace
 * An identifier token matches `[0-9a-zA-Z_:]+`
 * Characters `( )` are single character symbol tokens
 * Anything else is forbidden

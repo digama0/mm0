@@ -1,16 +1,16 @@
 module MM0.FrontEnd.AST (module MM0.FrontEnd.AST, Ident, DepType(..), SortData(..)) where
 
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, DepType(..), SortData(..))
+import MM0.Kernel.Environment (Ident, DepType(..), SortData(..), Comment)
 
 type AST = [Stmt]
 
 data Stmt =
-    Sort Ident SortData
-  | Term Ident [Binder] DepType
-  | Axiom Ident [Binder] Formula
-  | Theorem Ident [Binder] Formula
-  | Def Ident [Binder] DepType (Maybe Formula)
+    Sort Comment Ident SortData
+  | Term Comment Ident [Binder] DepType
+  | Axiom Comment Ident [Binder] Formula
+  | Theorem Comment Ident [Binder] Formula
+  | Def Comment Ident [Binder] DepType (Maybe Formula)
   | Notation Notation
   | Inout Inout
 
@@ -108,17 +108,28 @@ showsAssert l f = let (l1, l2) = split l in
       _ -> ([bi], r)
     (l', r) -> (bi : l', r)
 
+showsComment :: Comment -> ShowS
+showsComment Nothing = id
+showsComment (Just c) = ("--| " ++) . flip (T.foldr replace) c . ('\n' :) where
+  replace '\n' = ("\n--| " ++)
+  replace c = (c :)
+
 instance Show Stmt where
-  showsPrec _ (Sort x (SortData p s pr f)) r =
+  showsPrec _ (Sort c x (SortData p s pr f)) r =
+    showsComment c (
     (if p then "pure " else "") ++ (if s then "strict " else "") ++
     (if pr then "provable " else "") ++ (if f then "free " else "") ++
-    "sort " ++ T.unpack x ++ ';' : r
-  showsPrec _ (Term x bis ty) r = "term " ++ T.unpack x ++
-    showsGroupedBinders bis (": " ++ shows ty (';' : r))
-  showsPrec _ (Axiom x bis ty) r = "axiom " ++ T.unpack x ++ showsAssert bis ty r
-  showsPrec _ (Theorem x bis ty) r = "theorem " ++ T.unpack x ++ showsAssert bis ty r
-  showsPrec _ (Def x bis ty o) r = "def " ++ T.unpack x ++
-    showsGroupedBinders bis (": " ++ shows ty s) where
+    "sort " ++ T.unpack x ++ ';' : r)
+  showsPrec _ (Term c x bis ty) r =
+    showsComment c ("term " ++ T.unpack x ++
+    showsGroupedBinders bis (": " ++ shows ty (';' : r)))
+  showsPrec _ (Axiom c x bis ty) r =
+    showsComment c ("axiom " ++ T.unpack x ++ showsAssert bis ty r)
+  showsPrec _ (Theorem c x bis ty) r =
+    showsComment c ("theorem " ++ T.unpack x ++ showsAssert bis ty r)
+  showsPrec _ (Def c x bis ty o) r =
+    showsComment c ("def " ++ T.unpack x ++
+    showsGroupedBinders bis (": " ++ shows ty s)) where
     s = case o of
       Nothing -> ';' : r
       Just f -> " = " ++ shows f (';' : r)

@@ -7,7 +7,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
-import MM0.Kernel.Environment (SortData, SExpr)
+import MM0.Kernel.Environment (SortData, SExpr, Comment)
 
 type Const = T.Text
 type Var = T.Text
@@ -31,8 +31,8 @@ data MMProof =
   deriving (Show)
 
 data Stmt = Hyp Hyp
-  | Term Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
-  | Thm Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
+  | Term Comment Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
+  | Thm Comment Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
   | Alias Label
   deriving (Show)
 

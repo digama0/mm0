@@ -21,10 +21,10 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
     when (S.notMember x sl) $ do
       addStmt x
       case getStmtM db x of
-        Just (_, Term (hs, _) (_, e) _) -> do
+        Just (_, Term _ (hs, _) (_, e) _) -> do
           mapM_ checkHyp hs
           checkExpr e
-        Just (_, Thm (hs, _) (_, e) pr) -> do
+        Just (_, Thm _ (hs, _) (_, e) pr) -> do
           mapM_ checkHyp hs
           checkExpr e
           mapM_ (\(ds, p) -> mapM_ (checkStmt . fst) ds >> checkProof p) pr

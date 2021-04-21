@@ -33,7 +33,7 @@ parseProofOrDie s = f [] where
 
 parseProof :: Monad m => B.ByteString -> (String -> m ()) -> (Stmt -> m ()) -> m ()
 parseProof s ferr fstmt =
-  runParserT (space *> parseStmts) "" s >>= \case
+  runParserT (ws *> parseStmts) "" s >>= \case
     Left err -> ferr (show err)
     Right () -> return ()
   where
@@ -41,8 +41,17 @@ parseProof s ferr fstmt =
 
 data Lisp = Atom T.Text | List [Lisp] deriving (Show)
 
+ws :: Monad m => ParserT m ()
+ws = do
+  space
+  (do
+    _ <- string "--"
+    _ <- takeWhileP (Just "non-newline") (/= 10) -- 10 = \n
+    _ <- char 10
+    ws) <|> pure ()
+
 symbol :: Monad m => Word8 -> ParserT m ()
-symbol c = char c >> space
+symbol c = char c >> ws
 
 paren :: Monad m => ParserT m a -> ParserT m a
 paren = between (symbol _parenleft) (symbol _parenright)
@@ -56,7 +65,7 @@ lispIdent = (lispIdentV V.!) . fromIntegral
 
 ident :: Monad m => ParserT m T.Text
 ident = do
-  s <- takeWhileP (Just "identifier char") lispIdent <* space
+  s <- takeWhileP (Just "identifier char") lispIdent <* ws
   guard (not (B.null s))
   return $ T.decodeLatin1 s
 

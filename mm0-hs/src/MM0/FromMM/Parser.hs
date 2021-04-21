@@ -16,12 +16,12 @@ import qualified Data.Sequence as Q
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import MM0.Kernel.Environment (SortData(..), SExpr(..))
+import MM0.Kernel.Environment (SortData(..), SExpr(..), Comment)
 import MM0.FromMM.Types
 import MM0.Util
 
 parseMM :: B.ByteString -> Either String MMDatabase
-parseMM s = snd <$> runFromMMM (process (toks s))
+parseMM s = snd <$> runFromMMM (process Nothing (toks s))
 
 toks :: B.ByteString -> [T.Text]
 toks = filter (not . T.null) . map (T.decodeLatin1 . B.toStrict) .
@@ -144,65 +144,65 @@ addStmt x st = modifyDB $ \db -> db {
   mDecls = mDecls db Q.|> Stmt x,
   mStmts = M.insert x (Q.length (mDecls db), st) (mStmts db) }
 
-process :: [T.Text] -> FromMMM ()
-process [] = return ()
-process ("$(" : "$j" : ss) = processJ (parseJ ss)
-process ("$(" : ss) = readUntil "$)" ss >>= process . snd
-process ("$c" : ss) = do
+process :: Maybe [T.Text] -> [T.Text] -> FromMMM ()
+process _ [] = return ()
+process _ ("$(" : "$j" : ss) = processJ (parseJ ss)
+process _ ("$(" : ss) = do (c, ss') <- readUntil "$)" ss; process (Just c) ss'
+process _ ("$c" : ss) = do
   (cs, ss') <- readUntil "$." ss
-  mapM_ addConstant cs >> process ss'
-process ("$v" : ss) = do
+  mapM_ addConstant cs >> process Nothing ss'
+process _ ("$v" : ss) = do
   (vs, ss') <- readUntil "$." ss
-  mapM_ addVariable vs >> process ss'
-process ("$d" : ss) = do
+  mapM_ addVariable vs >> process Nothing ss'
+process comment ("$d" : ss) = do
   (vs, ss') <- readUntil "$." ss
   t <- get
   let vs' = (\v -> snd (mVMap t M.! v)) <$> vs
   modify $ \t' -> t' {mScope = scopeAddDV vs' (mScope t')}
-  process ss'
-process ("${" : ss) = do
+  process comment ss'
+process _ ("${" : ss) = do
   modify $ \t -> t {mScope = scopeOpen (mScope t)}
-  process ss
-process ("$}" : ss) = do
+  process Nothing ss
+process _ ("$}" : ss) = do
   t <- get
   sc <- fromJustError "too many $}" (scopeClose (mScope t))
   put $ t {mScope = sc}
-  process ss
-process (x : "$f" : c : v : "$." : ss) = do
+  process Nothing ss
+process _ (x : "$f" : c : v : "$." : ss) = do
   modify $ \t -> t {mVMap = M.insert v (c, x) (mVMap t)}
   addHyp x (VHyp c v) S.empty
-  process ss
-process (x : "$e" : ss) = do
+  process Nothing ss
+process comment (x : "$e" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
   (s, e) <- parseFmla f
   withContext x $ addHyp x (EHyp s e) (exprVars e)
-  process ss'
-process (x : "$a" : ss) = do
+  process comment ss'
+process comment (x : "$a" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
   withContext x $ do
     (fr, m) <- mkFrame f
-    addThm x f fr m Nothing
-  process ss'
-process (x : "$p" : ss) = do
+    addThm x (T.intercalate (T.pack " ") <$> comment) f fr m Nothing
+  process Nothing ss'
+process comment (x : "$p" : ss) = do
   (f, ss1) <- withContext x $ readMath "$=" ss
   (p, ss2) <- readProof ss1
   withContext x $ do
     (fr, m) <- mkFrame f
     t <- get
     pr <- lift $ trProof fr (mDB t) p
-    addThm x f fr m (Just pr)
-  process ss2
-process (x : ss) = throwError ("wtf " ++ T.unpack x ++ show (take 100 ss))
+    addThm x (T.intercalate (T.pack " ") <$> comment) f fr m (Just pr)
+  process Nothing ss2
+process _ (x : ss) = throwError ("wtf " ++ T.unpack x ++ show (take 100 ss))
 
-addThm :: Label -> Fmla -> Frame -> M.Map Var Int ->
+addThm :: Label -> Comment -> Fmla -> Frame -> M.Map Var Int ->
   Maybe ([(Label, Label)], MMProof) -> FromMMM ()
-addThm x f@(Const s : _) fr m p = do
+addThm x c f@(Const s : _) fr m p = do
   db <- gets mDB
   case mSorts db M.!? s of
     Nothing -> throwError ("sort '" ++ T.unpack s ++ "' not declared")
     Just (Just s', _) -> do
       (_, e) <- parseFmla f
-      addStmt x (Thm fr (s', e) p)
+      addStmt x (Thm c fr (s', e) p)
     Just (Nothing, _) -> do
       guardError "syntax axiom has $d" (null (snd fr))
       when (isNothing p) $
@@ -210,8 +210,8 @@ addThm x f@(Const s : _) fr m p = do
         modify $ \t -> t {
           mParser = ptInsert (mVMap t) g f (mParser t) }
       e <- parseFmla f
-      addStmt x (Term fr e p)
-addThm _ _ _ _ _ = error "malformed statement"
+      addStmt x (Term c fr e p)
+addThm _ _ _ _ _ _ = error "malformed statement"
 
 readUntil :: T.Text -> [T.Text] -> FromMMM ([T.Text], [T.Text])
 readUntil u = go id where
@@ -284,9 +284,9 @@ trProof (hs, _) db = \case
       Just (_, Hyp (VHyp s _)) ->
         processPreloads p (heap Q.|> HeapEl (PDummy st)) (sz + 1) (ds . ((st, s) :))
       Just (_, Hyp (EHyp _ _)) -> throwError "$e found in paren list"
-      Just (_, Term (hs', _) _ _) ->
+      Just (_, Term _ (hs', _) _ _) ->
         processPreloads p (heap Q.|> HTerm st (length hs')) sz ds
-      Just (_, Thm (hs', _) _ _) ->
+      Just (_, Thm _ (hs', _) _ _) ->
         processPreloads p (heap Q.|> HThm st (length hs')) sz ds
       Just (_, Alias th) -> processPreloads (th : p) heap sz ds
 
@@ -381,7 +381,7 @@ processJ (JKeyword "equality" j) = case j of
     (JString refl (JString sym (JString trans (JSemi j'))))) -> do
       db <- gets mDB
       s <- fromJustError ("equality '" ++ T.unpack x ++ "' has the wrong shape") (do
-        (_, Term ([(_, v), _], _) _ _) <- getStmtM db x
+        (_, Term _ ([(_, v), _], _) _ _) <- getStmtM db x
         (_, Hyp (VHyp s _)) <- getStmtM db v
         return s)
       modifyMeta $ \m -> m { mEqual =
@@ -393,14 +393,14 @@ processJ (JKeyword "congruence" j) =
   processManyJ "congruence" j $ \x -> do
     db <- gets mDB
     t <- fromJustError ("congruence '" ++ T.unpack x ++ "' has the wrong shape") (do
-      (_, Thm _ (_, App _ [App t _, _]) _) <- getStmtM db x
+      (_, Thm _ _ (_, App _ [App t _, _]) _) <- getStmtM db x
       return t)
     modifyMeta $ \m -> m {mCongr = M.insert t x (mCongr m)}
 processJ (JKeyword "condequality" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j'))) -> do
     db <- gets mDB
     s <- fromJustError ("conditional equality '" ++ T.unpack x ++ "' has the wrong shape") (do
-      (_, Term ([(_, v), _, _], _) _ _) <- getStmtM db x
+      (_, Term _ ([(_, v), _, _], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s _)) <- getStmtM db v
       return s)
     modifyMeta $ \m -> m {mCondEq = M.insert s (x, th) (mCondEq m)}
@@ -413,7 +413,7 @@ processJ (JKeyword "notfree" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j'))) -> do
     db <- gets mDB
     s <- fromJustError ("not-free term '" ++ T.unpack x ++ "' has the wrong shape") (do
-      (_, Term ([(_, v), (_, a)], _) _ _) <- getStmtM db x
+      (_, Term _ ([(_, v), (_, a)], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s1 _)) <- getStmtM db v
       (_, Hyp (VHyp s2 _)) <- getStmtM db a
       return (s1, s2))
@@ -495,8 +495,8 @@ processJ (JKeyword "free_var" j) = case j of
   where
   updateDecl :: Label -> S.Set Var -> FromMMM ()
   updateDecl x ss = modifyDB $ \db ->
-    let go (n, Term (hs, dv) e p) = (n, Term (updateHyp db ss <$> hs, dv) e p)
-        go (n, Thm (hs, dv) e p) = (n, Thm (updateHyp db ss <$> hs, dv) e p)
+    let go (n, Term c (hs, dv) e p) = (n, Term c (updateHyp db ss <$> hs, dv) e p)
+        go (n, Thm c (hs, dv) e p) = (n, Thm c (updateHyp db ss <$> hs, dv) e p)
         go _ = error "bad $j 'free_var' command"
     in db {mStmts = M.adjust go x $ mStmts db}
 
@@ -514,18 +514,18 @@ processJ (JKeyword "free_var_in" j) = case j of
   where
   updateDecl :: Label -> [Label] -> FromMMM ()
   updateDecl x vs = modifyDB $ \db -> db {mStmts = M.adjust go x $ mStmts db} where
-    go (n, Term (hs, dv) e p) = (n, Term (hs, insertDVs (const True) dv vs) e p)
+    go (n, Term c (hs, dv) e p) = (n, Term c (hs, insertDVs (const True) dv vs) e p)
     go _ = error "bad $j 'free_var_in' command"
 processJ (JKeyword "restatement" j) = case j of
   JString ax (JKeyword "of" (JString th (JSemi j'))) -> do
     db <- gets mDB
     (n, sax) <- case getStmtM db ax of
       Nothing -> throwError ("axiom '" ++ T.unpack ax ++ "' not found")
-      Just (n, Thm fr e Nothing) -> return (n, (fr, e))
+      Just (n, Thm _ fr e Nothing) -> return (n, (fr, e))
       _ -> throwError ("'" ++ T.unpack ax ++ "' is not an axiom")
     case getStmtM db th of
       Nothing -> throwError ("theorem '" ++ T.unpack ax ++ "' not found")
-      Just (_, Thm fr e _) ->
+      Just (_, Thm _ fr e _) ->
         guardError ("restatement '" ++ T.unpack ax ++ "' does not match '" ++ T.unpack th ++ "'") $
           sax == (fr, e)
       _ -> throwError ("'" ++ T.unpack th ++ "' is not an axiom/theorem")
@@ -534,7 +534,7 @@ processJ (JKeyword "restatement" j) = case j of
   _ -> throwError "bad $j 'restatement' command"
 
 processJ (JKeyword _ j) = skipJ j
-processJ (JRest ss) = process ss
+processJ (JRest ss) = process Nothing ss
 processJ (JError e) = throwError e
 processJ _ = throwError "bad $j comment"
 

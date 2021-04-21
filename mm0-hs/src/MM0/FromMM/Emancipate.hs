@@ -12,12 +12,12 @@ emancipate db = execState (mapM_ emancipateDecl (mDecls db)) db
 
 emancipateDecl :: Decl -> State MMDatabase ()
 emancipateDecl (Stmt x) = get >>= \db -> case snd $ getStmt db x of
-  Term (hs, _) _ Nothing ->
+  Term _ (hs, _) _ Nothing ->
     let s = collectBound hs in
     updateDecl x hs $ if all ((== VSBound) . fst) hs then S.empty else s
-  Term (hs, _) (_, e) (Just _) ->
+  Term _ (hs, _) (_, e) (Just _) ->
     updateDecl x hs $ execState (checkExpr db False e) S.empty
-  Thm (hs, _) (_, e) pr ->
+  Thm _ (hs, _) (_, e) pr ->
     updateDecl x hs $ flip execState S.empty $ do
       mapM_ (checkHyp db) hs
       checkExpr db False e
@@ -42,7 +42,7 @@ checkExpr db hy = modify . checkExpr' where
   checkExpr' :: MMExpr -> S.Set Label -> S.Set Label
   checkExpr' (SVar v) = if hy then S.insert v else id
   checkExpr' (App t es) = checkApp hs es where
-    Term (hs, _) _ _ = snd $ getStmt db t
+    Term _ (hs, _) _ _ = snd $ getStmt db t
 
   checkApp :: [(VarStatus, Label)] -> [MMExpr] -> S.Set Label -> S.Set Label
   checkApp [] [] = id
@@ -54,9 +54,9 @@ checkProof :: MMDatabase -> MMProof -> State (S.Set Label) ()
 checkProof db = modify . checkProof' where
   checkProof' :: MMProof -> S.Set Label -> S.Set Label
   checkProof' (PTerm t ps) = checkApp hs ps where
-    Term (hs, _) _ _ = snd $ getStmt db t
+    Term _ (hs, _) _ _ = snd $ getStmt db t
   checkProof' (PThm t ps) = checkApp hs ps where
-    Thm (hs, _) _ _ = snd $ getStmt db t
+    Thm _ (hs, _) _ _ = snd $ getStmt db t
   checkProof' (PSave p) = checkProof' p
   checkProof' _ = id
 
@@ -71,8 +71,8 @@ updateDecl x hs s = case updateHyps s hs of
   Nothing -> return ()
   Just hs' -> modify $ \db -> db {mStmts = M.adjust (go hs') x $ mStmts db}
   where
-  go hs' (n, Term (_, dv) e p) = (n, Term (hs', dv) e p)
-  go hs' (n, Thm (_, dv) e p) = (n, Thm (hs', dv) e p)
+  go hs' (n, Term c (_, dv) e p) = (n, Term c (hs', dv) e p)
+  go hs' (n, Thm c (_, dv) e p) = (n, Thm c (hs', dv) e p)
   go _ _ = error "bad decl"
 
 updateHyps :: S.Set Label -> [(VarStatus, Label)] -> Maybe [(VarStatus, Label)]

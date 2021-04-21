@@ -11,6 +11,7 @@ type TermName = Ident
 type ThmName = Ident
 type VarName = Ident
 type Token = Ident
+type Comment = Maybe T.Text
 
 data DepType = DepType {
   dSort :: Sort,
