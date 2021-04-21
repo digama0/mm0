@@ -80,7 +80,7 @@ The underlying semantics of metamath zero is based on multi-sorted first order l
 
 * `pure` means that this sort does not have any term formers. It is an uninterpreted domain which may have variables but has no constant symbols, binary operators, or anything else targeting this sort. If a sort has this modifier, it is illegal to declare a `term` with this sort as the target.
 * `strict` is the "opposite" of `pure`: it says that the sort does not have any variable binding operators. It is illegal to have a bound variable or dummy variable of this sort, and it cannot appear as a dependency in another variable. For example, if `x: set` and `ph: wff x` then `set` must not be declared `strict`. (`pure` and `strict` are not mutually exclusive, although a sort with both properties is not very useful.)
-* `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
+* `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and theorems (between `$`) must have a provable sort.
 * `free` means that dummy variables may not be dropped in definitions unless they appear in binding syntax constructors.
 
 Term constructors
