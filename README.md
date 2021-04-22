@@ -77,4 +77,11 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
 * `vim` contains some basic vim files for syntax coloring.
   Copy them into `$HOME/.vim/`
   (e.g. with `cp -r vim/* ~/.vim/`) to install them.
-* [`ammkrn/second_opinion`](https://github.com/ammkrn/second_opinion) is not in this repository, but it deserves a mention, because it is a third-party alternate verifier for MM0 + MMB, like `mm0-c`, written in Rust by @ammkrn.
+
+## Third party MM0 verifiers
+
+Since MM0 has a simple specification, there have been a few alternative verifiers written for MM0. (I ([@digama0](https://github.com/digama0)) am not directly affiliated with these verifier projects, and some of them are in WIP status. See the linked repositories for more information.)
+
+* [`ammkrn/second_opinion`](https://github.com/ammkrn/second_opinion) is a third-party alternate verifier for MM0 + MMB, like `mm0-c`, written in Rust by [@ammkrn](https://github.com/ammkrn).
+* [`trivial-rs`](https://github.com/trivial-rs/kernel) contains an MMB verifier, as well as an [`mmb-objdump`](https://github.com/trivial-rs/mmb-binutils/tree/main/objdump) program for debugging MMB files. Written in Rust by [@IvoWingelaar](https://github.com/IvoWingelaar).
+* [`mm0kt`](https://github.com/Lakedaemon/mm0kt/) is a work in progress MM0 + MMU (text mode) verifier, written in Kotlin by [@Lakedaemon](https://github.com/Lakedaemon).
