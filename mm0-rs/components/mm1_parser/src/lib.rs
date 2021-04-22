@@ -71,7 +71,7 @@ use std::mem;
 use std::sync::Arc;
 
 #[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 
 #[cfg(feature = "server")]
 use lsp_types::{Diagnostic, DiagnosticSeverity};

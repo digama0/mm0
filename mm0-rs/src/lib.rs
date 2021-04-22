@@ -46,10 +46,10 @@
 #[macro_use] extern crate mm0_util;
 
 #[cfg(feature = "memory")]
-#[macro_use] extern crate deepsize_0;
+#[macro_use] extern crate mm0_deepsize;
 
 #[cfg(feature = "memory")]
-pub use deepsize_0::deep_size_0;
+pub use mm0_deepsize::deep_size_0;
 
 #[cfg(not(feature = "memory"))]
 /// A macro to generate an impl for types with no inner allocation.

@@ -1,5 +1,5 @@
 [package]
-name = "deepsize_0"
+name = "mm0_deepsize"
 version = "0.1.0"
 authors = ["Aeledfyr <aeledfyr@gmail.com>"]
 edition = "2018"
@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-deepsize_derive = { path = "../deepsize_derive", default-features = false }
+mm0_deepsize_derive = { version = "0.1.0", path = "../mm0_deepsize_derive", default-features = false }
 num = "0.4"
 typed-arena = "2.0"
 lsp-types = "0.89"

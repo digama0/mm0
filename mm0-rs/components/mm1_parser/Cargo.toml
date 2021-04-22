@@ -21,12 +21,12 @@ byteorder = "1.4"
 zerocopy = "0.4"
 
 # optional dependencies
-deepsize_0 = { path = "../deepsize_0", optional = true }
-deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
+mm0_deepsize = { path = "../mm0_deepsize", optional = true }
+mm0_deepsize_derive = { path = "../mm0_deepsize_derive", default-features = false, optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.89", optional = true }
 
 [features]
 default = []
-memory = ["deepsize_0", "deepsize_derive", "libc", "mm0_util/memory"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "mm0_util/memory"]
 server = ["lsp-types", "mm0_util/server"]

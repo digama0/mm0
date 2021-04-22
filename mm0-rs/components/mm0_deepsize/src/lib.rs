@@ -4,13 +4,13 @@
 //! Copyright (c) 2019 Aeledfyr, which is MIT licensed (see the LICENSE file
 //! in this directory).
 
-extern crate self as deepsize_0;
+extern crate self as mm0_deepsize;
 
 use std::mem::{size_of, size_of_val};
 use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::HashSet;
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 
 
 /// A trait for measuring the size of an object and its children

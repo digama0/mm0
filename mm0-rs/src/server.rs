@@ -84,7 +84,7 @@ struct MemoryData;
 impl MemoryData {
   fn get() -> MemoryData {
     #[cfg(feature = "memory")] {
-      use deepsize_0::DeepSizeOf;
+      use mm0_deepsize::DeepSizeOf;
       MemoryData(crate::get_memory_usage(), SERVER.vfs.deep_size_of())
     }
     #[cfg(not(feature = "memory"))] MemoryData

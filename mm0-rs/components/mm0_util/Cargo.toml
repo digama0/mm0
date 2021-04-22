@@ -20,9 +20,8 @@ pathdiff = "0.2"
 bitflags = "1.2"
 
 # optional dependencies
-deepsize_0 = { path = "../deepsize_0", optional = true }
-debug_derive = { path = "../debug_derive", optional = true }
-deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
+mm0_deepsize = { version = "0.1.0", path = "../mm0_deepsize", optional = true }
+mm0_deepsize_derive = { version = "0.1.0", path = "../mm0_deepsize_derive", default-features = false, optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.89", optional = true }
 
@@ -31,6 +30,5 @@ procinfo = { version = "0.4", optional = true }
 
 [features]
 default = ["memory"]
-memory = ["deepsize_0", "deepsize_derive", "libc", "procinfo"]
-debug = ["debug_derive"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procinfo"]
 server = ["lsp-types"]

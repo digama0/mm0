@@ -1,7 +1,7 @@
 //! Primitive mm0 types that consuming crates will probably want.
 
 #[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
@@ -15,7 +15,7 @@ macro_rules! id_wrapper {
     #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct $id(pub $ty);
     #[cfg(feature = "memory")]
-    deepsize_0::deep_size_0!($id);
+    mm0_deepsize::deep_size_0!($id);
 
     impl $id {
       /// Convert this newtyped integer into its underlying integer.
@@ -121,7 +121,7 @@ bitflags! {
 }
 
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Modifiers);
+mm0_deepsize::deep_size_0!(Modifiers);
 
 impl Modifiers {
   /// The null modifier set. Modifiers are represented as bitfields, so this is the same as `0`.
@@ -192,7 +192,7 @@ pub enum Prec {
   Max,
 }
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Prec);
+mm0_deepsize::deep_size_0!(Prec);
 
 impl fmt::Display for Prec {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

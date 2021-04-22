@@ -12,12 +12,12 @@
 
 [package]
 edition = "2018"
-name = "deepsize_derive"
+name = "mm0_deepsize_derive"
 version = "0.1.1"
 authors = ["Aeledfyr <aeledfyr@gmail.com>"]
 include = ["Cargo.toml", "src/**/*.rs", "../LICENSE", "../README.md"]
 description = "A crate for measuring the total size of object on the stack and heap"
-readme = "../README.md"
+readme = "../mm0_deepsize/README.md"
 keywords = ["size", "stack", "heap", "macro"]
 categories = ["development-tools::profiling", "memory-management"]
 license = "MIT"

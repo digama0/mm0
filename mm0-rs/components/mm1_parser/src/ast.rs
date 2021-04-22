@@ -8,7 +8,7 @@
 
 use crate::{DocComment, ParseError};
 #[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 use mm0_util::{ArcString, LinedString, Modifiers, Prec, Span};
 use num::BigUint;
 use std::sync::Arc;
@@ -34,7 +34,7 @@ pub enum Delimiter {
 #[derive(Copy, Clone, Debug)]
 pub struct Formula(pub Span);
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Formula);
+mm0_deepsize::deep_size_0!(Formula);
 
 impl Formula {
   /// Get the span of the interior of the formula (excluding `$` but including any inner whitespace).
@@ -55,7 +55,7 @@ pub struct Const {
   pub trim: Span,
 }
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Const);
+mm0_deepsize::deep_size_0!(Const);
 
 /// Declarations; term, axiom, theorem, def. Part of a [`Decl`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -71,7 +71,7 @@ pub enum DeclKind {
   Def,
 }
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(DeclKind);
+mm0_deepsize::deep_size_0!(DeclKind);
 
 impl DeclKind {
   /// Returns true if this modifier set is valid for the given [`DeclKind`].
@@ -111,7 +111,7 @@ pub enum LocalKind {
   Anon,
 }
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(LocalKind);
+mm0_deepsize::deep_size_0!(LocalKind);
 
 impl LocalKind {
   /// Return true iff self is a bound variable, either [`Bound`](LocalKind::Bound)
@@ -226,7 +226,7 @@ pub enum Atom {
   Nfx,
 }
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Atom);
+mm0_deepsize::deep_size_0!(Atom);
 
 /// The data portion of an s-expression.
 ///

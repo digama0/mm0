@@ -6,7 +6,7 @@
 
 use crate::{Position, Range, Span};
 #[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 use std::ops::{Deref, Index};
 
 /// Wrapper around std's String which stores data about the positions of any newline characters.

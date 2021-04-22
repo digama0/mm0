@@ -57,7 +57,7 @@ extern crate lazy_static;
 extern crate bitflags;
 
 #[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
+use mm0_deepsize_derive::DeepSizeOf;
 use std::collections::{
   hash_map::{Entry, OccupiedEntry},
   HashMap,
@@ -369,7 +369,7 @@ pub struct Span {
 }
 
 #[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Span);
+mm0_deepsize::deep_size_0!(Span);
 
 impl From<std::ops::Range<usize>> for Span {
   #[inline]
