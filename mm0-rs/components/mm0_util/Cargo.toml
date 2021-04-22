@@ -21,7 +21,7 @@ bitflags = "1.2"
 
 # optional dependencies
 mm0_deepsize = { version = "0.1.0", path = "../mm0_deepsize", optional = true }
-mm0_deepsize_derive = { version = "0.1.0", path = "../mm0_deepsize_derive", default-features = false, optional = true }
+mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", default-features = false, optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.89", optional = true }
 

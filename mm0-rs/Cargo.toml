@@ -17,7 +17,7 @@ default = ["server", "doc", "mmc"]
 server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log",
   "mm0_util/server", "mm1_parser/server"]
 doc = ["pulldown-cmark"]
-memory = ["deepsize_0", "deepsize_derive/nodummy", "mm0_util/memory", "mm1_parser/memory"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive/nodummy", "mm0_util/memory", "mm1_parser/memory"]
 wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
 mmc = ["bumpalo"]
 
@@ -49,10 +49,10 @@ libc = "0.2"
 zerocopy = "0.4"
 memchr = "2.3"
 bit-set = "0.5"
-deepsize_derive = { path = "components/deepsize_derive", default-features = false }
+mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
-deepsize_0 = { path = "components/deepsize_0", optional = true }
-mm0_util = { path = "components/mm0_util", default-features = false, features = ["debug"] }
+mm0_deepsize = { path = "components/mm0_deepsize", optional = true }
+mm0_util = { path = "components/mm0_util", default-features = false }
 mmb_parser = { path = "components/mmb_parser" }
 mm1_parser = { path = "components/mm1_parser" }
 
