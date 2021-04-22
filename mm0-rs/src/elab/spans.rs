@@ -87,7 +87,6 @@ impl<T> Spans<T> {
   #[must_use] pub fn decl(&self) -> AtomId { unsafe { self.decl.assume_init() } }
 
   /// Insert a new data element at a given span.
-  #[allow(clippy::useless_transmute)]
   pub fn insert<'a>(&'a mut self, sp: Span, val: T) -> &'a mut T {
     let v: &'a mut Vec<(Span, T)> = self.data.entry(sp.start).or_default();
     // Safety: As indicated below, we would like to return k directly in the loop,
@@ -107,6 +106,7 @@ impl<T> Spans<T> {
     for (sp1, k) in & /* 'b */ mut *v {
       if sp == *sp1 {
         // return k; // we would like to write this
+        #[allow(clippy::useless_transmute)]
         return unsafe { // safety, see above. We know we are in the first case, so 'b = 'a
           std::mem::transmute::<&/* 'b */ mut T, &/* 'a */ mut T>(k)
         }

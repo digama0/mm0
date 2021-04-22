@@ -8,7 +8,7 @@
 //!
 //! [`mm0_rs::server`]: crate::server
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::collections::{HashMap, hash_map::Entry};
 use std::{io, fs};
 use futures::{FutureExt, future::BoxFuture};
@@ -34,6 +34,8 @@ lazy_static! {
   /// transitive imports, protected for concurrent access by a mutex.
   static ref VFS: Vfs = Vfs(Mutex::new(HashMap::new()));
 }
+
+static QUIET: AtomicBool = AtomicBool::new(false);
 
 /// The cached [`Environment`](crate::elab::Environment) representing a
 /// completed parse, or an incomplete parse.
@@ -374,7 +376,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
-    log_msg(format!("elab {}", path));
+    if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {}", path)) }
     let rd = rd.push(path.clone());
     let fut =
       ElaborateBuilder {
@@ -401,7 +403,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let (cyc, _, errors, env) = fut.await;
     (cyc, errors, env)
   };
-  log_msg(format!("elabbed {}", path));
+  if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {}", path)) }
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s).to_string()) }
     let mut to_range = mk_to_range();
@@ -469,6 +471,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path: FileRef = fs::canonicalize(path)?.into();
   let (file, env) = elab_for_result(path.clone())?;
   let env = env.unwrap_or_else(|| std::process::exit(1));
+  QUIET.store(args.is_present("quiet"), Ordering::Relaxed);
   if let Some(s) = args.value_of_os("output") {
     if let Err((fsp, e)) =
       if s == "-" { env.run_output(io::stdout()) }

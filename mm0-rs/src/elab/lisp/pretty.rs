@@ -118,8 +118,8 @@ const LINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, NI
 const SOFTLINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE));
 const SOFTLINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE_));
 
-#[allow(clippy::useless_transmute)]
 fn covariant<'a>(from: RefDoc<'static>) -> RefDoc<'a> {
+  #[allow(clippy::useless_transmute)]
   unsafe {mem::transmute(from)}
 }
 
