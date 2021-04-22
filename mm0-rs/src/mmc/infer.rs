@@ -341,6 +341,19 @@ impl<'a> UnelabArgKind<'a> {
   }
 }
 
+/// The data for an individual label in a label group. We keep this data structure around while
+/// evaluating later statements in the block, and finalize it into a [`hir::Stmt::Label`] when
+/// exiting the block.
+#[derive(Debug)]
+struct UnelabLabelData<'a> {
+  /// The context just inside the label (including the label arguments)
+  ctx: Context<'a>,
+  /// The body of the label
+  body: &'a Spanned<ast::Block>,
+  /// The final list of arguments
+  args: Box<[hir::Arg<'a>]>
+}
+
 /// A statement in a block.
 #[derive(Debug)]
 enum UnelabStmt<'a> {
@@ -355,7 +368,7 @@ enum UnelabStmt<'a> {
   Expr((hir::ExprKind<'a>, ExprTy<'a>)),
   /// A label, which looks exactly like a local function but has no independent stack frame.
   /// They are called like regular functions but can only appear in tail position.
-  Label(VarId, Box<[(Context<'a>, &'a Spanned<ast::Block>, Box<[hir::Arg<'a>]>)]>),
+  Label(VarId, Box<[UnelabLabelData<'a>]>),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -2429,7 +2442,7 @@ impl<'a> InferCtx<'a> {
           .map(|arg| self.lower_arg(&arg.span, ArgAttr::empty(), &arg.k.1)).collect();
         let args = self.finish_args(args);
         let args = self.alloc.alloc_slice_fill_iter(
-          args.into_iter().map(|(attr, arg)| intern!(self, (*attr, arg.into()))));
+          args.iter().map(|(attr, arg)| intern!(self, (*attr, arg.into()))));
         intern!(self, TyKind::Struct(args))
       }
       ast::TypeKind::All(pats, ty) => {
@@ -2694,6 +2707,7 @@ impl<'a> InferCtx<'a> {
     }
   }
 
+  #[allow(clippy::similar_names)]
   fn lower_expr_kind(&mut self, span: &'a FileSpan,
     e: &'a ast::ExprKind, expect: ExpectExpr<'a>
   ) -> (hir::Expr<'a>, RExpr<'a>) {
@@ -3684,7 +3698,7 @@ impl<'a> InferCtx<'a> {
           let ctx = self.dc.context;
           let args = self.finish_args(args);
           let args2 = self.args_to_ty_args(&args);
-          todo.push((ctx, body, args));
+          todo.push(UnelabLabelData {ctx, body, args});
           (args2, variant)
         }).collect::<Box<[_]>>();
         let data = LabelData {labels: labs2, value: AgreeExpr::Unset, ret: tgt, dcs: vec![]};
@@ -3707,12 +3721,12 @@ impl<'a> InferCtx<'a> {
       }
       UnelabStmt::Expr(e) => hir::StmtKind::Expr(e),
       UnelabStmt::Label(v, labs) => {
-        let blocks = labs.into_vec().into_iter().map(|(ctx, bl, args)| {
+        let blocks = labs.into_vec().into_iter().map(|UnelabLabelData {ctx, body, args}| {
           self.dc.context = ctx;
-          let (bl2, pe2) = self.check_block(&bl.span, &bl.k, tgt.1);
+          let (bl2, pe2) = self.check_block(&body.span, &body.k, tgt.1);
           if let Ok(e_tgt) = tgt.0 {
             if !matches!(pe2, Ok(pe) if self.equate_expr(pe, e_tgt).is_ok()) {
-              tgt.0 = Err(pe2.err().unwrap_or(&bl.span))
+              tgt.0 = Err(pe2.err().unwrap_or(&body.span))
             }
           }
           (bl2, args)
@@ -3795,29 +3809,29 @@ impl<'a> InferCtx<'a> {
           }
         }))).collect();
         let rets = self.finish_args(rets);
-        let trets = self.args_to_ty_args(&rets);
-        self.returns = Some(trets);
+        let t_rets = self.args_to_ty_args(&rets);
+        self.returns = Some(t_rets);
         let ctx = self.dc.context;
         let variant = self.lower_variant(variant);
         let args = self.finish_args(args2);
-        let targs = self.args_to_ty_args(&args);
+        let t_args = self.args_to_ty_args(&args);
         let_unchecked!(Some(Entity::Proc(tc)) = self.names.get_mut(&name.k), tc).k =
           ProcTc::Typed(ProcTy {
             kind, tyargs,
-            args: targs.to_global(self),
-            rets: trets.to_global(self),
+            args: t_args.to_global(self),
+            rets: t_rets.to_global(self),
             variant: variant.to_global(self),
           }, None);
         self.dc.context = ctx;
-        let sigma = match *targs {
+        let sigma = match *t_args {
           [] => self.common.t_unit,
           [arg] => arg.k.1.var().k.ty(),
-          _ => intern!(self, TyKind::Struct(targs)),
+          _ => intern!(self, TyKind::Struct(t_args)),
         };
         let mut body = self.check_block(span, body, sigma).0;
         let e = body.expr.take().map_or_else(|| hir::Spanned {span, k:
           (hir::ExprKind::Unit, (Some(self.common.e_unit), self.common.t_unit))}, |e| *e);
-        let (span, k) = match targs.len() {
+        let (span, k) = match t_args.len() {
           0 => {
             body.stmts.push(e.map_into(hir::StmtKind::Expr));
             (span, hir::ExprKind::Return(vec![]))

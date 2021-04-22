@@ -597,7 +597,7 @@ impl Remap for ExprKind {
 impl ExprKind {
   /// Construct a binary operation application, but desugar `e1 && e2` and `e1 || e2`
   /// to if statements to ensure short-circuiting evaluation.
-  pub fn binop(span: &FileSpan, op: Binop, e1: Expr, e2: Expr) -> Self {
+  #[must_use] pub fn binop(span: &FileSpan, op: Binop, e1: Expr, e2: Expr) -> Self {
     match op {
       Binop::And => Self::If {
         ik: IfKind::And, hyp: None,

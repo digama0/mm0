@@ -350,23 +350,32 @@ type BlockDest = Option<VarId>;
 
 /// A `JoinBlock` represents a potential jump location, together with the information needed to
 /// correctly pass all the updated values of mutable variables from the current context.
-#[derive(Clone)]
-struct JoinBlock {
-  /// The block to jump to
-  tgt: BlockId,
-  /// The generation on entry to the target
-  gen: GenId,
-  /// The variables that could potentially have been mutated between when this `JoinBlock` was
-  /// created and the context we are jumping from. These lists are calculated during type inference
-  /// and are mostly syntax directed.
-  muts: Rc<[HVarId]>,
-}
+/// * `gen`: The generation on entry to the target
+/// * `muts`: The variables that could potentially have been mutated between when this `JoinBlock`
+///   was created and the context we are jumping from. These lists are calculated during type
+///   inference and are mostly syntax directed.
+type JoinPoint = (GenId, Rc<[HVarId]>);
 
-struct LabelData {
+/// A `JoinBlock` represents a potential jump location, together with the information needed to
+/// correctly pass all the updated values of mutable variables from the current context.
+#[derive(Clone)]
+struct JoinBlock(BlockId, JoinPoint);
+
+/// Data to support the `(jump label[i])` operation.
+type LabelData = (BlockId, Rc<[VarId]>);
+
+// impl JumpsData {
+//   fn get(&self, i: u16) -> (JoinBlock, Rc<[VarId]>) {
+//     let (tgt, ref args) = self.tgts[usize::from(i)];
+//     (JoinBlock {gen: self.gen, muts: self.muts.clone(), tgt}, args.clone())
+//   }
+// }
+
+struct LabelGroupData {
   /// This is `Some((gen, labs, muts))` if jumping to this label is valid. `gen, muts` are
   /// parameters to the [`JoinBlock`] (which are shared between all labels), and
   /// `labs[i] = (tgt, args)` give the target block and the list of variable names to pass
-  jumps: Option<(GenId, Rc<[(BlockId, Rc<[VarId]>)]>, Rc<[HVarId]>)>,
+  jumps: Option<(JoinPoint, Rc<[LabelData]>)>,
   /// The [`JoinBlock`] for breaking to this label, as well as a `BlockDest` which receives the
   /// `break e` expression.
   brk: Option<(JoinBlock, BlockDest)>,
@@ -384,11 +393,11 @@ struct BuildMir<'a> {
   /// function
   tr: Translator<'a>,
   /// The stack of labels in scope
-  labels: Vec<(HVarId, LabelData)>,
-  /// If this is `Some((gen, muts, args))` then `gen, muts` are the `BlockDest` parameters for the
-  /// jump and `args` are the list of variables for the argument. There is no block ID because
+  labels: Vec<(HVarId, LabelGroupData)>,
+  /// If this is `Some((gen, args))` then `gen` is the generation for the end of the function
+  /// and `args` is the list of variables for the argument. There is no block ID because
   /// [`Return`](Terminator::Return) doesn't jump to a block.
-  returns: Option<(GenId, Rc<[HVarId]>, Rc<[HVarId]>)>,
+  returns: Option<(GenId, Rc<[HVarId]>)>,
   /// Some variables are replaced by places when referenced; this keeps track of them.
   vars: HashMap<VarId, Place>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -463,11 +472,11 @@ impl<'a> BuildMir<'a> {
     Ok(v)
   }
 
-  fn assert(&mut self, vcond: Operand, cond: Expr) -> VarId {
+  fn assert(&mut self, v_cond: Operand, cond: Expr) -> VarId {
     let vh = self.fresh_var();
     self.extend_ctx(vh, (None, Rc::new(TyKind::Pure(cond))));
     let tgt = self.new_block();
-    self.cur_block().terminate(Terminator::Assert(vcond, vh, tgt));
+    self.cur_block().terminate(Terminator::Assert(v_cond, vh, tgt));
     self.cur_block = tgt;
     vh
   }
@@ -479,11 +488,11 @@ impl<'a> BuildMir<'a> {
         self.vars.get(&v).cloned().unwrap_or_else(|| v.into())
       }
       hir::ExprKind::Index(args) => {
-        let ([a, i], h) = *args;
-        let mut pl = self.place(a)?;
-        let vi = self.as_temp(i)?;
-        let vh = match h {
-          Ok(h) => self.as_temp(h)?,
+        let ([arr, idx], hyp_or_n) = *args;
+        let mut pl = self.place(arr)?;
+        let vi = self.as_temp(idx)?;
+        let vh = match hyp_or_n {
+          Ok(hyp) => self.as_temp(hyp)?,
           Err(n) => {
             let vn = self.as_temp(n)?;
             let vb = self.fresh_var();
@@ -500,28 +509,28 @@ impl<'a> BuildMir<'a> {
         pl
       }
       hir::ExprKind::Slice(args) => {
-        let ([a, i, l], h) = *args;
-        let mut pl = self.place(a)?;
-        let vi = self.as_temp(i)?;
-        let vl = self.as_temp(l)?;
-        let vh = match h {
-          Ok(h) => self.as_temp(h)?,
+        let ([arr, idx, len], hyp_or_n) = *args;
+        let mut pl = self.place(arr)?;
+        let vi = self.as_temp(idx)?;
+        let vl = self.as_temp(len)?;
+        let vh = match hyp_or_n {
+          Ok(hyp) => self.as_temp(hyp)?,
           Err(n) => {
             let vn = self.as_temp(n)?;
-            let vadd = self.fresh_var();
+            let v_add = self.fresh_var();
             let add = Rc::new(ExprKind::Binop(Binop::Add,
               Rc::new(ExprKind::Var(vi)),
               Rc::new(ExprKind::Var(vl))));
-            self.push_stmt(Statement::Let(vadd,
+            self.push_stmt(Statement::Let(v_add,
               (Some(add.clone()), Rc::new(TyKind::Int(IntTy::Int(Size::Inf)))),
               RValue::Binop(Binop::Add, Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
-            let vcond = self.fresh_var();
+            let v_cond = self.fresh_var();
             let cond = Rc::new(ExprKind::Binop(Binop::Le,
               add, Rc::new(ExprKind::Var(vn))));
-            self.push_stmt(Statement::Let(vcond,
+            self.push_stmt(Statement::Let(v_cond,
               (Some(cond.clone()), Rc::new(TyKind::Bool)),
-              RValue::Binop(Binop::Le, vadd.into(), vn.into())));
-            self.assert(vcond.into(), cond)
+              RValue::Binop(Binop::Le, v_add.into(), vn.into())));
+            self.assert(v_cond.into(), cond)
           }
         };
         pl.proj.push(Projection::Slice(vi, vl, vh));
@@ -699,17 +708,17 @@ impl<'a> BuildMir<'a> {
             if let Some(h) = h { this.expr(*h, None)?; }
           }
           hir::ExprKind::Index(args) => {
-            let ([a, i], h) = *args;
-            this.expr(a, None)?;
-            this.expr(i, None)?;
-            if let Ok(h) = h { this.expr(h, None)?; }
+            let ([arr, idx], hyp_or_n) = *args;
+            this.expr(arr, None)?;
+            this.expr(idx, None)?;
+            if let Ok(hyp) = hyp_or_n { this.expr(hyp, None)?; }
           }
           hir::ExprKind::Slice(args) => {
-            let ([a, i, l], h) = *args;
-            this.expr(a, None)?;
-            this.expr(i, None)?;
-            this.expr(l, None)?;
-            if let Ok(h) = h { this.expr(h, None)?; }
+            let ([arr, idx, len], hyp_or_n) = *args;
+            this.expr(arr, None)?;
+            this.expr(idx, None)?;
+            this.expr(len, None)?;
+            if let Ok(hyp) = hyp_or_n { this.expr(hyp, None)?; }
           }
           hir::ExprKind::List(es) => for e in es { this.expr(e, None)? }
           hir::ExprKind::Mm0(e, _) => for e in e.subst { this.expr(e, None)? }
@@ -727,11 +736,11 @@ impl<'a> BuildMir<'a> {
             return Err(Diverged)
           }
           hir::ExprKind::Jump(lab, i, es, _variant) => {
-            let (gen, jumps, muts) = this.labels.iter()
+            let (jp, jumps) = this.labels.iter()
               .rfind(|p| p.0 == lab).expect("missing label")
-              .1.jumps.as_ref().expect("label does not expect break");
+              .1.jumps.as_ref().expect("label does not expect jump");
             let (tgt, args) = jumps[usize::from(i)].clone();
-            let jb = JoinBlock {tgt, gen: *gen, muts: muts.clone()};
+            let jb = JoinBlock(tgt, jp.clone());
             let args = args.iter().zip(es).map(|(&v, e)| {
               Ok((v, this.operand(e)?))
             }).collect::<Block<Vec<_>>>()?;
@@ -748,10 +757,10 @@ impl<'a> BuildMir<'a> {
             this.join(&jb, args)
           }
           hir::ExprKind::Return(es) =>
-            match this.expr_return(|_| es.into_iter(), |this, e| this.place(e))? {}
+            match this.expr_return(|_| es.into_iter(), Self::place)? {}
           hir::ExprKind::UnpackReturn(e) => {
             let pl = this.place(*e)?;
-            match this.expr_return(|n| 0..n as u32, |this, i| Ok({
+            match this.expr_return(|n| 0..n.try_into().expect("overflow"), |this, i| Ok({
               let mut pl = pl.clone();
               pl.proj.push(Projection::Proj(ProjectionKind::Struct, i));
               pl
@@ -847,17 +856,20 @@ impl<'a> BuildMir<'a> {
     (bl, vs.into())
   }
 
-  fn join(&mut self,
-    &JoinBlock {tgt, gen, ref muts}: &JoinBlock,
-    mut args: Vec<(VarId, Operand)>
+  fn join_args(&mut self, ctx: CtxId, &(gen, ref muts): &JoinPoint,
+    args: &mut Vec<(VarId, Operand)>
   ) {
-    let ctx = self.cfg[tgt].ctx;
     args.extend(muts.iter().filter_map(|&v| {
       let from = self.tr(v);
       let to = self.tr_gen(v, gen);
       if from == to || self.cfg.ctxs.rev_iter(ctx).all(|&(u, _)| from != u) {return None}
       Some((to, from.into()))
     }));
+  }
+
+  fn join(&mut self, &JoinBlock(tgt, ref jp): &JoinBlock, mut args: Vec<(VarId, Operand)>) {
+    let ctx = self.cfg[tgt].ctx;
+    self.join_args(ctx, jp, &mut args);
     self.cur_block().terminate(Terminator::Jump(tgt, args))
   }
 
@@ -883,8 +895,8 @@ impl<'a> BuildMir<'a> {
           self.cur_ctx = base_ctx;
           (bl, args)
         }).collect();
-        self.labels.push((v, LabelData {
-          jumps: Some((base_gen, Rc::clone(&jumps), brk.muts.clone())),
+        self.labels.push((v, LabelGroupData {
+          jumps: Some(((base_gen, brk.1 .1.clone()), Rc::clone(&jumps))),
           brk: Some((brk.clone(), dest))
         }));
         for (&(bl, _), body) in jumps.iter().zip(bodies) {
@@ -905,17 +917,17 @@ impl<'a> BuildMir<'a> {
 
   fn block(&mut self, hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest) -> Block<()> {
     let reset = self.labels.len();
-    let jp = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
+    let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
       let dest2 = dest.map(|v| self.tr_gen(v, gen));
-      Some((JoinBlock {tgt: self.new_block(), gen, muts: muts.into()}, dest2))
+      Some((JoinBlock(self.new_block(), (gen, muts.into())), dest2))
     } else { None };
     let r = (|| {
-      for stmt in stmts { self.stmt(stmt, jp.as_ref())? }
+      for stmt in stmts { self.stmt(stmt, jb.as_ref())? }
       if let Some(e) = expr { self.expr(*e, dest) }
       else { self.expr_unit(dest); Ok(()) }
     })();
     self.labels.truncate(reset);
-    if let Some((JoinBlock {tgt, gen, ..}, _)) = jp {
+    if let Some((JoinBlock(tgt, (gen, _)), _)) = jb {
       self.set((tgt, self.cfg[tgt].ctx, gen));
       Ok(())
     } else { r }
@@ -930,8 +942,8 @@ impl<'a> BuildMir<'a> {
     dest: Dest,
   ) -> Block<()> {
     // In the general case, we generate:
-    //   vcond := cond
-    //   if vcond {h. goto tru(h)} else {h. goto fal(h)}
+    //   v_cond := cond
+    //   if v_cond {h. goto tru(h)} else {h. goto fal(h)}
     // tru(h: cond):
     //   v := e_tru
     //   goto after(v)
@@ -940,21 +952,21 @@ impl<'a> BuildMir<'a> {
     //   goto after(v)
     // after(dest: T):
     let pe = cond.k.1 .0;
-    //   vcond := cond
-    let vcond = self.as_temp(cond)?;
-    let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(vcond)), |e| self.tr(e));
-    let vhyp = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
+    //   v_cond := cond
+    let v_cond = self.as_temp(cond)?;
+    let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
+    let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
     let (_, base_ctx, base_gen) = self.cur();
-    // tru_ctx is the current context with `vhyp: cond`
-    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vhyp,
+    // tru_ctx is the current context with `vh: cond`
+    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
     let tru = self.cfg.new_block(tru_ctx);
-    // fal_ctx is the current context with `vhyp: !cond`
-    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vhyp,
+    // fal_ctx is the current context with `vh: !cond`
+    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
     let fal = self.cfg.new_block(fal_ctx);
-    //   if vcond {vhyp. goto tru(vhyp)} else {vhyp. goto fal(vhyp)}
-    self.cur_block().terminate(Terminator::If(vcond.into(), [(vhyp, tru), (vhyp, fal)]));
+    //   if v_cond {vh. goto tru(vh)} else {vh. goto fal(vh)}
+    self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh, tru), (vh, fal)]));
 
     let (trans, dest) = match dest {
       None => (None, None),
@@ -977,8 +989,8 @@ impl<'a> BuildMir<'a> {
     // Either `e_tru` or `e_fal` may have diverged before getting to the end of the block.
     // * If they both diverged, then the if statement diverges
     // * If one of them diverges, then the if statement degenerates:
-    //     vcond := cond
-    //     if vcond {h. goto tru(h)} else {h. goto fal(h)}
+    //     v_cond := cond
+    //     if v_cond {h. goto tru(h)} else {h. goto fal(h)}
     //   tru(h: cond):
     //     e_tru -> diverge
     //   fal(h: !cond):
@@ -989,13 +1001,13 @@ impl<'a> BuildMir<'a> {
       (Err(Diverged), Ok(())) => { self.set(fal) }
       (Ok(()), Ok(())) => {
         // If neither diverges, we put `goto after` at the end of each block
-        let join = JoinBlock {tgt: self.new_block(), gen, muts: muts.into()};
+        let join = JoinBlock(self.new_block(), (gen, muts.into()));
         self.set(tru);
         self.join(&join, match trans { None => vec![], Some(v) => vec![(v, v.into())] });
         self.set(fal);
         self.join(&join, match trans { None => vec![], Some(v) => vec![(v, v.into())] });
         // And the after block is the end of the statement
-        self.set((join.tgt, base_ctx, gen));
+        self.set((join.0, base_ctx, gen));
       }
     }
     Ok(())
@@ -1056,21 +1068,21 @@ impl<'a> BuildMir<'a> {
 
     // if `has_break` then we need to be prepared to jump to `after` from inside the loop.
     let brk = if has_break {
-      Some((JoinBlock {tgt: self.new_block(), gen, muts: muts.clone()}, None))
+      Some((JoinBlock(self.new_block(), (gen, muts.clone())), None))
     } else { None };
 
     // Set things up so that `(continue label)` jumps to `base`,
     // and `(break label)` jumps to `after`
-    self.labels.push((label, LabelData {
-      jumps: Some((base_gen, Rc::new([(base_bl, Rc::new([]))]), muts.clone())),
+    self.labels.push((label, LabelGroupData {
+      jumps: Some(((base_gen, muts.clone()), Rc::new([(base_bl, Rc::new([]))]))),
       brk: brk.clone()
     }));
 
-    // `res` captures the exit condition produced from inside the loop.
-    let mut res = Err(Diverged);
+    // `exit_point` captures the exit condition produced from inside the loop.
+    let mut exit_point = Err(Diverged);
     // This is the body of the loop. We catch divergence here because if the execution of `cond` or
     // `body` diverges we still have to construct `after` and anything after that, provided that
-    // `after` itself is reachable (which we signal by `res` having a value).
+    // `after` itself is reachable (which we signal by `exit_point` having a value).
     (|| -> Block<()> {
       let pe: Option<ty::Expr<'_>> = cond.k.1 .0;
       if let Some(true) = trivial {
@@ -1084,43 +1096,43 @@ impl<'a> BuildMir<'a> {
         //   _ := body
         //   goto base
         //
-        // We never set `res`, so it remains `Err(Diverged)` because it is unreachable.
+        // We never set `exit_point`, so it remains `Err(Diverged)` because it is unreachable.
         self.expr(*cond, None)?;
         if let (Some(pe), Some(hyp)) = (pe, hyp) {
           let pe = self.tr(pe);
-          let vhyp = self.tr(hyp);
-          self.push_stmt(Statement::Let(vhyp,
+          let vh = self.tr(hyp);
+          self.push_stmt(Statement::Let(vh,
             (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe))),
             Constant::itrue().into()));
         }
       } else {
         // Otherwise, this is a proper while loop.
-        //   vcond := cond
-        let vcond = self.as_temp(*cond)?;
-        let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(vcond)), |e| self.tr(e));
-        let vhyp = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
+        //   v_cond := cond
+        let v_cond = self.as_temp(*cond)?;
+        let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
+        let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
         let test = self.cur();
-        // tru_ctx is the current context with `vhyp: cond`
-        let tru_ctx = self.cfg.ctxs.extend(test.1, vhyp,
+        // tru_ctx is the current context with `vh: cond`
+        let tru_ctx = self.cfg.ctxs.extend(test.1, vh,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
         let tru = self.cfg.new_block(tru_ctx);
-        // fal_ctx is the current context with `vhyp: !cond`
-        let fal_ctx = self.cfg.ctxs.extend(test.1, vhyp,
+        // fal_ctx is the current context with `vh: !cond`
+        let fal_ctx = self.cfg.ctxs.extend(test.1, vh,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
         let fal = self.cfg.new_block(fal_ctx);
-        //   if vcond {vhyp. goto main(vhyp)} else {vhyp. goto after(vhyp)}
-        self.cur_block().terminate(Terminator::If(vcond.into(), [(vhyp, tru), (vhyp, fal)]));
+        //   if v_cond {vh. goto main(vh)} else {vh. goto after(vh)}
+        self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh, tru), (vh, fal)]));
 
         // If `brk` is set (to `after`) then that means `has_break` is true so we want to jump to
-        // `after` and ignore the `vhyp: !cond` in the false case.
+        // `after` and ignore the `vh: !cond` in the false case.
         if let Some((ref join, _)) = brk {
-          // We don't set `res` because it is ignored in this case
+          // We don't set `exit_point` because it is ignored in this case
           self.set((fal, fal_ctx, test.2));
           self.join(join, vec![]);
         } else {
-          // Set `res` to the `after` block (the false branch of the if),
-          // and `vhyp: !cond` is the output
-          res = Ok(((fal, fal_ctx, test.2), vhyp.into()));
+          // Set `exit_point` to the `after` block (the false branch of the if),
+          // and `vh: !cond` is the output
+          exit_point = Ok(((fal, fal_ctx, test.2), vh.into()));
         }
         // Prepare to generate the `main` label
         self.set((tru, tru_ctx, test.2));
@@ -1128,22 +1140,22 @@ impl<'a> BuildMir<'a> {
       //   _ := body
       self.block(*body, None)?;
       //   goto base
-      self.join(&JoinBlock {tgt: base_bl, gen: base_gen, muts}, vec![]);
+      self.join(&JoinBlock(base_bl, (base_gen, muts)), vec![]);
       // We've diverged, there is nothing more to do in the loop
       Err(Diverged)
     })().expect_err("it's a loop");
 
-    if let Some((join, _)) = self.labels.pop().expect("underflow").1.brk {
+    if let Some((JoinBlock(tgt, (gen, _)), _)) = self.labels.pop().expect("underflow").1.brk {
       // If `has_break` is true, then the final location after the while loop is the join point
       // `after`, and the context is `base_ctx` because the while loop doesn't add any bindings
-      self.set((join.tgt, base_ctx, join.gen));
+      self.set((tgt, base_ctx, gen));
       // We return `()` from the loop expression
       Ok(Constant::unit().into())
     } else {
       // If `has_break` is false, then the final location is the false branch inside the loop,
       // which we may or may not have reached before diverging (if for example the loop condition
       // diverges). If we did reach it then we pull out the position and return the value.
-      res.map(|(pos, rv)| { self.set(pos); rv })
+      exit_point.map(|(pos, rv)| { self.set(pos); rv })
     }
   }
 
@@ -1162,8 +1174,8 @@ impl<'a> BuildMir<'a> {
     es: impl FnOnce(usize) -> I,
     mut f: impl FnMut(&mut Self, T) -> Block<Place>,
   ) -> Block<std::convert::Infallible> {
-    let (gen, muts, args) = self.returns.as_ref().expect("can't return here").clone();
-    let args = es(args.len()).zip(&*args).map(|(e, &v)| {
+    let (gen, args) = self.returns.as_ref().expect("can't return here").clone();
+    let mut args = es(args.len()).zip(&*args).map(|(e, &v)| {
       Ok((self.tr_gen(v, gen), f(self, e)?.into()))
     }).collect::<Block<Vec<_>>>()?;
     self.cur_block().terminate(Terminator::Return(args));

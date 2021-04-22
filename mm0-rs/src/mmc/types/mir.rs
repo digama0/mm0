@@ -672,7 +672,7 @@ impl From<VarId> for Operand {
 
 impl Operand {
   /// Convert an operand to an rvalue.
-  #[inline] pub fn rv(self) -> RValue { RValue::Use(self) }
+  #[inline] #[must_use] pub fn rv(self) -> RValue { RValue::Use(self) }
 }
 
 /// A proof that `x: T` can be retyped as `U`.
