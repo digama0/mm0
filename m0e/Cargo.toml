@@ -6,7 +6,7 @@ edition = "2018"
 description = "MM0/MM1 explorer"
 repository = "https://github.com/digama0/mm0"
 readme = "README.md"
-license = "CC0"
+license = "CC0-1.0"
 keywords = ["theorem", "proving", "proof", "assistant"]
 categories = ["command-line-utilities", "development-tools", "mathematics"]
 

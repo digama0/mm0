@@ -7,7 +7,7 @@ description = "MM0/MM1 language utilities"
 repository = "https://github.com/digama0/mm0"
 include = ["Cargo.toml", "src/**/*.rs", "../../README.md"]
 readme = "../../README.md"
-license = "CC0"
+license = "CC0-1.0"
 keywords = ["theorem", "proving", "proof", "assistant"]
 categories = ["command-line-utilities", "development-tools", "mathematics"]
 
