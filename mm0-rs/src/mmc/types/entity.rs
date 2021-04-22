@@ -64,6 +64,8 @@ make_prims! {
     Break: "break",
     /// `(bxor e1 ... en)` returns the bitwise `XOR` of the arguments.
     BitXor: "bxor",
+    /// `(& x)` constructs a reference to `x`.
+    Borrow: "&",
     /// `{(cast {x : T} h) : U}` returns `x` of type `U` if `h` proves `x :> T -* x :> U`.
     Cast: "cast",
     /// * `(continue e)` jumps to the start of the nearest enclosing loop.
@@ -98,15 +100,13 @@ make_prims! {
     List: "list",
     /// `{x < y}` returns true if `x` is less than `y`
     Lt: "<",
-    /// `(ref x)` constructs `x` as an lvalue (place).
-    Place: "ref",
     /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
     /// one of the numeric types
     Pure: "pure",
     /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
     Pun: "pun",
-    /// `(& x)` constructs a reference to `x`.
-    Ref: "&",
+    /// `(ref x)` constructs `x` as an lvalue (place).
+    Ref: "ref",
     /// `(return e1 ... en)` returns `e1, ..., en` from the current function.
     Return: "return",
     /// `(sizeof T)` is the size of `T` in bytes.

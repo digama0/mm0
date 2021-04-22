@@ -34,7 +34,7 @@
 //! `x` changes (or `{{(* y) <- 2} with x}` if the name shadowing is acceptable).
 
 use num::BigInt;
-use crate::{AtomId, Remap, Remapper, LispVal};
+use crate::{AtomId, Remap, Remapper, LispVal, FileSpan};
 use super::{Binop, FieldName, Mm0Expr, Size, Spanned, Unop, VarId, entity::Intrinsic};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
@@ -382,6 +382,19 @@ impl Remap for StmtKind {
   }
 }
 
+/// This enum is used to distinguish between proper if statements and short-circuiting
+/// boolean operators that have been desugared to if statements.
+#[derive(Copy, Clone, Debug)]
+pub enum IfKind {
+  /// This is an `(if cond e1 e2)` statement.
+  If,
+  /// This is a `(if e1 e2 false)` statement, as the desugaring of `e1 && e2`.
+  And,
+  /// This is a `(if e1 true e2)` statement, as the desugaring of `e1 || e2`.
+  Or,
+}
+crate::deep_size_0!(IfKind);
+
 /// An expression.
 pub type Expr = Spanned<ExprKind>;
 
@@ -422,9 +435,9 @@ pub enum ExprKind {
   Ghost(Box<Expr>),
   /// Evaluates the expression as a pure expression, so it will not take
   /// ownership of the result.
-  Place(Box<Expr>),
-  /// `(& x)` constructs a reference to `x`.
   Ref(Box<Expr>),
+  /// `(& x)` constructs a reference to `x`.
+  Borrow(Box<Expr>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<Expr>),
@@ -477,6 +490,8 @@ pub enum ExprKind {
   /// An if-then-else expression (at either block or statement level). The initial atom names
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
+    /// Distinguishes if statements from short-circuiting boolean operators.
+    ik: IfKind,
     /// The hypothesis name.
     hyp: Option<VarId>,
     /// The if condition.
@@ -546,8 +561,8 @@ impl Remap for ExprKind {
       ExprKind::Deref(e) => ExprKind::Deref(e.remap(r)),
       ExprKind::List(e) => ExprKind::List(e.remap(r)),
       ExprKind::Ghost(e) => ExprKind::Ghost(e.remap(r)),
-      ExprKind::Place(e) => ExprKind::Place(e.remap(r)),
       ExprKind::Ref(e) => ExprKind::Ref(e.remap(r)),
+      ExprKind::Borrow(e) => ExprKind::Borrow(e.remap(r)),
       ExprKind::Mm0(e) => ExprKind::Mm0(e.remap(r)),
       ExprKind::Typed(e, ty) => ExprKind::Typed(e.remap(r), ty.remap(r)),
       ExprKind::As(e, ty) => ExprKind::As(e.remap(r), ty.remap(r)),
@@ -563,8 +578,8 @@ impl Remap for ExprKind {
         f: f.remap(r), tys: tys.remap(r), args: args.remap(r), variant: variant.remap(r) },
       ExprKind::Entail(p, q) => ExprKind::Entail(p.remap(r), q.remap(r)),
       ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
-      ExprKind::If {hyp, cond, then, els} => ExprKind::If {
-        hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
+      ExprKind::If {ik, hyp, cond, then, els} => ExprKind::If {
+        ik: *ik, hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
       ExprKind::While {label, muts, hyp, cond, var, body, has_break} => ExprKind::While {
         label: *label, muts: muts.remap(r), hyp: *hyp, has_break: *has_break,
         cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
@@ -575,6 +590,28 @@ impl Remap for ExprKind {
       ExprKind::Rc(e) => ExprKind::Rc(e.remap(r)),
       &ExprKind::Infer(b) => ExprKind::Infer(b),
       ExprKind::Error => ExprKind::Error,
+    }
+  }
+}
+
+impl ExprKind {
+  /// Construct a binary operation application, but desugar `e1 && e2` and `e1 || e2`
+  /// to if statements to ensure short-circuiting evaluation.
+  pub fn binop(span: &FileSpan, op: Binop, e1: Expr, e2: Expr) -> Self {
+    match op {
+      Binop::And => Self::If {
+        ik: IfKind::And, hyp: None,
+        cond: Box::new(e1),
+        then: Box::new(e2),
+        els: Box::new(Spanned {span: span.clone(), k: ExprKind::Bool(false)})
+      },
+      Binop::Or => Self::If {
+        ik: IfKind::Or, hyp: None,
+        cond: Box::new(e1),
+        then: Box::new(Spanned {span: span.clone(), k: ExprKind::Bool(true)}),
+        els: Box::new(e2),
+      },
+      _ => Self::Binop(op, Box::new(e1), Box::new(e2))
     }
   }
 }

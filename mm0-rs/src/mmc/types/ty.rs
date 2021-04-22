@@ -332,7 +332,7 @@ pub type Arg<'a> = &'a WithMeta<ArgS<'a>>;
 pub type ArgS<'a> = (ArgAttr, ArgKind<'a>);
 
 /// An argument declaration for a function.
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
 pub enum ArgKind<'a> {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(TuplePattern<'a>),

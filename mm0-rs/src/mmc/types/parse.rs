@@ -454,11 +454,11 @@ pub enum CallKind {
   /// `(sizeof T)` is the size of `T` in bytes.
   Sizeof(LispVal),
   /// `(ref x)` constructs `x` as an lvalue.
-  Place(LispVal),
+  Ref(LispVal),
   /// `(* x)` is a deref operation `*x: T` where `x: &T`.
   Deref(LispVal),
   /// `(& x)` constructs a reference to `x`.
-  Ref(LispVal),
+  Borrow(LispVal),
   /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
   /// it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)`
   /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that

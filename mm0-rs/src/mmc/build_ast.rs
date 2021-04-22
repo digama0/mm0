@@ -167,7 +167,7 @@ impl<'a> BuildAst<'a> {
       ast::ExprKind::Index(e, _, _) |
       ast::ExprKind::Proj(e, _) |
       ast::ExprKind::Ghost(e) |
-      ast::ExprKind::Ref(e) |
+      ast::ExprKind::Borrow(e) |
       ast::ExprKind::Block(ast::Block {expr: Some(e), ..}) => Self::add_origins(e, f)?,
       ast::ExprKind::Slice(e, _) => Self::add_origins(&e.0, f)?,
       ast::ExprKind::If {then, els, ..} => {Self::add_origins(then, f)?; Self::add_origins(els, f)?}
@@ -392,7 +392,7 @@ impl<'a> BuildAst<'a> {
         let mut ret = if let Some(els) = els {this.push_expr(&span, els)?.k} else {ast::ExprKind::Unit};
         for (hyp, cond, then) in branches.into_iter().rev() {
           let els = Box::new(Spanned {span: span.clone(), k: ret});
-          ret = ast::ExprKind::If {hyp, cond, then, els};
+          ret = ast::ExprKind::If {ik: ast::IfKind::If, hyp, cond, then, els};
         }
         Ok(ret)
       })?,
@@ -401,7 +401,7 @@ impl<'a> BuildAst<'a> {
         let v = self.fresh_var(AtomId::UNDER);
         let k = self.build_match(&span, Some(v), &e, branches, true,
           |stmts, e| ast::ExprKind::Block(ast::Block { stmts, expr: Some(Box::new(e)) }),
-          |hyp, cond, then, els| ast::ExprKind::If {hyp, cond, then, els},
+          |hyp, cond, then, els| ast::ExprKind::If {ik: ast::IfKind::If, hyp, cond, then, els},
           |this, rhs| this.push_expr(&span, rhs))?;
         ast::ExprKind::Block(ast::Block {
           stmts: vec![let_var(&span, AtomId::UNDER, v,
@@ -681,7 +681,7 @@ impl<'a> BuildAst<'a> {
     Ok(if let Some(e) = it.next() {
       let mut out = self.build_expr(span, e)?;
       for e in it {
-        let k = ast::ExprKind::Binop(op, Box::new(out), Box::new(self.build_expr(span, e)?));
+        let k = ast::ExprKind::binop(span, op, out, self.build_expr(span, e)?);
         out = Spanned {span: span.clone(), k};
       }
       Some(out)
@@ -699,16 +699,18 @@ impl<'a> BuildAst<'a> {
     // mk_block v1 e2 [] = (v1 < e2)
     // mk_block v1 e2 (e3:es) = { let v2 = e2; mk_and v1 v2 e3 es }
 
-    macro_rules! binop {($op:expr, $e1:expr, $e2:expr) => {ast::ExprKind::Binop($op, Box::new($e1), Box::new($e2))}}
     macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
+    macro_rules! binop {($sp:expr, $op:expr, $e1:expr, $e2:expr) => {
+      sp!($sp, ast::ExprKind::binop($sp, $op, $e1, $e2))
+    }}
     macro_rules! block {($($e:expr),*; $last:expr) => {
       ast::ExprKind::Block(ast::Block {stmts: vec![$($e),*], expr: Some(Box::new($last))})
     }}
     fn binop(sp: &FileSpan, op: Binop, v1: VarId, e2: ast::Expr) -> ast::Expr {
-      sp!(sp, binop!(op, sp!(sp, ast::ExprKind::Var(v1)), e2))
+      binop!(sp, op, sp!(sp, ast::ExprKind::Var(v1)), e2)
     }
     fn and(sp: &FileSpan, op: Binop, v1: VarId, v2: VarId, e: ast::Expr) -> ast::Expr {
-      sp!(sp, binop!(Binop::And, binop(sp, op, v1, sp!(sp, ast::ExprKind::Var(v2))), e))
+      binop!(sp, Binop::And, binop(sp, op, v1, sp!(sp, ast::ExprKind::Var(v2))), e)
     }
     let mut it = args.into_iter();
     let arg_1 = it.next().ok_or_else(|| ElabError::new_e(sp, "inequality: syntax error"))?;
@@ -738,7 +740,7 @@ impl<'a> BuildAst<'a> {
           mk_and(self, sp, op, v_1, v_2, arg_3, it)?
         ]
       } else {
-        ast::ExprKind::Binop(op, Box::new(arg_1), Box::new(arg_2))
+        ast::ExprKind::binop(sp, op, arg_1, arg_2)
       }
     } else {
       block![arg_1.map_into(ast::StmtKind::Expr); sp!(sp, ast::ExprKind::Bool(true))]
@@ -824,13 +826,13 @@ impl<'a> BuildAst<'a> {
       CallKind::Uninit => ast::ExprKind::Uninit,
       CallKind::TypeofBang(e) => ast::ExprKind::Typeof(Box::new(self.build_expr(&span, e)?)),
       CallKind::Typeof(e) => {
-        let k = ast::ExprKind::Place(Box::new(self.build_expr(&span, e)?));
+        let k = ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?));
         ast::ExprKind::Typeof(Box::new(Spanned {span: span.clone(), k}))
       }
       CallKind::Sizeof(ty) => ast::ExprKind::Sizeof(Box::new(self.build_ty(&span, &ty)?)),
-      CallKind::Place(e) => ast::ExprKind::Place(Box::new(self.build_expr(&span, e)?)),
-      CallKind::Deref(e) => ast::ExprKind::Deref(Box::new(self.build_expr(&span, e)?)),
       CallKind::Ref(e) => ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?)),
+      CallKind::Deref(e) => ast::ExprKind::Deref(Box::new(self.build_expr(&span, e)?)),
+      CallKind::Borrow(e) => ast::ExprKind::Borrow(Box::new(self.build_expr(&span, e)?)),
       CallKind::Index(a, i, h) => ast::ExprKind::Index(
         Box::new(self.build_expr(&span, a)?),
         Box::new(self.build_expr(&span, i)?),

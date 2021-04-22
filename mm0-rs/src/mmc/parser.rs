@@ -743,12 +743,12 @@ impl<'a> Parser<'a> {
           let (args, last) = self.parse_pure_args(base, args)?;
           CallKind::Mm0(args, last)
         }
-        (PrimOp::Place, [e]) => CallKind::Place(e.clone()),
         (PrimOp::Ref, [e]) => CallKind::Ref(e.clone()),
+        (PrimOp::Borrow, [e]) => CallKind::Borrow(e.clone()),
         (PrimOp::TypeofBang, [e]) => CallKind::TypeofBang(e.clone()),
         (PrimOp::Typeof, [e]) => CallKind::Typeof(e.clone()),
         (PrimOp::Sizeof, [ty]) => CallKind::Sizeof(ty.clone()),
-        (PrimOp::Place, _) | (PrimOp::Ref, _) | (PrimOp::TypeofBang, _) |
+        (PrimOp::Ref, _) | (PrimOp::Borrow, _) | (PrimOp::TypeofBang, _) |
         (PrimOp::Typeof, _) |  (PrimOp::Sizeof, _) => err!("expected 1 argument"),
         (PrimOp::Unreachable, args) => match args {
           [] => CallKind::Unreachable(None),

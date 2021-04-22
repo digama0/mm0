@@ -178,12 +178,34 @@ pub enum VariantType<'a> {
 #[derive(Clone, Copy, Debug, DeepSizeOf)]
 pub struct Variant<'a>(pub ty::Expr<'a>, pub VariantType<'a>);
 
+/// An argument declaration for a function.
+pub type Arg<'a> = (ty::ArgAttr, ArgKind<'a>);
+
+/// An argument declaration for a function.
+#[derive(Debug, DeepSizeOf)]
+pub enum ArgKind<'a> {
+  /// A standard argument of the form `{x : T}`, a "lambda binder"
+  Lam(ty::TuplePattern<'a>),
+  /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
+  /// invocations, they act as let binders in the remainder of the arguments.)
+  Let(ty::TuplePattern<'a>, ty::Expr<'a>, Option<Box<Expr<'a>>>),
+}
+
+impl<'a> From<&ArgKind<'a>> for ty::ArgKind<'a> {
+  fn from(arg: &ArgKind<'a>) -> Self {
+    match *arg {
+      ArgKind::Lam(pat) => Self::Lam(pat),
+      ArgKind::Let(pat, e, _) => Self::Let(pat, e),
+    }
+  }
+}
+
 /// A label in a label group declaration. Individual labels in the group
 /// are referred to by their index in the list.
 #[derive(Debug, DeepSizeOf)]
 pub struct Label<'a> {
   /// The arguments of the label
-  pub args: &'a [ty::Arg<'a>],
+  pub args: Box<[Arg<'a>]>,
   /// The variant, for recursive calls
   pub variant: Option<Variant<'a>>,
   /// The code that is executed when you jump to the label
@@ -223,6 +245,42 @@ pub enum StmtKind<'a> {
   Label(VarId, Box<[Label<'a>]>),
 }
 
+/// The different kinds of projection, used in defining places.
+#[derive(Copy, Clone, Debug)]
+pub enum ProjectionKind {
+  /// A projection `a.i` which retrieves the `i`th element of a tuple.
+  List,
+  /// A projection `a.i` which retrieves the `i`th element of a dependent tuple.
+  Struct,
+  /// A projection `a.i` which views a conjunction type as its `i`th conjunct.
+  And,
+}
+crate::deep_size_0!(ProjectionKind);
+
+/// A while loop expression. An additional field `has_break` is stored in the return type
+/// of the expression: If `cond` is a pure expression and there are no early `break`s inside the
+/// loop, then the return type is `!cond`; otherwise `()`.
+#[derive(Debug, DeepSizeOf)]
+pub struct While<'a> {
+  /// The name of this loop, which can be used as a target for jumps.
+  pub label: VarId,
+  /// A hypothesis that the condition is true in the loop.
+  pub hyp: Option<VarId>,
+  /// The loop condition.
+  pub cond: Box<Expr<'a>>,
+  /// The variant, which must decrease on every round around the loop.
+  pub var: Option<Variant<'a>>,
+  /// The body of the loop.
+  pub body: Box<Block<'a>>,
+  /// The generation after the loop.
+  pub gen: GenId,
+  /// The variables that were modified by the loop.
+  pub muts: Box<[VarId]>,
+  /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the loop
+  /// trivializes or is an infinite loop.
+  pub trivial: Option<bool>,
+}
+
 /// An expression.
 pub type Expr<'a> = Spanned<'a, (ExprKind<'a>, ty::ExprTy<'a>)>;
 
@@ -241,8 +299,6 @@ pub enum ExprKind<'a> {
   Var(VarId, GenId),
   /// A user constant.
   Const(AtomId),
-  /// A global variable.
-  Global(AtomId),
   /// A boolean literal.
   Bool(bool),
   /// A number literal.
@@ -256,13 +312,15 @@ pub enum ExprKind<'a> {
   Sn(Box<Expr<'a>>, Option<Box<Expr<'a>>>),
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
-  Index(Box<Expr<'a>>, Box<Expr<'a>>, Option<Box<Expr<'a>>>),
+  /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
+  Index(Box<([Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
   /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
   /// `h` is a proof that `a + b <= n`.
-  Slice(Box<(Expr<'a>, Expr<'a>, Expr<'a>)>, Option<Box<Expr<'a>>>),
+  /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
+  Slice(Box<([Expr<'a>; 3], Result<Expr<'a>, Expr<'a>>)>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
-  Proj(Box<Expr<'a>>, u32),
+  Proj(ProjectionKind, Box<Expr<'a>>, u32),
   /// An lvalue-to-rvalue conversion `x: T` where `x: ref T`.
   Rval(Box<Expr<'a>>),
   /// An deref operation `*x: T` where `x: &T`.
@@ -276,9 +334,9 @@ pub enum ExprKind<'a> {
   Ghost(Box<Expr<'a>>),
   /// Evaluates the expression as a pure expression, so it will not take
   /// ownership of the result.
-  Place(Box<Expr<'a>>),
-  /// `(& x)` constructs a reference to `x`.
   Ref(Box<Expr<'a>>),
+  /// `(& x)` constructs a reference to `x`.
+  Borrow(Box<Expr<'a>>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<Expr<'a>>, ty::Ty<'a>),
@@ -342,18 +400,7 @@ pub enum ExprKind<'a> {
   },
   /// A while loop. If `cond` is a pure expression and there are no early `break`s inside the loop,
   /// then the return type is `!cond`; otherwise `()`.
-  While {
-    /// The name of this loop, which can be used as a target for jumps.
-    label: VarId,
-    /// A hypothesis that the condition is true in the loop.
-    hyp: Option<VarId>,
-    /// The loop condition.
-    cond: Box<Expr<'a>>,
-    /// The variant, which must decrease on every round around the loop.
-    var: Option<Variant<'a>>,
-    /// The body of the loop.
-    body: Box<Block<'a>>,
-  },
+  While(Box<While<'a>>),
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr<'a>>),
   /// `(lab e1 ... en)` jumps to label `lab` with `e1 ... en` as arguments.
@@ -420,9 +467,9 @@ pub enum ItemKind<'a> {
     /// The number of type arguments
     tyargs: u32,
     /// The arguments of the procedure.
-    args: &'a [ty::Arg<'a>],
+    args: Box<[Arg<'a>]>,
     /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-    rets: &'a [ty::Arg<'a>],
+    rets: Box<[Arg<'a>]>,
     /// The variant, used for recursive functions.
     variant: Option<Variant<'a>>,
     /// The body of the procedure.
@@ -449,7 +496,7 @@ pub enum ItemKind<'a> {
     /// The number of type arguments
     tyargs: u32,
     /// The arguments of the type declaration, for a parametric type
-    args: &'a [ty::Arg<'a>],
+    args: Box<[ty::Arg<'a>]>,
     /// The value of the declaration (another type)
     val: ty::Ty<'a>,
   },

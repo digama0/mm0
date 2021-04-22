@@ -38,12 +38,15 @@
   clippy::shadow_unrelated, clippy::too_many_lines, clippy::unnested_or_patterns,
   clippy::use_self)]
 
-#[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
 #[macro_use] extern crate debug_derive;
-#[macro_use] extern crate if_chain;
 #[macro_use] extern crate mm0_util;
+
+#[cfg(feature = "mmc")]
+#[macro_use] extern crate bitflags;
+#[cfg(feature = "mmc")]
+#[macro_use] extern crate if_chain;
 
 #[cfg(feature = "memory")]
 #[macro_use] extern crate mm0_deepsize;
