@@ -1,8 +1,15 @@
 [package]
 name = "mm0_deepsize"
 version = "0.1.0"
-authors = ["Aeledfyr <aeledfyr@gmail.com>"]
+authors = ["Aeledfyr <aeledfyr@gmail.com>", "Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
+include = ["Cargo.toml", "src/**/*.rs", "LICENSE", "README.md"]
+description = "MM0 port of deepsize crate"
+readme = "README.md"
+keywords = ["size", "stack", "heap", "macro"]
+categories = ["development-tools::profiling", "memory-management"]
+license = "MIT"
+repository = "https://github.com/digama0/mm0/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

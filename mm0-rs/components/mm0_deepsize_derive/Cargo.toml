@@ -14,14 +14,14 @@
 edition = "2018"
 name = "mm0_deepsize_derive"
 version = "0.1.1"
-authors = ["Aeledfyr <aeledfyr@gmail.com>"]
-include = ["Cargo.toml", "src/**/*.rs", "../LICENSE", "../README.md"]
+authors = ["Aeledfyr <aeledfyr@gmail.com>", "Mario Carneiro <di.gama@gmail.com>"]
+include = ["Cargo.toml", "src/**/*.rs", "../mm0_deepsize/LICENSE", "../mm0_deepsize/README.md"]
 description = "A crate for measuring the total size of object on the stack and heap"
 readme = "../mm0_deepsize/README.md"
 keywords = ["size", "stack", "heap", "macro"]
 categories = ["development-tools::profiling", "memory-management"]
 license = "MIT"
-repository = "https://github.com/Aeledfyr/deepsize/"
+repository = "https://github.com/digama0/mm0/"
 
 [features]
 default = ["nodummy"]
