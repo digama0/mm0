@@ -86,7 +86,7 @@ pub use elab::{environment::*,
   ElabError, Elaborator};
 pub use mm0_util::*;
 pub use mm1_parser::{ast, DocComment, ErrorLevel};
-pub use mmb_parser::MAX_BOUND_VARS;
+pub use mm0b_parser::MAX_BOUND_VARS;
 
 static CHECK_PROOFS: AtomicBool = AtomicBool::new(true);
 pub(crate) fn get_check_proofs() -> bool { CHECK_PROOFS.load(Ordering::Relaxed) }

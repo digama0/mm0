@@ -1,4 +1,4 @@
-use mmb_parser::{BareMmbFile, ParseError};
+use mm0b_parser::{BareMmbFile, ParseError};
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::PathBuf;

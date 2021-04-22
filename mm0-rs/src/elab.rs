@@ -171,8 +171,8 @@ impl From<mm1_parser::ParseError> for ElabError {
   }
 }
 
-impl From<mmb_parser::ParseError> for ElabError {
-  fn from(e: mmb_parser::ParseError) -> Self { Self::new_e(0, format!("{:?}", e)) }
+impl From<mm0b_parser::ParseError> for ElabError {
+  fn from(e: mm0b_parser::ParseError) -> Self { Self::new_e(0, format!("{:?}", e)) }
 }
 
 /// Records the current reporting setting. A report that is suppressed by the reporting mode

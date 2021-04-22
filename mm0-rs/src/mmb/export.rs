@@ -11,7 +11,7 @@ use crate::{
   FrozenEnv, FileRef, LinedString, ErrorLevel};
 
 #[allow(clippy::wildcard_imports)]
-use mmb_parser::{ProofCmd, UnifyCmd, cmd::*, write_cmd_bytes};
+use mm0b_parser::{ProofCmd, UnifyCmd, cmd::*, write_cmd_bytes};
 
 #[derive(Debug)]
 struct Reorder<T=u32> {

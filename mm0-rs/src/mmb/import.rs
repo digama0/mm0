@@ -6,7 +6,7 @@ use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
 use crate::elab::proof::{IDedup, ProofKind, ProofHash, build};
 use crate::{FileRef, FileSpan, SliceExt};
-use mmb_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile,
+use mm0b_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile,
   ParseError, UnifyIter, ProofIter, exhausted};
 
 

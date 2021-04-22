@@ -53,7 +53,7 @@ mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-feature
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true }
 mm0_util = { path = "components/mm0_util", default-features = false }
-mmb_parser = { path = "components/mmb_parser" }
+mm0b_parser = { path = "components/mm0b_parser" }
 mm1_parser = { path = "components/mm1_parser" }
 
 # For "server" feature

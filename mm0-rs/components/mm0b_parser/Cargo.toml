@@ -1,5 +1,5 @@
 [package]
-name = "mmb_parser"
+name = "mm0b_parser"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
