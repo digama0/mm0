@@ -1,11 +1,11 @@
 [package]
 name = "mm0_util"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
 description = "MM0/MM1 language utilities"
 repository = "https://github.com/digama0/mm0"
-include = ["Cargo.toml", "src/**/*.rs", "../../README.md"]
+include = ["Cargo.toml", "src/**/*.rs", "../../README.md", "rustfmt.toml"]
 readme = "../../README.md"
 license = "CC0-1.0"
 keywords = ["theorem", "proving", "proof", "assistant"]
@@ -15,14 +15,13 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4"
-memchr = "2.3"
-pathdiff = "0.2"
 bitflags = "1.2"
 
 # optional dependencies
 mm0_deepsize = { version = "0.1.0", path = "../mm0_deepsize", optional = true }
 mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", default-features = false, optional = true }
+lazy_static = { version = "1.4", optional = true }
+pathdiff = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.89", optional = true }
 
@@ -30,6 +29,7 @@ lsp-types = { version = "0.89", optional = true }
 procinfo = { version = "0.4", optional = true }
 
 [features]
-default = ["memory"]
+default = ["memory", "lined_string"]
 memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procinfo"]
 server = ["lsp-types"]
+lined_string = ["lazy_static", "pathdiff"]

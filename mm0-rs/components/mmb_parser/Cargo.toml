@@ -5,7 +5,7 @@ authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
 description = "parsing tools for Metamath Zero's mmb binary format"
 repository = "https://github.com/digama0/mm0"
-include = ["Cargo.toml", "src/**/*.rs", "../../README.md"]
+include = ["Cargo.toml", "src/**/*.rs", "../../README.md", "rustfmt.toml"]
 readme = "../../README.md"
 license = "CC0-1.0"
 keywords = ["theorem", "proving", "proof", "assistant"]
@@ -16,4 +16,5 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 [dependencies]
 byteorder = "1.4"
 zerocopy = "0.4"
-mm0_util = { version = "0.1.0", path = "../mm0_util" }
+memchr = "2.3"
+mm0_util = { version = "0.1.1", path = "../mm0_util", default-features = false }

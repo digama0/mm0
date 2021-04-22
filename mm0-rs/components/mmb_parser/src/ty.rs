@@ -35,9 +35,7 @@ impl From<u64> for Type {
 
 impl Type {
   /// Get the u64 comprising a type
-  pub fn into_inner(self) -> u64 {
-    self.0.get()
-  }
+  pub fn into_inner(self) -> u64 { self.0.get() }
 
   /// Make a new `Type` of sort `sort_num`
   #[must_use]

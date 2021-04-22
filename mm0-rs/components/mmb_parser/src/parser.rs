@@ -1,8 +1,10 @@
 //! Parser for MMB binary proof files.
-use crate::{cmd, Arg, Header, NameEntry, NumdStmtCmd, ProofCmd, SortData,
-  StmtCmd, TableEntry, TermEntry, ThmEntry, UnifyCmd, exhausted, u32_as_usize, u64_as_usize};
+use crate::{
+  cmd, cstr_from_bytes_prefix, exhausted, u32_as_usize, u64_as_usize, Arg, Header, NameEntry,
+  NumdStmtCmd, ProofCmd, SortData, StmtCmd, TableEntry, TermEntry, ThmEntry, UnifyCmd,
+};
 use byteorder::LE;
-use mm0_util::{cstr_from_bytes_prefix, SortId, TermId, ThmId};
+use mm0_util::{SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
@@ -130,13 +132,15 @@ impl<'a> MmbIndexBuilder<'a> for Option<SymbolNames<'a>> {
   fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
     if e.id == cmd::INDEX_NAME {
       let rest = f.buf.get(u64_as_usize(e.ptr)..).ok_or_else(|| f.bad_index_parse())?;
-      let (sorts, rest) = new_slice_prefix(rest, f.sorts.len()).ok_or_else(|| f.bad_index_parse())?;
-      let (terms, rest) = new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (sorts, rest) =
+        new_slice_prefix(rest, f.sorts.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (terms, rest) =
+        new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
       let (thms, _) = new_slice_prefix(rest, f.thms.len()).ok_or_else(|| f.bad_index_parse())?;
       if self.replace(SymbolNames { sorts, terms, thms }).is_some() {
         return Err(ParseError::DuplicateIndexTable {
           p_index: u64_as_usize(f.header.p_index),
-          id: e.id
+          id: e.id,
         })
       }
     }
@@ -163,12 +167,13 @@ impl<'a> MmbIndexBuilder<'a> for Option<VarNames<'a>> {
   fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
     if e.id == cmd::INDEX_VAR_NAME {
       let rest = f.buf.get(u64_as_usize(e.ptr)..).ok_or_else(|| f.bad_index_parse())?;
-      let (terms, rest) = new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (terms, rest) =
+        new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
       let (thms, _) = new_slice_prefix(rest, f.thms.len()).ok_or_else(|| f.bad_index_parse())?;
       if self.replace(VarNames { terms, thms }).is_some() {
         return Err(ParseError::DuplicateIndexTable {
           p_index: u64_as_usize(f.header.p_index),
-          id: e.id
+          id: e.id,
         })
       }
     }
@@ -197,7 +202,7 @@ impl<'a> MmbIndexBuilder<'a> for Option<HypNames<'a>> {
       if self.replace(HypNames { thms }).is_some() {
         return Err(ParseError::DuplicateIndexTable {
           p_index: u64_as_usize(f.header.p_index),
-          id: e.id
+          id: e.id,
         })
       }
     }
@@ -212,8 +217,7 @@ impl<'a> NoHypNames for Option<SymbolNames<'a>> {}
 impl<'a> NoHypNames for Option<VarNames<'a>> {}
 
 /// A basic index, usable for getting names of declarations and variables.
-pub type BasicIndex<'a> =
-  (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
+pub type BasicIndex<'a> = (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
 
 /// Return the raw command data (a pair `[(u8, u32)]`)
 /// while ensuring that an iterator which is literally empty
@@ -598,7 +602,11 @@ impl<'a, X> MmbFile<'a, X> {
   #[must_use]
   pub fn p_index(&self) -> Option<usize> {
     let n = u64_as_usize(self.header.p_index);
-    if n == 0 { None } else { Some(n) }
+    if n == 0 {
+      None
+    } else {
+      Some(n)
+    }
   }
 
   /// Returns a bad index parse error, for error reporting during index parsing.
@@ -649,7 +657,8 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
         let (num_entries, rest) =
           LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(&*buf.get(n..)?)?;
         new_slice_prefix(rest, num_entries.get().try_into().ok()?)
-      })().ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
+      })()
+      .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
       let mut index = X::default();
       for e in entries {
         index.build(&mut file, e)?
@@ -794,8 +803,7 @@ pub struct NameEntryRef<'a> {
 
 #[inline]
 fn name_entry_ref(
-  buf: &[u8],
-  NameEntry { p_proof, p_name }: NameEntry
+  buf: &[u8], NameEntry { p_proof, p_name }: NameEntry,
 ) -> Option<NameEntryRef<'_>> {
   let value = buf.get(u64_as_usize(p_name)..)?;
   Some(NameEntryRef { buf, p_proof, value })
@@ -838,7 +846,7 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
   pub fn term_name(&self, n: TermId) -> Cow<'a, str> {
     match self.term_index(n).and_then(|t| t.value()) {
       Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("t{}", n.0))
+      None => Cow::Owned(format!("t{}", n.0)),
     }
   }
 
@@ -848,7 +856,7 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
   pub fn thm_name(&self, n: ThmId) -> Cow<'a, str> {
     match self.thm_index(n).and_then(|t| t.value()) {
       Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("T{}", n.0))
+      None => Cow::Owned(format!("T{}", n.0)),
     }
   }
 
@@ -858,7 +866,7 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
   pub fn sort_name(&self, n: SortId) -> Cow<'a, str> {
     match self.sort_index(n).and_then(|t| t.value()) {
       Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("s{}", n.0))
+      None => Cow::Owned(format!("s{}", n.0)),
     }
   }
 }
@@ -911,7 +919,7 @@ macro_rules! str_list_wrapper {
   )*}
 }
 
-str_list_wrapper!{
+str_list_wrapper! {
   /// A handle to an list of variable names in the index.
   VarListRef("v{}");
 
@@ -921,11 +929,12 @@ str_list_wrapper!{
 
 impl<'a, X> MmbFile<'a, X> {
   fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
-    let (num_vars, rest) = LayoutVerified::<_, U64<LE>>::
-      new_unaligned_from_prefix(&*self.buf.get(u64_as_usize(p_vars)..)?)?;
+    let (num_vars, rest) = LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(
+      &*self.buf.get(u64_as_usize(p_vars)..)?,
+    )?;
     Some(StrListRef {
       buf: self.buf,
-      strs: new_slice_prefix(rest, num_vars.get().try_into().ok()?)?.0
+      strs: new_slice_prefix(rest, num_vars.get().try_into().ok()?)?.0,
     })
   }
 }

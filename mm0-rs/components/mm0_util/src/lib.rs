@@ -51,6 +51,7 @@
   clippy::use_self
 )]
 
+#[cfg(feature = "lazy_static")]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -63,17 +64,16 @@ use std::collections::{
   HashMap,
 };
 use std::error::Error;
-use std::ffi::CStr;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{borrow::Borrow, convert::TryInto};
 
-mod ids;
 mod atoms;
+mod ids;
 mod lined_string;
 
 pub use {ids::*, lined_string::*};
@@ -158,8 +158,9 @@ macro_rules! unwrap_unchecked {
 #[macro_export]
 macro_rules! const_panic {
   () => {{
-    #[allow(unconditional_panic)] [][0]
-  }}
+    #[allow(unconditional_panic)]
+    [][0]
+  }};
 }
 
 /// Converts `n` from `u32` to `usize` or panics (which should not happen since we don't support
@@ -439,6 +440,7 @@ pub struct Range {
   pub end: Position,
 }
 
+#[cfg(feature = "lined_string")]
 lazy_static! {
   /// A [`PathBuf`] created by `lazy_static!` pointing to a canonicalized "."
   pub static ref CURRENT_DIR: PathBuf =
@@ -452,8 +454,8 @@ lazy_static! {
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
-#[cfg(not(target_arch = "wasm32"))]
-fn make_relative(buf: &Path) -> String {
+#[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
+fn make_relative(buf: &std::path::Path) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR)
     .as_deref()
     .unwrap_or(buf)
@@ -480,11 +482,12 @@ struct FileRefInner {
 #[derive(Clone)]
 pub struct FileRef(Arc<FileRefInner>);
 
+#[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
   #[cfg(target_arch = "wasm32")]
   fn from(_: PathBuf) -> FileRef { todo!() }
 
-  #[cfg(not(target_arch = "wasm32"))]
+  #[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
   fn from(path: PathBuf) -> FileRef {
     FileRef(Arc::new(FileRefInner {
       rel: make_relative(&path),
@@ -573,19 +576,6 @@ impl fmt::Debug for FileSpan {
 }
 impl<'a> From<&'a FileSpan> for Span {
   fn from(fsp: &'a FileSpan) -> Self { fsp.span }
-}
-
-/// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
-/// the first nul character. The second output is the remainder of the slice.
-#[must_use]
-pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
-  let mid = memchr::memchr(0, bytes)? + 1;
-  unsafe {
-    Some((
-      CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
-      bytes.get_unchecked(..mid),
-    ))
-  }
 }
 
 /// Try to get memory usage (resident set size) in bytes using the

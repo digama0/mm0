@@ -57,6 +57,7 @@ mod ty;
 mod write;
 
 use std::convert::{TryFrom, TryInto};
+use std::ffi::CStr;
 use std::mem::size_of;
 
 use byteorder::LE;
@@ -160,6 +161,19 @@ pub mod cmd {
 #[inline]
 fn u64_as_usize(n: U64<LE>) -> usize {
   n.get().try_into().expect("here's a nickel, get a better computer")
+}
+
+/// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
+/// the first nul character. The second output is the remainder of the slice.
+#[must_use]
+pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
+  let mid = memchr::memchr(0, bytes)? + 1;
+  unsafe {
+    Some((
+      CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
+      bytes.get_unchecked(..mid),
+    ))
+  }
 }
 
 /// The main part of the proof consists of a sequence of declarations,
