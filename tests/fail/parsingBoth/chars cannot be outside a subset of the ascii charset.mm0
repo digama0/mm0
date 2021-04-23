@@ -1,6 +1,0 @@
--- lexeme ::= symbol | identifier | number | math-string
--- symbol ::= '*' | '.' | ':' | ';' | '(' | ')' | '>' | '{' | '}' | '=' | '_'
--- identifier ::= [a-zA-Z_][a-zA-Z0-9_]*
--- number ::= 0 | [1-9][0-9]*
--- math-string ::= '$' [^$]* '$'
-sort s;
