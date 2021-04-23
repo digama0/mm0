@@ -1,0 +1,6 @@
+-- Whitespace is ignored except to separate tokens
+-- Line comments are written --comment and extend until the next \n; line comments act like whitespace
+-- An identifier token matches [0-9a-zA-Z_:]+
+-- Characters ( ) are single character symbol tokens
+-- Anything else is forbidden
+(sort s)
