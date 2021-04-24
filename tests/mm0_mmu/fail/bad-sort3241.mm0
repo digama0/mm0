@@ -1,0 +1,2 @@
+-- bad modifier order
+provable strict free pure sort s3241;

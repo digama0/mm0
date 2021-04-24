@@ -1,0 +1,2 @@
+-- provable should be after strict
+provable strict sort s32;

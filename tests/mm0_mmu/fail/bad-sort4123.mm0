@@ -1,0 +1,2 @@
+-- bad modifier order
+free pure strict provable sort s4123;
