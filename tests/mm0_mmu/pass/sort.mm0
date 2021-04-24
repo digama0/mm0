@@ -1,0 +1,16 @@
+sort s0;
+free sort s1;
+provable sort s2;
+provable free sort s3;
+strict sort s4;
+strict free sort s5;
+strict provable sort s6;
+strict provable free sort s7;
+pure sort s8;
+pure free sort s9;
+pure provable sort s10;
+pure provable free sort s11;
+pure strict sort s12;
+pure strict free sort s13;
+pure strict provable sort s14;
+pure strict provable free sort s15;
