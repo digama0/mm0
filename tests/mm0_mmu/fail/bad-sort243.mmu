@@ -1,0 +1,2 @@
+-- bad modifier order
+(sort s243 strict free provable)

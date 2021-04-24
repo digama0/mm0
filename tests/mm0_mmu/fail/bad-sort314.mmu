@@ -1,0 +1,2 @@
+-- bad modifier order
+(sort s314 provable pure free)
