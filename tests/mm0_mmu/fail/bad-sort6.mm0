@@ -1,0 +1,2 @@
+-- provable modifier before strict
+provable strict sort s12;
