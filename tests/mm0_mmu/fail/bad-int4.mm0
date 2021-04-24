@@ -1,0 +1,2 @@
+--                      V--  forbidden sign
+prefix plus: $ + $ prec -1;

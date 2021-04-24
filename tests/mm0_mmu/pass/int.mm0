@@ -1,0 +1,6 @@
+-- int number ::= 0 | [1-9][0-9]*
+-- Verifiers should support precedences up to at least 2^11 - 2 = 2046
+prefix a: $ + $ prec 0;
+prefix b: $ * $ prec 2046;
+prefix c: $ - $ prec 1875;
+prefix d: $ / $ prec 39;
