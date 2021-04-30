@@ -398,7 +398,7 @@ impl LocalCtx {
   fn new() -> Self { Self {names: HashMap::new(), ctx: vec![]} }
   fn len(&self) -> usize { self.ctx.len() }
   fn get(&self, x: AtomId) -> Option<usize> {
-    self.names.get(&x).and_then(|v| v.last().cloned())
+    Some(*self.names.get(&x)?.last()?)
   }
   fn push(&mut self, x: AtomId) -> usize {
     let old = self.ctx.len();

@@ -25,7 +25,7 @@ fn span(source: &[u8], s: Span) -> &[u8] { &source[s.start..s.end] }
 
 impl<'a> Importer<'a> {
   fn cur(&self) -> u8 { self.source[self.idx] }
-  fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).copied() }
 
   fn span(&self, s: Span) -> &'a [u8] { span(self.source, s) }
 

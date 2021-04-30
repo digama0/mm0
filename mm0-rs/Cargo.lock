@@ -231,28 +231,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deepsize_0"
-version = "0.1.0"
-dependencies = [
- "deepsize_derive",
- "futures",
- "lsp-types",
- "memmap",
- "num",
- "owning_ref",
- "typed-arena",
-]
-
-[[package]]
-name = "deepsize_derive"
-version = "0.1.1"
-dependencies = [
- "proc-macro2 0.4.30",
- "quote 0.6.13",
- "syn 0.15.44",
-]
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -545,8 +523,6 @@ dependencies = [
  "console_error_panic_hook",
  "crossbeam",
  "debug_derive",
- "deepsize_0",
- "deepsize_derive",
  "either",
  "futures",
  "hashbrown",
@@ -560,9 +536,11 @@ dependencies = [
  "lsp-types",
  "memchr",
  "memmap",
+ "mm0_deepsize",
+ "mm0_deepsize_derive",
  "mm0_util",
+ "mm0b_parser",
  "mm1_parser",
- "mmb_parser",
  "num",
  "owning_ref",
  "pathdiff",
@@ -580,19 +558,49 @@ dependencies = [
 ]
 
 [[package]]
-name = "mm0_util"
+name = "mm0_deepsize"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "lsp-types",
+ "memmap",
+ "mm0_deepsize_derive",
+ "num",
+ "owning_ref",
+ "typed-arena",
+]
+
+[[package]]
+name = "mm0_deepsize_derive"
+version = "0.1.1"
+dependencies = [
+ "proc-macro2 0.4.30",
+ "quote 0.6.13",
+ "syn 0.15.44",
+]
+
+[[package]]
+name = "mm0_util"
+version = "0.1.1"
+dependencies = [
  "bitflags",
- "debug_derive",
- "deepsize_0",
- "deepsize_derive",
  "lazy_static",
  "libc",
  "lsp-types",
- "memchr",
+ "mm0_deepsize",
+ "mm0_deepsize_derive",
  "pathdiff",
  "procinfo",
+]
+
+[[package]]
+name = "mm0b_parser"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "memchr",
+ "mm0_util",
+ "zerocopy",
 ]
 
 [[package]]
@@ -601,21 +609,12 @@ version = "0.1.0"
 dependencies = [
  "annotate-snippets",
  "byteorder",
- "deepsize_0",
- "deepsize_derive",
  "libc",
  "lsp-types",
+ "mm0_deepsize",
+ "mm0_deepsize_derive",
  "mm0_util",
  "num",
- "zerocopy",
-]
-
-[[package]]
-name = "mmb_parser"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "mm0_util",
  "zerocopy",
 ]
 
