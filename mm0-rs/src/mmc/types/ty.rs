@@ -464,7 +464,7 @@ pub enum TyKind<'a> {
   /// (see [`Lifetime`]).
   Ref(Lifetime, Ty<'a>),
   /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
-  RefSn(Expr<'a>),
+  RefSn(Place<'a>),
   /// `(A, B, C)` is a tuple type with elements `A, B, C`;
   /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
   List(&'a [Ty<'a>]),
@@ -537,6 +537,8 @@ pub enum TyKind<'a> {
 pub trait TyVisit<'a> {
   /// Called on `Expr` subexpressions.
   fn visit_expr(&mut self, _: Expr<'a>) {}
+  /// Called on `Place` subexpressions.
+  fn visit_place(&mut self, _: Place<'a>) {}
   /// Called on type `MVar` subexpressions.
   fn visit_mvar(&mut self, _: TyMVarId) {}
 }
@@ -569,7 +571,7 @@ impl<'a> TyS<'a> {
       TyKind::Uninit(ty) |
       TyKind::Not(ty) |
       TyKind::Moved(ty) => ty.visit(f),
-      TyKind::RefSn(e) |
+      TyKind::RefSn(p) => f.visit_place(p),
       TyKind::Pure(e) => f.visit_expr(e),
       TyKind::List(tys) |
       TyKind::And(tys) |
@@ -630,7 +632,7 @@ impl AddFlags for TyKind<'_> {
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => {*f |= ty; f.remove(Flags::IS_NON_COPY)}
       TyKind::Ref(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
-      TyKind::RefSn(e) |
+      TyKind::RefSn(p) => {*f |= p; f.remove(Flags::IS_NON_COPY)}
       TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY)}
       TyKind::Struct(args) => *f |= args,
       TyKind::All(pat, p) => *f |= (pat, p),
@@ -726,6 +728,75 @@ impl<'a, F: FnMut(VarId)> ExprVisit<'a> for OnVars<F> {
   fn visit_var(&mut self, v: VarId) { self.0(v) }
 }
 
+/// A place expression.
+pub type Place<'a> = &'a PlaceS<'a>;
+/// A place expression.
+pub type PlaceS<'a> = WithMeta<PlaceKind<'a>>;
+/// A place expression, or a "place to blame" for why it's not pure.
+pub type RPlace<'a> = Result<Place<'a>, &'a FileSpan>;
+/// A pair of an optional place expression and a type, used to classify the result
+/// of expressions that may or may not be pure.
+pub type RPlaceTy<'a> = (RPlace<'a>, Ty<'a>);
+
+/// A place expression.
+#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+pub enum PlaceKind<'a> {
+  /// A variable reference.
+  Var(VarId),
+  /// An index operation `(index a i): T` where `a: (array T n)` and `i: nat`.
+  Index(Place<'a>, Ty<'a>, Expr<'a>),
+  /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
+  /// `h` is a proof that `a + b <= n`.
+  /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
+  Slice(Place<'a>, Ty<'a>, [Expr<'a>; 2]),
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(Place<'a>, Ty<'a>, u32),
+  /// A type error that has been reported.
+  Error,
+}
+
+impl<'a> PlaceS<'a> {
+  /// Calls `f` on all leaf subterms of interest, using methods in the [`ExprVisit`] trait.
+  pub fn visit(&self, f: &mut impl ExprVisit<'a>) {
+    match self.k {
+      PlaceKind::Error => {}
+      PlaceKind::Var(v) => f.visit_var(v),
+      PlaceKind::Index(a, ty, i) => {a.visit(f); f.visit_ty(ty); i.visit(f)}
+      PlaceKind::Slice(a, ty, [i, n]) => {a.visit(f); f.visit_ty(ty); i.visit(f); n.visit(f)}
+      PlaceKind::Proj(e, ty, _) => {e.visit(f); f.visit_ty(ty)},
+    }
+  }
+
+  /// Calls function `f` on all expression variables (not type variables).
+  pub fn on_vars(&self, f: impl FnMut(VarId)) { self.visit(&mut OnVars(f)) }
+}
+
+impl AddFlags for PlaceKind<'_> {
+  fn add(&self, f: &mut Flags) {
+    match *self {
+      PlaceKind::Var(_) => *f |= Flags::HAS_VAR,
+      PlaceKind::Proj(e, ty,  _) => *f |= (e, ty),
+      PlaceKind::Index(a, ty, i) => *f |= (a, ty, i),
+      PlaceKind::Slice(a, ty, [i, n]) => *f |= ((a, ty), i, n),
+      PlaceKind::Error => *f |= Flags::HAS_ERROR,
+    }
+  }
+}
+
+impl<C: DisplayCtx> CtxDisplay<C> for PlaceKind<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
+    match *self {
+      PlaceKind::Var(v) => ctx.fmt_var(v, f),
+      PlaceKind::Index(a, _, i) => write!(f, "(index {} {})", p!(a), p!(i)),
+      PlaceKind::Slice(a, _, [i, n]) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
+      PlaceKind::Proj(a, _, i) => write!(f, "({} . {})", p!(a), i),
+      PlaceKind::Error => "??".fmt(f),
+    }
+  }
+}
+
 /// A pure expression. (Regular expressions are not manipulated like types,
 /// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
 pub type Expr<'a> = &'a ExprS<'a>;
@@ -767,14 +838,14 @@ pub enum ExprKind<'a> {
   /// and `i: nat`.
   Index(Expr<'a>, Expr<'a>),
   /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
-  Slice(Expr<'a>, Expr<'a>, Expr<'a>),
+  Slice([Expr<'a>; 3]),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(Expr<'a>, u32),
   /// `(update-index a i e)` is the result of `a` after `a[i] = e`.
-  UpdateIndex(Expr<'a>, Expr<'a>, Expr<'a>),
+  UpdateIndex([Expr<'a>; 3]),
   /// `(update-slice x a b e)` is the result of assigning `x[a..a+b] = e`.
-  UpdateSlice(Expr<'a>, Expr<'a>, Expr<'a>, Expr<'a>),
+  UpdateSlice([Expr<'a>; 4]),
   /// `(update-proj x i)` is the result of assigning `x.i = e`.
   UpdateProj(Expr<'a>, u32, Expr<'a>),
   /// `(e1, ..., en)` returns a tuple of the arguments.
@@ -783,8 +854,8 @@ pub enum ExprKind<'a> {
   Array(&'a [Expr<'a>]),
   /// Return the size of a type.
   Sizeof(Ty<'a>),
-  /// A pointer to a place.
-  Ref(Expr<'a>),
+  /// A place result.
+  Ref(Place<'a>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<'a>),
@@ -835,13 +906,13 @@ impl<'a> ExprS<'a> {
       ExprKind::Error => {}
       ExprKind::Var(v) => f.visit_var(v),
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) |
+      ExprKind::Proj(e, _) => e.visit(f),
       ExprKind::Ref(e) => e.visit(f),
       ExprKind::Binop(_, e1, e2) => {e1.visit(f); e2.visit(f)}
       ExprKind::Index(a, i) => {a.visit(f); i.visit(f)}
-      ExprKind::Slice(a, i, n) => {a.visit(f); i.visit(f); n.visit(f)}
-      ExprKind::UpdateIndex(a, i, val) => {a.visit(f); i.visit(f); val.visit(f)}
-      ExprKind::UpdateSlice(a, i, n, val) => {a.visit(f); i.visit(f); n.visit(f); val.visit(f)}
+      ExprKind::Slice([a, i, n]) => {a.visit(f); i.visit(f); n.visit(f)}
+      ExprKind::UpdateIndex([a, i, val]) => {a.visit(f); i.visit(f); val.visit(f)}
+      ExprKind::UpdateSlice([a, i, n, val]) => {a.visit(f); i.visit(f); n.visit(f); val.visit(f)}
       ExprKind::UpdateProj(a, _, val) => {a.visit(f); val.visit(f)}
       ExprKind::Sizeof(e) => f.visit_ty(e),
       ExprKind::List(es) |
@@ -879,13 +950,13 @@ impl AddFlags for ExprKind<'_> {
       ExprKind::Sizeof(_) => {}
       ExprKind::Var(_) => *f |= Flags::HAS_VAR,
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) |
+      ExprKind::Proj(e, _) => *f |= e,
       ExprKind::Ref(e) => *f |= e,
       ExprKind::Binop(_, e1, e2) => *f |= (e1, e2),
       ExprKind::Index(a, i) => *f |= (a, i),
-      ExprKind::Slice(a, i, n) => *f |= (a, i, n),
-      ExprKind::UpdateIndex(a, i, val) => *f |= (a, i, val),
-      ExprKind::UpdateSlice(a, i, n, val) => *f |= ((a, i, n), val),
+      ExprKind::Slice([a, i, n]) => *f |= (a, i, n),
+      ExprKind::UpdateIndex([a, i, val]) => *f |= (a, i, val),
+      ExprKind::UpdateSlice([a, i, n, val]) => *f |= ((a, i, n), val),
       ExprKind::UpdateProj(a, _, val) => *f |= (a, val),
       ExprKind::List(es) |
       ExprKind::Array(es) => *f |= es,
@@ -915,11 +986,11 @@ impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
       ExprKind::List(es) |
       ExprKind::Array(es) => write!(f, "(list {})", es.iter().map(|&e| p!(e)).format(" ")),
       ExprKind::Index(a, i) => write!(f, "(index {} {})", p!(a), p!(i)),
-      ExprKind::Slice(a, i, n) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
+      ExprKind::Slice([a, i, n]) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
       ExprKind::Proj(a, i) => write!(f, "({} . {})", p!(a), i),
-      ExprKind::UpdateIndex(a, i, val) => write!(f,
+      ExprKind::UpdateIndex([a, i, val]) => write!(f,
         "(update-index {} {} {})", p!(a), p!(i), p!(val)),
-      ExprKind::UpdateSlice(a, i, l, val) => write!(f,
+      ExprKind::UpdateSlice([a, i, l, val]) => write!(f,
         "(update-slice {} {} {} {})", p!(a), p!(i), p!(l), p!(val)),
       ExprKind::UpdateProj(a, n, val) => write!(f,
         "(update-proj {} {} {})", p!(a), n, p!(val)),

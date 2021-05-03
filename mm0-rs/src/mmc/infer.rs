@@ -15,7 +15,7 @@ use super::{parser::try_get_fspan, types};
 use types::{Binop, BinopType, FieldName, Mm0ExprNode, Size, Spanned, Unop, VarId, ast, global, hir};
 use ast::{ProcKind, ArgAttr};
 use global::{ToGlobal, ToGlobalCtx};
-use hir::{GenId, ProjectionKind};
+use hir::{GenId, ListKind};
 use types::entity::{Entity, ConstTc, GlobalTc, ProcTy, ProcTc, TypeTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
@@ -58,6 +58,8 @@ pub enum TypeError<'a> {
   Hole(Box<DynContext<'a>>, Option<Ty<'a>>),
   /// Don't know how to evaluate this expression
   UnsupportedSynthesis(Box<DynContext<'a>>, Expr<'a>, Ty<'a>),
+  /// Can't match on a place
+  UnsupportedPlaceMatch,
   /// Can't use return in this position
   InvalidReturn,
   /// While loop mutates a value without marking it as `mut` in the loop header
@@ -105,6 +107,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
       TypeError::UnsupportedSynthesis(ref dc, e, t) => write!(f, "{}|- {}\n:= {}\n\
         Note: the target expression is known but we don't know how to evaluate it",
         p!(&**dc), p!(t), p!(e)),
+      TypeError::UnsupportedPlaceMatch => write!(f, "Can't match on a place"),
       TypeError::InvalidReturn => write!(f, "Can't use return in this position"),
       TypeError::MissingMuts(ref muts) => write!(f, "\
         While loop mutates a value without marking it as 'mut' in the loop header. \
@@ -165,6 +168,7 @@ mk_interner! {
   args: ArgS,
   tys: TyKind,
   exprs: ExprKind,
+  places: PlaceKind,
 }
 
 impl<'a> Interner<'a> {
@@ -423,6 +427,8 @@ impl<'a> Subst<'a> {
     if let Ok(e) = e { e.on_vars(|v| { self.fvars.insert(v); }) }
   }
 
+  fn add_fvars_place(&mut self, e: Place<'a>) { e.on_vars(|v| { self.fvars.insert(v); }) }
+
   fn push_tuple_pattern_raw(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan,
     pat: TuplePattern<'a>, e: Result<Expr<'a>, &'a FileSpan>
   ) {
@@ -459,6 +465,28 @@ impl<'a> Subst<'a> {
     } else { None }
   }
 
+  fn subst_place(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, e: Place<'a>) -> Place<'a> {
+    macro_rules! subst {($op:expr, $p:expr, $ty:expr $(, $es:expr)*) => {{
+      let p2 = self.subst_place(ctx, sp, $p);
+      let ty2 = self.subst_ty(ctx, sp, $ty);
+      let e2 = ($(self.subst_expr(ctx, sp, $es)),*);
+      if $p == p2 && $ty == ty2 && ($($es),*) == e2 { return e }
+      intern!(ctx, $op(p2, ty2, e2))
+    }}}
+    match e.k {
+      PlaceKind::Var(v) => match self.subst_var(ctx, sp, v) {
+        Some(&WithMeta {k: ExprKind::Ref(pl), ..}) => pl,
+        _ => e
+      },
+      PlaceKind::Index(a, ty, i) =>
+        subst!(|a, ty, i| PlaceKind::Index(a, ty, i), a, ty, i),
+      PlaceKind::Slice(a, ty, [i, l]) =>
+        subst!(|a, ty, (i, l)| PlaceKind::Slice(a, ty, [i, l]), a, ty, i, l),
+      PlaceKind::Proj(e, ty, i) => subst!(|e, ty, ()| PlaceKind::Proj(e, ty, i), e, ty),
+      PlaceKind::Error => e,
+    }
+  }
+
   fn subst_expr(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, e: Expr<'a>) -> Expr<'a> {
     macro_rules! subst {($op:expr, $($es:expr),*) => {{
       let e2 = ($(self.subst_expr(ctx, sp, $es)),*);
@@ -478,14 +506,14 @@ impl<'a> Subst<'a> {
         subst!(|(e1, e2)| ExprKind::Binop(op, e1, e2), e1, e2),
       ExprKind::Index(e1, e2) =>
         subst!(|(e1, e2)| ExprKind::Index(e1, e2), e1, e2),
-      ExprKind::Slice(e1, e2, e3) =>
-        subst!(|(e1, e2, e3)| ExprKind::Slice(e1, e2, e3), e1, e2, e3),
+      ExprKind::Slice([e1, e2, e3]) =>
+        subst!(|(e1, e2, e3)| ExprKind::Slice([e1, e2, e3]), e1, e2, e3),
       ExprKind::Proj(e, i) =>
         subst!(|e| ExprKind::Proj(e, i), e),
-      ExprKind::UpdateIndex(e1, e2, e3) =>
-        subst!(|(e1, e2, e3)| ExprKind::UpdateIndex(e1, e2, e3), e1, e2, e3),
-      ExprKind::UpdateSlice(e1, e2, e3, e4) =>
-        subst!(|(e1, e2, e3, e4)| ExprKind::UpdateSlice(e1, e2, e3, e4), e1, e2, e3, e4),
+      ExprKind::UpdateIndex([e1, e2, e3]) =>
+        subst!(|(e1, e2, e3)| ExprKind::UpdateIndex([e1, e2, e3]), e1, e2, e3),
+      ExprKind::UpdateSlice([e1, e2, e3, e4]) =>
+        subst!(|(e1, e2, e3, e4)| ExprKind::UpdateSlice([e1, e2, e3, e4]), e1, e2, e3, e4),
       ExprKind::UpdateProj(e1, i, e2) =>
         subst!(|(e1, e2)| ExprKind::UpdateProj(e1, i, e2), e1, e2),
       ExprKind::List(es) => {
@@ -498,7 +526,11 @@ impl<'a> Subst<'a> {
         if es == es2 { return e }
         intern!(ctx, ExprKind::Array(ctx.alloc.alloc_slice_fill_iter(es2.into_iter())))
       }
-      ExprKind::Ref(e) => subst!(|e| ExprKind::Ref(e), e),
+      ExprKind::Ref(p) => {
+        let p2 = self.subst_place(ctx, sp, p);
+        if p == p2 { return e }
+        intern!(ctx, ExprKind::Ref(p2))
+      }
       ExprKind::Sizeof(ty) => {
         let ty2 = self.subst_ty(ctx, sp, ty);
         if ty == ty2 { return e }
@@ -540,7 +572,7 @@ impl<'a> Subst<'a> {
           match origin.k {
             ExprKind::Var(v) => break Lifetime::Place(v),
             ExprKind::Index(a, _) |
-            ExprKind::Slice(a, _, _) |
+            ExprKind::Slice([a, _, _]) |
             ExprKind::Proj(a, _) => origin = a,
             ExprKind::Error => return None,
             ExprKind::Infer(_) => {
@@ -642,7 +674,11 @@ impl<'a> Subst<'a> {
         if lft == lft2 && t == t2 { return ty }
         intern!(ctx, TyKind::Ref(lft2, t2))
       }
-      TyKind::RefSn(e) => subst!(|_, e| TyKind::RefSn(e);; e), // FIXME: verify this is correct
+      TyKind::RefSn(p) => {
+        let p2 = self.subst_place(ctx, sp, p);
+        if p == p2 { return ty }
+        intern!(ctx, TyKind::RefSn(p2))
+      }
       TyKind::List(tys) => substs!(TyKind::List; tys),
       TyKind::Sn(e, ty) => subst!(|ty, e| TyKind::Sn(e, ty); ty; e),
       TyKind::Struct(args) => {
@@ -804,38 +840,52 @@ impl<'a> FromGlobal<'a> for global::Variant {
   }
 }
 
+impl<'a> FromGlobal<'a> for global::PlaceKind {
+  type Output = Place<'a>;
+  #[allow(clippy::many_single_char_names)]
+  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+    macro_rules! g {($e:expr) => {$e.from_global(c, t)}}
+    intern!(c, match self {
+      &global::PlaceKind::Var(v) => PlaceKind::Var(v),
+      global::PlaceKind::Index(a, ty, i) =>
+        PlaceKind::Index(g!(a), g!(ty), g!(i)),
+      global::PlaceKind::Slice(a, ty, [i, l]) =>
+        PlaceKind::Slice(g!(a), g!(ty), [g!(i), g!(l)]),
+      global::PlaceKind::Proj(a, ty, i) => PlaceKind::Proj(g!(a), g!(ty), *i),
+      global::PlaceKind::Error => PlaceKind::Error,
+    })
+  }
+}
+
 impl<'a> FromGlobal<'a> for global::ExprKind {
   type Output = Expr<'a>;
   #[allow(clippy::many_single_char_names)]
   fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+    macro_rules! g {($e:expr) => {$e.from_global(c, t)}}
     intern!(c, match self {
       global::ExprKind::Unit => ExprKind::Unit,
       &global::ExprKind::Var(v) => ExprKind::Var(v),
       &global::ExprKind::Const(c) => ExprKind::Const(c),
       &global::ExprKind::Bool(b) => ExprKind::Bool(b),
       global::ExprKind::Int(n) => ExprKind::Int(c.alloc.alloc(n.clone())),
-      global::ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.from_global(c, t)),
-      global::ExprKind::Binop(op, e1, e2) =>
-        ExprKind::Binop(*op, e1.from_global(c, t), e2.from_global(c, t)),
-      global::ExprKind::Index(a, i) => ExprKind::Index(a.from_global(c, t), i.from_global(c, t)),
-      global::ExprKind::Slice(a, i, l) =>
-        ExprKind::Slice(a.from_global(c, t), i.from_global(c, t), l.from_global(c, t)),
-      global::ExprKind::Proj(a, i) => ExprKind::Proj(a.from_global(c, t), *i),
-      global::ExprKind::UpdateIndex(a, i, v) =>
-        ExprKind::UpdateIndex(a.from_global(c, t), i.from_global(c, t), v.from_global(c, t)),
-      global::ExprKind::UpdateSlice(a, i, l, v) => ExprKind::UpdateSlice(
-        a.from_global(c, t), i.from_global(c, t), l.from_global(c, t), v.from_global(c, t)),
-      global::ExprKind::UpdateProj(a, i, v) =>
-        ExprKind::UpdateProj(a.from_global(c, t), *i, v.from_global(c, t)),
-      global::ExprKind::List(es) => ExprKind::List(es.from_global(c, t)),
-      global::ExprKind::Array(es) => ExprKind::Array(es.from_global(c, t)),
-      global::ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.from_global(c, t)),
-      global::ExprKind::Ref(e) => ExprKind::Ref(e.from_global(c, t)),
-      global::ExprKind::Mm0(e) => ExprKind::Mm0(e.from_global(c, t)),
+      global::ExprKind::Unop(op, e) => ExprKind::Unop(*op, g!(e)),
+      global::ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, g!(e1), g!(e2)),
+      global::ExprKind::Index(a, i) => ExprKind::Index(g!(a), g!(i)),
+      global::ExprKind::Slice([a, i, l]) => ExprKind::Slice([g!(a), g!(i), g!(l)]),
+      global::ExprKind::Proj(a, i) => ExprKind::Proj(g!(a), *i),
+      global::ExprKind::UpdateIndex([a, i, v]) => ExprKind::UpdateIndex([g!(a), g!(i), g!(v)]),
+      global::ExprKind::UpdateSlice([a, i, l, v]) =>
+        ExprKind::UpdateSlice([g!(a), g!(i), g!(l), g!(v)]),
+      global::ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(g!(a), *i, g!(v)),
+      global::ExprKind::List(es) => ExprKind::List(g!(es)),
+      global::ExprKind::Array(es) => ExprKind::Array(g!(es)),
+      global::ExprKind::Sizeof(ty) => ExprKind::Sizeof(g!(ty)),
+      global::ExprKind::Ref(e) => ExprKind::Ref(g!(e)),
+      global::ExprKind::Mm0(e) => ExprKind::Mm0(g!(e)),
       &global::ExprKind::Call {f, ref tys, ref args} =>
-        ExprKind::Call {f, tys: tys.from_global(c, t), args: args.from_global(c, t)},
+        ExprKind::Call {f, tys: g!(tys), args: g!(args)},
       global::ExprKind::If {cond, then, els} => ExprKind::If {
-        cond: cond.from_global(c, t), then: then.from_global(c, t), els: els.from_global(c, t)},
+        cond: g!(cond), then: g!(then), els: g!(els)},
       global::ExprKind::Error => ExprKind::Error,
     })
   }
@@ -1168,7 +1218,7 @@ impl TupleMatchKind {
           exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
       }
       Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
-      Self::Own => intern!(ctx, ExprKind::Ref((*exprs.first()?)?)),
+      Self::Own => (*exprs.get(1)?)?,
     })
   }
 
@@ -1262,7 +1312,7 @@ impl<'a> TupleIter<'a> {
 
   /// Finishes a call to `next` by substituting `val` into all types in the
   /// rest of the sequence of types.
-  fn push(&mut self, ctx: &mut InferCtx<'a>, val: Expr<'a>) {
+  fn push(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, val: Expr<'a>) {
     match self {
       Self::Ty(_) | Self::List(_) => {}
       &mut Self::Sn(e, _) => {
@@ -1275,7 +1325,14 @@ impl<'a> TupleIter<'a> {
         let_unchecked!(Self::Args(args) = mem::take(self),
           *self = Self::mk_args(ctx, args.span, args.subst, args.rest))
       }
-      Self::Own(_) => *self = Self::Ty(Some(intern!(ctx, TyKind::RefSn(val)))),
+      Self::Own(_) => *self = Self::Ty(Some(intern!(ctx, TyKind::RefSn({
+        if let ExprKind::Var(v) = val.k {
+          intern!(ctx, PlaceKind::Var(v))
+        } else {
+          ctx.errors.push(hir::Spanned {span: sp, k: TypeError::UnsupportedPlaceMatch});
+          ctx.common.p_error
+        }
+      })))),
     }
   }
 }
@@ -1293,6 +1350,7 @@ struct Common<'a> {
   t_int: [Ty<'a>; 5],
   t_error: Ty<'a>,
   e_error: Expr<'a>,
+  p_error: Place<'a>,
   e_num: [Expr<'a>; 5],
 }
 
@@ -1310,6 +1368,7 @@ impl<'a> Common<'a> {
       t_int: allocs!(|sz| TyKind::Int(IntTy::Int(sz)); S8, S16, S32, S64, Inf),
       t_error: alloc!(TyKind::Error),
       e_error: alloc!(ExprKind::Error),
+      p_error: alloc!(PlaceKind::Error),
       t_true: alloc!(TyKind::True),
       t_false: alloc!(TyKind::False),
       e_num: allocs!(|x: u32| ExprKind::Int(alloc.alloc(x.into())); 0, 1, 2, 4, 8),
@@ -1437,6 +1496,16 @@ impl<'a> InferCtx<'a> {
       self.expr_mvars.assign(v, e);
     }
     true
+  }
+
+  fn place_to_expr(&mut self, p: Place<'a>) -> Expr<'a> {
+    intern!(self, match p.k {
+      PlaceKind::Var(v) => ExprKind::Var(v),
+      PlaceKind::Index(a, _, i) => ExprKind::Index(self.place_to_expr(a), i),
+      PlaceKind::Slice(a, _, [i, l]) => ExprKind::Slice([self.place_to_expr(a), i, l]),
+      PlaceKind::Proj(a, _, i) => ExprKind::Proj(self.place_to_expr(a), i),
+      PlaceKind::Error => ExprKind::Error,
+    })
   }
 
   pub(crate) fn get_lft_or_assign_extern(&mut self, v: LftMVarId) -> Lifetime {
@@ -1582,7 +1651,7 @@ impl<'a> InferCtx<'a> {
         then { self.whnf_expr(sp, es[i]) }
         else { e }
       },
-      ExprKind::Slice(a, i, l) => if_chain! {
+      ExprKind::Slice([a, i, l]) => if_chain! {
         if let ExprKind::Array(es) = self.whnf_expr(sp, a).k;
         if let ExprKind::Int(i) = self.whnf_expr(sp, i).k;
         if let Ok(i) = usize::try_from(i);
@@ -1600,7 +1669,7 @@ impl<'a> InferCtx<'a> {
         then { self.whnf_expr(sp, es[i]) }
         else { e }
       },
-      ExprKind::UpdateIndex(a, i, val) => if_chain! {
+      ExprKind::UpdateIndex([a, i, val]) => if_chain! {
         if let ExprKind::Array(es) = self.whnf_expr(sp, a).k;
         if let ExprKind::Int(i) = self.whnf_expr(sp, i).k;
         if let Ok(i) = usize::try_from(i);
@@ -1612,7 +1681,7 @@ impl<'a> InferCtx<'a> {
         }}
         else { e }
       },
-      ExprKind::UpdateSlice(a, i, l, val) => if_chain! {
+      ExprKind::UpdateSlice([a, i, l, val]) => if_chain! {
         if let ExprKind::Array(es) = self.whnf_expr(sp, a).k;
         if let ExprKind::Int(i) = self.whnf_expr(sp, i).k;
         if let Ok(i) = usize::try_from(i);
@@ -1884,7 +1953,7 @@ impl<'a> InferCtx<'a> {
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?}
       (ExprKind::Index(a1, a2), ExprKind::Index(b1, b2)) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?}
-      (ExprKind::Slice(a1, a2, a3), ExprKind::Slice(b1, b2, b3)) =>
+      (ExprKind::Slice([a1, a2, a3]), ExprKind::Slice([b1, b2, b3])) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
       (ExprKind::Proj(a1, p_a), ExprKind::Proj(b1, p_b)) if p_a == p_b => self.equate_expr(a1, b1)?,
       (ExprKind::List(ls_a), ExprKind::List(ls_b)) if ls_a.len() == ls_b.len() =>
@@ -1930,6 +1999,27 @@ impl<'a> InferCtx<'a> {
     Ok(())
   }
 
+  fn equate_place(&mut self, a: Place<'a>, b: Place<'a>) -> StdResult<(), ()> {
+    if a == b { return Ok(()) }
+    match (a.k, b.k) {
+      (PlaceKind::Error, _) | (_, PlaceKind::Error) => {}
+      (PlaceKind::Index(a1, ty_a, a2), PlaceKind::Index(b1, ty_b, b2)) if ty_a == ty_b => {
+        self.equate_place(a1, b1)?;
+        self.equate_expr(a2, b2)?
+      }
+      (PlaceKind::Slice(a1, ty_a, [a2, a3]), PlaceKind::Slice(b1, ty_b, [b2, b3]))
+      if ty_a == ty_b => {
+        self.equate_place(a1, b1)?;
+        self.equate_expr(a2, b2)?;
+        self.equate_expr(a3, b3)?
+      }
+      (PlaceKind::Proj(a1, ty_a, p_a), PlaceKind::Proj(b1, ty_b, p_b))
+      if p_a == p_b && ty_a == ty_b => self.equate_place(a1, b1)?,
+      _ => return Err(())
+    }
+    Ok(())
+  }
+
   fn relate_whnf_ty(&mut self, from: WhnfTy<'a>, to: WhnfTy<'a>, mut rel: Relation) -> StdResult<Vec<Coercion>, ()> {
     macro_rules! check {($($i:ident),*) => {{
       $(if from.$i != to.$i { return Err(()) })*
@@ -1970,7 +2060,7 @@ impl<'a> InferCtx<'a> {
       }
       (TyKind::RefSn(a1), TyKind::RefSn(b1)) => {
         check!(uninit, ghost);
-        self.equate_expr(a1, b1)?;
+        self.equate_place(a1, b1)?;
       }
       (TyKind::List(tys_a), TyKind::List(tys_b)) if tys_a.len() == tys_b.len() => {
         for (&ty_a, &ty_b) in tys_a.iter().zip(tys_b) {
@@ -2148,7 +2238,7 @@ impl<'a> InferCtx<'a> {
         TyKind::Array(ty, _) => ty,
         _ => return None,
       }
-      ExprKind::Slice(a, _, len) => match self.expr_type(sp, a)?.k {
+      ExprKind::Slice([a, _, len]) => match self.expr_type(sp, a)?.k {
         TyKind::Array(ty, _) => intern!(self, TyKind::Array(ty, len)),
         _ => return None,
       }
@@ -2197,6 +2287,44 @@ impl<'a> InferCtx<'a> {
       ExprKind::Sizeof(_) => self.common.nat(),
       ExprKind::Error => self.common.t_error,
       _ => return None,
+    })
+  }
+
+  /// Get the type of the given place.
+  fn place_type(&mut self, sp: &'a FileSpan, e: Place<'a>) -> Option<Ty<'a>> {
+    Some(match e.k {
+      PlaceKind::Var(v) => self.dc.get_var(v).2,
+      PlaceKind::Index(a, _, _) => match self.place_type(sp, a)?.k {
+        TyKind::Array(ty, _) => ty,
+        _ => return None,
+      }
+      PlaceKind::Slice(a, _, [_, len]) => match self.place_type(sp, a)?.k {
+        TyKind::Array(ty, _) => intern!(self, TyKind::Array(ty, len)),
+        _ => return None,
+      }
+      PlaceKind::Proj(a, _, i) => {
+        let aty = self.place_type(sp, a)?;
+        match aty.k {
+          TyKind::List(tys) => *tys.get(u32_as_usize(i))?,
+          TyKind::Struct(args) => {
+            let ty = args.get(u32_as_usize(i))?.k.1.var().k.ty();
+            let mut subst = Subst::default();
+            subst.add_fvars_place(a);
+            let a = self.place_to_expr(a);
+            for (j, &arg) in args.iter().enumerate().take(u32_as_usize(i)) {
+              match arg.k.1.var().k {
+                TuplePatternKind::Name(_, v, _) =>
+                  subst.push_raw(v, Ok(intern!(self,
+                    ExprKind::Proj(a, j.try_into().expect("overflow"))))),
+                _ => unimplemented!("subfields"),
+              }
+            }
+            subst.subst_ty(self, sp, ty)
+          }
+          _ => return None,
+        }
+      }
+      PlaceKind::Error => self.common.t_error,
     })
   }
 
@@ -2317,7 +2445,7 @@ impl<'a> InferCtx<'a> {
       let tgt = opt_it.as_mut().and_then(|it| it.next(self));
       let (pat, e) = self.lower_tuple_pattern(span, pat, None, tgt);
       if let Some(it) = &mut opt_it {
-        if let Some(e) = e { it.push(self, e) }
+        if let Some(e) = e { it.push(self, span, e) }
         else { opt_it = None }
       }
       es.push(e);
@@ -2361,10 +2489,10 @@ impl<'a> InferCtx<'a> {
           }
           TuplePatternResult::Tuple(mk, mut it) => {
             let mut es = Vec::with_capacity(pats.len());
-            let pats = pats.iter().map(|pat| {
+            let pats = pats.iter().map(|u_pat| {
               let tgt = it.next(self);
-              let (pat, e) = self.finish_tuple_pattern_inner(pat, tgt);
-              it.push(self, e);
+              let (pat, e) = self.finish_tuple_pattern_inner(u_pat, tgt);
+              it.push(self, u_pat.span, e);
               es.push(Some(e));
               pat
             }).collect::<Vec<_>>();
@@ -2425,8 +2553,8 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Ref(lft, ty))
       }
       ast::TypeKind::RefSn(e) => {
-        let (e, _) = self.lower_pure_expr(e, ExpectExpr::Any);
-        intern!(self, TyKind::RefSn(e))
+        let (e, pe) = self.lower_place(e);
+        intern!(self, TyKind::RefSn(self.as_pure_place(e.span, pe)))
       }
       ast::TypeKind::List(tys) => {
         let tys = self.alloc.alloc_slice_fill_iter(
@@ -2721,9 +2849,9 @@ impl<'a> InferCtx<'a> {
     }
 
     macro_rules! unit {() => {self.common.e_unit}}
-    macro_rules! ret {($k:expr, $pe:expr, $e:expr) => {{
+    macro_rules! ret {($k:expr, $pe:expr, $ty:expr) => {{
       let pe: RExpr<'a> = $pe;
-      (hir::Expr {span, k: {#[allow(unused)] use hir::ExprKind::*; ($k, (pe.ok(), $e))}}, pe)
+      (hir::Expr {span, k: {#[allow(unused)] use hir::ExprKind::*; ($k, (pe.ok(), $ty))}}, pe)
     }}}
     macro_rules! error {($($sp:expr, $es:expr),*) => {{
       $({
@@ -2732,12 +2860,10 @@ impl<'a> InferCtx<'a> {
       })*
       return ret![Error, Ok(self.common.e_error), self.common.t_error]
     }}}
-    macro_rules! eval_expr {
-      ($sp:expr, $e:expr, $ty:expr) => {{
-        if let Some(n) = self.eval_expr($sp, $e) { n }
-        else { error!($sp, UnsupportedSynthesis(Box::new(self.dc.clone()), $e, $ty)) }
-      }}
-    }
+    macro_rules! eval_expr {($sp:expr, $e:expr, $ty:expr) => {{
+      if let Some(n) = self.eval_expr($sp, $e) { n }
+      else { error!($sp, UnsupportedSynthesis(Box::new(self.dc.clone()), $e, $ty)) }
+    }}}
 
     match e {
       ast::ExprKind::Unit => ret![Unit, Ok(unit!()), self.common.t_unit],
@@ -2881,9 +3007,9 @@ impl<'a> InferCtx<'a> {
           None => Err(eval_expr!(span, n, self.common.nat())),
         };
         ret![Slice(Box::new(([e_a, e_i, e_l], hyp))),
-          arr.and_then(|a| Ok(intern!(self, ExprKind::Slice(a, idx?, pe_l)))),
+          arr.and_then(|a| Ok(intern!(self, ExprKind::Slice([a, idx?, pe_l])))),
           intern!(self, TyKind::Array(ty, pe_l))]
-      },
+      }
 
       ast::ExprKind::Proj(e, field) => {
         enum ProjKind<'a> {
@@ -2906,18 +3032,18 @@ impl<'a> InferCtx<'a> {
             _ => error!(e2.span, ExpectedStruct(wty))
           }
         };
-        let ret = |pk, i, pe, ty| ret![Proj(pk, Box::new(e2), i), pe, ty];
+        let ret = |lk, i, pe, ty| ret![Proj(lk, Box::new(e2), i), pe, ty];
         #[allow(clippy::never_loop)] loop { // try block, not a loop
           match tys {
             ProjKind::List(tys) => if let FieldName::Number(i) = field.k {
               if let Some(&ty) = tys.get(u32_as_usize(i)) {
-                break ret(ProjectionKind::List, i,
+                break ret(ListKind::List, i,
                   pe.map(|pe| intern!(self, ExprKind::Proj(pe, i))), ty)
               }
             }
             ProjKind::And(tys) => if let FieldName::Number(i) = field.k {
               if let Some(&ty) = tys.get(u32_as_usize(i)) {
-                break ret(ProjectionKind::And, i, pe, ty)
+                break ret(ListKind::And, i, pe, ty)
               }
             }
             ProjKind::Struct(args) => {
@@ -2939,31 +3065,27 @@ impl<'a> InferCtx<'a> {
                   }
                 }
                 let ty = subst.subst_ty(self, span, ty);
-                break ret(ProjectionKind::Struct, i,
+                break ret(ListKind::Struct, i,
                   pe.map(|pe| intern!(self, ExprKind::Proj(pe, i))), ty)
               }
             }
           }
           error!(&field.span, FieldMissing(wty, field.k))
         }
-      },
+      }
 
       ast::ExprKind::Deref(e) => {
-        let expect2 = match expect {
-          ExpectExpr::Sn(a, _) => ExpectExpr::HasTy(intern!(self, TyKind::RefSn(a))),
-          _ => ExpectExpr::Any
-        };
-        let e2 = self.lower_expr(e, expect2).0;
+        let e2 = self.lower_expr(e, ExpectExpr::Any).0;
         let ty = e2.ty();
         match self.whnf_ty(span, ty.into()).ty.k {
-          TyKind::RefSn(e) => if let Some(ty) = self.expr_type(span, e) {
-            ret![Deref(Box::new(e2)), Ok(e), ty]
+          TyKind::RefSn(e) => if let Some(ty) = self.place_type(span, e) {
+            ret![Deref(Box::new(e2)), Ok(self.place_to_expr(e)), ty]
           } else {
             error!(e2.span, ExpectedPlace)
           }
           TyKind::Error => error!(),
           _ => {
-            let tgt = intern!(self, TyKind::RefSn(self.new_expr_mvar(e2.span)));
+            let tgt = intern!(self, TyKind::RefSn(self.common.p_error));
             error!(e2.span, Relate(ty, tgt, Relation::Equal))
           }
         }
@@ -3027,7 +3149,7 @@ impl<'a> InferCtx<'a> {
             }).collect();
             let pes = pes.map(|pes| intern!(self, ExprKind::Array(
               self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
-            ret![List(es), pes, ty]
+            ret![List(ListKind::Array, es), pes, ty]
           }
           TyKind::List(tgts) => {
             expect!(tgts.len());
@@ -3044,7 +3166,7 @@ impl<'a> InferCtx<'a> {
             }).collect();
             let pes = pes.map(|pes| intern!(self, ExprKind::List(
               self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
-            ret![List(es), pes, tgt]
+            ret![List(ListKind::List, es), pes, tgt]
           }
           TyKind::And(tgts) => {
             expect!(tgts.len());
@@ -3060,7 +3182,7 @@ impl<'a> InferCtx<'a> {
               e
             }).collect();
             if let Some(val) = val {
-              ret![List(es), Ok(val), tgt]
+              ret![List(ListKind::And, es), Ok(val), tgt]
             } else {
               proof![ITrue, self.common.t_unit]
             }
@@ -3070,7 +3192,7 @@ impl<'a> InferCtx<'a> {
             let (es, pes, _) = self.check_args(span, es, args, |x| x.k.1);
             let val = pes.map(|pes| intern!(self, ExprKind::List(
               self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
-            ret![List(es), val, tgt]
+            ret![List(ListKind::Struct, es), val, tgt]
           }
           TyKind::Own(_) |
           TyKind::Sn(_, _) => { expect!(2); todo!() }
@@ -3096,14 +3218,14 @@ impl<'a> InferCtx<'a> {
       }
 
       ast::ExprKind::Ref(e) => {
-        let (e, pe) = self.lower_expr(e, expect);
+        let (e, pe) = self.lower_place(e);
         let ty = e.ty();
-        ret![Ref(Box::new(e)), pe, ty]
+        ret![Ref(Box::new(e)), pe.map(|pe| self.place_to_expr(pe)), ty]
       }
 
       ast::ExprKind::Borrow(e) => {
-        let (e, pe) = self.lower_expr(e, expect);
-        let pe = self.as_pure(e.span, pe);
+        let (e, pe) = self.lower_place(e);
+        let pe = self.as_pure_place(e.span, pe);
         ret![Borrow(Box::new(e)),
           Ok(intern!(self, ExprKind::Ref(pe))),
           intern!(self, TyKind::RefSn(pe))]
@@ -3138,7 +3260,7 @@ impl<'a> InferCtx<'a> {
           if let TyKind::Int(ity2) = tgt.k;
           then {
             if ity <= ity2 {
-              ret![Cast(Box::new(e), ty, tgt, hir::CastKind::Subtype(None)), pe, tgt]
+              ret![Cast(Box::new(e), ty, hir::CastKind::Subtype(None)), pe, tgt]
             } else if let IntTy::UInt(Size::Inf) = ity2 {
               fail!()
             } else {
@@ -3151,7 +3273,7 @@ impl<'a> InferCtx<'a> {
             if matches!(ty.k, TyKind::Own(_) | TyKind::RefSn(_)) &&
               matches!(tgt.k, TyKind::Int(ity) if IntTy::UInt(Size::S64) <= ity) {
               let tgt = self.common.t_uint(Size::S64);
-              ret![Cast(Box::new(e), ty, tgt, hir::CastKind::Subtype(None)), pe, tgt]
+              ret![Cast(Box::new(e), ty, hir::CastKind::Subtype(None)), pe, tgt]
             } else { fail!() }
           }
         }
@@ -3182,7 +3304,7 @@ impl<'a> InferCtx<'a> {
             self.check_expr(h, hty).0
           })))
         };
-        ret![Cast(Box::new(e), ty, tgt, ck), pe, tgt]
+        ret![Cast(Box::new(e), ty, ck), pe, tgt]
       }
 
       ast::ExprKind::Pun(e, h) => {
@@ -3195,7 +3317,7 @@ impl<'a> InferCtx<'a> {
           let hty = intern!(self, TyKind::HasTy(pe, tgt));
           self.check_expr(h, hty).0
         })));
-        ret![Cast(Box::new(e), ty, tgt, ck), Ok(pe), tgt]
+        ret![Cast(Box::new(e), ty, ck), Ok(pe), tgt]
       }
 
       ast::ExprKind::Uninit => {
@@ -3231,26 +3353,22 @@ impl<'a> InferCtx<'a> {
       }
 
       ast::ExprKind::Assign {lhs, rhs, oldmap} => {
-        enum Lens<'a> {
+        enum Projection<'a> {
           Index(Expr<'a>),
           Slice(Expr<'a>, Expr<'a>),
           Proj(u32),
         }
-        let (lhs, plhs) = self.lower_expr(lhs, ExpectExpr::Any);
-        let plhs = self.as_pure(lhs.span, plhs);
+        let (lhs, plhs) = self.lower_place(lhs);
+        let plhs = self.as_pure_place(lhs.span, plhs);
         let mut origin = plhs;
         let mut lens = vec![];
         let v = loop {
           match origin.k {
-            ExprKind::Var(v) => break v,
-            ExprKind::Index(a, i) => {lens.push((a, Lens::Index(i))); origin = a}
-            ExprKind::Slice(a, i, l) => {lens.push((a, Lens::Slice(i, l))); origin = a}
-            ExprKind::Proj(a, i) => {lens.push((a, Lens::Proj(i))); origin = a}
-            ExprKind::Error => error!(),
-            ExprKind::Infer(v) =>
-              if let Some(e) = self.expr_mvars.lookup(v) { origin = e }
-              else { error!(lhs.span, ExpectedType) }
-            _ => error!(lhs.span, UnsupportedAssign),
+            PlaceKind::Var(v) => break v,
+            PlaceKind::Index(a, _, i) => {lens.push(Projection::Index(i)); origin = a}
+            PlaceKind::Slice(a, _, [i, l]) => {lens.push(Projection::Slice(i, l)); origin = a}
+            PlaceKind::Proj(a, _, i) => {lens.push(Projection::Proj(i)); origin = a}
+            PlaceKind::Error => error!(),
           }
         };
         let (rhs, prhs) = self.lower_expr(rhs, ExpectExpr::HasTy(lhs.ty()));
@@ -3262,12 +3380,22 @@ impl<'a> InferCtx<'a> {
         self.dc.context = self.new_context_next(old, e, ty).into();
         let newgen = self.new_generation();
         let val = if let Ok(mut val) = prhs {
-          for (a, l) in lens {
-            val = intern!(self, match l {
-              Lens::Index(i) => ExprKind::UpdateIndex(a, i, val),
-              Lens::Slice(i, l) => ExprKind::UpdateSlice(a, i, l, val),
-              Lens::Proj(i) => ExprKind::UpdateProj(a, i, val),
-            })
+          let mut elhs = intern!(self, ExprKind::Var(v));
+          for l in lens {
+            match l {
+              Projection::Index(i) => {
+                val = intern!(self, ExprKind::UpdateIndex([elhs, i, val]));
+                elhs = intern!(self, ExprKind::Index(elhs, i));
+              }
+              Projection::Slice(i, l) => {
+                val = intern!(self, ExprKind::UpdateSlice([elhs, i, l, val]));
+                elhs = intern!(self, ExprKind::Slice([elhs, i, l]));
+              }
+              Projection::Proj(i) => {
+                val = intern!(self, ExprKind::UpdateProj(elhs, i, val));
+                elhs = intern!(self, ExprKind::Proj(elhs, i));
+              }
+            }
           }
           val
         } else {
@@ -3277,8 +3405,8 @@ impl<'a> InferCtx<'a> {
         let e = hir::ExprKind::Assign {
           lhs: Box::new(lhs),
           rhs: Box::new(rhs),
-          oldmap: Box::new([(v, old)]),
-          gen: newgen
+          map: Box::new([(v, old, (Some(val), ty))]),
+          gen: newgen,
         };
         ret![e, Ok(unit!()), self.common.t_unit]
       }
@@ -3320,16 +3448,16 @@ impl<'a> InferCtx<'a> {
           let from = intern!(self, TyKind::And(self.alloc.alloc_slice_fill_iter(tys.into_iter())));
           let ty = intern!(self, TyKind::Imp(from, tgt));
           let e = Box::new(hir::Spanned {span, k:
-            (hir::ExprKind::List(ps), (Some(unit!()), from))});
+            (hir::ExprKind::List(ListKind::List, ps), (Some(unit!()), from))});
           let ck = hir::CastKind::Subtype(Some(Box::new(self.elab_proof(span, ty, pf))));
-          hir::ExprKind::Cast(e, from, tgt, ck)
+          hir::ExprKind::Cast(e, from, ck)
         } else {
           let from = intern!(self, TyKind::List(self.alloc.alloc_slice_fill_iter(tys.into_iter())));
           let ty = intern!(self, TyKind::Wand(from, tgt));
           let e = Box::new(hir::Spanned {span, k:
-            (hir::ExprKind::List(ps), (Some(unit!()), from))});
+            (hir::ExprKind::List(ListKind::List, ps), (Some(unit!()), from))});
           let ck = hir::CastKind::Wand(unit!(), Some(Box::new(self.elab_proof(span, ty, pf))));
-          hir::ExprKind::Cast(e, from, tgt, ck)
+          hir::ExprKind::Cast(e, from, ck)
         };
         ret![pr, Ok(unit!()), tgt]
       }
@@ -3563,10 +3691,10 @@ impl<'a> InferCtx<'a> {
         (hir::ExprKind::If {hyp: None, cond, cases, gen: self.dc.generation, muts: vec![]}, ty1)
       }
       ExprKind::Index(_, _) |
-      ExprKind::Slice(_, _, _) |
+      ExprKind::Slice(_) |
       ExprKind::Proj(_, _) |
-      ExprKind::UpdateIndex(_, _, _) |
-      ExprKind::UpdateSlice(_, _, _, _) |
+      ExprKind::UpdateIndex(_) |
+      ExprKind::UpdateSlice(_) |
       ExprKind::UpdateProj(_, _, _) |
       ExprKind::List(_) |
       ExprKind::Array(_) |
@@ -3675,6 +3803,112 @@ impl<'a> InferCtx<'a> {
       self.errors.push(hir::Spanned {span, k: TypeError::ExpectedPure(sp)});
       self.common.e_error
     })
+  }
+
+  fn as_pure_place(&mut self, span: &'a FileSpan, pe: RPlace<'a>) -> Place<'a> {
+    pe.unwrap_or_else(|sp| {
+      self.errors.push(hir::Spanned {span, k: TypeError::ExpectedPure(sp)});
+      self.common.p_error
+    })
+  }
+
+  #[allow(clippy::similar_names)]
+  fn lower_place(&mut self, Spanned {span, k}: &'a ast::Expr) -> (hir::Place<'a>, RPlace<'a>) {
+    macro_rules! ret {($k:expr, $pe:expr, $ty:expr) => {
+      (hir::Place {span, k: {#[allow(unused)] use hir::PlaceKind::*; ($k, $ty)}}, $pe)
+    }}
+    macro_rules! error {($($sp:expr, $es:expr),*) => {{
+      $({
+        use TypeError::*; let k = $es;
+        self.errors.push(hir::Spanned {span: $sp, k});
+      })*
+      return ret![Error, Ok(self.common.p_error), self.common.t_error]
+    }}}
+    macro_rules! eval_expr {($sp:expr, $e:expr, $ty:expr) => {{
+      if let Some(n) = self.eval_expr($sp, $e) { n }
+      else { error!($sp, UnsupportedSynthesis(Box::new(self.dc.clone()), $e, $ty)) }
+    }}}
+    match k {
+      &ast::ExprKind::Var(v) => {
+        let (_, _, ty) = self.dc.get_var(v);
+        ret![Var(v), Ok(intern!(self, PlaceKind::Var(v))), ty]
+      }
+
+      ast::ExprKind::Index(arr, idx, hyp) => {
+        let (e_a, arr) = self.lower_place(arr);
+        let arrty = self.whnf_ty(span, e_a.ty().into()).ty;
+        let (ty, n) = match arrty.k {
+          TyKind::Array(ty, n) => (ty, n),
+          TyKind::Error => error!(),
+          _ => {
+            let ty2 = TyKind::Array(self.new_ty_mvar(span), self.new_expr_mvar(span));
+            error!(span, Relate(arrty, intern!(self, ty2), Relation::Equal))
+          }
+        };
+        let (e_i, idx) = self.check_expr(idx, self.common.nat());
+        let hyp = match hyp {
+          Some(h) => {
+            let idx = self.as_pure(e_i.span, idx);
+            let ty = intern!(self, TyKind::Pure(
+              intern!(self, ExprKind::Binop(Binop::Lt, idx, n))));
+            Ok(self.check_expr(h, ty).0)
+          }
+          None => Err(eval_expr!(span, n, self.common.nat())),
+        };
+        ret![Index(Box::new((e_a, e_i, hyp))),
+          arr.and_then(|a| Ok(intern!(self, PlaceKind::Index(a, arrty, idx?)))),
+          ty]
+      }
+
+      ast::ExprKind::Slice(args, hyp) => {
+        let (arr, idx, len) = &**args;
+        let (e_a, arr) = self.lower_place(arr);
+        let arrty = self.whnf_ty(span, e_a.ty().into()).ty;
+        let (ty, n) =  match arrty.k {
+          TyKind::Array(ty, n) => (ty, n),
+          TyKind::Error => error!(),
+          _ => {
+            let ty2 = TyKind::Array(self.new_ty_mvar(span), self.new_expr_mvar(span));
+            error!(span, Relate(arrty, intern!(self, ty2), Relation::Equal))
+          }
+        };
+        let (e_i, idx) = self.check_expr(idx, self.common.nat());
+        let (e_l, len) = self.check_expr(len, self.common.nat());
+        let pe_l = self.as_pure(e_l.span, len);
+        let hyp = match hyp {
+          Some(hyp) => {
+            let e_i = self.as_pure(e_i.span, idx);
+            let ty = intern!(self, TyKind::Pure(
+              intern!(self, ExprKind::Binop(Binop::Le,
+                intern!(self, ExprKind::Binop(Binop::Add, e_i, pe_l)), n))));
+            Ok(self.check_expr(hyp, ty).0)
+          }
+          None => Err(eval_expr!(span, n, self.common.nat())),
+        };
+        ret![Slice(Box::new((e_a, [e_i, e_l], hyp))),
+          arr.and_then(|a| Ok(intern!(self, PlaceKind::Slice(a, arrty, [idx?, pe_l])))),
+          intern!(self, TyKind::Array(ty, pe_l))]
+      }
+
+      ast::ExprKind::Deref(e) => {
+        let e2 = self.lower_expr(e, ExpectExpr::Any).0;
+        let ty = e2.ty();
+        match self.whnf_ty(span, ty.into()).ty.k {
+          TyKind::RefSn(e) => if let Some(ty) = self.place_type(span, e) {
+            ret![Deref(Box::new(e2)), Ok(e), ty]
+          } else {
+            error!(e2.span, ExpectedPlace)
+          }
+          TyKind::Error => error!(),
+          _ => {
+            let tgt = intern!(self, TyKind::RefSn(self.common.p_error));
+            error!(e2.span, Relate(ty, tgt, Relation::Equal))
+          }
+        }
+      }
+
+      _ => error!(span, ExpectedPlace),
+    }
   }
 
   fn lower_stmt(&mut self, Spanned {span, k: stmt}: &'a ast::Stmt, tgt: Ty<'a>) -> UnelabStmt<'a> {
@@ -3837,7 +4071,7 @@ impl<'a> InferCtx<'a> {
             (span, hir::ExprKind::Return(vec![]))
           }
           1 => (span, hir::ExprKind::Return(vec![e])),
-          _ => if let hir::Spanned {span, k: (hir::ExprKind::List(es), _)} = e {
+          _ => if let hir::Spanned {span, k: (hir::ExprKind::List(_, es), _)} = e {
             (span, hir::ExprKind::Return(es))
           } else {
             (span, hir::ExprKind::UnpackReturn(Box::new(e)))

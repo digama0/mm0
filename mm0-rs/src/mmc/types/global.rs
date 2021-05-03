@@ -19,6 +19,7 @@ pub(crate) struct ToGlobalCtx<'a> {
   tpat: Mapper<'a, ty::TuplePatternKind<'a>>,
   arg: Mapper<'a, ty::ArgS<'a>>,
   expr: Mapper<'a, ty::ExprKind<'a>>,
+  place: Mapper<'a, ty::PlaceKind<'a>>,
   ty: Mapper<'a, ty::TyKind<'a>>,
   mm0: HashMap<*const Mm0ExprNode, Rc<Mm0ExprNode>>,
 }
@@ -34,6 +35,10 @@ impl<'a> Internable<'a> for ty::ArgS<'a> {
 impl<'a> Internable<'a> for ty::ExprKind<'a> {
   type Inner = ExprKind;
   fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.expr }
+}
+impl<'a> Internable<'a> for ty::PlaceKind<'a> {
+  type Inner = PlaceKind;
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.place }
 }
 impl<'a> Internable<'a> for ty::TyKind<'a> {
   type Inner = TyKind;
@@ -59,6 +64,13 @@ impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for &'a [T] {
   type Output = Box<[T::Output]>;
   fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Box<[T::Output]> {
     self.iter().map(|t| t.to_global(ctx)).collect()
+  }
+}
+
+impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for [T; 2] {
+  type Output = [T::Output; 2];
+  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> [T::Output; 2] {
+    [self[0].to_global(ctx), self[1].to_global(ctx)]
   }
 }
 
@@ -232,7 +244,7 @@ pub enum TyKind {
   /// (see [`Lifetime`]).
   Ref(Lifetime, Ty),
   /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
-  RefSn(Expr),
+  RefSn(Place),
   /// `(A, B, C)` is a tuple type with elements `A, B, C`;
   /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
   List(Box<[Ty]>),
@@ -433,6 +445,58 @@ impl Remap for Variant {
 
 /// A pure expression. (Regular expressions are not manipulated like types,
 /// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
+pub type Place = Rc<PlaceKind>;
+
+/// A pure expression.
+#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+pub enum PlaceKind {
+  /// A variable reference.
+  Var(VarId),
+  /// An index operation `a[i]: T` where `a: (array T n)`
+  /// and `i: nat`.
+  Index(Place, Ty, Expr),
+  /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
+  Slice(Place, Ty, [Expr; 2]),
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(Place, Ty, u32),
+  /// A type error that has been reported.
+  Error,
+}
+
+impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
+  type Output = Rc<PlaceKind>;
+  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+    Rc::new(match *self {
+      ty::PlaceKind::Var(v) => PlaceKind::Var(v),
+      ty::PlaceKind::Index(a, ty, i) =>
+        PlaceKind::Index(a.to_global(ctx), ty.to_global(ctx), i.to_global(ctx)),
+      ty::PlaceKind::Slice(a, ty, il) =>
+        PlaceKind::Slice(a.to_global(ctx), ty.to_global(ctx), il.to_global(ctx)),
+      ty::PlaceKind::Proj(a, ty, i) => PlaceKind::Proj(a.to_global(ctx), ty.to_global(ctx), i),
+      ty::PlaceKind::Error => PlaceKind::Error,
+    })
+  }
+}
+
+impl Remap for PlaceKind {
+  type Target = Self;
+  #[allow(clippy::many_single_char_names)]
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      &PlaceKind::Var(v) => PlaceKind::Var(v),
+      PlaceKind::Index(a, ty, i) =>
+        PlaceKind::Index(a.remap(r), ty.remap(r), i.remap(r)),
+      PlaceKind::Slice(a, ty, il) =>
+        PlaceKind::Slice(a.remap(r), ty.remap(r), il.remap(r)),
+      PlaceKind::Proj(a, ty, i) => PlaceKind::Proj(a.remap(r), ty.remap(r), *i),
+      PlaceKind::Error => PlaceKind::Error,
+    }
+  }
+}
+
+/// A pure expression. (Regular expressions are not manipulated like types,
+/// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression.
@@ -456,14 +520,14 @@ pub enum ExprKind {
   /// and `i: nat`.
   Index(Expr, Expr),
   /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
-  Slice(Expr, Expr, Expr),
+  Slice([Expr; 3]),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(Expr, u32),
   /// `(update-index a i e)` is the result of `a` after `a[i] = e`.
-  UpdateIndex(Expr, Expr, Expr),
+  UpdateIndex([Expr; 3]),
   /// `(update-slice x a b e)` is the result of assigning `x[a..a+b] = e`.
-  UpdateSlice(Expr, Expr, Expr, Expr),
+  UpdateSlice([Expr; 4]),
   /// `(update-proj x i)` is the result of assigning `x.i = e`.
   UpdateProj(Expr, u32, Expr),
   /// `(e1, ..., en)` returns a tuple of the arguments.
@@ -473,7 +537,7 @@ pub enum ExprKind {
   /// Return the size of a type.
   Sizeof(Ty),
   /// A pointer to a place.
-  Ref(Expr),
+  Ref(Place),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr),
@@ -512,13 +576,13 @@ impl<'a> ToGlobal<'a> for ty::ExprKind<'a> {
       ty::ExprKind::Unop(op, e) => ExprKind::Unop(op, e.to_global(ctx)),
       ty::ExprKind::Binop(op, e1, e2) => ExprKind::Binop(op, e1.to_global(ctx), e2.to_global(ctx)),
       ty::ExprKind::Index(a, i) => ExprKind::Index(a.to_global(ctx), i.to_global(ctx)),
-      ty::ExprKind::Slice(a, i, l) =>
-        ExprKind::Slice(a.to_global(ctx), i.to_global(ctx), l.to_global(ctx)),
+      ty::ExprKind::Slice([a, i, l]) =>
+        ExprKind::Slice([a.to_global(ctx), i.to_global(ctx), l.to_global(ctx)]),
       ty::ExprKind::Proj(a, i) => ExprKind::Proj(a.to_global(ctx), i),
-      ty::ExprKind::UpdateIndex(a, i, v) =>
-        ExprKind::UpdateIndex(a.to_global(ctx), i.to_global(ctx), v.to_global(ctx)),
-      ty::ExprKind::UpdateSlice(a, i, l, v) => ExprKind::UpdateSlice(
-        a.to_global(ctx), i.to_global(ctx), l.to_global(ctx), v.to_global(ctx)),
+      ty::ExprKind::UpdateIndex([a, i, v]) =>
+        ExprKind::UpdateIndex([a.to_global(ctx), i.to_global(ctx), v.to_global(ctx)]),
+      ty::ExprKind::UpdateSlice([a, i, l, v]) => ExprKind::UpdateSlice(
+        [a.to_global(ctx), i.to_global(ctx), l.to_global(ctx), v.to_global(ctx)]),
       ty::ExprKind::UpdateProj(a, i, v) =>
         ExprKind::UpdateProj(a.to_global(ctx), i, v.to_global(ctx)),
       ty::ExprKind::List(es) => ExprKind::List(es.to_global(ctx)),
@@ -549,11 +613,12 @@ impl Remap for ExprKind {
       ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),
       ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
       ExprKind::Index(a, i) => ExprKind::Index(a.remap(r), i.remap(r)),
-      ExprKind::Slice(a, i, l) => ExprKind::Slice(a.remap(r), i.remap(r), l.remap(r)),
+      ExprKind::Slice([a, i, l]) => ExprKind::Slice([a.remap(r), i.remap(r), l.remap(r)]),
       ExprKind::Proj(a, i) => ExprKind::Proj(a.remap(r), *i),
-      ExprKind::UpdateIndex(a, i, v) => ExprKind::UpdateIndex(a.remap(r), i.remap(r), v.remap(r)),
-      ExprKind::UpdateSlice(a, i, l, v) =>
-        ExprKind::UpdateSlice(a.remap(r), i.remap(r), l.remap(r), v.remap(r)),
+      ExprKind::UpdateIndex([a, i, v]) =>
+        ExprKind::UpdateIndex([a.remap(r), i.remap(r), v.remap(r)]),
+      ExprKind::UpdateSlice([a, i, l, v]) =>
+        ExprKind::UpdateSlice([a.remap(r), i.remap(r), l.remap(r), v.remap(r)]),
       ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(a.remap(r), *i, v.remap(r)),
       ExprKind::List(es) => ExprKind::List(es.remap(r)),
       ExprKind::Array(es) => ExprKind::Array(es.remap(r)),

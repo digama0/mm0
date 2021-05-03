@@ -69,6 +69,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Borrow, convert::TryInto};
 
@@ -113,6 +114,21 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
       }
       Entry::Occupied(e) => Some((v, e)),
     }
+  }
+}
+
+/// Extension trait for [`HashMap`]`<K, V>`.
+pub trait RcExt<T> {
+  /// Extract `T` from `Rc<T>` by cloning the inner data unless it is unshared.
+  fn unwrap(this: Self) -> T
+  where T: Clone;
+}
+
+impl<T> RcExt<T> for Rc<T> {
+  #[inline]
+  fn unwrap(this: Self) -> T
+  where T: Clone {
+    Rc::try_unwrap(this).unwrap_or_else(|r| (*r).clone())
   }
 }
 

@@ -247,15 +247,17 @@ pub enum StmtKind<'a> {
 
 /// The different kinds of projection, used in defining places.
 #[derive(Copy, Clone, Debug)]
-pub enum ProjectionKind {
+pub enum ListKind {
   /// A projection `a.i` which retrieves the `i`th element of a tuple.
   List,
   /// A projection `a.i` which retrieves the `i`th element of a dependent tuple.
   Struct,
+  /// A projection `a[i]` which retrieves the `i`th element of an array.
+  Array,
   /// A projection `a.i` which views a conjunction type as its `i`th conjunct.
   And,
 }
-crate::deep_size_0!(ProjectionKind);
+crate::deep_size_0!(ListKind);
 
 /// A while loop expression. An additional field `has_break` is stored in the return type
 /// of the expression: If `cond` is a pure expression and there are no early `break`s inside the
@@ -279,6 +281,36 @@ pub struct While<'a> {
   /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the loop
   /// trivializes or is an infinite loop.
   pub trivial: Option<bool>,
+}
+
+/// A place expression.
+pub type Place<'a> = Spanned<'a, (PlaceKind<'a>, ty::Ty<'a>)>;
+
+impl<'a> Place<'a> {
+  /// Get the (stored) type of the expression.
+  #[inline] #[must_use] pub fn ty(&self) -> ty::Ty<'a> { self.k.1 }
+}
+
+/// A place expression.
+#[derive(Debug, DeepSizeOf)]
+pub enum PlaceKind<'a> {
+  /// A variable reference.
+  Var(VarId),
+  /// An deref operation `*x: T` where `x: &T`.
+  Deref(Box<Expr<'a>>),
+  /// An index operation `(index _ i h): T` where `_: (array T n)`,
+  /// `i: nat`, and `h: i < n`.
+  /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
+  Index(Box<(Place<'a>, Expr<'a>, Result<Expr<'a>, Expr<'a>>)>),
+  /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
+  /// `h` is a proof that `a + b <= n`.
+  /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
+  Slice(Box<(Place<'a>, [Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(ListKind, Box<Place<'a>>, u32),
+  /// An upstream error.
+  Error
 }
 
 /// An expression.
@@ -320,7 +352,7 @@ pub enum ExprKind<'a> {
   Slice(Box<([Expr<'a>; 3], Result<Expr<'a>, Expr<'a>>)>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
-  Proj(ProjectionKind, Box<Expr<'a>>, u32),
+  Proj(ListKind, Box<Expr<'a>>, u32),
   /// An lvalue-to-rvalue conversion `x: T` where `x: ref T`.
   Rval(Box<Expr<'a>>),
   /// An deref operation `*x: T` where `x: &T`.
@@ -329,19 +361,20 @@ pub enum ExprKind<'a> {
   /// `List`, `Struct`, `Array` or `And`). In the `And` case,
   /// all arguments must be copy or all cover the same heap location,
   /// and expressions have to be pure and have the same value.
-  List(Vec<Expr<'a>>),
+  List(ListKind, Vec<Expr<'a>>),
   /// A ghost expression.
   Ghost(Box<Expr<'a>>),
   /// Evaluates the expression as a pure expression, so it will not take
   /// ownership of the result.
-  Ref(Box<Expr<'a>>),
+  Ref(Box<Place<'a>>),
   /// `(& x)` constructs a reference to `x`.
-  Borrow(Box<Expr<'a>>),
+  Borrow(Box<Place<'a>>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<Expr<'a>>, ty::Ty<'a>),
   /// Combine an expression with a proof that it has the right type.
-  Cast(Box<Expr<'a>>, ty::Ty<'a>, ty::Ty<'a>, CastKind<'a>),
+  /// The given type is the type of `e` (which should be defeq to the actual type of `e`)
+  Cast(Box<Expr<'a>>, ty::Ty<'a>, CastKind<'a>),
   /// Reinterpret an expression given a proof that it has the right type.
   Pun(Box<Expr<'a>>, Option<Box<Expr<'a>>>),
   /// An expression denoting an uninitialized value of the given type.
@@ -355,16 +388,17 @@ pub enum ExprKind<'a> {
   /// An assignment / mutation.
   Assign {
     /// A place (lvalue) to write to.
-    lhs: Box<Expr<'a>>,
+    lhs: Box<Place<'a>>,
     /// The expression to evaluate.
     rhs: Box<Expr<'a>>,
-    /// An array of `new -> old` mappings as `(new, old)` pairs; the `new` variable is a variable
-    /// id already in scope, while `old` is a new binding representing the previous
+    /// An array of `new: ty -> old` mappings as `(new, old, ty)` tuples; the `new` variable
+    /// is a variable id already in scope, while `old` is a new binding representing the previous
     /// value of the variable before the assignment.
     /// (This ordering is chosen so that the variable ID retains its "newest" value
     /// through any number of writes to it, while non-updatable `old` variables are created
     /// by the various assignments.)
-    oldmap: Box<[(VarId, VarId)]>,
+    /// The type `ty` is the type of `new` after the mutation.
+    map: Box<[(VarId, VarId, ty::ExprTy<'a>)]>,
     /// The generation after the mutation.
     gen: GenId,
   },

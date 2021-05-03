@@ -637,6 +637,10 @@ impl<A: Remap, B: Remap> Remap for (A, B) {
   type Target = (A::Target, B::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r)) }
 }
+impl<A: Remap> Remap for [A; 2] {
+  type Target = [A::Target; 2];
+  fn remap(&self, r: &mut Remapper) -> Self::Target { [self[0].remap(r), self[1].remap(r)] }
+}
 impl<A: Remap, B: Remap, C: Remap> Remap for (A, B, C) {
   type Target = (A::Target, B::Target, C::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }

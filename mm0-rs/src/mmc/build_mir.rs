@@ -12,7 +12,7 @@ use bumpalo::Bump;
 use itertools::Itertools;
 use num::Signed;
 use types::IntTy;
-use crate::{AtomId, FileSpan, FormatEnv, LispVal, lisp::print::alphanumber, u32_as_usize};
+use crate::{AtomId, FileSpan, FormatEnv, LispVal, RcExt, lisp::print::alphanumber, u32_as_usize};
 use super::{Compiler, parser::try_get_fspan, types};
 use types::{Binop, BinopType, FieldName, Mm0ExprNode, Size, Spanned, Unop,
   VarId as HVarId, hir, ty, mir};
@@ -33,7 +33,10 @@ type TrMap<K, V> = HashMap<K, Result<V, HashMap<GenId, V>>>;
 struct Translator<'a> {
   tys: TrMap<ty::Ty<'a>, Ty>,
   exprs: TrMap<ty::Expr<'a>, Expr>,
+  places: TrMap<ty::Place<'a>, EPlace>,
   gen_vars: HashMap<GenId, GenMap>,
+  locations: HashMap<HVarId, VarId>,
+  located: HashMap<VarId, Vec<VarId>>,
   next_var: VarId,
   cur_gen: GenId,
   subst: HashMap<HVarId, Expr>,
@@ -89,6 +92,22 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
     }
   }
 }
+
+impl<'a> TranslateBase<'a> for ty::PlaceKind<'a> {
+  type Output = EPlaceKind;
+  fn get_mut<'b>(t: &'b mut Translator<'a>) -> &'b mut TrMap<ty::Place<'a>, EPlace> { &mut t.places }
+  fn make(&'a self, tr: &mut Translator<'a>) -> EPlaceKind {
+    match *self {
+      ty::PlaceKind::Var(v) => EPlaceKind::Var(tr.location(v)),
+      ty::PlaceKind::Index(a, ty, i) => EPlaceKind::Index(a.tr(tr), ty.tr(tr), i.tr(tr)),
+      ty::PlaceKind::Slice(a, ty, [i, l]) =>
+        EPlaceKind::Slice(a.tr(tr), ty.tr(tr), [i.tr(tr), l.tr(tr)]),
+      ty::PlaceKind::Proj(a, ty, i) => EPlaceKind::Proj(a.tr(tr), ty.tr(tr), i),
+      ty::PlaceKind::Error => unreachable!(),
+    }
+  }
+}
+
 impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
   type Output = ExprKind;
   fn get_mut<'b>(t: &'b mut Translator<'a>) -> &'b mut TrMap<ty::Expr<'a>, Expr> { &mut t.exprs }
@@ -102,10 +121,10 @@ impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
       ty::ExprKind::Unop(op, e) => ExprKind::Unop(op, e.tr(tr)),
       ty::ExprKind::Binop(op, e1, e2) => ExprKind::Binop(op, e1.tr(tr), e2.tr(tr)),
       ty::ExprKind::Index(a, i) => ExprKind::Index(a.tr(tr), i.tr(tr)),
-      ty::ExprKind::Slice(a, i, l) => ExprKind::Slice(a.tr(tr), i.tr(tr), l.tr(tr)),
+      ty::ExprKind::Slice([a, i, l]) => ExprKind::Slice(a.tr(tr), i.tr(tr), l.tr(tr)),
       ty::ExprKind::Proj(a, i) => ExprKind::Proj(a.tr(tr), i),
-      ty::ExprKind::UpdateIndex(a, i, v) => ExprKind::UpdateIndex(a.tr(tr), i.tr(tr), v.tr(tr)),
-      ty::ExprKind::UpdateSlice(a, i, l, v) =>
+      ty::ExprKind::UpdateIndex([a, i, v]) => ExprKind::UpdateIndex(a.tr(tr), i.tr(tr), v.tr(tr)),
+      ty::ExprKind::UpdateSlice([a, i, l, v]) =>
         ExprKind::UpdateSlice(a.tr(tr), i.tr(tr), l.tr(tr), v.tr(tr)),
       ty::ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(a.tr(tr), i, v.tr(tr)),
       ty::ExprKind::List(es) => ExprKind::List(es.tr(tr)),
@@ -229,8 +248,21 @@ impl<'a> Translator<'a> {
     if let Some(v) = var { v.tr(self) } else { self.fresh_var() }
   }
 
-  fn add_gen(&mut self, dominator: GenId, gen: GenId, vars: &[HVarId]) {
-    let value = vars.iter().map(|&v| (v, self.fresh_var())).collect();
+  fn location(&mut self, var: HVarId) -> VarId {
+    let next = &mut self.next_var;
+    *self.locations.entry(var).or_insert_with(|| fresh_var(next))
+  }
+  fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
+    self.located.entry(var).or_insert_with(Vec::new)
+  }
+
+  fn add_gen(&mut self, dominator: GenId, gen: GenId, value: HashMap<HVarId, VarId>) {
+    assert!(self.gen_vars.insert(gen,
+      GenMap { dominator, value, cache: Default::default() }).is_none())
+  }
+
+  fn add_gen_fresh(&mut self, dominator: GenId, gen: GenId, vars: impl Iterator<Item=HVarId>) {
+    let value = vars.map(|v| (v, self.fresh_var())).collect();
     assert!(self.gen_vars.insert(gen,
       GenMap { dominator, value, cache: Default::default() }).is_none())
   }
@@ -418,7 +450,7 @@ impl<'a> BuildMir<'a> {
       cur_gen: GenId::ROOT,
       ..Default::default()
     };
-    tr.add_gen(GenId::ROOT, GenId::ROOT, &[]);
+    tr.add_gen(GenId::ROOT, GenId::ROOT, Default::default());
     Self {
       compiler, alloc,
       cfg: Cfg::default(),
@@ -456,6 +488,9 @@ impl<'a> BuildMir<'a> {
         self.extend_ctx(v, (None, ty.clone()));
         self.extend_ctx(h, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
+      Statement::Assign(_, _, ref vars) => for &(_, v, ref ety) in &**vars {
+        self.extend_ctx(v, ety.clone())
+      }
     }
     self.cur_block().stmts.push(stmt);
   }
@@ -481,7 +516,99 @@ impl<'a> BuildMir<'a> {
     vh
   }
 
-  fn place(&mut self, e: hir::Expr<'a>) -> Block<Place> {
+  fn index_projection(&mut self, idx: hir::Expr<'a>,
+    hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
+  ) -> Block<Projection> {
+    let vi = self.as_temp(idx)?;
+    Ok(Projection::Index(vi, match hyp_or_n {
+      Ok(hyp) => self.as_temp(hyp)?,
+      Err(n) => {
+        let vn = self.as_temp(n)?;
+        let vb = self.fresh_var();
+        let cond = Rc::new(ExprKind::Binop(Binop::Lt,
+          Rc::new(ExprKind::Var(vi)),
+          Rc::new(ExprKind::Var(vn))));
+        self.push_stmt(Statement::Let(vb,
+          (Some(cond.clone()), Rc::new(TyKind::Bool)),
+          RValue::Binop(Binop::Lt, Operand::Copy(vi.into()), vn.into())));
+        self.assert(vb.into(), cond)
+      }
+    }))
+  }
+
+  fn slice_projection(&mut self, idx: hir::Expr<'a>, len: hir::Expr<'a>,
+    hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
+  ) -> Block<Projection> {
+    let vi = self.as_temp(idx)?;
+    let vl = self.as_temp(len)?;
+    Ok(Projection::Slice(vi, vl, match hyp_or_n {
+      Ok(hyp) => self.as_temp(hyp)?,
+      Err(n) => {
+        let vn = self.as_temp(n)?;
+        let v_add = self.fresh_var();
+        let add = Rc::new(ExprKind::Binop(Binop::Add,
+          Rc::new(ExprKind::Var(vi)),
+          Rc::new(ExprKind::Var(vl))));
+        self.push_stmt(Statement::Let(v_add,
+          (Some(add.clone()), Rc::new(TyKind::Int(IntTy::Int(Size::Inf)))),
+          RValue::Binop(Binop::Add, Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
+        let v_cond = self.fresh_var();
+        let cond = Rc::new(ExprKind::Binop(Binop::Le,
+          add, Rc::new(ExprKind::Var(vn))));
+        self.push_stmt(Statement::Let(v_cond,
+          (Some(cond.clone()), Rc::new(TyKind::Bool)),
+          RValue::Binop(Binop::Le, v_add.into(), vn.into())));
+        self.assert(v_cond.into(), cond)
+      }
+    }))
+  }
+
+  fn place(&mut self, e: hir::Place<'a>) -> Block<Place> {
+    Ok(match e.k.0 {
+      hir::PlaceKind::Var(v) => {
+        let v2 = self.tr.location(v);
+        self.vars.get(&v2).cloned().unwrap_or_else(|| v2.into())
+      }
+      hir::PlaceKind::Index(args) => {
+        let (arr, idx, hyp_or_n) = *args;
+        self.place(arr)?.proj(self.index_projection(idx, hyp_or_n)?)
+      }
+      hir::PlaceKind::Slice(args) => {
+        let (arr, [idx, len], hyp_or_n) = *args;
+        self.place(arr)?.proj(self.slice_projection(idx, len, hyp_or_n)?)
+      }
+      hir::PlaceKind::Proj(pk, e, i) =>
+        self.place(*e)?.proj(Projection::Proj(pk.into(), i)),
+      hir::PlaceKind::Deref(e) =>
+        Place::local(self.as_temp(*e)?).proj(Projection::Deref),
+      hir::PlaceKind::Error => unreachable!()
+    })
+  }
+
+  fn ignore_place(&mut self, e: hir::Place<'a>) -> Block<()> {
+    match e.k.0 {
+      hir::PlaceKind::Var(v) => {}
+      hir::PlaceKind::Index(args) => {
+        let (arr, idx, hyp_or_n) = *args;
+        self.ignore_place(arr)?;
+        self.expr(idx, None)?;
+        if let Ok(hyp) = hyp_or_n { self.expr(hyp, None)?; }
+      }
+      hir::PlaceKind::Slice(args) => {
+        let (arr, [idx, len], hyp_or_n) = *args;
+        self.ignore_place(arr)?;
+        self.expr(idx, None)?;
+        self.expr(len, None)?;
+        if let Ok(hyp) = hyp_or_n { self.expr(hyp, None)?; }
+      }
+      hir::PlaceKind::Proj(_, e, _) => self.ignore_place(*e)?,
+      hir::PlaceKind::Deref(e) => self.expr(*e, None)?,
+      hir::PlaceKind::Error => unreachable!()
+    }
+    Ok(())
+  }
+
+  fn expr_place(&mut self, e: hir::Expr<'a>) -> Block<Place> {
     Ok(match e.k.0 {
       hir::ExprKind::Var(v, gen) => {
         let v = self.tr_gen(v, gen);
@@ -489,75 +616,28 @@ impl<'a> BuildMir<'a> {
       }
       hir::ExprKind::Index(args) => {
         let ([arr, idx], hyp_or_n) = *args;
-        let mut pl = self.place(arr)?;
-        let vi = self.as_temp(idx)?;
-        let vh = match hyp_or_n {
-          Ok(hyp) => self.as_temp(hyp)?,
-          Err(n) => {
-            let vn = self.as_temp(n)?;
-            let vb = self.fresh_var();
-            let cond = Rc::new(ExprKind::Binop(Binop::Lt,
-              Rc::new(ExprKind::Var(vi)),
-              Rc::new(ExprKind::Var(vn))));
-            self.push_stmt(Statement::Let(vb,
-              (Some(cond.clone()), Rc::new(TyKind::Bool)),
-              RValue::Binop(Binop::Lt, Operand::Copy(vi.into()), vn.into())));
-            self.assert(vb.into(), cond)
-          }
-        };
-        pl.proj.push(Projection::Index(vi, vh));
-        pl
+        self.expr_place(arr)?.proj(self.index_projection(idx, hyp_or_n)?)
       }
       hir::ExprKind::Slice(args) => {
         let ([arr, idx, len], hyp_or_n) = *args;
-        let mut pl = self.place(arr)?;
-        let vi = self.as_temp(idx)?;
-        let vl = self.as_temp(len)?;
-        let vh = match hyp_or_n {
-          Ok(hyp) => self.as_temp(hyp)?,
-          Err(n) => {
-            let vn = self.as_temp(n)?;
-            let v_add = self.fresh_var();
-            let add = Rc::new(ExprKind::Binop(Binop::Add,
-              Rc::new(ExprKind::Var(vi)),
-              Rc::new(ExprKind::Var(vl))));
-            self.push_stmt(Statement::Let(v_add,
-              (Some(add.clone()), Rc::new(TyKind::Int(IntTy::Int(Size::Inf)))),
-              RValue::Binop(Binop::Add, Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
-            let v_cond = self.fresh_var();
-            let cond = Rc::new(ExprKind::Binop(Binop::Le,
-              add, Rc::new(ExprKind::Var(vn))));
-            self.push_stmt(Statement::Let(v_cond,
-              (Some(cond.clone()), Rc::new(TyKind::Bool)),
-              RValue::Binop(Binop::Le, v_add.into(), vn.into())));
-            self.assert(v_cond.into(), cond)
-          }
-        };
-        pl.proj.push(Projection::Slice(vi, vl, vh));
-        pl
+        self.expr_place(arr)?.proj(self.slice_projection(idx, len, hyp_or_n)?)
       }
-      hir::ExprKind::Proj(pk, e, i) => {
-        let mut pl = self.place(*e)?;
-        pl.proj.push(Projection::Proj(pk.into(), i));
-        pl
-      }
+      hir::ExprKind::Proj(pk, e, i) =>
+        self.expr_place(*e)?.proj(Projection::Proj(pk.into(), i)),
       hir::ExprKind::Ref(e) => self.place(*e)?,
-      hir::ExprKind::Deref(e) => {
-        let mut pl = self.place(*e)?;
-        pl.proj.push(Projection::Deref);
-        pl
-      }
+      hir::ExprKind::Deref(e) =>
+        Place::local(self.as_temp(*e)?).proj(Projection::Deref),
       _ => Place::local(self.as_temp(e)?)
     })
   }
 
   fn copy_or_move(&mut self, e: hir::Expr<'a>) -> Block<Operand> {
     let copy = e.ty().is_copy();
-    let p = self.place(e)?;
+    let p = self.expr_place(e)?;
     Ok(if copy {Operand::Copy(p)} else {Operand::Move(p)})
   }
 
-  fn copy_or_ref(&mut self, e: hir::Expr<'a>) -> Block<Operand> {
+  fn copy_or_ref(&mut self, e: hir::Place<'a>) -> Block<Operand> {
     let copy = e.ty().is_copy();
     let p = self.place(e)?;
     Ok(if copy {Operand::Copy(p)} else {Operand::Ref(p)})
@@ -608,11 +688,25 @@ impl<'a> BuildMir<'a> {
         let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(|h| h.into());
         RValue::Cast(vx.into(), CastKind::Sn(vh))
       }
-      hir::ExprKind::List(es) => todo!(),
+      hir::ExprKind::List(lk, es) => {
+        let vs = es.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
+          .collect::<Block<Box<[_]>>>()?;
+        match lk {
+          hir::ListKind::List | hir::ListKind::Struct => RValue::List(vs),
+          hir::ListKind::Array => RValue::Array(vs),
+          hir::ListKind::And => {
+            let mut vs = vs.into_vec();
+            let_unchecked!(v as Operand::Move(v) = vs.remove(0));
+            RValue::Cast(v, CastKind::And(vs))
+          }
+        }
+      }
       hir::ExprKind::Ghost(e) => RValue::Ghost(self.copy_or_move(*e)?),
-      hir::ExprKind::Borrow(e) => todo!(),
-      hir::ExprKind::Mm0(_, _) => todo!(),
-      hir::ExprKind::Cast(_, _, _, _) => todo!(),
+      hir::ExprKind::Borrow(e) => RValue::Borrow(self.place(*e)?),
+      hir::ExprKind::Mm0(types::Mm0Expr {subst, ..}, ty) => RValue::Mm0(
+        subst.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
+          .collect::<Block<Box<[_]>>>()?),
+      hir::ExprKind::Cast(e, _, _) => todo!(),
       hir::ExprKind::Pun(_, _) => todo!(),
       hir::ExprKind::Uninit(_) => todo!(),
       hir::ExprKind::Sizeof(_) => todo!(),
@@ -694,10 +788,10 @@ impl<'a> BuildMir<'a> {
           hir::ExprKind::Rval(e) |
           hir::ExprKind::Deref(e) |
           hir::ExprKind::Ghost(e) |
-          hir::ExprKind::Ref(e) |
-          hir::ExprKind::Borrow(e) |
-          hir::ExprKind::Cast(e, _, _, _) |
+          hir::ExprKind::Cast(e, _, _) |
           hir::ExprKind::Typeof(e) => return this.expr(*e, None),
+          hir::ExprKind::Ref(e) |
+          hir::ExprKind::Borrow(e) => return this.ignore_place(*e),
           hir::ExprKind::Binop(_, e1, e2) => {
             this.expr(*e1, None)?;
             this.expr(*e2, None)?;
@@ -720,13 +814,22 @@ impl<'a> BuildMir<'a> {
             this.expr(len, None)?;
             if let Ok(hyp) = hyp_or_n { this.expr(hyp, None)?; }
           }
-          hir::ExprKind::List(es) => for e in es { this.expr(e, None)? }
+          hir::ExprKind::List(_, es) => for e in es { this.expr(e, None)? }
           hir::ExprKind::Mm0(e, _) => for e in e.subst { this.expr(e, None)? }
           hir::ExprKind::Assert(_) => {
             this.expr(e, Some(PreVar::Fresh))?;
           }
-          hir::ExprKind::Assign {lhs, rhs, oldmap, gen} => {
-            todo!()
+          hir::ExprKind::Assign {lhs, rhs, map, gen} => {
+            let lhs = this.place(*lhs)?;
+            let rhs = this.operand(*rhs)?;
+            let mut varmap = map.iter()
+              .map(|&(new, old, _)| (old, this.tr(new))).collect::<HashMap<_, _>>();
+            this.tr.add_gen(this.tr.cur_gen, gen, varmap);
+            let mut vars = map.into_vec().into_iter().map(|(new, _, ety)| {
+              (this.tr(new), this.tr_gen(new, gen), this.tr_gen(ety, gen))
+            }).collect::<Box<[_]>>();
+            this.tr.cur_gen = gen;
+            this.push_stmt(Statement::Assign(lhs, rhs, vars))
           }
           hir::ExprKind::Proof(_) |
           hir::ExprKind::While {..} => { this.rvalue(e)?; }
@@ -757,12 +860,12 @@ impl<'a> BuildMir<'a> {
             this.join(&jb, args)
           }
           hir::ExprKind::Return(es) =>
-            match this.expr_return(|_| es.into_iter(), Self::place)? {}
+            match this.expr_return(|_| es.into_iter(), Self::expr_place)? {}
           hir::ExprKind::UnpackReturn(e) => {
-            let pl = this.place(*e)?;
+            let pl = this.expr_place(*e)?;
             match this.expr_return(|n| 0..n.try_into().expect("overflow"), |this, i| Ok({
               let mut pl = pl.clone();
-              pl.proj.push(Projection::Proj(ProjectionKind::Struct, i));
+              pl.proj.push(Projection::Proj(ListKind::Struct, i));
               pl
             }))? {}
           }
@@ -790,10 +893,10 @@ impl<'a> BuildMir<'a> {
       TuplePatternKind::Tuple(pats, mk, ty) => {
         let pk = match mk {
           TupleMatchKind::Unit | TupleMatchKind::True => return,
-          TupleMatchKind::List | TupleMatchKind::Struct => ProjectionKind::Struct,
-          TupleMatchKind::Array => ProjectionKind::Array,
-          TupleMatchKind::And => ProjectionKind::And,
-          TupleMatchKind::Sn => ProjectionKind::Sn,
+          TupleMatchKind::List | TupleMatchKind::Struct => ListKind::Struct,
+          TupleMatchKind::Array => ListKind::Array,
+          TupleMatchKind::And => ListKind::And,
+          TupleMatchKind::Sn => ListKind::Sn,
           TupleMatchKind::Own => let_unchecked!([vpat, hpat] = *pats, {
             let tgt = self.tr(pat.k.ty());
             let v = self.tr.tr_opt_var(vpat.k.var());
