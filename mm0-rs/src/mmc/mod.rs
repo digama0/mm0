@@ -91,7 +91,7 @@ impl Compiler {
       mir: Default::default(),
       init: Default::default(),
       predef: PredefMap::new(|_, s| e.env.get_atom(s.as_bytes())),
-      prefix: "_mmc_".as_bytes(),
+      prefix: b"_mmc_",
     }
   }
 
