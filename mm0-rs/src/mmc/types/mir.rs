@@ -1,13 +1,66 @@
 //! The mid level IR, a basic block based representation used for most optimizations.
 #![allow(unused)]
 
-use std::{ops::{Index, IndexMut}, rc::Rc};
+use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
 use num::BigInt;
 use crate::{AtomId, FileSpan, LispVal, Remap, Remapper};
-use super::{Binop, IntTy, Spanned, Unop, ast::ProcKind, ast, global, hir, ty};
-pub use {ast::TyVarId, ty::Lifetime};
+use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir, ty};
+pub use ast::TyVarId;
+
+/// The alpha conversion struct is a mapping from variables to variables.
+#[derive(Debug, Default)]
+pub struct Alpha(HashMap<VarId, VarId>);
+
+impl Alpha {
+  /// Insert a new variable mapping into the alpha conversion struct.
+  pub fn push(&mut self, v: VarId, w: VarId) {
+    if v != w { assert!(self.0.insert(v, w).is_none()) }
+  }
+
+  /// Enter a binder during alpha conversion. This suppresses substitution for a bound variable
+  /// within its scope.
+  fn enter<R>(&mut self, v: VarId, f: impl FnOnce(&mut Self) -> R) -> R {
+    use std::collections::hash_map::Entry::*;
+    if let Some(w) = self.0.remove(&v) {
+      let r = f(self);
+      self.0.insert(v, w);
+      r
+    } else {
+      f(self)
+    }
+  }
+
+  /// Performs alpha conversion (var-var substitution) on a type or expression.
+  pub fn alpha<T: HasAlpha + Clone>(&mut self, t: &T) -> T {
+    if self.0.is_empty() { t.clone() } else { t.alpha(self) }
+  }
+}
+
+/// A trait for the alpha conversion operation on subparts of a type.
+pub trait HasAlpha {
+  /// Applies the alpha conversion operation, producing a copy of the value.
+  fn alpha(&self, a: &mut Alpha) -> Self;
+}
+
+impl<T: HasAlpha> HasAlpha for Rc<T> {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    Rc::new((**self).alpha(a))
+  }
+}
+
+impl<T: HasAlpha> HasAlpha for Box<[T]> {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    self.iter().map(|e| e.alpha(a)).collect()
+  }
+}
+
+impl<T: HasAlpha> HasAlpha for global::Mm0Expr<T> {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    Self { subst: self.subst.alpha(a), expr: self.expr.clone() }
+  }
+}
 
 /// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
 #[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq, Hash)]
@@ -22,6 +75,34 @@ impl std::fmt::Display for VarId {
 impl Remap for VarId {
   type Target = Self;
   fn remap(&self, _: &mut Remapper) -> Self { *self }
+}
+
+impl HasAlpha for VarId {
+  fn alpha(&self, a: &mut Alpha) -> Self { *a.0.get(self).unwrap_or(self) }
+}
+
+/// A "lifetime" in MMC is a variable or place from which references can be derived.
+/// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
+/// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
+/// There is a special lifetime `extern` that represents inputs to the current function.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Lifetime {
+  /// The `extern` lifetime is the inferred lifetime for function arguments such as
+  /// `fn f(x: &T)`.
+  Extern,
+  /// A variable lifetime `x` is the annotation on references derived from `x`
+  /// (or derived from other references derived from `x`).
+  Place(VarId),
+}
+crate::deep_size_0!(Lifetime);
+
+impl HasAlpha for Lifetime {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    match self {
+      Lifetime::Extern => Lifetime::Extern,
+      Lifetime::Place(v) => Lifetime::Place(v.alpha(a))
+    }
+  }
 }
 
 bitflags! {
@@ -207,6 +288,61 @@ impl Remap for TyKind {
   }
 }
 
+impl HasAlpha for TyKind {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    macro_rules! a {($e:expr) => {$e.alpha(a)}}
+    match self {
+      TyKind::Unit => TyKind::Unit,
+      TyKind::True => TyKind::True,
+      TyKind::False => TyKind::False,
+      TyKind::Bool => TyKind::Bool,
+      &TyKind::Var(v) => TyKind::Var(v),
+      &TyKind::Int(ity) => TyKind::Int(ity),
+      TyKind::Array(ty, n) => TyKind::Array(a!(ty), a!(n)),
+      TyKind::Own(ty) => TyKind::Own(a!(ty)),
+      TyKind::Ref(lft, ty) => TyKind::Ref(a!(lft), a!(ty)),
+      TyKind::RefSn(e) => TyKind::RefSn(a!(e)),
+      TyKind::Sn(a, ty) => TyKind::Sn(a!(a), a!(ty)),
+      TyKind::Struct(args) => {
+        fn rec(args: &mut std::slice::Iter<'_, Arg>, a: &mut Alpha, vec: &mut Vec<Arg>) {
+          loop {
+            if let Some(&Arg {attr, var, ref ty}) = args.next() {
+              let ty = ty.alpha(a);
+              vec.push(Arg {attr, var, ty});
+              if attr.contains(ArgAttr::NONDEP) { continue }
+              a.enter(var, |a| rec(args, a, vec))
+            }
+            break
+          }
+        }
+        let mut vec = Vec::with_capacity(args.len());
+        rec(&mut args.iter(), a, &mut vec);
+        TyKind::Struct(vec.into_boxed_slice())
+      }
+      &TyKind::All(v, ref pat, ref ty) => {
+        let pat = a!(pat);
+        a.enter(v, |a| TyKind::All(v, pat, ty.alpha(a)))
+      }
+      TyKind::Imp(p, q) => TyKind::Imp(a!(p), a!(q)),
+      TyKind::Wand(p, q) => TyKind::Wand(a!(p), a!(q)),
+      TyKind::Not(p) => TyKind::Not(a!(p)),
+      TyKind::And(ps) => TyKind::And(a!(ps)),
+      TyKind::Or(ps) => TyKind::Or(a!(ps)),
+      TyKind::If(c, t, e) => TyKind::If(a!(c), a!(t), a!(e)),
+      TyKind::Ghost(ty) => TyKind::Ghost(a!(ty)),
+      TyKind::Uninit(ty) => TyKind::Uninit(a!(ty)),
+      TyKind::Pure(e) => TyKind::Pure(a!(e)),
+      TyKind::User(f, tys, es) => TyKind::User(*f, tys.clone(), a!(es)),
+      TyKind::Heap(e, v, ty) =>
+        TyKind::Heap(a!(e), a!(v), a!(ty)),
+      TyKind::HasTy(e, ty) => TyKind::HasTy(a!(e), a!(ty)),
+      TyKind::Input => TyKind::Input,
+      TyKind::Output => TyKind::Output,
+      TyKind::Moved(ty) => TyKind::Moved(a!(ty)),
+    }
+  }
+}
+
 /// The type of variant, or well founded order that recursions decrease.
 #[derive(Debug, DeepSizeOf)]
 pub enum VariantType {
@@ -257,6 +393,18 @@ impl Remap for EPlaceKind {
       EPlaceKind::Index(a, ty, i) => EPlaceKind::Index(a.remap(r), ty.remap(r), i.remap(r)),
       EPlaceKind::Slice(a, ty, il) => EPlaceKind::Slice(a.remap(r), ty.remap(r), il.remap(r)),
       EPlaceKind::Proj(a, ty, i) => EPlaceKind::Proj(a.remap(r), ty.remap(r), *i),
+    }
+  }
+}
+
+impl HasAlpha for EPlaceKind {
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    macro_rules! a {($e:expr) => {$e.alpha(a)}}
+    match self {
+      &EPlaceKind::Var(v) => EPlaceKind::Var(a!(v)),
+      EPlaceKind::Index(a, ty, i) => EPlaceKind::Index(a!(a), a!(ty), a!(i)),
+      EPlaceKind::Slice(a, ty, [i, l]) => EPlaceKind::Slice(a!(a), a!(ty), [a!(i), a!(l)]),
+      EPlaceKind::Proj(a, ty, i) => EPlaceKind::Proj(a!(a), a!(ty), *i),
     }
   }
 }
@@ -359,6 +507,37 @@ impl Remap for ExprKind {
         ExprKind::Call {f, tys: tys.remap(r), args: args.remap(r)},
       ExprKind::If {cond, then, els} => ExprKind::If {
         cond: cond.remap(r), then: then.remap(r), els: els.remap(r)},
+    }
+  }
+}
+
+impl HasAlpha for ExprKind {
+  #[allow(clippy::many_single_char_names)]
+  fn alpha(&self, a: &mut Alpha) -> Self {
+    macro_rules! a {($e:expr) => {$e.alpha(a)}}
+    match self {
+      ExprKind::Unit => ExprKind::Unit,
+      ExprKind::Var(v) => ExprKind::Var(*a.0.get(v).unwrap_or(v)),
+      &ExprKind::Const(c) => ExprKind::Const(c),
+      &ExprKind::Bool(b) => ExprKind::Bool(b),
+      ExprKind::Int(n) => ExprKind::Int(n.clone()),
+      ExprKind::Unop(op, e) => ExprKind::Unop(*op, a!(e)),
+      ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, a!(e1), a!(e2)),
+      ExprKind::Index(a, i) => ExprKind::Index(a!(a), a!(i)),
+      ExprKind::Slice(a, i, l) => ExprKind::Slice(a!(a), a!(i), a!(l)),
+      ExprKind::Proj(a, i) => ExprKind::Proj(a!(a), *i),
+      ExprKind::UpdateIndex(a, i, v) => ExprKind::UpdateIndex(a!(a), a!(i), a!(v)),
+      ExprKind::UpdateSlice(a, i, l, v) => ExprKind::UpdateSlice(a!(a), a!(i), a!(l), a!(v)),
+      ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(a!(a), *i, a!(v)),
+      ExprKind::List(es) => ExprKind::List(a!(es)),
+      ExprKind::Array(es) => ExprKind::Array(a!(es)),
+      ExprKind::Sizeof(ty) => ExprKind::Sizeof(a!(ty)),
+      ExprKind::Ref(e) => ExprKind::Ref(a!(e)),
+      ExprKind::Mm0(e) => ExprKind::Mm0(a!(e)),
+      &ExprKind::Call {f, ref tys, ref args} =>
+        ExprKind::Call {f, tys: tys.clone(), args: a!(args)},
+      ExprKind::If {cond, then, els} => ExprKind::If {
+        cond: a!(cond), then: a!(then), els: a!(els)},
     }
   }
 }
@@ -624,8 +803,13 @@ impl Constant {
   }
 
   /// Returns an uninit constant of the specified type.
+  #[must_use] pub fn uninit_core(uninit_ty: Ty) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), uninit_ty), k: ConstKind::Uninit }
+  }
+
+  /// Returns an uninit constant of the specified type.
   #[must_use] pub fn uninit(ty: Ty) -> Self {
-    Self { ety: (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Uninit(ty))), k: ConstKind::Uninit }
+    Self::uninit_core(Rc::new(TyKind::Uninit(ty)))
   }
 
   /// Returns a boolean constant.
@@ -637,6 +821,29 @@ impl Constant {
   #[must_use] pub fn int(ty: IntTy, n: BigInt) -> Self {
     Self { ety: (Some(Rc::new(ExprKind::Int(n))), Rc::new(TyKind::Int(ty))), k: ConstKind::Int }
   }
+
+  /// Returns the size of the specified type as a constant expression.
+  #[must_use] pub fn sizeof(ty: Ty) -> Self {
+    Self {
+      ety: (Some(Rc::new(ExprKind::Sizeof(ty))), Rc::new(TyKind::Int(IntTy::UInt(Size::Inf)))),
+      k: ConstKind::Sizeof
+    }
+  }
+
+  /// Get the type in a sizeof constant.
+  #[must_use] pub fn ty_as_sizeof(&self) -> &Ty {
+    if_chain! {
+      if let Some(e) = &self.ety.0;
+      if let ExprKind::Sizeof(ty) = &**e;
+      then { ty }
+      else { panic!("not a sizeof constant") }
+    }
+  }
+
+  /// Return a MM0 proof constant expression.
+  #[must_use] pub fn mm0_proof(ty: Ty, val: LispVal) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), ty), k: ConstKind::Mm0Proof(val) }
+  }
 }
 
 impl Remap for Constant {
@@ -647,7 +854,7 @@ impl Remap for Constant {
 }
 
 /// The different types of constant.
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum ConstKind {
   /// A unit constant `()`.
   Unit,
@@ -662,18 +869,24 @@ pub enum ConstKind {
   Uninit,
   /// A named constant.
   Const(AtomId),
+  /// The size of a type, which must be evaluable at compile time.
+  Sizeof,
+  /// A proof embedded from MM0.
+  Mm0Proof(LispVal),
 }
 
 impl Remap for ConstKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match *self {
+    match self {
       Self::Unit => Self::Unit,
       Self::ITrue => Self::ITrue,
       Self::Bool => Self::Bool,
       Self::Int => Self::Int,
       Self::Uninit => Self::Uninit,
       Self::Const(a) => Self::Const(a.remap(r)),
+      Self::Sizeof => Self::Sizeof,
+      Self::Mm0Proof(p) => Self::Mm0Proof(p.remap(r)),
     }
   }
 }
@@ -719,23 +932,54 @@ impl Operand {
   #[inline] #[must_use] pub fn rv(self) -> RValue { RValue::Use(self) }
 }
 
-/// A proof that `x: T` can be retyped as `U`.
+/// A proof that `v @ x: T` can be retyped as `v @ x': U`. That is, this operation can change
+/// the pure value `x` but the bit representation `v` is unchanged.
 #[derive(Clone, Debug, DeepSizeOf)]
-pub enum CastKind {
-  /// * `Cast(x, Sn(None))` proves that `x: sn x`
-  /// * `Cast(x, Sn(Some(h)))` proves that `x: sn y` where `h: x = y`
+pub enum PunKind {
+  /// * `Pun(x, Sn(None))` proves that `x: sn x`
+  /// * `Pun(x, Sn(Some(h)))` proves that `x: sn y` where `h: x = y`
   Sn(Option<Operand>),
-  /// `Cast(e1, And([e2, e3, .., en]))` proves that `e1` has the intersection type
+  /// `Pun(e1, And([e2, e3, .., en]))` proves that `e1` has the intersection type
   /// `T1 /\ T2 /\ .. /\ Tn`.
   And(Vec<Operand>),
+  /// `Pun(e, Ptr)` reinterprets a pointer as a `u64`.
+  Ptr,
+}
+
+impl Remap for PunKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      PunKind::Sn(h) => PunKind::Sn(h.remap(r)),
+      PunKind::And(es) => PunKind::And(es.remap(r)),
+      PunKind::Ptr => PunKind::Ptr,
+    }
+  }
+}
+
+/// A proof that `v @ x: T` can be retyped as `v' @ x: U`. That is, this operation can change
+/// the bit representation `v` but the pure value `x` is unchanged.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub enum CastKind {
+  /// Convert between integral types `ity <= ity2`. The sizes are determined
+  /// by the size of the input and output types.
+  Int,
+  /// Proof that `A` is a subtype of `B`
+  Subtype(Option<Operand>),
+  /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast
+  Wand(Option<Operand>),
+  /// Proof that `[x : B]` for the particular `x` in the cast
+  Mem(Option<Operand>),
 }
 
 impl Remap for CastKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      CastKind::Sn(h) => CastKind::Sn(h.remap(r)),
-      CastKind::And(es) => CastKind::And(es.remap(r))
+      CastKind::Int => CastKind::Int,
+      CastKind::Subtype(h) => CastKind::Subtype(h.remap(r)),
+      CastKind::Wand(h) => CastKind::Wand(h.remap(r)),
+      CastKind::Mem(h) => CastKind::Mem(h.remap(r)),
     }
   }
 }
@@ -750,8 +994,10 @@ pub enum RValue {
   Unop(Unop, Operand),
   /// Apply a binary operator.
   Binop(Binop, Operand, Operand),
-  /// Construct an lvalue reference with the specified type.
-  Cast(Place, CastKind),
+  /// Construct an lvalue reference with the specified type, aka "bit-cast".
+  Pun(PunKind, Place),
+  /// Apply an identity function on values that can change the type.
+  Cast(CastKind, Operand, Ty),
   /// Make a struct from the given values.
   List(Box<[Operand]>),
   /// Make an array from the given values.
@@ -762,6 +1008,8 @@ pub enum RValue {
   Borrow(Place),
   /// A pure expression lifted from MM0, based on supplied values for the substitution.
   Mm0(Box<[Operand]>),
+  /// Take the type of a variable.
+  Typeof(Operand),
 }
 
 impl Remap for RValue {
@@ -771,12 +1019,14 @@ impl Remap for RValue {
       RValue::Use(e) => RValue::Use(e.remap(r)),
       RValue::Unop(op, e) => RValue::Unop(*op, e.remap(r)),
       RValue::Binop(op, e1, e2) => RValue::Binop(*op, e1.remap(r), e2.remap(r)),
-      RValue::Cast(e, ck) => RValue::Cast(e.remap(r), ck.remap(r)),
+      RValue::Pun(pk, e) => RValue::Pun(pk.remap(r), e.remap(r)),
+      RValue::Cast(ck, ty, e) => RValue::Cast(ck.remap(r), ty.remap(r), e.remap(r)),
       RValue::List(e) => RValue::List(e.remap(r)),
       RValue::Array(e) => RValue::Array(e.remap(r)),
       RValue::Ghost(e) => RValue::Ghost(e.remap(r)),
       RValue::Borrow(e) => RValue::Borrow(e.remap(r)),
       RValue::Mm0(e) => RValue::Mm0(e.remap(r)),
+      RValue::Typeof(e) => RValue::Typeof(e.remap(r)),
     }
   }
 }
@@ -864,6 +1114,10 @@ pub enum Terminator {
   /// This is lowered the same as a branch, but there is no actual `fail` basic block to
   /// jump to.
   Assert(Operand, VarId, BlockId),
+  /// A `f(tys, es) -> l(xs)` function call, which calls `f` with type arguments `tys` and
+  /// values `es`, and jumps to `l`, using `xs` to store the return values.
+  /// If `l` and `xs` are none, then the return is unreachable.
+  Call(AtomId, Box<[Ty]>, Box<[Operand]>, Option<(BlockId, Box<[VarId]>)>),
 }
 
 impl Remap for Terminator {
@@ -875,6 +1129,7 @@ impl Remap for Terminator {
       Self::Unreachable(rv) => Self::Unreachable(rv.remap(r)),
       Self::If(cond, args) => Self::If(cond.remap(r), *args),
       Self::Assert(cond, v, bl) => Self::Assert(cond.remap(r), *v, *bl),
+      Self::Call(f, tys, es, bl) => Self::Call(f.remap(r), tys.remap(r), es.remap(r), bl.remap(r)),
     }
   }
 }

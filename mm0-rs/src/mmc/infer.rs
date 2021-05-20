@@ -15,7 +15,7 @@ use super::{parser::try_get_fspan, types};
 use types::{Binop, BinopType, FieldName, Mm0ExprNode, Size, Spanned, Unop, VarId, ast, global, hir};
 use ast::{ProcKind, ArgAttr};
 use global::{ToGlobal, ToGlobalCtx};
-use hir::{GenId, ListKind};
+use hir::{GenId, ListKind, ReturnKind};
 use types::entity::{Entity, ConstTc, GlobalTc, ProcTy, ProcTc, TypeTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
@@ -2776,6 +2776,47 @@ impl<'a> InferCtx<'a> {
     (self.coerce_expr(e_a, a, arrty), a)
   }
 
+  fn check_call(&mut self,
+    &Spanned {ref span, k: f}: &'a Spanned<AtomId>,
+    tys: &'a [ast::Type],
+    es: &'a [ast::Expr],
+    pf: &'a Option<Box<ast::Expr>>
+  ) -> Option<(hir::Call<'a>, RExprTy<'a>)> {
+    let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
+    let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
+    let ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k.ty()?;
+    let ProcTy {kind, tyargs, args, rets, variant} = ty.clone();
+    assert_eq!(tys.len(), u32_as_usize(tyargs));
+    let args = args.from_global(self, tys);
+    let (es, pes, subst) = self.check_args(span, es, args, |x| x.k.1);
+    let variant = variant.map(|v| v.from_global(self, tys));
+    let variant = self.check_variant_use(subst, pf.as_deref(), variant);
+    if args.iter().any(|arg| arg.k.0.contains(ArgAttr::MUT)) {
+      self.dc.generation = self.new_generation();
+    }
+    let gen = self.dc.generation;
+    let rets = rets.from_global(self, tys);
+    let (mut rk, ret) = match rets.len() {
+      0 => (ReturnKind::Unit, self.common.t_unit),
+      1 => match rets[0].k.1 {
+        ArgKind::Lam(pat) => (ReturnKind::One, pat.k.ty()),
+        ArgKind::Let(..) => (ReturnKind::Unit, self.common.t_unit),
+      }
+      // TODO: support {x := a, _ : T x} returns as `One`
+      _ => {
+        let n = rets.iter().filter(|&a| matches!(a.k.1, ArgKind::Lam(_))).count()
+          .try_into().expect("too many args");
+        (ReturnKind::Struct(n), intern!(self, TyKind::Struct(rets)))
+      }
+    };
+    if let TyKind::False = ret.k { rk = ReturnKind::Unreachable }
+    let pe = if matches!(kind, ProcKind::Func) {
+      pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
+        args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))
+    } else { Err(span) };
+    Some((hir::Call {f: hir::Spanned {span, k: f}, tys, args: es, variant, gen, rk}, (pe, ret)))
+  }
+
   fn prop_to_expr(&mut self, sp: &'a FileSpan, p: Ty<'a>) -> Option<Expr<'a>> {
     Some(match self.whnf_ty(sp, p.into()).ty.k {
       TyKind::True | TyKind::Unit => self.common.e_bool(true),
@@ -2835,19 +2876,33 @@ impl<'a> InferCtx<'a> {
     }
   }
 
+  fn whnf_expect(&mut self, sp: &'a FileSpan, expect: ExpectExpr<'a>) -> Option<Ty<'a>> {
+    Some(self.whnf_ty(sp, expect.to_ty()?.into()).ty)
+  }
+
+  fn as_int_ty(&mut self, sp: &'a FileSpan, expect: ExpectExpr<'a>) -> Option<IntTy> {
+    self.whnf_expect(sp, expect)?.as_int_ty()
+  }
+
+  fn lower_expr_sn(&mut self, span: &'a FileSpan, expect: ExpectExpr<'a>,
+    x: &'a ast::Expr, h: Option<&'a ast::Expr>,
+  ) -> (hir::ExprKind<'a>, Expr<'a>, Ty<'a>) {
+    let expect2 = ExpectExpr::has_ty(self.whnf_expect(span, expect));
+    let (e, pe) = self.lower_expr(x, expect2);
+    let ty = e.ty();
+    let y = self.as_pure(&x.span, pe);
+    let x = if let ExpectExpr::Sn(x, _) = expect {x} else {self.new_expr_mvar(span)};
+    let h = h.map(|h| Box::new({
+      let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Binop(Binop::Eq, x, y))));
+      self.check_expr(h, ty).0
+    }));
+    (hir::ExprKind::Sn(Box::new(e), h), y, intern!(self, TyKind::Sn(x, ty)))
+  }
+
   #[allow(clippy::similar_names)]
   fn lower_expr_kind(&mut self, span: &'a FileSpan,
     e: &'a ast::ExprKind, expect: ExpectExpr<'a>
   ) -> (hir::Expr<'a>, RExpr<'a>) {
-
-    fn whnf_expect<'a>(ctx: &mut InferCtx<'a>, sp: &'a FileSpan, expect: ExpectExpr<'a>) -> Option<Ty<'a>> {
-      Some(ctx.whnf_ty(sp, expect.to_ty()?.into()).ty)
-    }
-
-    fn as_int_ty<'a>(ctx: &mut InferCtx<'a>, sp: &'a FileSpan, expect: ExpectExpr<'a>) -> Option<IntTy> {
-      whnf_expect(ctx, sp, expect)?.as_int_ty()
-    }
-
     macro_rules! unit {() => {self.common.e_unit}}
     macro_rules! ret {($k:expr, $pe:expr, $ty:expr) => {{
       let pe: RExpr<'a> = $pe;
@@ -2887,7 +2942,7 @@ impl<'a> InferCtx<'a> {
 
       ast::ExprKind::Int(n) => {
         #[allow(clippy::map_unwrap_or)]
-        let ty = as_int_ty(self, span, expect)
+        let ty = self.as_int_ty(span, expect)
           .filter(|ity| ity.contains(n))
           .map(|ity| self.common.int_ty(ity))
           .unwrap_or_else(|| {
@@ -2912,7 +2967,7 @@ impl<'a> InferCtx<'a> {
       }
 
       ast::ExprKind::Unop(Unop::BitNot(_), e) => {
-        let sz = as_int_ty(self, span, expect)
+        let sz = self.as_int_ty(span, expect)
           .and_then(|ty| if let IntTy::UInt(sz) = ty { Some(sz) } else { None })
           .unwrap_or(Size::Inf);
         let ty =
@@ -2930,7 +2985,7 @@ impl<'a> InferCtx<'a> {
       &ast::ExprKind::Binop(op, ref e1, ref e2) => {
         let opty = op.ty();
         let ((e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
-          let ityin = as_int_ty(self, span, expect).unwrap_or(IntTy::Int(Size::Inf));
+          let ityin = self.as_int_ty(span, expect).unwrap_or(IntTy::Int(Size::Inf));
           let tyin1 = self.common.int_ty(ityin);
           let (e1, pe1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin1));
           let tyin2 = if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
@@ -2938,8 +2993,8 @@ impl<'a> InferCtx<'a> {
           } else { tyin1 };
           let (e2, pe2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin2));
           let (tyin2, tyout) = self.binop_ty(op,
-            |this| as_int_ty(this, span, ExpectExpr::HasTy(e1.ty())),
-            |this| as_int_ty(this, span, ExpectExpr::HasTy(e2.ty())));
+            |this| this.as_int_ty(span, ExpectExpr::HasTy(e1.ty())),
+            |this| this.as_int_ty(span, ExpectExpr::HasTy(e2.ty())));
           let e1 = self.coerce_expr(e1, pe1, tyin2);
           let e2 = self.coerce_expr(e2, pe2, tyin2);
           ((e1, pe1), (e2, pe2), tyout)
@@ -2955,16 +3010,8 @@ impl<'a> InferCtx<'a> {
       }
 
       ast::ExprKind::Sn(x, h) => {
-        let expect2 = ExpectExpr::has_ty(whnf_expect(self, span, expect));
-        let (e, pe) = self.lower_expr(x, expect2);
-        let ty = e.ty();
-        let y = self.as_pure(&x.span, pe);
-        let x = if let ExpectExpr::Sn(x, _) = expect {x} else {self.new_expr_mvar(span)};
-        let h = h.as_deref().map(|h| Box::new({
-          let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Binop(Binop::Eq, x, y))));
-          self.check_expr(h, ty).0
-        }));
-        ret![Sn(Box::new(e), h), Ok(y), intern!(self, TyKind::Sn(x, ty))]
+        let (ek, pe, ty) = self.lower_expr_sn(span, expect, x, h.as_deref());
+        ret![ek, Ok(pe), ty]
       }
 
       ast::ExprKind::Index(arr, idx, hyp) => {
@@ -2988,7 +3035,7 @@ impl<'a> InferCtx<'a> {
 
       ast::ExprKind::Slice(args, hyp) => {
         let (arr, idx, len) = &**args;
-        let ty = whnf_expect(self, span, expect)
+        let ty = self.whnf_expect(span, expect)
           .and_then(|ty| if let TyKind::Array(ty, _) = ty.k {Some(ty)} else {None})
           .unwrap_or_else(|| self.new_ty_mvar(span));
         let n = self.new_expr_mvar(span);
@@ -3113,9 +3160,6 @@ impl<'a> InferCtx<'a> {
           let n = $n;
           if es.len() != n { error!(span, NumArgs(n, es.len())) }
         }}}
-        macro_rules! proof {($e:expr, $ty:expr) => {
-          ret![Proof({use hir::Proof::*; $e}), Ok(unit!()), $ty]
-        }}
         match tgt.k {
           TyKind::Unit => {
             expect!(0);
@@ -3123,7 +3167,7 @@ impl<'a> InferCtx<'a> {
           }
           TyKind::True => {
             expect!(0);
-            proof![ITrue, self.common.t_unit]
+            ret![ITrue, Ok(unit!()), self.common.t_unit]
           }
           TyKind::Array(tgt1, n_tgt) => {
             let n = intern!(self, ExprKind::Int(self.alloc.alloc(es.len().into())));
@@ -3184,7 +3228,7 @@ impl<'a> InferCtx<'a> {
             if let Some(val) = val {
               ret![List(ListKind::And, es), Ok(val), tgt]
             } else {
-              proof![ITrue, self.common.t_unit]
+              ret![ITrue, Ok(unit!()), self.common.t_unit]
             }
           }
           TyKind::Struct(args) => {
@@ -3195,7 +3239,12 @@ impl<'a> InferCtx<'a> {
             ret![List(ListKind::Struct, es), val, tgt]
           }
           TyKind::Own(_) |
-          TyKind::Sn(_, _) => { expect!(2); todo!() }
+          TyKind::Sn(_, _) => {
+            expect!(2);
+            let_unchecked!((x, h) as [x, h] = &**es);
+            let (ek, pe, ty) = self.lower_expr_sn(span, expect, x, Some(h));
+            ret![ek, Ok(pe), ty]
+          }
           _ => error!()
         }
       }
@@ -3260,7 +3309,7 @@ impl<'a> InferCtx<'a> {
           if let TyKind::Int(ity2) = tgt.k;
           then {
             if ity <= ity2 {
-              ret![Cast(Box::new(e), ty, hir::CastKind::Subtype(None)), pe, tgt]
+              ret![Cast(Box::new(e), ty, hir::CastKind::Int), pe, tgt]
             } else if let IntTy::UInt(Size::Inf) = ity2 {
               fail!()
             } else {
@@ -3273,7 +3322,7 @@ impl<'a> InferCtx<'a> {
             if matches!(ty.k, TyKind::Own(_) | TyKind::RefSn(_)) &&
               matches!(tgt.k, TyKind::Int(ity) if IntTy::UInt(Size::S64) <= ity) {
               let tgt = self.common.t_uint(Size::S64);
-              ret![Cast(Box::new(e), ty, hir::CastKind::Subtype(None)), pe, tgt]
+              ret![Cast(Box::new(e), ty, hir::CastKind::Ptr), pe, tgt]
             } else { fail!() }
           }
         }
@@ -3284,7 +3333,7 @@ impl<'a> InferCtx<'a> {
         let ty = e.ty();
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let ck = if let Ok(x) = pe {
-          hir::CastKind::Wand(x, h.as_deref().map(|h| Box::new({
+          hir::CastKind::Wand(h.as_deref().map(|h| Box::new({
             // [x: ty] -* [x: tgt]
             let hty = intern!(self, TyKind::Wand(
               intern!(self, TyKind::HasTy(x, ty)),
@@ -3312,7 +3361,7 @@ impl<'a> InferCtx<'a> {
         let ty = e.ty();
         let pe = self.as_pure(e.span, pe);
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
-        let ck = hir::CastKind::Mem(pe, h.as_deref().map(|h| Box::new({
+        let ck = hir::CastKind::Mem(h.as_deref().map(|h| Box::new({
           // [x: tgt]
           let hty = intern!(self, TyKind::HasTy(pe, tgt));
           self.check_expr(h, hty).0
@@ -3325,7 +3374,7 @@ impl<'a> InferCtx<'a> {
         tgt.uninit = false;
         let tgt = tgt.to_ty(self);
         let u_tgt = intern!(self, TyKind::Uninit(tgt));
-        ret![Uninit(tgt), Ok(unit!()), u_tgt]
+        ret![Uninit, Ok(unit!()), u_tgt]
       }
 
       ast::ExprKind::Sizeof(ty) => {
@@ -3411,26 +3460,17 @@ impl<'a> InferCtx<'a> {
         ret![e, Ok(unit!()), self.common.t_unit]
       }
 
-      ast::ExprKind::Call {f: Spanned {span, k: f}, tys, args: es, variant: pf} => {
-        let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
-        let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
-        let ty = match let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(f), ty).k.ty() {
+      ast::ExprKind::Call {f, tys, args, variant} =>
+        match self.check_call(f, tys, args, variant) {
           None => error!(),
-          Some(ty) => ty,
-        };
-        let ProcTy {kind, tyargs, args, rets, variant} = ty.clone();
-        assert_eq!(tys.len(), u32_as_usize(tyargs));
-        let args = args.from_global(self, tys);
-        let (es, pes, subst) = self.check_args(span, es, args, |x| x.k.1);
-        let variant = variant.map(|v| v.from_global(self, tys));
-        let variant = self.check_variant_use(subst, pf.as_deref(), variant);
-        let ret = intern!(self, TyKind::Struct(rets.from_global(self, tys)));
-        let pe = if matches!(kind, ProcKind::Func) {
-          pes.map(|pes| intern!(self, ExprKind::Call {f: *f, tys,
-            args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))
-        } else { Err(span) };
-        ret![Call {f: hir::Spanned {span, k: *f}, tys, args: es, variant}, pe, ret]
-      }
+          Some((call, (pe, mut ret))) => {
+            if let ReturnKind::Unreachable = call.rk {
+              self.dc.diverged = true;
+              if let Some(ty) = expect.to_ty() { ret = ty }
+            }
+            ret![Call(call), pe, ret]
+          }
+        }
 
       ast::ExprKind::Entail(pf, ps) => {
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
@@ -3456,7 +3496,7 @@ impl<'a> InferCtx<'a> {
           let ty = intern!(self, TyKind::Wand(from, tgt));
           let e = Box::new(hir::Spanned {span, k:
             (hir::ExprKind::List(ListKind::List, ps), (Some(unit!()), from))});
-          let ck = hir::CastKind::Wand(unit!(), Some(Box::new(self.elab_proof(span, ty, pf))));
+          let ck = hir::CastKind::Wand(Some(Box::new(self.elab_proof(span, ty, pf))));
           hir::ExprKind::Cast(e, from, ck)
         };
         ret![pr, Ok(unit!()), tgt]
@@ -3630,8 +3670,7 @@ impl<'a> InferCtx<'a> {
 
   fn elab_proof(&mut self, base: &'a FileSpan, ty: Ty<'a>, pf: &'a LispVal) -> hir::Expr<'a> {
     let span = self.alloc.alloc(try_get_fspan(base, pf));
-    let pf = hir::ExprKind::Proof(hir::Proof::Mm0(pf, ty));
-    hir::Spanned {span, k: (pf, (Some(self.common.e_unit), ty))}
+    hir::Spanned {span, k: (hir::ExprKind::Mm0Proof(pf), (Some(self.common.e_unit), ty))}
   }
 
   fn eval_expr(&mut self, span: &'a FileSpan, e: Expr<'a>) -> Option<hir::Expr<'a>> {
@@ -3680,6 +3719,7 @@ impl<'a> InferCtx<'a> {
       ExprKind::Sizeof(ty) => {
         let e2 = self.whnf_expr(span, e);
         if e != e2 { return self.eval_expr(span, e2) }
+        if let ExprKind::Infer(_) = e2.k { error!(UninferredType) }
         (hir::ExprKind::Sizeof(ty), self.common.nat())
       }
       ExprKind::If {cond, then, els} => {

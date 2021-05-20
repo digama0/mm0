@@ -283,6 +283,38 @@ pub struct While<'a> {
   pub trivial: Option<bool>,
 }
 
+/// Categorizes the way the returns of a call expression are packed.
+#[derive(Debug, Copy, Clone)]
+pub enum ReturnKind {
+  /// This function has at least one false return value, and so it does not return.
+  Unreachable,
+  /// This function has no return values.
+  Unit,
+  /// This function has one return value, and is not packed.
+  One,
+  /// This function has more than one return value, and is packed into a struct.
+  Struct(u16),
+}
+crate::deep_size_0!(ReturnKind);
+
+/// A call expression.
+#[derive(Debug, DeepSizeOf)]
+pub struct Call<'a> {
+  /// The function to call.
+  pub f: Spanned<'a, AtomId>,
+  /// The type arguments.
+  pub tys: &'a [ty::Ty<'a>],
+  /// The function arguments.
+  pub args: Vec<Expr<'a>>,
+  /// The variant, if needed.
+  pub variant: Option<Box<Expr<'a>>>,
+  /// The generation after the function call (the same as the current generation if this function
+  /// does not mutate any variables)
+  pub gen: GenId,
+  /// Categorizes the way the returns are packed.
+  pub rk: ReturnKind,
+}
+
 /// A place expression.
 pub type Place<'a> = Spanned<'a, (PlaceKind<'a>, ty::Ty<'a>)>;
 
@@ -327,6 +359,8 @@ impl<'a> Expr<'a> {
 pub enum ExprKind<'a> {
   /// A `()` literal.
   Unit,
+  /// A proof of true.
+  ITrue,
   /// A variable reference.
   Var(VarId, GenId),
   /// A user constant.
@@ -375,10 +409,8 @@ pub enum ExprKind<'a> {
   /// Combine an expression with a proof that it has the right type.
   /// The given type is the type of `e` (which should be defeq to the actual type of `e`)
   Cast(Box<Expr<'a>>, ty::Ty<'a>, CastKind<'a>),
-  /// Reinterpret an expression given a proof that it has the right type.
-  Pun(Box<Expr<'a>>, Option<Box<Expr<'a>>>),
   /// An expression denoting an uninitialized value of the given type.
-  Uninit(ty::Ty<'a>),
+  Uninit,
   /// Return the size of a type.
   Sizeof(ty::Ty<'a>),
   /// Take the type of a variable, producing a proof of type `T`.
@@ -403,19 +435,9 @@ pub enum ExprKind<'a> {
     gen: GenId,
   },
   /// A function call (or something that looks like one at parse time).
-  Call {
-    /// The function to call.
-    f: Spanned<'a, AtomId>,
-    /// The type arguments.
-    tys: &'a [ty::Ty<'a>],
-    /// The function arguments.
-    args: Vec<Expr<'a>>,
-    /// The variant, if needed.
-    variant: Option<Box<Expr<'a>>>,
-  },
-  /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
-  /// `P1, ..., Pn` and is a hypothesis of type `Q`.
-  Proof(Proof<'a>),
+  Call(Call<'a>),
+  /// A proof of a closed pure proposition.
+  Mm0Proof(&'a LispVal),
   /// A block scope.
   Block(Block<'a>),
   /// An if-then-else expression (at either block or statement level). The initial atom names
@@ -460,30 +482,19 @@ pub enum ExprKind<'a> {
   Error
 }
 
-/// A proof expression, which proves some hypothesis.
-#[derive(Debug, DeepSizeOf)]
-pub enum Proof<'a> {
-  /// A proof of [`PropKind::True`]
-  ITrue,
-  /// A proof of [`PropKind::Emp`]
-  IEmp,
-  /// And introduction
-  IAnd(Box<[Expr<'a>]>),
-  /// Sep introduction
-  ISep(Box<[Expr<'a>]>),
-  /// A proof of `P`.
-  Mm0(&'a LispVal, ty::Ty<'a>),
-}
-
 /// A `cast` kind, which determines what the type of `h` in `(cast x h)` is.
 #[derive(Debug, DeepSizeOf)]
 pub enum CastKind<'a> {
+  /// Casting integral types `u32 -> i64` and so on
+  Int,
+  /// Casting a pointer type to `u64`
+  Ptr,
   /// Proof that `A` is a subtype of `B`
   Subtype(Option<Box<Expr<'a>>>),
   /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast
-  Wand(ty::Expr<'a>, Option<Box<Expr<'a>>>),
+  Wand(Option<Box<Expr<'a>>>),
   /// Proof that `[x : B]` for the particular `x` in the cast
-  Mem(ty::Expr<'a>, Option<Box<Expr<'a>>>),
+  Mem(Option<Box<Expr<'a>>>),
 }
 
 /// A top level program item. (A program AST is a list of program items.)

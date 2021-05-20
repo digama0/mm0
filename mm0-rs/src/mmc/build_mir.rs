@@ -66,7 +66,7 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
       ty::TyKind::Int(ity) => TyKind::Int(ity),
       ty::TyKind::Array(ty, n) => TyKind::Array(ty.tr(tr), n.tr(tr)),
       ty::TyKind::Own(ty) => TyKind::Own(ty.tr(tr)),
-      ty::TyKind::Ref(lft, ty) => TyKind::Ref(lft, ty.tr(tr)),
+      ty::TyKind::Ref(lft, ty) => TyKind::Ref(lft.tr(tr), ty.tr(tr)),
       ty::TyKind::RefSn(e) => TyKind::RefSn(e.tr(tr)),
       ty::TyKind::List(tys) => tr.tr_list(tys),
       ty::TyKind::Sn(a, ty) => TyKind::Sn(a.tr(tr), ty.tr(tr)),
@@ -210,6 +210,17 @@ impl<'a> Translate<'a> for PreVar {
       PreVar::Ok(v) => v,
       PreVar::Pre(v) => v.tr(tr),
       PreVar::Fresh => tr.fresh_var(),
+    }
+  }
+}
+
+impl<'a> Translate<'a> for ty::Lifetime {
+  type Output = Lifetime;
+  fn tr(self, tr: &mut Translator<'a>) -> Lifetime {
+    match self {
+      ty::Lifetime::Extern => Lifetime::Extern,
+      ty::Lifetime::Place(v) => Lifetime::Place(v.tr(tr)),
+      ty::Lifetime::Infer(_) => unreachable!(),
     }
   }
 }
@@ -653,10 +664,16 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Rval(e) => self.copy_or_move(*e)?,
       hir::ExprKind::Ref(e) => self.copy_or_ref(*e)?,
       hir::ExprKind::Unit => Constant::unit().into(),
+      hir::ExprKind::ITrue => Constant::itrue().into(),
       hir::ExprKind::Bool(b) => Constant::bool(b).into(),
       hir::ExprKind::Int(n) => let_unchecked!(ty::TyKind::Int(ity) = e.ty().k,
         Constant::int(ity, n.clone()).into()),
       hir::ExprKind::Const(a) => Constant {ety: self.tr(e.k.1), k: ConstKind::Const(a)}.into(),
+      hir::ExprKind::Call(ref call)
+      if matches!(call.rk, hir::ReturnKind::Unit | hir::ReturnKind::Unreachable) => {
+        self.expr(e, None)?;
+        Constant::unit().into()
+      }
       _ => self.as_temp(e)?.into()
     })
   }
@@ -671,6 +688,7 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Rval(_) |
       hir::ExprKind::Ref(_) |
       hir::ExprKind::Unit |
+      hir::ExprKind::ITrue |
       hir::ExprKind::Bool(_) |
       hir::ExprKind::Int(_) |
       hir::ExprKind::Const(_) => self.operand(e)?.into(),
@@ -686,7 +704,7 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Sn(x, h) => {
         let vx = self.as_temp(*x)?;
         let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(|h| h.into());
-        RValue::Cast(vx.into(), CastKind::Sn(vh))
+        RValue::Pun(PunKind::Sn(vh), vx.into())
       }
       hir::ExprKind::List(lk, es) => {
         let vs = es.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
@@ -697,7 +715,7 @@ impl<'a> BuildMir<'a> {
           hir::ListKind::And => {
             let mut vs = vs.into_vec();
             let_unchecked!(v as Operand::Move(v) = vs.remove(0));
-            RValue::Cast(v, CastKind::And(vs))
+            RValue::Pun(PunKind::And(vs), v)
           }
         }
       }
@@ -706,19 +724,53 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Mm0(types::Mm0Expr {subst, ..}, ty) => RValue::Mm0(
         subst.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
           .collect::<Block<Box<[_]>>>()?),
-      hir::ExprKind::Cast(e, _, _) => todo!(),
-      hir::ExprKind::Pun(_, _) => todo!(),
-      hir::ExprKind::Uninit(_) => todo!(),
-      hir::ExprKind::Sizeof(_) => todo!(),
-      hir::ExprKind::Typeof(_) => todo!(),
-      hir::ExprKind::Assert(_) => todo!(),
+      hir::ExprKind::Cast(e, ty, hir::CastKind::Int) =>
+        RValue::Cast(CastKind::Int, self.operand(*e)?, self.tr(ty)),
+      hir::ExprKind::Cast(e, _, hir::CastKind::Ptr) =>
+        RValue::Pun(PunKind::Ptr, self.expr_place(*e)?),
+      hir::ExprKind::Cast(e, ty, hir::CastKind::Subtype(h)) => {
+        let e = self.operand(*e)?;
+        let ty = self.tr(ty);
+        RValue::Cast(CastKind::Subtype(h.map(|h| self.operand(*h)).transpose()?), e, ty)
+      }
+      hir::ExprKind::Cast(e, ty, hir::CastKind::Wand(h)) => {
+        let e = self.operand(*e)?;
+        let ty = self.tr(ty);
+        RValue::Cast(CastKind::Wand(h.map(|h| self.operand(*h)).transpose()?), e, ty)
+      }
+      hir::ExprKind::Cast(e, ty, hir::CastKind::Mem(h)) => {
+        let e = self.operand(*e)?;
+        let ty = self.tr(ty);
+        RValue::Cast(CastKind::Mem(h.map(|h| self.operand(*h)).transpose()?), e, ty)
+      }
+      hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
+      hir::ExprKind::Sizeof(ty) => Constant::sizeof(self.tr(ty)).into(),
+      hir::ExprKind::Typeof(e) => RValue::Typeof(self.operand(*e)?),
+      hir::ExprKind::Assert(e) => if let Some(pe) = e.k.1 .0 {
+        let e = self.operand(*e)?;
+        let cond = self.tr(pe);
+        self.assert(e, cond).into()
+      } else {
+        let v = self.as_temp(*e)?;
+        self.assert(Operand::Move(v.into()), Rc::new(ExprKind::Var(v))).into()
+      }
       hir::ExprKind::Assign {..} => {
         self.expr(e, None)?;
         Constant::unit().into()
       }
-      hir::ExprKind::Proof(_) => todo!(),
-      hir::ExprKind::While(while_) =>
-        self.rvalue_while(*while_, e.k.1)?,
+      hir::ExprKind::Call(ref call)
+      if matches!(call.rk, hir::ReturnKind::Struct(n)) => {
+        let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
+        let_unchecked!(n as hir::ReturnKind::Struct(n) = call.rk);
+        let dest = (0..n).map(|_| PreVar::Ok(self.fresh_var())).collect::<Vec<_>>();
+        self.expr_call(call, e.k.1 .1, &dest)?;
+        RValue::List(dest.into_iter().map(|v| {
+          let_unchecked!(PreVar::Ok(v) = v, v.into())
+        }).collect())
+      }
+      hir::ExprKind::Call(_) => self.operand(e)?.into(),
+      hir::ExprKind::Mm0Proof(p) => Constant::itrue().into(),
+      hir::ExprKind::While(while_) => self.rvalue_while(*while_, e.k.1)?,
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
       hir::ExprKind::Break(_, _) |
@@ -727,7 +779,7 @@ impl<'a> BuildMir<'a> {
         self.expr(e, None)?;
         unreachable!()
       }
-      hir::ExprKind::If {..} | hir::ExprKind::Block(_) | hir::ExprKind::Call {..} |
+      hir::ExprKind::If {..} | hir::ExprKind::Block(_) |
       hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!()
     })
   }
@@ -770,18 +822,21 @@ impl<'a> BuildMir<'a> {
         hir::ExprKind::If {hyp, cond, cases, gen, muts} =>
           return this.expr_if(hyp, *cond, *cases, gen, muts, dest),
         hir::ExprKind::Block(bl) => return this.block(bl, dest),
-        hir::ExprKind::Call {f, tys, args, variant} =>
-          return this.expr_call(f, tys, args, variant, dest),
+        hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
+          let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
+          return this.expr_call(call, e.k.1 .1, &[dest.unwrap_or(PreVar::Fresh)])
+        }
         _ => {}
       }
       match dest {
         None => match e.k.0 {
           hir::ExprKind::Unit |
+          hir::ExprKind::ITrue |
           hir::ExprKind::Var(_, _) |
           hir::ExprKind::Const(_) |
           hir::ExprKind::Bool(_) |
           hir::ExprKind::Int(_) |
-          hir::ExprKind::Uninit(_) |
+          hir::ExprKind::Uninit |
           hir::ExprKind::Sizeof(_) => {}
           hir::ExprKind::Unop(_, e) |
           hir::ExprKind::Proj(_, e, _) |
@@ -796,8 +851,7 @@ impl<'a> BuildMir<'a> {
             this.expr(*e1, None)?;
             this.expr(*e2, None)?;
           }
-          hir::ExprKind::Sn(e1, h) |
-          hir::ExprKind::Pun(e1, h) => {
+          hir::ExprKind::Sn(e1, h) => {
             this.expr(*e1, None)?;
             if let Some(h) = h { this.expr(*h, None)?; }
           }
@@ -831,8 +885,15 @@ impl<'a> BuildMir<'a> {
             this.tr.cur_gen = gen;
             this.push_stmt(Statement::Assign(lhs, rhs, vars))
           }
-          hir::ExprKind::Proof(_) |
+          hir::ExprKind::Mm0Proof(_) |
           hir::ExprKind::While {..} => { this.rvalue(e)?; }
+          hir::ExprKind::Call(call) => match call.rk {
+            hir::ReturnKind::Unreachable |
+            hir::ReturnKind::Unit => this.expr_call(call, e.k.1 .1, &[])?,
+            hir::ReturnKind::One => unreachable!(),
+            hir::ReturnKind::Struct(n) =>
+              this.expr_call(call, e.k.1 .1, &vec![PreVar::Fresh; n.into()])?,
+          }
           hir::ExprKind::Unreachable(h) => {
             let h = this.as_temp(*h)?;
             this.cur_block().terminate(Terminator::Unreachable(h.into()));
@@ -869,7 +930,7 @@ impl<'a> BuildMir<'a> {
               pl
             }))? {}
           }
-          hir::ExprKind::If {..} | hir::ExprKind::Block(_) | hir::ExprKind::Call {..} |
+          hir::ExprKind::If {..} | hir::ExprKind::Block(_) |
           hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!()
         }
         Some(dest) => {
@@ -979,10 +1040,27 @@ impl<'a> BuildMir<'a> {
   fn stmt(&mut self, stmt: hir::Stmt<'a>, brk: Option<&(JoinBlock, BlockDest)>) -> Block<()> {
     match stmt.k {
       hir::StmtKind::Let { lhs, rhs } => {
-        let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
-        self.expr(rhs, Some(v))?;
-        let v = self.tr(v);
-        self.tup_pat(lhs, &mut v.into());
+        if_chain! {
+          if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
+          if let ty::TuplePatternKind::Tuple(pats, _, _) = lhs.k;
+          if pats.len() == usize::from(n);
+          then {
+            let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
+            let dest = pats.iter().map(|&pat| {
+              pat.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre)
+            }).collect::<Vec<_>>();
+            self.expr_call(call, rhs.k.1 .1, &dest)?;
+            for (&pat, v) in pats.iter().zip(dest) {
+              let v = self.tr(v);
+              self.tup_pat(pat, &mut v.into());
+            }
+          } else {
+            let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
+            self.expr(rhs, Some(v))?;
+            let v = self.tr(v);
+            self.tup_pat(lhs, &mut v.into());
+          }
+        }
         Ok(())
       }
       hir::StmtKind::Expr(e) => self.expr(hir::Spanned {span: stmt.span, k: e}, None),
@@ -1263,14 +1341,42 @@ impl<'a> BuildMir<'a> {
   }
 
   fn expr_call(&mut self,
-    f: hir::Spanned<'a, AtomId>,
-    tys: &'a [ty::Ty<'a>],
-    args: Vec<hir::Expr<'a>>,
-    variant: Option<Box<hir::Expr<'a>>>,
-    dest: Dest,
+    hir::Call {f: hir::Spanned {k: f, ..}, tys, args, variant, gen, rk}: hir::Call<'a>,
+    tgt: ty::Ty<'a>,
+    dest: &[PreVar],
   ) -> Block<()> {
-    drop((f, args, variant));
-    todo!()
+    let tys = self.tr(tys);
+    let args = args.into_iter().map(|e| self.operand(e)).collect::<Block<Box<[_]>>>()?;
+    self.tr.cur_gen = gen;
+    let vars: Box<[_]> = match rk {
+      hir::ReturnKind::Unreachable => {
+        self.cur_block().terminate(Terminator::Call(f, tys, args, None));
+        return Err(Diverged)
+      }
+      hir::ReturnKind::Unit => Box::new([]),
+      hir::ReturnKind::One => {
+        let v = self.tr(dest[0]);
+        let tgt = self.tr(tgt);
+        self.extend_ctx(v, (None, tgt));
+        Box::new([v])
+      }
+      hir::ReturnKind::Struct(_) => {
+        let tgt = self.tr(tgt);
+        let argtys = if let TyKind::Struct(args) = &*tgt { &**args } else { unreachable!() };
+        let mut alph = Alpha::default();
+        dest.iter().zip(argtys).map(|(&dest, &Arg {attr, var, ref ty})| {
+          let v = self.tr(dest);
+          let ty = alph.alpha(ty);
+          self.extend_ctx(v, (None, ty));
+          if !attr.contains(ArgAttr::NONDEP) { alph.push(var, v) }
+          v
+        }).collect()
+      }
+    };
+    let bl = self.new_block();
+    self.cur_block().terminate(Terminator::Call(f, tys, args, Some((bl, vars))));
+    self.cur_block = bl;
+    Ok(())
   }
 
   fn expr_return<T, I: ExactSizeIterator<Item=T>>(&mut self,
@@ -1288,15 +1394,15 @@ impl<'a> BuildMir<'a> {
   fn build_item(&mut self, it: hir::Item<'a>) {
     match it.k {
       hir::ItemKind::Proc { kind, name, tyargs, args, rets, variant, body } => {
-
+        todo!();
       }
       hir::ItemKind::Global { lhs, rhs } => {
         mem::swap(&mut self.compiler.init.0, &mut self.cfg);
-
+        todo!();
         mem::swap(&mut self.compiler.init.0, &mut self.cfg);
       }
-      hir::ItemKind::Const { lhs, rhs } => {}
-      hir::ItemKind::Typedef { name, tyargs, args, val } => {}
+      hir::ItemKind::Const { lhs, rhs } => todo!(),
+      hir::ItemKind::Typedef { name, tyargs, args, val } => todo!(),
     }
   }
 }
