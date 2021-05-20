@@ -1,27 +1,17 @@
 //! Build the mid-level IR from HIR
-#![allow(unused)]
-#![allow(clippy::unused_self, clippy::match_same_arms)]
 
-use std::borrow::{Borrow, Cow};
-use std::{cell::RefCell, rc::Rc, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
-use std::result::Result as StdResult;
-use std::convert::{TryFrom, TryInto};
-use std::collections::{HashMap, HashSet, hash_map::Entry};
-use arrayvec::ArrayVec;
-use bumpalo::Bump;
-use itertools::Itertools;
-use num::Signed;
+use std::{rc::Rc, fmt::Debug, mem};
+use std::convert::TryInto;
+use std::collections::{HashMap, hash_map::Entry};
 use types::IntTy;
-use crate::{AtomId, FileSpan, FormatEnv, LispVal, RcExt, lisp::print::alphanumber, u32_as_usize};
-use super::{Compiler, parser::try_get_fspan, types};
-use types::{Binop, BinopType, FieldName, Mm0ExprNode, Size, Spanned, Unop,
-  VarId as HVarId, hir, ty, mir};
-use types::entity::{Entity, ConstTc, GlobalTc, ProcTy, ProcTc, TypeTc, TypeTy};
-use hir::{Context, ContextNext, GenId};
+use crate::AtomId;
+use super::types;
+use types::{Binop, Size, Spanned, VarId as HVarId, hir, ty, mir};
+use hir::GenId;
 use ty::{TuplePattern, TuplePatternKind, TupleMatchKind};
-use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use mir::*;
 
+#[derive(Debug)]
 struct GenMap {
   dominator: GenId,
   value: HashMap<HVarId, VarId>,
@@ -29,14 +19,14 @@ struct GenMap {
 }
 
 type TrMap<K, V> = HashMap<K, Result<V, HashMap<GenId, V>>>;
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Translator<'a> {
   tys: TrMap<ty::Ty<'a>, Ty>,
   exprs: TrMap<ty::Expr<'a>, Expr>,
   places: TrMap<ty::Place<'a>, EPlace>,
   gen_vars: HashMap<GenId, GenMap>,
   locations: HashMap<HVarId, VarId>,
-  located: HashMap<VarId, Vec<VarId>>,
+  // located: HashMap<VarId, Vec<VarId>>,
   next_var: VarId,
   cur_gen: GenId,
   subst: HashMap<HVarId, Expr>,
@@ -158,7 +148,7 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
           Ok(_) => unreachable!(),
           Err(m) => { m.insert(gen, r.clone()); }
         }
-        Entry::Vacant(mut e) => {
+        Entry::Vacant(e) => {
           e.insert(if self.flags.contains(ty::Flags::HAS_VAR) {
             let mut m = HashMap::new();
             m.insert(gen, r.clone());
@@ -263,17 +253,11 @@ impl<'a> Translator<'a> {
     let next = &mut self.next_var;
     *self.locations.entry(var).or_insert_with(|| fresh_var(next))
   }
-  fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
-    self.located.entry(var).or_insert_with(Vec::new)
-  }
+  // fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
+  //   self.located.entry(var).or_insert_with(Vec::new)
+  // }
 
   fn add_gen(&mut self, dominator: GenId, gen: GenId, value: HashMap<HVarId, VarId>) {
-    assert!(self.gen_vars.insert(gen,
-      GenMap { dominator, value, cache: Default::default() }).is_none())
-  }
-
-  fn add_gen_fresh(&mut self, dominator: GenId, gen: GenId, vars: impl Iterator<Item=HVarId>) {
-    let value = vars.map(|v| (v, self.fresh_var())).collect();
     assert!(self.gen_vars.insert(gen,
       GenMap { dominator, value, cache: Default::default() }).is_none())
   }
@@ -401,19 +385,13 @@ type JoinPoint = (GenId, Rc<[HVarId]>);
 
 /// A `JoinBlock` represents a potential jump location, together with the information needed to
 /// correctly pass all the updated values of mutable variables from the current context.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct JoinBlock(BlockId, JoinPoint);
 
 /// Data to support the `(jump label[i])` operation.
 type LabelData = (BlockId, Rc<[VarId]>);
 
-// impl JumpsData {
-//   fn get(&self, i: u16) -> (JoinBlock, Rc<[VarId]>) {
-//     let (tgt, ref args) = self.tgts[usize::from(i)];
-//     (JoinBlock {gen: self.gen, muts: self.muts.clone(), tgt}, args.clone())
-//   }
-// }
-
+#[derive(Debug)]
 struct LabelGroupData {
   /// This is `Some((gen, labs, muts))` if jumping to this label is valid. `gen, muts` are
   /// parameters to the [`JoinBlock`] (which are shared between all labels), and
@@ -424,12 +402,36 @@ struct LabelGroupData {
   brk: Option<(JoinBlock, BlockDest)>,
 }
 
+/// The global initializer, which contains let bindings for every global variable.
+#[derive(Debug, DeepSizeOf)]
+pub struct Initializer {
+  cfg: Cfg,
+  cur_block: Block<BlockId>,
+  next_var: VarId,
+}
+
+impl crate::Remap for Initializer {
+  type Target = Self;
+  fn remap(&self, r: &mut crate::Remapper) -> Self {
+    Initializer {
+      cfg: self.cfg.remap(r),
+      cur_block: self.cur_block,
+      next_var: self.next_var,
+    }
+  }
+}
+
+impl Default for Initializer {
+  fn default() -> Self {
+    let mut cfg = Cfg::default();
+    let cur_block = Ok(cfg.new_block(CtxId::ROOT));
+    Self {cfg, cur_block, next_var: Default::default()}
+  }
+}
+
 /// The main context struct for the MIR builder.
-struct BuildMir<'a> {
-  /// The global compiler data structures
-  compiler: &'a mut Compiler,
-  /// The allocator for HIR data
-  alloc: &'a Bump,
+#[derive(Debug)]
+pub struct BuildMir<'a> {
   /// The main data structure, the MIR control flow graph
   cfg: Cfg,
   /// Contains the current generation and other information relevant to the [`tr`](Self::tr)
@@ -437,10 +439,9 @@ struct BuildMir<'a> {
   tr: Translator<'a>,
   /// The stack of labels in scope
   labels: Vec<(HVarId, LabelGroupData)>,
-  /// If this is `Some((gen, args))` then `gen` is the generation for the end of the function
-  /// and `args` is the list of variables for the argument. There is no block ID because
-  /// [`Return`](Terminator::Return) doesn't jump to a block.
-  returns: Option<(GenId, Rc<[HVarId]>)>,
+  /// If this is `Some(args)` then `args` are the names of the return places.
+  /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
+  returns: Option<Rc<[VarId]>>,
   /// Some variables are replaced by places when referenced; this keeps track of them.
   vars: HashMap<VarId, Place>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -450,20 +451,24 @@ struct BuildMir<'a> {
   cur_ctx: CtxId,
 }
 
-struct Diverged;
+/// Indicates that construction diverged. See [`Block`].
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
+pub struct Diverged;
 
-type Block<T> = Result<T, Diverged>;
+/// This is the return type of functions that construct a `T` but may choose instead to perform
+/// some kind of non-local exit, in which case [`cur_block`](BuildMir::cur_block) will be
+/// terminated.
+pub type Block<T> = Result<T, Diverged>;
 
-impl<'a> BuildMir<'a> {
-  fn new(compiler: &'a mut Compiler, alloc: &'a Bump, var_names: &[AtomId]) -> Self {
+impl Default for BuildMir<'_> {
+  fn default() -> Self {
     let mut tr = Translator {
-      next_var: VarId(var_names.len().try_into().expect("overflow")),
+      next_var: VarId::default(),
       cur_gen: GenId::ROOT,
       ..Default::default()
     };
     tr.add_gen(GenId::ROOT, GenId::ROOT, Default::default());
     Self {
-      compiler, alloc,
       cfg: Cfg::default(),
       labels: vec![],
       returns: None,
@@ -473,7 +478,9 @@ impl<'a> BuildMir<'a> {
       cur_ctx: CtxId::ROOT,
     }
   }
+}
 
+impl<'a> BuildMir<'a> {
   fn fresh_var(&mut self) -> VarId { self.tr.fresh_var() }
 
   #[inline] fn cur(&self) -> (BlockId, CtxId, GenId) {
@@ -598,7 +605,7 @@ impl<'a> BuildMir<'a> {
 
   fn ignore_place(&mut self, e: hir::Place<'a>) -> Block<()> {
     match e.k.0 {
-      hir::PlaceKind::Var(v) => {}
+      hir::PlaceKind::Var(_) => {}
       hir::PlaceKind::Index(args) => {
         let (arr, idx, hyp_or_n) = *args;
         self.ignore_place(arr)?;
@@ -721,7 +728,7 @@ impl<'a> BuildMir<'a> {
       }
       hir::ExprKind::Ghost(e) => RValue::Ghost(self.copy_or_move(*e)?),
       hir::ExprKind::Borrow(e) => RValue::Borrow(self.place(*e)?),
-      hir::ExprKind::Mm0(types::Mm0Expr {subst, ..}, ty) => RValue::Mm0(
+      hir::ExprKind::Mm0(types::Mm0Expr {subst, ..}) => RValue::Mm0(
         subst.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
           .collect::<Block<Box<[_]>>>()?),
       hir::ExprKind::Cast(e, ty, hir::CastKind::Int) =>
@@ -759,7 +766,7 @@ impl<'a> BuildMir<'a> {
         Constant::unit().into()
       }
       hir::ExprKind::Call(ref call)
-      if matches!(call.rk, hir::ReturnKind::Struct(n)) => {
+      if matches!(call.rk, hir::ReturnKind::Struct(_)) => {
         let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
         let_unchecked!(n as hir::ReturnKind::Struct(n) = call.rk);
         let dest = (0..n).map(|_| PreVar::Ok(self.fresh_var())).collect::<Vec<_>>();
@@ -769,7 +776,7 @@ impl<'a> BuildMir<'a> {
         }).collect())
       }
       hir::ExprKind::Call(_) => self.operand(e)?.into(),
-      hir::ExprKind::Mm0Proof(p) => Constant::itrue().into(),
+      hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p.clone()).into(),
       hir::ExprKind::While(while_) => self.rvalue_while(*while_, e.k.1)?,
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
@@ -869,17 +876,17 @@ impl<'a> BuildMir<'a> {
             if let Ok(hyp) = hyp_or_n { this.expr(hyp, None)?; }
           }
           hir::ExprKind::List(_, es) => for e in es { this.expr(e, None)? }
-          hir::ExprKind::Mm0(e, _) => for e in e.subst { this.expr(e, None)? }
+          hir::ExprKind::Mm0(e) => for e in e.subst { this.expr(e, None)? }
           hir::ExprKind::Assert(_) => {
             this.expr(e, Some(PreVar::Fresh))?;
           }
           hir::ExprKind::Assign {lhs, rhs, map, gen} => {
             let lhs = this.place(*lhs)?;
             let rhs = this.operand(*rhs)?;
-            let mut varmap = map.iter()
+            let varmap = map.iter()
               .map(|&(new, old, _)| (old, this.tr(new))).collect::<HashMap<_, _>>();
             this.tr.add_gen(this.tr.cur_gen, gen, varmap);
-            let mut vars = map.into_vec().into_iter().map(|(new, _, ety)| {
+            let vars = map.into_vec().into_iter().map(|(new, _, ety)| {
               (this.tr(new), this.tr_gen(new, gen), this.tr_gen(ety, gen))
             }).collect::<Box<[_]>>();
             this.tr.cur_gen = gen;
@@ -924,7 +931,7 @@ impl<'a> BuildMir<'a> {
             match this.expr_return(|_| es.into_iter(), Self::expr_place)? {}
           hir::ExprKind::UnpackReturn(e) => {
             let pl = this.expr_place(*e)?;
-            match this.expr_return(|n| 0..n.try_into().expect("overflow"), |this, i| Ok({
+            match this.expr_return(|n| 0..n.try_into().expect("overflow"), |_, i| Ok({
               let mut pl = pl.clone();
               pl.proj.push(Projection::Proj(ListKind::Struct, i));
               pl
@@ -951,7 +958,7 @@ impl<'a> BuildMir<'a> {
         let v = self.tr(v);
         self.vars.insert(v, src.clone());
       }
-      TuplePatternKind::Tuple(pats, mk, ty) => {
+      TuplePatternKind::Tuple(pats, mk, _) => {
         let pk = match mk {
           TupleMatchKind::Unit | TupleMatchKind::True => return,
           TupleMatchKind::List | TupleMatchKind::Struct => ListKind::Struct,
@@ -979,16 +986,26 @@ impl<'a> BuildMir<'a> {
     }
   }
 
-  fn push_args(&mut self, args: Box<[hir::Arg<'a>]>) -> (BlockId, Rc<[VarId]>) {
+  fn push_args_raw(&mut self,
+    args: &[hir::Arg<'a>], mut f: impl FnMut(ty::ArgAttr, VarId, &Ty)
+  ) -> Vec<VarId> {
     let mut vs = Vec::with_capacity(args.len());
-    for arg in &*args {
+    for arg in args {
       if let hir::ArgKind::Lam(pat) = arg.1 {
         let var = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
         vs.push(var);
         let ty = self.tr(pat.k.ty());
+        f(arg.0, var, &ty);
         self.extend_ctx(var, (None, ty));
       }
     }
+    vs
+  }
+
+  fn push_args(&mut self,
+    args: Box<[hir::Arg<'a>]>, f: impl FnMut(ty::ArgAttr, VarId, &Ty)
+  ) -> (BlockId, Rc<[VarId]>) {
+    let vs = self.push_args_raw(&args, f);
     let bl = self.new_block();
     self.cur_block = bl;
     let mut pats = vec![];
@@ -1015,7 +1032,7 @@ impl<'a> BuildMir<'a> {
         }
       }
       Ok(())
-    })();
+    })().expect("pure expressions can't diverge");
     for pat in pats.into_iter().rev() { self.tr.finish_tup_pat(pat) }
     (bl, vs.into())
   }
@@ -1037,32 +1054,34 @@ impl<'a> BuildMir<'a> {
     self.cur_block().terminate(Terminator::Jump(tgt, args))
   }
 
+  fn let_stmt(&mut self, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
+    if_chain! {
+      if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
+      if let ty::TuplePatternKind::Tuple(pats, _, _) = lhs.k;
+      if pats.len() == usize::from(n);
+      then {
+        let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
+        let dest = pats.iter().map(|&pat| {
+          pat.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre)
+        }).collect::<Vec<_>>();
+        self.expr_call(call, rhs.k.1 .1, &dest)?;
+        for (&pat, v) in pats.iter().zip(dest) {
+          let v = self.tr(v);
+          self.tup_pat(pat, &mut v.into());
+        }
+      } else {
+        let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
+        self.expr(rhs, Some(v))?;
+        let v = self.tr(v);
+        self.tup_pat(lhs, &mut v.into());
+      }
+    }
+    Ok(())
+  }
+
   fn stmt(&mut self, stmt: hir::Stmt<'a>, brk: Option<&(JoinBlock, BlockDest)>) -> Block<()> {
     match stmt.k {
-      hir::StmtKind::Let { lhs, rhs } => {
-        if_chain! {
-          if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
-          if let ty::TuplePatternKind::Tuple(pats, _, _) = lhs.k;
-          if pats.len() == usize::from(n);
-          then {
-            let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
-            let dest = pats.iter().map(|&pat| {
-              pat.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre)
-            }).collect::<Vec<_>>();
-            self.expr_call(call, rhs.k.1 .1, &dest)?;
-            for (&pat, v) in pats.iter().zip(dest) {
-              let v = self.tr(v);
-              self.tup_pat(pat, &mut v.into());
-            }
-          } else {
-            let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
-            self.expr(rhs, Some(v))?;
-            let v = self.tr(v);
-            self.tup_pat(lhs, &mut v.into());
-          }
-        }
-        Ok(())
-      }
+      hir::StmtKind::Let { lhs, rhs } => self.let_stmt(lhs, rhs),
       hir::StmtKind::Expr(e) => self.expr(hir::Spanned {span: stmt.span, k: e}, None),
       hir::StmtKind::Label(v, labs) => {
         let base_ctx = self.cur_ctx;
@@ -1071,7 +1090,7 @@ impl<'a> BuildMir<'a> {
         let &(ref brk, dest) = brk.expect("we need a join point for the break here");
         let mut bodies = vec![];
         let jumps = labs.into_vec().into_iter().map(|lab| {
-          let (bl, args) = self.push_args(lab.args);
+          let (bl, args) = self.push_args(lab.args, |_, _, _| {});
           bodies.push(lab.body);
           self.cur_ctx = base_ctx;
           (bl, args)
@@ -1195,7 +1214,7 @@ impl<'a> BuildMir<'a> {
   }
 
   fn rvalue_while(&mut self,
-    hir::While { label, hyp, cond, var, body, gen, muts, trivial }: hir::While<'a>,
+    hir::While { label, hyp, cond, var: _, body, gen, muts, trivial }: hir::While<'a>,
     ret: ty::ExprTy<'a>,
   ) -> Block<RValue> {
     // If `has_break` is true, then this looks like
@@ -1341,7 +1360,7 @@ impl<'a> BuildMir<'a> {
   }
 
   fn expr_call(&mut self,
-    hir::Call {f: hir::Spanned {k: f, ..}, tys, args, variant, gen, rk}: hir::Call<'a>,
+    hir::Call {f: hir::Spanned {k: f, ..}, tys, args, variant: _, gen, rk}: hir::Call<'a>,
     tgt: ty::Ty<'a>,
     dest: &[PreVar],
   ) -> Block<()> {
@@ -1383,26 +1402,61 @@ impl<'a> BuildMir<'a> {
     es: impl FnOnce(usize) -> I,
     mut f: impl FnMut(&mut Self, T) -> Block<Place>,
   ) -> Block<std::convert::Infallible> {
-    let (gen, args) = self.returns.as_ref().expect("can't return here").clone();
-    let mut args = es(args.len()).zip(&*args).map(|(e, &v)| {
-      Ok((self.tr_gen(v, gen), f(self, e)?.into()))
+    let args = self.returns.as_ref().expect("can't return here").clone();
+    let args = es(args.len()).zip(&*args).map(|(e, &v)| {
+      Ok((v, f(self, e)?.into()))
     }).collect::<Block<Vec<_>>>()?;
     self.cur_block().terminate(Terminator::Return(args));
     Err(Diverged)
   }
 
-  fn build_item(&mut self, it: hir::Item<'a>) {
+  /// Build the MIR for an item (function, procedure, or static variable).
+  pub fn build_item(mut self,
+    mir: &mut HashMap<AtomId, Proc>,
+    init: &mut Initializer,
+    it: hir::Item<'a>
+  ) {
     match it.k {
-      hir::ItemKind::Proc { kind, name, tyargs, args, rets, variant, body } => {
-        todo!();
+      hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant: _, body } => {
+        fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
+          if attr.contains(ty::ArgAttr::NONDEP) { ArgAttr::NONDEP } else { ArgAttr::empty() }
+        }
+        if let hir::ProcKind::Intrinsic(_) = kind { return }
+        let mut args2 = Vec::with_capacity(args.len());
+        assert_eq!(self.push_args(args, |attr, var, ty| {
+          args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
+        }).0, BlockId::ENTRY);
+        self.tr.cur_gen = gen;
+        let mut rets2 = Vec::with_capacity(rets.len());
+        let ret_vs = self.push_args_raw(&rets, |attr, var, ty| {
+          rets2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
+        });
+        self.returns = Some(ret_vs.into());
+        self.tr.cur_gen = GenId::ROOT;
+        match self.block(body, None) {
+          Ok(()) => unreachable!("bodies should end in unconditional return"),
+          Err(Diverged) => {}
+        }
+        mir.insert(name.k, Proc {
+          kind,
+          name: Spanned {span: name.span.clone(), k: name.k},
+          tyargs,
+          args: args2,
+          rets: rets2,
+          body: self.cfg,
+        });
       }
       hir::ItemKind::Global { lhs, rhs } => {
-        mem::swap(&mut self.compiler.init.0, &mut self.cfg);
-        todo!();
-        mem::swap(&mut self.compiler.init.0, &mut self.cfg);
+        mem::swap(&mut init.cfg, &mut self.cfg);
+        self.tr.next_var = init.next_var;
+        init.cur_block = (|| -> Block<BlockId> {
+          self.cur_block = init.cur_block?;
+          self.let_stmt(lhs, rhs)?;
+          Ok(self.cur_block)
+        })();
+        init.next_var = self.tr.next_var;
+        mem::swap(&mut init.cfg, &mut self.cfg);
       }
-      hir::ItemKind::Const { lhs, rhs } => todo!(),
-      hir::ItemKind::Typedef { name, tyargs, args, val } => todo!(),
     }
   }
 }

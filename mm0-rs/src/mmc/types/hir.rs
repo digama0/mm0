@@ -2,7 +2,8 @@
 
 use num::BigInt;
 use crate::{AtomId, LispVal, FileSpan};
-use super::{Binop, Mm0Expr, Unop, VarId, ast::ProcKind, ty};
+use super::{Binop, Mm0Expr, Unop, VarId, ty};
+pub use super::ast::ProcKind;
 
 /// A "generation ID", which tracks the program points where mutation
 /// can occur. The actual set of logical variables is some subset of
@@ -405,7 +406,7 @@ pub enum ExprKind<'a> {
   Borrow(Box<Place<'a>>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
-  Mm0(Mm0Expr<Expr<'a>>, ty::Ty<'a>),
+  Mm0(Mm0Expr<Expr<'a>>),
   /// Combine an expression with a proof that it has the right type.
   /// The given type is the type of `e` (which should be defeq to the actual type of `e`)
   Cast(Box<Expr<'a>>, ty::Ty<'a>, CastKind<'a>),
@@ -513,6 +514,8 @@ pub enum ItemKind<'a> {
     tyargs: u32,
     /// The arguments of the procedure.
     args: Box<[Arg<'a>]>,
+    /// The generation for the return values.
+    gen: GenId,
     /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
     rets: Box<[Arg<'a>]>,
     /// The variant, used for recursive functions.
@@ -526,23 +529,5 @@ pub enum ItemKind<'a> {
     lhs: ty::TuplePattern<'a>,
     /// The value of the declaration
     rhs: Expr<'a>,
-  },
-  /// A constant declaration.
-  Const {
-    /// The constant(s) being declared
-    lhs: ty::TuplePattern<'a>,
-    /// The value of the declaration
-    rhs: ty::Expr<'a>,
-  },
-  /// A type definition.
-  Typedef {
-    /// The name of the newly declared type
-    name: Spanned<'a, AtomId>,
-    /// The number of type arguments
-    tyargs: u32,
-    /// The arguments of the type declaration, for a parametric type
-    args: Box<[ty::Arg<'a>]>,
-    /// The value of the declaration (another type)
-    val: ty::Ty<'a>,
   },
 }

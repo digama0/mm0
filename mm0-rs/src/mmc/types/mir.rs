@@ -1,12 +1,11 @@
 //! The mid level IR, a basic block based representation used for most optimizations.
-#![allow(unused)]
 
 use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
 use num::BigInt;
-use crate::{AtomId, FileSpan, LispVal, Remap, Remapper};
-use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir, ty};
+use crate::{AtomId, LispVal, Remap, Remapper};
+use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir};
 pub use ast::TyVarId;
 
 /// The alpha conversion struct is a mapping from variables to variables.
@@ -22,7 +21,6 @@ impl Alpha {
   /// Enter a binder during alpha conversion. This suppresses substitution for a bound variable
   /// within its scope.
   fn enter<R>(&mut self, v: VarId, f: impl FnOnce(&mut Self) -> R) -> R {
-    use std::collections::hash_map::Entry::*;
     if let Some(w) = self.0.remove(&v) {
       let r = f(self);
       self.0.insert(v, w);
@@ -543,7 +541,7 @@ impl HasAlpha for ExprKind {
 }
 
 /// A basic block ID, which is used to look up blocks in the [`Cfg`].
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub struct BlockId(u32);
 crate::deep_size_0!(BlockId);
 
@@ -553,7 +551,7 @@ impl BlockId {
 }
 impl Remap for BlockId {
   type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self { *self }
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
 /// A collection of contexts, maintaining a tree structure. The underlying data structure is a list
@@ -582,9 +580,9 @@ impl Contexts {
   /// Given a context ID, retrieve a context buffer, ensuring that it can be directly extended by
   /// allocating a new context buffer if necessary.
   pub fn unshare(&mut self, id: &'_ mut CtxId) -> &mut CtxBuf {
-    let mut ctx = &mut self[id.0];
+    let ctx = &mut self[id.0];
     if u32::try_from(ctx.vars.len()).expect("overflow") == id.1 {
-      /// Safety: NLL case 3 (polonius validates this borrow pattern)
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
       #[allow(clippy::useless_transmute)]
       unsafe { std::mem::transmute::<&mut CtxBuf, &mut CtxBuf>(ctx) }
     } else {
@@ -1171,17 +1169,17 @@ impl BasicBlock {
 #[derive(Debug, DeepSizeOf)]
 pub struct Proc {
   /// The type of declaration: `func`, `proc`, or `intrinsic`.
-  kind: ProcKind,
+  pub kind: ProcKind,
   /// The name of the procedure.
-  name: Spanned<AtomId>,
+  pub name: Spanned<AtomId>,
   /// The number of type arguments
-  tyargs: u32,
+  pub tyargs: u32,
   /// The arguments of the procedure.
-  args: Vec<Arg>,
+  pub args: Vec<Arg>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  rets: Vec<Arg>,
+  pub rets: Vec<Arg>,
   /// The body of the procedure.
-  body: Cfg,
+  pub body: Cfg,
 }
 
 impl Remap for Proc {

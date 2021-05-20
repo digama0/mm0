@@ -47,12 +47,12 @@ impl<'a> Internable<'a> for ty::TyKind<'a> {
 
 pub(crate) trait ToGlobal<'a> {
   type Output;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output;
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output;
 }
 
 impl<'a, T: Internable<'a> + ToGlobal<'a, Output=Rc<<T as Internable<'a>>::Inner>>> ToGlobal<'a> for &'a WithMeta<T> {
   type Output = Rc<T::Inner>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Rc<T::Inner> {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Rc<T::Inner> {
     if let Some(e) = T::interner(&mut ctx.gctx).get(self) { return e.clone() }
     let rc = self.k.to_global(ctx);
     T::interner(&mut ctx.gctx).insert(self, rc.clone());
@@ -60,23 +60,23 @@ impl<'a, T: Internable<'a> + ToGlobal<'a, Output=Rc<<T as Internable<'a>>::Inner
   }
 }
 
-impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for &'a [T] {
+impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for &[T] {
   type Output = Box<[T::Output]>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Box<[T::Output]> {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Box<[T::Output]> {
     self.iter().map(|t| t.to_global(ctx)).collect()
   }
 }
 
 impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for [T; 2] {
   type Output = [T::Output; 2];
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> [T::Output; 2] {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> [T::Output; 2] {
     [self[0].to_global(ctx), self[1].to_global(ctx)]
   }
 }
 
 impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
   type Output = Option<T::Output>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Option<T::Output> {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Option<T::Output> {
     self.as_ref().map(|t| t.to_global(ctx))
   }
 }
@@ -98,7 +98,7 @@ pub enum TuplePatternKind {
 
 impl<'a> ToGlobal<'a> for ty::TuplePatternKind<'a> {
   type Output = Rc<TuplePatternKind>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::TuplePatternKind::Name(a, v, ty) => TuplePatternKind::Name(a, v, ty.to_global(ctx)),
       ty::TuplePatternKind::Tuple(pats, mk, ty) =>
@@ -139,7 +139,7 @@ pub enum ArgKind {
 
 impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
   type Output = Rc<ArgS>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Rc::new((self.0, match self.1 {
       ty::ArgKind::Lam(arg) => ArgKind::Lam(arg.to_global(ctx)),
       ty::ArgKind::Let(arg, e) => ArgKind::Let(arg.to_global(ctx), e.to_global(ctx)),
@@ -182,16 +182,16 @@ impl<T: PartialEq> PartialEq for Mm0Expr<T> {
 }
 impl<T: Eq> Eq for Mm0Expr<T> {}
 
-impl<'a> ToGlobal<'a> for &'a Mm0ExprNode {
+impl ToGlobal<'_> for &Mm0ExprNode {
   type Output = Rc<Mm0ExprNode>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'_, '_>) -> Self::Output {
     ctx.gctx.mm0.entry(*self).or_insert_with(|| Rc::new((*self).clone())).clone()
   }
 }
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {
   type Output = Mm0Expr<Expr>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Mm0Expr { subst: self.subst.to_global(ctx), expr: self.expr.clone() }
   }
 }
@@ -203,9 +203,9 @@ impl<T: Remap> Remap for Mm0Expr<T> {
   }
 }
 
-impl<'a> ToGlobal<'a> for Lifetime {
+impl ToGlobal<'_> for Lifetime {
   type Output = Lifetime;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'_, '_>) -> Self::Output {
     match *self {
       Lifetime::Infer(v) => ctx.get_lft_or_assign_extern(v),
       lft => lft
@@ -312,7 +312,7 @@ pub enum TyKind {
 
 impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
   type Output = Rc<TyKind>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Rc<TyKind> {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Rc<TyKind> {
     Rc::new(match *self {
       ty::TyKind::Unit => TyKind::Unit,
       ty::TyKind::True => TyKind::True,
@@ -404,7 +404,7 @@ pub enum VariantType {
 
 impl<'a> ToGlobal<'a> for hir::VariantType<'a> {
   type Output = VariantType;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     match self {
       hir::VariantType::Down => VariantType::Down,
       hir::VariantType::UpLt(e) => VariantType::UpLt(e.to_global(ctx)),
@@ -431,7 +431,7 @@ pub struct Variant(pub Expr, pub VariantType);
 
 impl<'a> ToGlobal<'a> for hir::Variant<'a> {
   type Output = Variant;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Variant(self.0.to_global(ctx), self.1.to_global(ctx))
   }
 }
@@ -466,7 +466,7 @@ pub enum PlaceKind {
 
 impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
   type Output = Rc<PlaceKind>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::PlaceKind::Var(v) => PlaceKind::Var(v),
       ty::PlaceKind::Index(a, ty, i) =>
@@ -566,7 +566,7 @@ pub enum ExprKind {
 
 impl<'a> ToGlobal<'a> for ty::ExprKind<'a> {
   type Output = Rc<ExprKind>;
-  fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
+  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::ExprKind::Unit => ExprKind::Unit,
       ty::ExprKind::Var(v) => ExprKind::Var(v),

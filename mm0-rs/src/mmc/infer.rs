@@ -120,7 +120,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
 
 impl<'a> hir::Spanned<'a, TypeError<'a>> {
   /// Convert this type error into an MM1 elaboration error
-  pub fn into_elab_error(self, pr: &PrintCtx<'a, '_>) -> crate::ElabError {
+  pub fn into_elab_error(self, pr: &PrintCtx<'a, '_, '_>) -> crate::ElabError {
     match self.k {
       TypeError::ExpectedPure(sp) =>
         crate::ElabError::with_info(self.span, format!("{}", CtxPrint(pr, &self.k)).into(),
@@ -255,7 +255,7 @@ impl<'a, K: UnifyKey, V> Index<K> for Assignments<'a, K, V> {
 }
 
 impl Unop {
-  // #[must_use] fn arg_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
+  // #[must_use] fn arg_ty<'a>(self, ctx: &mut InferCtx<'a, '_>) -> Ty<'a> {
   //   match self {
   //     Unop::Not => ctx.common.t_bool,
   //     Unop::Neg |
@@ -264,7 +264,7 @@ impl Unop {
   //     Unop::BitNot(sz) => ctx.common.t_uint(sz),
   //   }
   // }
-  #[must_use] fn ret_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
+  #[must_use] fn ret_ty<'a>(self, ctx: &mut InferCtx<'a, '_>) -> Ty<'a> {
     match self {
       Unop::Not => ctx.common.t_bool,
       Unop::Neg | Unop::BitNot(Size::Inf) => ctx.common.int(),
@@ -308,7 +308,7 @@ impl<'a> UnelabTupPat<'a> {
   }
 
   /// The context before introducing the bindings in this tuple pattern.
-  fn base_context(&self, ctx: &mut InferCtx<'a>) {
+  fn base_context(&self, ctx: &mut InferCtx<'a, '_>) {
     match &self.k {
       UnelabTupPatKind::Name(_, _, &ContextNext {parent, ..}) => ctx.dc.context = parent,
       UnelabTupPatKind::Tuple(pats, _) =>
@@ -384,7 +384,7 @@ struct WhnfTy<'a> {
 }
 
 impl<'a> WhnfTy<'a> {
-  fn to_ty(mut self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
+  fn to_ty(mut self, ctx: &mut InferCtx<'a, '_>) -> Ty<'a> {
     if self.moved { self.ty = intern!(ctx, TyKind::Moved(self.ty)) }
     if self.ghost { self.ty = intern!(ctx, TyKind::Ghost(self.ty)) }
     if self.uninit { self.ty = intern!(ctx, TyKind::Uninit(self.ty)) }
@@ -429,7 +429,7 @@ impl<'a> Subst<'a> {
 
   fn add_fvars_place(&mut self, e: Place<'a>) { e.on_vars(|v| { self.fvars.insert(v); }) }
 
-  fn push_tuple_pattern_raw(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan,
+  fn push_tuple_pattern_raw(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan,
     pat: TuplePattern<'a>, e: Result<Expr<'a>, &'a FileSpan>
   ) {
     match pat.k {
@@ -444,14 +444,14 @@ impl<'a> Subst<'a> {
     }
   }
 
-  fn push_tuple_pattern(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan,
+  fn push_tuple_pattern(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan,
     pat: TuplePattern<'a>, e: Result<Expr<'a>, &'a FileSpan>
   ) {
     self.add_fvars(e);
     self.push_tuple_pattern_raw(ctx, sp, pat, e);
   }
 
-  fn subst_var(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, v: VarId) -> Option<Expr<'a>> {
+  fn subst_var(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, v: VarId) -> Option<Expr<'a>> {
     if let im::hashmap::Entry::Occupied(mut e) = self.subst.entry(v) {
       let res = e.get_mut();
       Some(match *res {
@@ -465,7 +465,7 @@ impl<'a> Subst<'a> {
     } else { None }
   }
 
-  fn subst_place(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, e: Place<'a>) -> Place<'a> {
+  fn subst_place(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, e: Place<'a>) -> Place<'a> {
     macro_rules! subst {($op:expr, $p:expr, $ty:expr $(, $es:expr)*) => {{
       let p2 = self.subst_place(ctx, sp, $p);
       let ty2 = self.subst_ty(ctx, sp, $ty);
@@ -487,7 +487,7 @@ impl<'a> Subst<'a> {
     }
   }
 
-  fn subst_expr(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, e: Expr<'a>) -> Expr<'a> {
+  fn subst_expr(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, e: Expr<'a>) -> Expr<'a> {
     macro_rules! subst {($op:expr, $($es:expr),*) => {{
       let e2 = ($(self.subst_expr(ctx, sp, $es)),*);
       if ($($es),*) == e2 { return e }
@@ -563,7 +563,7 @@ impl<'a> Subst<'a> {
   }
 
   fn subst_lft(&mut self,
-    ctx: &mut InferCtx<'a>, span: &'a FileSpan, lft: Lifetime
+    ctx: &mut InferCtx<'a, '_>, span: &'a FileSpan, lft: Lifetime
   ) -> Option<Lifetime> {
     Some(match lft {
       Lifetime::Extern => lft,
@@ -594,7 +594,7 @@ impl<'a> Subst<'a> {
   }
 
   fn subst_tup_pat(&mut self,
-    ctx: &mut InferCtx<'a>, sp: &'a FileSpan, pat: TuplePattern<'a>
+    ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, pat: TuplePattern<'a>
   ) -> TuplePattern<'a> {
     match pat.k {
       TuplePatternKind::Name(g, v, ty) => {
@@ -624,7 +624,7 @@ impl<'a> Subst<'a> {
     }
   }
 
-  fn subst_arg(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, arg: Arg<'a>) -> Arg<'a> {
+  fn subst_arg(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, arg: Arg<'a>) -> Arg<'a> {
     match arg.k.1 {
       ArgKind::Lam(pat) => {
         let pat2 = self.subst_tup_pat(ctx, sp, pat);
@@ -640,7 +640,7 @@ impl<'a> Subst<'a> {
     }
   }
 
-  fn subst_ty(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, ty: Ty<'a>) -> Ty<'a> {
+  fn subst_ty(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, ty: Ty<'a>) -> Ty<'a> {
     macro_rules! subst {($op:expr; $($tys:expr),*; $($es:expr),*) => {{
       let ty2 = ($(self.subst_ty(ctx, sp, $tys)),*);
       let e2 = ($(self.subst_expr(ctx, sp, $es)),*);
@@ -728,12 +728,12 @@ impl<'a> Subst<'a> {
 
 trait FromGlobal<'a> {
   type Output: 'a;
-  fn from_global(&self, ctx: &mut InferCtx<'a>, subst: &[Ty<'a>]) -> Self::Output;
+  fn from_global(&self, ctx: &mut InferCtx<'a, '_>, subst: &[Ty<'a>]) -> Self::Output;
 }
 
 impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for std::rc::Rc<T> {
   type Output = T::Output;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     (**self).from_global(c, t)
   }
 }
@@ -741,7 +741,7 @@ impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for std::rc::Rc<T> {
 impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for Box<[T]> {
   type Output = &'a [T::Output];
   #[allow(clippy::needless_collect)]
-  fn from_global(&self, c: &mut InferCtx<'a>, subst: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, subst: &[Ty<'a>]) -> Self::Output {
     let vec = self.iter().map(|t| t.from_global(c, subst)).collect::<Vec<_>>();
     c.alloc.alloc_slice_fill_iter(vec.into_iter())
   }
@@ -749,7 +749,7 @@ impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for Box<[T]> {
 
 impl<'a> FromGlobal<'a> for global::TuplePatternKind {
   type Output = TuplePattern<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     intern!(c, match self {
       global::TuplePatternKind::Name(a, v, ty) =>
         TuplePatternKind::Name(*a, *v, ty.from_global(c, t)),
@@ -763,7 +763,7 @@ impl<'a> FromGlobal<'a> for global::TuplePatternKind {
 
 impl<'a> FromGlobal<'a> for global::ArgS {
   type Output = Arg<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     intern!(c, (self.0, match &self.1 {
       global::ArgKind::Lam(arg) => ArgKind::Lam(arg.from_global(c, t)),
       global::ArgKind::Let(arg, e) => ArgKind::Let(arg.from_global(c, t), e.from_global(c, t)),
@@ -773,7 +773,7 @@ impl<'a> FromGlobal<'a> for global::ArgS {
 
 impl<'a> FromGlobal<'a> for global::Mm0Expr {
   type Output = Mm0Expr<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Mm0Expr<'a> {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Mm0Expr<'a> {
     Mm0Expr {
       subst: self.subst.from_global(c, t),
       expr: c.mm0_alloc.0.alloc(self.expr.clone())
@@ -783,7 +783,7 @@ impl<'a> FromGlobal<'a> for global::Mm0Expr {
 
 impl<'a> FromGlobal<'a> for global::TyKind {
   type Output = Ty<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Ty<'a> {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Ty<'a> {
     intern!(c, match self {
       global::TyKind::Unit => TyKind::Unit,
       global::TyKind::True => TyKind::True,
@@ -824,7 +824,7 @@ impl<'a> FromGlobal<'a> for global::TyKind {
 
 impl<'a> FromGlobal<'a> for global::VariantType {
   type Output = hir::VariantType<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     match self {
       global::VariantType::Down => hir::VariantType::Down,
       global::VariantType::UpLt(e) => hir::VariantType::UpLt(e.from_global(c, t)),
@@ -835,7 +835,7 @@ impl<'a> FromGlobal<'a> for global::VariantType {
 
 impl<'a> FromGlobal<'a> for global::Variant {
   type Output = hir::Variant<'a>;
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     hir::Variant(self.0.from_global(c, t), self.1.from_global(c, t))
   }
 }
@@ -843,7 +843,7 @@ impl<'a> FromGlobal<'a> for global::Variant {
 impl<'a> FromGlobal<'a> for global::PlaceKind {
   type Output = Place<'a>;
   #[allow(clippy::many_single_char_names)]
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     macro_rules! g {($e:expr) => {$e.from_global(c, t)}}
     intern!(c, match self {
       &global::PlaceKind::Var(v) => PlaceKind::Var(v),
@@ -860,7 +860,7 @@ impl<'a> FromGlobal<'a> for global::PlaceKind {
 impl<'a> FromGlobal<'a> for global::ExprKind {
   type Output = Expr<'a>;
   #[allow(clippy::many_single_char_names)]
-  fn from_global(&self, c: &mut InferCtx<'a>, t: &[Ty<'a>]) -> Self::Output {
+  fn from_global(&self, c: &mut InferCtx<'a, '_>, t: &[Ty<'a>]) -> Self::Output {
     macro_rules! g {($e:expr) => {$e.from_global(c, t)}}
     intern!(c, match self {
       global::ExprKind::Unit => ExprKind::Unit,
@@ -973,15 +973,15 @@ struct PrintCtxInner {
 /// using the internal numbering, which might involve a lot of temporaries). Variables and
 /// metavariables are numbered consistently as long as this object is kept around.
 #[derive(Debug)]
-pub struct PrintCtx<'a, 'b> {
+pub struct PrintCtx<'a, 'n, 'b> {
   fe: FormatEnv<'a>,
-  inner: RefCell<&'b mut InferCtx<'a>>,
+  inner: RefCell<&'b mut InferCtx<'a, 'n>>,
 }
 
-impl<'a> InferCtx<'a> {
+impl<'a, 'n> InferCtx<'a, 'n> {
   /// Constructs a stateful printer for error messages, which should be used on all error messages
   /// in a group.
-  pub fn print(&mut self) -> PrintCtx<'a, '_> {
+  pub fn print(&mut self) -> PrintCtx<'a, 'n, '_> {
     PrintCtx {
       fe: self.fe,
       inner: RefCell::new(self),
@@ -989,7 +989,7 @@ impl<'a> InferCtx<'a> {
   }
 }
 
-impl<'a, 'b> DisplayCtx for PrintCtx<'a, 'b> {
+impl DisplayCtx for PrintCtx<'_, '_, '_> {
   fn format_env(&self) -> FormatEnv<'_> { self.fe }
 
   fn fmt_var(&self, v: VarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1055,13 +1055,13 @@ impl<'a> Debug for Mm0Arena<'a> {
 
 /// The main inference context for the type inference pass.
 #[derive(Debug)]
-pub struct InferCtx<'a> {
+pub struct InferCtx<'a, 'n> {
   /// The bump allocator that stores all the data structures
   /// (the `'a` in all the borrowed types).
   alloc: &'a Bump,
   mm0_alloc: Mm0Arena<'a>,
   /// The name map, for global variables and functions.
-  names: &'a mut HashMap<AtomId, Entity>,
+  names: &'n mut HashMap<AtomId, Entity>,
   /// The interner, which is used to deduplicate types and terms that are
   /// constructed multiple times.
   interner: Interner<'a>,
@@ -1203,7 +1203,7 @@ impl TupleMatchKind {
   /// Constructs an expression from a list of expressions for the sub-pattern matches.
   /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
   /// type error.
-  fn build<'a>(self, ctx: &mut InferCtx<'a>, exprs: Vec<Option<Expr<'a>>>) -> Option<Expr<'a>> {
+  fn build<'a>(self, ctx: &mut InferCtx<'a, '_>, exprs: Vec<Option<Expr<'a>>>) -> Option<Expr<'a>> {
     Some(match self {
       Self::Unit | Self::True => ctx.common.e_unit,
       Self::Sn => (*exprs.first()?)?,
@@ -1225,7 +1225,7 @@ impl TupleMatchKind {
   /// Constructs an expression from a list of expressions for the sub-pattern matches.
   /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
   /// type error.
-  fn proj<'a>(self, ctx: &mut InferCtx<'a>,
+  fn proj<'a>(self, ctx: &mut InferCtx<'a, '_>,
     span: &'a FileSpan, e: Expr<'a>, num: usize, idx: u32
   ) -> Expr<'a> {
     match self {
@@ -1279,7 +1279,7 @@ impl Default for TupleIter<'_> {
 
 impl<'a> TupleIter<'a> {
   /// Construct an `Args` variant, pulling the next non-`Let` argument from the list.
-  fn mk_args(ctx: &mut InferCtx<'a>, span: &'a FileSpan,
+  fn mk_args(ctx: &mut InferCtx<'a, '_>, span: &'a FileSpan,
     mut subst: Subst<'a>, mut rest: std::slice::Iter<'a, Arg<'a>>
   ) -> Self {
     while let Some(arg) = rest.next() {
@@ -1300,7 +1300,7 @@ impl<'a> TupleIter<'a> {
   /// **Note**: Unlike a regular iterator, `next` cannot be called twice in a row.
   /// If you get `Some(ty)` you have to either discard the iterator or call `push`
   /// to get it ready for the next `next` call.
-  fn next(&mut self, ctx: &mut InferCtx<'a>) -> Option<Ty<'a>> {
+  fn next(&mut self, ctx: &mut InferCtx<'a, '_>) -> Option<Ty<'a>> {
     match self {
       Self::Ty(ty) => ty.take(),
       &mut Self::Sn(_, ty) => Some(ty),
@@ -1312,7 +1312,7 @@ impl<'a> TupleIter<'a> {
 
   /// Finishes a call to `next` by substituting `val` into all types in the
   /// rest of the sequence of types.
-  fn push(&mut self, ctx: &mut InferCtx<'a>, sp: &'a FileSpan, val: Expr<'a>) {
+  fn push(&mut self, ctx: &mut InferCtx<'a, '_>, sp: &'a FileSpan, val: Expr<'a>) {
     match self {
       Self::Ty(_) | Self::List(_) => {}
       &mut Self::Sn(e, _) => {
@@ -1400,12 +1400,12 @@ impl<'a> Common<'a> {
   }
 }
 
-impl<'a> InferCtx<'a> {
+impl<'a, 'n> InferCtx<'a, 'n> {
   /// Create a new `InferCtx` from the given allocator.
   pub fn new(
     alloc: &'a Bump,
     mm0_alloc: &'a typed_arena::Arena<Rc<Mm0ExprNode>>,
-    names: &'a mut HashMap<AtomId, Entity>,
+    names: &'n mut HashMap<AtomId, Entity>,
     fe: FormatEnv<'a>,
     var_names: Vec<AtomId>,
   ) -> Self {
@@ -3290,7 +3290,7 @@ impl<'a> InferCtx<'a> {
         let tgt = expect.to_ty().unwrap_or_else(|| self.common.nat());
         let pe = self.alloc.alloc_slice_fill_iter(p_subst.into_iter());
         let pe = intern!(self, ExprKind::Mm0(Mm0Expr {subst: pe, expr }));
-        ret![Mm0(types::Mm0Expr { subst, expr: expr.clone() }, tgt), Ok(pe), tgt]
+        ret![Mm0(types::Mm0Expr { subst, expr: expr.clone() }), Ok(pe), tgt]
       }
 
       ast::ExprKind::Typed(e, ty) => {
@@ -4060,13 +4060,14 @@ impl<'a> InferCtx<'a> {
   }
 
   /// Construct the HIR for a top level item, performing type inference.
-  pub fn lower_item(&mut self, Spanned {span, k: item}: &'a ast::Item) -> hir::Item<'a> {
+  pub fn lower_item(&mut self, Spanned {span, k: item}: &'a ast::Item) -> Option<hir::Item<'a>> {
     let item = match item {
       &ast::ItemKind::Proc {kind, ref name, tyargs, ref args, ref rets, ref variant, ref body} => {
         let name = hir::Spanned {span: &name.span, k: name.k};
         let args2 = args.iter()
           .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
         let mut subst = Subst::default();
+        let gen = self.new_generation();
         let rets = rets.iter().map(|ret| (ArgAttr::empty(), UnelabArgKind::Lam(match ret {
           ast::Ret::Reg(pat) => self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0,
           &ast::Ret::Out(g, i, n, v, ref ty) => {
@@ -4095,7 +4096,7 @@ impl<'a> InferCtx<'a> {
             args: t_args.to_global(self),
             rets: t_rets.to_global(self),
             variant: variant.to_global(self),
-          }, None);
+          });
         self.dc.context = ctx;
         let sigma = match *t_args {
           [] => self.common.t_unit,
@@ -4119,7 +4120,7 @@ impl<'a> InferCtx<'a> {
         };
         body.expr = Some(Box::new(hir::Spanned {span, k:
           (k, (Some(self.common.e_unit), self.common.t_false))}));
-        hir::ItemKind::Proc {kind, name, tyargs, args, rets, variant, body}
+        hir::ItemKind::Proc {kind, name, tyargs, args, gen, rets, variant, body}
       }
       ast::ItemKind::Global {lhs, rhs} => {
         let ctx = self.dc.context;
@@ -4143,7 +4144,7 @@ impl<'a> InferCtx<'a> {
           let_unchecked!(Some(Entity::Const(tc)) = self.names.get_mut(&name), tc).k =
             ConstTc::Checked(lhs.k.ty().to_global(self), rhs.to_global(self))
         } else { todo!() }
-        hir::ItemKind::Const {lhs, rhs}
+        return None
       }
       &ast::ItemKind::Typedef {ref name, tyargs, ref args, ref val} => {
         let name = hir::Spanned {span: &name.span, k: name.k};
@@ -4152,9 +4153,13 @@ impl<'a> InferCtx<'a> {
         let val = self.lower_ty(val, ExpectTy::Any);
         let args = self.finish_args2(args2,
           |this, (attr, arg)| intern!(this, (attr, (&arg).into())));
-        hir::ItemKind::Typedef {name, tyargs, args, val}
+        let args = (&*args).to_global(self);
+        let val = val.to_global(self);
+        let_unchecked!(Some(Entity::Type(tc)) = self.names.get_mut(&name.k), tc).k =
+          TypeTc::Typed(TypeTy {tyargs, args, val});
+        return None
       }
     };
-    hir::Spanned {span, k: item}
+    Some(hir::Spanned {span, k: item})
   }
 }

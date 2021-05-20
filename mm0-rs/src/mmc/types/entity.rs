@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use crate::{Environment, AtomId, Remap, Remapper, FileSpan};
-use crate::mmc::{Compiler, types::{ast, global, mir}};
+use crate::mmc::{Compiler, types::{ast, global}};
 use super::Spanned;
 
 macro_rules! make_prims {
@@ -306,7 +306,7 @@ pub enum ProcTc {
   /// We have determined that this is a procedure but we have not yet examined the body.
   Unchecked,
   /// We have determined the type of the procedure.
-  Typed(ProcTy, Option<mir::Proc>),
+  Typed(ProcTy),
 }
 
 impl ProcTc {
@@ -314,15 +314,7 @@ impl ProcTc {
   #[must_use] pub fn ty(&self) -> Option<&ProcTy> {
     match self {
       ProcTc::Unchecked => None,
-      ProcTc::Typed(ty, _) => Some(ty)
-    }
-  }
-
-  /// Get the compiled MIR for the procedure, if it has been deduced.
-  #[must_use] pub fn mir(&self) -> Option<&mir::Proc> {
-    match self {
-      ProcTc::Unchecked => None,
-      ProcTc::Typed(_, mir) => mir.as_ref()
+      ProcTc::Typed(ty) => Some(ty)
     }
   }
 }
@@ -332,7 +324,7 @@ impl Remap for ProcTc {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       ProcTc::Unchecked => ProcTc::Unchecked,
-      ProcTc::Typed(ty, mir) => ProcTc::Typed(ty.remap(r), mir.remap(r))
+      ProcTc::Typed(ty) => ProcTc::Typed(ty.remap(r))
     }
   }
 }
