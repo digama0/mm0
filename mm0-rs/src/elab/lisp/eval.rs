@@ -1040,7 +1040,7 @@ make_builtins! { self, sp1, sp2, args,
   ListToString: Exact(1) => {
     let mut u = Uncons::New(args[0].clone());
     let mut out: Vec<u8> = Vec::with_capacity(u.len());
-    while let Some(e) = u.next() {
+    for e in &mut u {
       out.push(try1!(self.with_int(&e,
         |n| n.try_into().map_err(|_| format!("character out of range: {}", n)))));
     }

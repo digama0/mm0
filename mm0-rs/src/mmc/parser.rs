@@ -433,7 +433,7 @@ impl<'a> Parser<'a> {
           tyargs.push(spanned(base, e, a));
           u.next();
         }
-        while let Some(e) = u.next() {
+        for e in &mut u {
           if let Some(AtomId::COLON) = e.as_atom() { break }
           self.parse_arg(base, Default::default(), e, &mut args)?
         }
