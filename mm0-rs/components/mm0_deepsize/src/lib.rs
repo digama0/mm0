@@ -10,7 +10,8 @@ use std::mem::{size_of, size_of_val};
 use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::HashSet;
-use mm0_deepsize_derive::DeepSizeOf;
+
+#[allow(unused_imports)] use mm0_deepsize_derive::DeepSizeOf;
 
 
 /// A trait for measuring the size of an object and its children
@@ -225,6 +226,8 @@ impl<T: DeepSizeOf> DeepSizeOf for [T] {
         self.iter().map(|child| child.deep_size_of_children(context)).sum()
     }
 }
+
+#[cfg(feature = "owning_ref")]
 impl<O: DeepSizeOf, T: ?Sized> DeepSizeOf for owning_ref::OwningRef<O, T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.as_owner().deep_size_of_children(context)
@@ -269,9 +272,11 @@ deep_size_0!(
     {!Copy T} std::rc::Weak<T>,
     {!Copy T} std::mem::MaybeUninit<T>,
     {T: ?Sized} core::marker::PhantomData<T>,
-    {!Copy} dyn std::error::Error + Send + Sync,
-    {!Copy T} futures::channel::oneshot::Sender<T>
+    {!Copy} dyn std::error::Error + Send + Sync
 );
+
+#[cfg(feature = "futures")]
+deep_size_0!({!Copy T} futures::channel::oneshot::Sender<T>);
 
 impl DeepSizeOf for String {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { self.capacity() }
@@ -330,18 +335,21 @@ impl DeepSizeOf for std::path::PathBuf {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { self.capacity() }
 }
 
+#[cfg(feature = "num")]
 impl DeepSizeOf for num::BigUint {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
         unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity()
     }
 }
 
+#[cfg(feature = "num")]
 impl DeepSizeOf for num::BigInt {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.magnitude().deep_size_of_children(context)
     }
 }
 
+#[cfg(feature = "lsp-types")]
 impl DeepSizeOf for lsp_types::Url {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
         // this is an underestimate, but Url doesn't expose its capacity
@@ -365,6 +373,7 @@ impl<T: DeepSizeOf> DeepSizeOf for std::sync::Mutex<T> {
     }
 }
 
+#[cfg(feature = "futures")]
 impl<T: DeepSizeOf> DeepSizeOf for futures::lock::Mutex<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         if let Some(g) = self.try_lock() {
@@ -373,6 +382,7 @@ impl<T: DeepSizeOf> DeepSizeOf for futures::lock::Mutex<T> {
     }
 }
 
+#[cfg(feature = "typed-arena")]
 impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         #[derive(DeepSizeOf)]
@@ -390,6 +400,18 @@ impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     }
 }
 
+#[cfg(feature = "memmap")]
 impl DeepSizeOf for memmap::Mmap {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { size_of_val(&**self) }
+}
+
+#[cfg(feature = "smallvec")]
+impl<T: smallvec::Array + DeepSizeOf> DeepSizeOf for smallvec::SmallVec<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        let mut n = self.iter().map(|child| child.deep_size_of_children(context)).sum::<usize>();
+        if self.spilled() {
+            n += self.capacity() * size_of::<T>()
+        }
+        n
+    }
 }
