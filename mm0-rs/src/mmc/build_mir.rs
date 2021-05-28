@@ -318,7 +318,9 @@ impl<'a> Translator<'a> {
 
   fn tr_list(&mut self, tys: &'a [ty::Ty<'a>]) -> TyKind {
     TyKind::Struct(tys.iter().map(|&ty| {
-      Arg {attr: ArgAttr::NONDEP, var: self.fresh_var(), ty: ty.tr(self)}
+      let attr = ArgAttr::NONDEP | ArgAttr::ghost(ty.ghostly());
+      let ty = ty.tr(self);
+      Arg {attr, var: self.fresh_var(), ty}
     }).collect())
   }
 
@@ -329,11 +331,13 @@ impl<'a> Translator<'a> {
         (attr, ty::ArgKind::Lam(pat)) => {
           let mut attr2 = ArgAttr::empty();
           if attr.contains(ty::ArgAttr::NONDEP) { attr2 |= ArgAttr::NONDEP }
+          let ty = pat.k.ty();
+          if ty.ghostly() { attr2 |= ArgAttr::GHOST }
+          let ty = ty.tr(self);
           if let Some(v) = pat.k.var() {
-            args2.push(Arg {attr: attr2, var: v.tr(self), ty: pat.k.ty().tr(self)})
+            args2.push(Arg {attr: attr2, var: v.tr(self), ty})
           } else {
             let v = self.fresh_var();
-            let ty = pat.k.ty().tr(self);
             self.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
             args2.push(Arg {attr: attr2, var: v, ty})
           }
@@ -501,8 +505,9 @@ impl<'a> BuildMir<'a> {
 
   fn push_stmt(&mut self, stmt: Statement) {
     match stmt {
-      Statement::Let(v, ref ty, _) => self.extend_ctx(v, ty.clone()),
-      Statement::ExElim(ExElimKind::Own([(v, ref ty), (h, ref ty2)]), _, _) => {
+      Statement::Let(LetKind::Let(v, _, ref e), ref ty, _) =>
+        self.extend_ctx(v, (e.clone(), ty.clone())),
+      Statement::Let(LetKind::Own([(v, _, ref ty), (h, _, ref ty2)]), _, _) => {
         self.extend_ctx(v, (None, ty.clone()));
         self.extend_ctx(h, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
@@ -546,8 +551,8 @@ impl<'a> BuildMir<'a> {
         let cond = Rc::new(ExprKind::Binop(Binop::Lt,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vn))));
-        self.push_stmt(Statement::Let(vb,
-          (Some(cond.clone()), Rc::new(TyKind::Bool)),
+        self.push_stmt(Statement::Let(
+          LetKind::Let(vb, true, Some(cond.clone())), Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Lt, Operand::Copy(vi.into()), vn.into())));
         self.assert(vb.into(), cond)
       }
@@ -567,14 +572,16 @@ impl<'a> BuildMir<'a> {
         let add = Rc::new(ExprKind::Binop(Binop::Add,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vl))));
-        self.push_stmt(Statement::Let(v_add,
-          (Some(add.clone()), Rc::new(TyKind::Int(IntTy::Int(Size::Inf)))),
+        self.push_stmt(Statement::Let(
+          LetKind::Let(v_add, true, Some(add.clone())),
+          Rc::new(TyKind::Int(IntTy::Int(Size::Inf))),
           RValue::Binop(Binop::Add, Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
         let v_cond = self.fresh_var();
         let cond = Rc::new(ExprKind::Binop(Binop::Le,
           add, Rc::new(ExprKind::Var(vn))));
-        self.push_stmt(Statement::Let(v_cond,
-          (Some(cond.clone()), Rc::new(TyKind::Bool)),
+        self.push_stmt(Statement::Let(
+          LetKind::Let(v_cond, true, Some(cond.clone())),
+          Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Le, v_add.into(), vn.into())));
         self.assert(v_cond.into(), cond)
       }
@@ -809,8 +816,9 @@ impl<'a> BuildMir<'a> {
       let r = f(self, None)?;
       let rv = self.as_unit_const(ety.1);
       let v = self.tr(v);
-      let ety = self.tr(ety);
-      self.push_stmt(Statement::Let(v, ety, rv.into()));
+      let rel = !ety.1.ghostly();
+      let (e, ty) = self.tr(ety);
+      self.push_stmt(Statement::Let(LetKind::Let(v, rel, e), ty, rv.into()));
       Ok(r)
     } else { f(self, dest) }
   }
@@ -818,8 +826,9 @@ impl<'a> BuildMir<'a> {
   fn expr_unit(&mut self, dest: Dest) {
     if let Some(v) = dest {
       let rv = Constant::unit();
+      let (e, ty) = rv.ety.clone();
       let v = self.tr(v);
-      self.push_stmt(Statement::Let(v, rv.ety.clone(), rv.into()));
+      self.push_stmt(Statement::Let(LetKind::Let(v, false, e), ty, rv.into()));
     }
   }
 
@@ -944,8 +953,9 @@ impl<'a> BuildMir<'a> {
           let ety = e.k.1;
           let rv = this.rvalue(e)?;
           let dest = this.tr(dest);
-          let ety = this.tr(ety);
-          this.push_stmt(Statement::Let(dest, ety, rv))
+          let rel = !ety.1.ghostly();
+          let (e, ty) = this.tr(ety);
+          this.push_stmt(Statement::Let(LetKind::Let(dest, rel, e), ty, rv))
         }
       }
       Ok(())
@@ -969,8 +979,10 @@ impl<'a> BuildMir<'a> {
             let tgt = self.tr(pat.k.ty());
             let v = self.tr.tr_opt_var(vpat.k.var());
             let h = self.tr.tr_opt_var(hpat.k.var());
-            let ek = ExElimKind::Own([(v, self.tr(vpat.k.ty())), (h, self.tr(hpat.k.ty()))]);
-            self.push_stmt(Statement::ExElim(ek, tgt, src.clone().into()));
+            let vty = vpat.k.ty();
+            let lk = LetKind::Own([
+              (v, !vty.ghostly(), self.tr(vty)), (h, true, self.tr(hpat.k.ty()))]);
+            self.push_stmt(Statement::Let(lk, tgt, src.clone().into()));
             self.tup_pat(vpat, &mut v.into());
             self.tup_pat(hpat, &mut h.into());
             return
@@ -1301,8 +1313,9 @@ impl<'a> BuildMir<'a> {
         if let (Some(pe), Some(hyp)) = (pe, hyp) {
           let pe = self.tr(pe);
           let vh = self.tr(hyp);
-          self.push_stmt(Statement::Let(vh,
-            (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe))),
+          self.push_stmt(Statement::Let(
+            LetKind::Let(vh, false, Some(Rc::new(ExprKind::Unit))),
+            Rc::new(TyKind::Pure(pe)),
             Constant::itrue().into()));
         }
       } else {
@@ -1360,7 +1373,7 @@ impl<'a> BuildMir<'a> {
   }
 
   fn expr_call(&mut self,
-    hir::Call {f: hir::Spanned {k: f, ..}, tys, args, variant: _, gen, rk}: hir::Call<'a>,
+    hir::Call {f, side_effect: se, tys, args, variant: _, gen, rk}: hir::Call<'a>,
     tgt: ty::Ty<'a>,
     dest: &[PreVar],
   ) -> Block<()> {
@@ -1369,7 +1382,7 @@ impl<'a> BuildMir<'a> {
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
-        self.cur_block().terminate(Terminator::Call(f, tys, args, None));
+        self.cur_block().terminate(Terminator::Call(f.k, se, tys, args, None));
         return Err(Diverged)
       }
       hir::ReturnKind::Unit => Box::new([]),
@@ -1393,7 +1406,7 @@ impl<'a> BuildMir<'a> {
       }
     };
     let bl = self.new_block();
-    self.cur_block().terminate(Terminator::Call(f, tys, args, Some((bl, vars))));
+    self.cur_block().terminate(Terminator::Call(f.k, se, tys, args, Some((bl, vars))));
     self.cur_block = bl;
     Ok(())
   }
@@ -1415,13 +1428,13 @@ impl<'a> BuildMir<'a> {
     mir: &mut HashMap<AtomId, Proc>,
     init: &mut Initializer,
     it: hir::Item<'a>
-  ) {
+  ) -> Option<AtomId> {
     match it.k {
       hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant: _, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
           if attr.contains(ty::ArgAttr::NONDEP) { ArgAttr::NONDEP } else { ArgAttr::empty() }
         }
-        if let hir::ProcKind::Intrinsic(_) = kind { return }
+        if let hir::ProcKind::Intrinsic(_) = kind { return None }
         let mut args2 = Vec::with_capacity(args.len());
         assert_eq!(self.push_args(args, |attr, var, ty| {
           args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
@@ -1445,6 +1458,7 @@ impl<'a> BuildMir<'a> {
           rets: rets2,
           body: self.cfg,
         });
+        Some(name.k)
       }
       hir::ItemKind::Global { lhs, rhs } => {
         mem::swap(&mut init.cfg, &mut self.cfg);
@@ -1456,6 +1470,7 @@ impl<'a> BuildMir<'a> {
         })();
         init.next_var = self.tr.next_var;
         mem::swap(&mut init.cfg, &mut self.cfg);
+        None
       }
     }
   }

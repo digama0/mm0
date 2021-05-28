@@ -63,8 +63,10 @@ bitflags! {
     const HAS_MVAR =
       Self::HAS_TY_MVAR.bits | Self::HAS_PROP_MVAR.bits |
       Self::HAS_EXPR_MVAR.bits | Self::HAS_LFT_MVAR.bits;
-    /// (For Prop and Ty:) Is this type not (necessarily) a copy type?
+    /// (For Ty:) Is this type not (necessarily) a copy type?
     const IS_NON_COPY   = 1 << 6;
+    /// (For Ty:) Is this a computationally relevant type?
+    const IS_RELEVANT   = 1 << 7;
   }
 }
 crate::deep_size_0!(Flags);
@@ -371,6 +373,7 @@ impl AddFlags for ArgS<'_> {
       ArgKind::Lam(pat) => *f |= pat,
       ArgKind::Let(pat, e) => *f |= (pat, e),
     }
+    if self.0.contains(ArgAttr::GHOST) { f.remove(Flags::IS_RELEVANT) }
   }
 }
 
@@ -614,46 +617,50 @@ impl AddFlags for TyKind<'_> {
     match *self {
       TyKind::Unit |
       TyKind::True |
-      TyKind::False |
+      TyKind::False => {}
       TyKind::Bool |
       TyKind::Var(_) |
-      TyKind::Int(_) => {}
+      TyKind::Int(_) => *f |= Flags::IS_RELEVANT,
       TyKind::Input |
       TyKind::Output => *f |= Flags::IS_NON_COPY,
       TyKind::Array(ty, e) |
       TyKind::Sn(e, ty) => {
         *f |= e;
-        f.remove(Flags::IS_NON_COPY);
+        f.remove(Flags::IS_NON_COPY | Flags::IS_RELEVANT);
         *f |= ty;
       }
       TyKind::Own(ty) => *f |= (Flags::IS_NON_COPY, ty),
-      TyKind::Not(ty) |
-      TyKind::Ghost(ty) => *f |= ty,
+      TyKind::Not(ty) => *f |= ty,
+      TyKind::Ghost(ty) => {*f |= ty; f.remove(Flags::IS_RELEVANT)}
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => {*f |= ty; f.remove(Flags::IS_NON_COPY)}
       TyKind::Ref(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
       TyKind::RefSn(p) => {*f |= p; f.remove(Flags::IS_NON_COPY)}
-      TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY)}
+      TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY | Flags::IS_RELEVANT)}
       TyKind::Struct(args) => *f |= args,
-      TyKind::All(pat, p) => *f |= (pat, p),
+      TyKind::All(pat, p) => {*f |= pat; f.remove(Flags::IS_RELEVANT); *f |= p}
       TyKind::Imp(p, q) |
-      TyKind::Wand(p, q) => *f |= (p, q),
+      TyKind::Wand(p, q) => {*f |= p; f.remove(Flags::IS_RELEVANT); *f |= q}
       TyKind::List(tys) |
       TyKind::And(tys) |
       TyKind::Or(tys) => *f |= tys,
       TyKind::If(e, tru, fal) => {
         *f |= e;
-        f.remove(Flags::IS_NON_COPY);
+        f.remove(Flags::IS_NON_COPY | Flags::IS_RELEVANT);
         *f |= (tru, fal);
       }
-      TyKind::User(_, tys, es) => *f |= (Flags::IS_NON_COPY, tys, es),
-      TyKind::Heap(e, v, ty) => {*f |= Flags::IS_NON_COPY; *f |= (e, v, ty)}
+      TyKind::User(_, tys, es) => *f |= (Flags::IS_NON_COPY | Flags::IS_RELEVANT, tys, es),
+      TyKind::Heap(e, v, ty) => {
+        *f |= (Flags::IS_NON_COPY, (e, v, ty));
+        f.remove(Flags::IS_RELEVANT);
+      }
       TyKind::HasTy(v, ty) => {
         *f |= v;
         f.remove(Flags::IS_NON_COPY);
         *f |= ty;
+        f.remove(Flags::IS_RELEVANT);
       }
-      TyKind::Infer(_) => *f |= Flags::IS_NON_COPY | Flags::HAS_TY_MVAR,
+      TyKind::Infer(_) => *f |= Flags::IS_NON_COPY | Flags::IS_RELEVANT | Flags::HAS_TY_MVAR,
       TyKind::Error => *f |= Flags::HAS_ERROR,
     }
   }
@@ -715,6 +722,16 @@ impl<'a> TyS<'a> {
   /// Returns true if this is a copy type (i.e. `|T| = T`).
   #[inline] #[must_use] pub fn is_copy(&self) -> bool {
     !self.flags.contains(Flags::IS_NON_COPY)
+  }
+
+  /// A type is ghostly if elements of this type can be obtained from the logical assertion that
+  /// the element exists in the type, without any actual computation or bit representation.
+  ///
+  /// This includes types with at most one element like `()`, `true` and `false`, as well as pure
+  /// (separating) propositions like `[v: T]`, as well as `(ghost T)` for any `T`, and structs made
+  /// up from these pieces.
+  #[inline] #[must_use] pub fn ghostly(&self) -> bool {
+    !self.flags.contains(Flags::IS_RELEVANT)
   }
 }
 

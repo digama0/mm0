@@ -480,10 +480,16 @@ impl<'a> Parser<'a> {
   /// Parses the input lisp literal `e` into a list of top level items and appends them to `ast`.
   fn parse_item_group(&self, base: &FileSpan, e: &LispVal) -> Result<ItemGroup> {
     Ok(match self.head_keyword(e) {
-      Some((Keyword::Proc, u)) =>
-        ItemGroup::Item(spanned(base, e, ItemKind::Proc(self.parse_proc(base, &|_| Ok(ProcKind::Proc), u)?))),
-      Some((Keyword::Func, u)) =>
-        ItemGroup::Item(spanned(base, e, ItemKind::Proc(self.parse_proc(base, &|_| Ok(ProcKind::Func), u)?))),
+      Some((Keyword::Proc, u)) => {
+        let f = |a| Ok({
+          if &*self.fe.env.data[a].name == b"main" {ProcKind::Main} else {ProcKind::Proc}
+        });
+        ItemGroup::Item(spanned(base, e, ItemKind::Proc(self.parse_proc(base, &f, u)?)))
+      }
+      Some((Keyword::Func, u)) => {
+        let f = |_| Ok(ProcKind::Func);
+        ItemGroup::Item(spanned(base, e, ItemKind::Proc(self.parse_proc(base, &f, u)?)))
+      }
       Some((Keyword::Intrinsic, u)) => {
         let f = |a| Ok(ProcKind::Intrinsic(Intrinsic::from_bytes(&self.fe.env.data[a].name)
           .ok_or_else(|| ElabError::new_e(try_get_span(base, e), "unknown intrinsic"))?));

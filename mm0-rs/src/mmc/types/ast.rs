@@ -634,6 +634,8 @@ pub enum ProcKind {
   Func,
   /// A procedure, which is opaque except for its type. (Body provided.)
   Proc,
+  /// The main procedure. (Body provided.)
+  Main,
   /// An intrinsic declaration, which is only here to put the function declaration in user code.
   /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
   /// called until they are declared using an `intrinsic` declaration.
@@ -657,15 +659,18 @@ bitflags! {
   pub struct ArgAttr: u8 {
     /// A `(mut x)` argument, which is modified in the body and passed out
     /// via an `(out x x')` in the returns.
-    const MUT = 1;
+    const MUT = 1 << 0;
     /// An `(implicit x)` argument, which indicates that the variable will be
     /// inferred in applications.
-    const IMPLICIT = 2;
+    const IMPLICIT = 1 << 1;
     /// A `(global x)` argument, which indicates that the variable is not passed directly
     /// but is instead sourced from a global variable of the same name.
-    const GLOBAL = 4;
+    const GLOBAL = 1 << 2;
     /// An argument is nondependent if the remainder of the type does not depend on this variable.
-    const NONDEP = 8;
+    const NONDEP = 1 << 3;
+    /// An argument is ghost if the computer does not need to construct an actual bit pattern
+    /// for this argument.
+    const GHOST = 1 << 4;
   }
 }
 crate::deep_size_0!(ArgAttr);

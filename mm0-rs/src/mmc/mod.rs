@@ -14,8 +14,8 @@ pub mod build_ast;
 pub mod union_find;
 pub mod infer;
 pub mod nameck;
-// pub mod typeck;
 pub mod build_mir;
+pub mod mir_opt;
 
 use std::collections::HashMap;
 use bumpalo::Bump;
@@ -24,7 +24,7 @@ use parser::ItemIter;
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
 use {types::{Keyword, entity::Entity, mir}, parser::Parser,
-  build_ast::BuildAst, build_mir::BuildMir, predef::PredefMap};
+  build_ast::BuildAst, predef::PredefMap};
 
 impl Remap for Keyword {
   type Target = Self;
@@ -120,7 +120,9 @@ impl Compiler {
         let item = ctx.lower_item(&item);
         if ctx.errors.is_empty() {
           if let Some(item) = item {
-            BuildMir::default().build_item(mir, init, item)
+            if let Some(n) = build_mir::BuildMir::default().build_item(mir, init, item) {
+              mir_opt::optimize(mir.get_mut(&n).expect("missing"));
+            }
           }
         } else {
           let errs = std::mem::take(&mut ctx.errors);

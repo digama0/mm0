@@ -3,7 +3,9 @@
 use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
+use mm0_util::u32_as_usize;
 use num::BigInt;
+use smallvec::SmallVec;
 use crate::{AtomId, LispVal, Remap, Remapper};
 use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir};
 pub use ast::TyVarId;
@@ -107,25 +109,32 @@ bitflags! {
   /// Attributes on arguments in a `(struct)` dependent tuple type.
   pub struct ArgAttr: u8 {
     /// An argument is nondependent if the remainder of the type does not depend on this variable.
-    const NONDEP = 1;
+    const NONDEP = 1 << 0;
     /// An existential argument represents `exists x. p(x)` instead of `sigma x. p(x)`; the
     /// difference is that a witness to `exists x. p(x)` is `a` such that `a: p(x)` for some `x`,
     /// while a witness to `sigma x. p(x)` is a tuple `(x, a)` such that `a: p(x)`. Thus we cannot
     /// project out existential arguments (nor can we get the type of arguments depending on an
     /// existential argument).
-    const EXISTENTIAL = 2;
+    const EXISTENTIAL = 1 << 1;
     /// An singleton argument is a special case where an existential argument can support
     /// projections, because it has a singleton type (for example `()`, `sn x`, or a proposition).
-    const SINGLETON = 4;
+    const SINGLETON = 1 << 2;
     /// A ghost argument is one that has no bit-representation; a representative of
     /// `sigma x: ghost T. p(x)` is just a representative of `p(x)`, while a representative of
     /// `sigma x: T. p(x)` is the concatenation of a representative of `T` and a representative of
     /// `p(x)`. (In other words, this is like `EXISTENTIAL` but at the computation level instead of
     /// the logical level.)
-    const GHOST = 8;
+    const GHOST = 1 << 3;
   }
 }
 crate::deep_size_0!(ArgAttr);
+
+impl ArgAttr {
+  /// The [`GHOST`](Self::GHOST) flag modulated by a boolean.
+  #[inline] #[must_use] pub fn ghost(b: bool) -> ArgAttr {
+    if b { ArgAttr::GHOST } else { ArgAttr::empty() }
+  }
+}
 
 impl Remap for ArgAttr {
   type Target = Self;
@@ -553,6 +562,17 @@ impl Remap for BlockId {
   type Target = Self;
   fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
+impl From<BlockId> for usize {
+  fn from(id: BlockId) -> usize { u32_as_usize(id.0) }
+}
+
+impl super::Idx for BlockId {
+  fn into_usize(self) -> usize { self.into() }
+  fn from_usize(n: usize) -> Self { Self(n.try_into().expect("overflow")) }
+}
+
+/// A vector indexed by [`BlockId`]s.
+pub type BlockVec<T> = super::IdxVec<BlockId, T>;
 
 /// A collection of contexts, maintaining a tree structure. The underlying data structure is a list
 /// of `CtxBuf` structs, each of which is a `CtxId` pointer to another context, plus an additional
@@ -626,6 +646,8 @@ impl<'a> Iterator for CtxIter<'a> {
   }
 }
 
+/// The calculated predecessor information for blocks in the CFG.
+pub type Predecessors = BlockVec<SmallVec<[BlockId; 4]>>;
 
 /// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
 /// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
@@ -635,13 +657,19 @@ pub struct Cfg {
   /// The set of logical contexts for the basic blocks.
   pub ctxs: Contexts,
   /// The set of basic blocks, containing the actual code.
-  pub blocks: Vec<BasicBlock>,
+  pub blocks: BlockVec<BasicBlock>,
+  /// The mapping from basic blocks to their predecessors, calculated lazily.
+  predecessor_cache: Option<Predecessors>,
 }
 
 impl Remap for Cfg {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { ctxs: self.ctxs.remap(r), blocks: self.blocks.remap(r) }
+    Self {
+      ctxs: self.ctxs.remap(r),
+      blocks: self.blocks.remap(r),
+      predecessor_cache: self.predecessor_cache.clone()
+    }
   }
 }
 
@@ -650,9 +678,27 @@ impl Cfg {
   /// is, with an empty `Terminator`; the terminator must be filled by the time MIR construction is
   /// complete.
   pub fn new_block(&mut self, parent: CtxId) -> BlockId {
-    let id = BlockId(self.blocks.len().try_into().expect("block overflow"));
-    self.blocks.push(BasicBlock::new(parent, None));
-    id
+    self.blocks.push(BasicBlock::new(parent, None))
+  }
+
+  /// Calculate the predecessor information for this CFG, and return a reference to it.
+  pub fn compute_predecessors(&mut self) -> &Predecessors {
+    if let Some(preds) = &self.predecessor_cache {
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
+      #[allow(clippy::useless_transmute)]
+      return unsafe { std::mem::transmute::<&Predecessors, &Predecessors>(preds) }
+    }
+    let mut preds = BlockVec::from(vec![SmallVec::new(); self.blocks.len()]);
+    for (id, bl) in self.blocks.enum_iter() {
+      for succ in bl.successors() { preds[succ].push(id) }
+    }
+    self.predecessor_cache.get_or_insert(preds)
+  }
+
+  /// Retrieve the predecessor information for this CFG.
+  /// Panics if [`compute_predecessors`](Cfg::compute_predecessors) is not called first.
+  #[must_use] pub fn predecessors(&self) -> &Predecessors {
+    self.predecessor_cache.as_ref().expect("call compute_predecessors first")
   }
 }
 
@@ -665,10 +711,10 @@ impl IndexMut<CtxBufId> for Cfg {
 }
 impl Index<BlockId> for Cfg {
   type Output = BasicBlock;
-  fn index(&self, index: BlockId) -> &BasicBlock { &self.blocks[index.0 as usize] }
+  fn index(&self, index: BlockId) -> &BasicBlock { &self.blocks[index] }
 }
 impl IndexMut<BlockId> for Cfg {
-  fn index_mut(&mut self, index: BlockId) -> &mut BasicBlock { &mut self.blocks[index.0 as usize] }
+  fn index_mut(&mut self, index: BlockId) -> &mut BasicBlock { &mut self.blocks[index] }
 }
 
 /// A "context buffer ID", which points to one of the context buffers in the [`Contexts`] struct.
@@ -729,6 +775,55 @@ impl From<hir::ListKind> for ListKind {
       hir::ListKind::Struct => Self::Struct,
       hir::ListKind::Array => Self::Array,
       hir::ListKind::And => Self::And,
+    }
+  }
+}
+
+/// An iterator over the successors of a basic block.
+#[must_use] #[derive(Debug)]
+pub struct Successors<'a>(SuccessorsState<'a>);
+
+#[derive(Debug)]
+enum SuccessorsState<'a> {
+  New(&'a Terminator),
+  One(BlockId),
+  Zero,
+}
+
+impl<'a> Successors<'a> {
+  /// Constructs a new `Successors`.
+  #[inline] fn new(term: &'a Terminator) -> Self {
+    Self(SuccessorsState::New(term))
+  }
+}
+
+impl<'a> Iterator for Successors<'a> {
+  type Item = BlockId;
+  fn next(&mut self) -> Option<Self::Item> {
+    match self.0 {
+      SuccessorsState::New(t) => match *t {
+        Terminator::If(_, [(_, bl1), (_, bl2)]) => {
+          self.0 = SuccessorsState::One(bl2);
+          Some(bl1)
+        }
+        Terminator::Jump(bl, _) |
+        Terminator::Assert(_, _, bl) |
+        Terminator::Call(_, _, _, _, Some((bl, _))) => {
+          self.0 = SuccessorsState::Zero;
+          Some(bl)
+        }
+        Terminator::Return(_) |
+        Terminator::Unreachable(_) |
+        Terminator::Call(_, _, _, _, None) => {
+          self.0 = SuccessorsState::Zero;
+          None
+        }
+      }
+      SuccessorsState::One(bl) => {
+        self.0 = SuccessorsState::Zero;
+        Some(bl)
+      }
+      SuccessorsState::Zero => None
     }
   }
 }
@@ -1042,19 +1137,24 @@ impl From<VarId> for RValue {
   #[inline] fn from(v: VarId) -> RValue { Place::local(v).into() }
 }
 
-/// The different kinds of existential elimination statement.
+/// The different kinds of let statement.
 #[derive(Clone, Debug, DeepSizeOf)]
-pub enum ExElimKind {
+pub enum LetKind {
+  /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
+  /// variable is non-ghost.
+  Let(VarId, bool, Option<Expr>),
   /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
   /// value `x` and a pointer `p: &sn x`.
-  Own([(VarId, Ty); 2]),
+  Own([(VarId, bool, Ty); 2]),
 }
 
-impl Remap for ExElimKind {
+impl Remap for LetKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Self::Own([(x, xt), (y, yt)]) => Self::Own([(*x, xt.remap(r)), (*y, yt.remap(r))])
+    match *self {
+      Self::Let(x, g, ref ty) => Self::Let(x, g, ty.remap(r)),
+      Self::Own([(x, xg, ref xt), (y, yg, ref yt)]) =>
+        Self::Own([(x, xg, xt.remap(r)), (y, yg, yt.remap(r))])
     }
   }
 }
@@ -1064,10 +1164,8 @@ impl Remap for ExElimKind {
 /// after performing some action that cannot fail.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Statement {
-  /// A declaration of a variable with a value, `let x: T = rv;`
-  Let(VarId, ExprTy, RValue),
-  /// An exists destructuring, `let (x, h): (exists x: T, P x) = rv;`
-  ExElim(ExElimKind, Ty, RValue),
+  /// A let or tuple destructuring of values from an [`RValue`] of the specified type.
+  Let(LetKind, Ty, RValue),
   /// `Assign(lhs, rhs, vars)` is the statement `lhs <- rhs`.
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
@@ -1078,8 +1176,7 @@ impl Remap for Statement {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      Self::Let(x, ty, rv) => Self::Let(*x, ty.remap(r), rv.remap(r)),
-      Self::ExElim(ek, ty, rv) => Self::ExElim(ek.remap(r), ty.remap(r), rv.remap(r)),
+      Self::Let(lk, ty, rv) => Self::Let(lk.remap(r), ty.remap(r), rv.remap(r)),
       Self::Assign(lhs, rhs, vars) => Self::Assign(lhs.remap(r), rhs.remap(r), vars.remap(r)),
     }
   }
@@ -1115,7 +1212,8 @@ pub enum Terminator {
   /// A `f(tys, es) -> l(xs)` function call, which calls `f` with type arguments `tys` and
   /// values `es`, and jumps to `l`, using `xs` to store the return values.
   /// If `l` and `xs` are none, then the return is unreachable.
-  Call(AtomId, Box<[Ty]>, Box<[Operand]>, Option<(BlockId, Box<[VarId]>)>),
+  /// The bool is true if the function is side-effectful.
+  Call(AtomId, bool, Box<[Ty]>, Box<[Operand]>, Option<(BlockId, Box<[VarId]>)>),
 }
 
 impl Remap for Terminator {
@@ -1127,7 +1225,8 @@ impl Remap for Terminator {
       Self::Unreachable(rv) => Self::Unreachable(rv.remap(r)),
       Self::If(cond, args) => Self::If(cond.remap(r), *args),
       Self::Assert(cond, v, bl) => Self::Assert(cond.remap(r), *v, *bl),
-      Self::Call(f, tys, es, bl) => Self::Call(f.remap(r), tys.remap(r), es.remap(r), bl.remap(r)),
+      Self::Call(f, se, tys, es, bl) =>
+        Self::Call(f.remap(r), *se, tys.remap(r), es.remap(r), bl.remap(r)),
     }
   }
 }
@@ -1163,6 +1262,15 @@ impl BasicBlock {
   pub fn terminate(&mut self, term: Terminator) {
     assert!(mem::replace(&mut self.term, Some(term)).is_none())
   }
+
+  /// Get the terminator for this block.
+  /// It is a bug to call this method if the basic block is not terminated.
+  #[must_use] pub fn terminator(&self) -> &Terminator {
+    self.term.as_ref().expect("unfinished block")
+  }
+
+  /// An iterator over the successors of this basic block.
+  #[inline] pub fn successors(&self) -> Successors<'_> { Successors::new(self.terminator()) }
 }
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.

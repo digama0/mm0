@@ -303,6 +303,8 @@ crate::deep_size_0!(ReturnKind);
 pub struct Call<'a> {
   /// The function to call.
   pub f: Spanned<'a, AtomId>,
+  /// True if this function contains side effects.
+  pub side_effect: bool,
   /// The type arguments.
   pub tys: &'a [ty::Ty<'a>],
   /// The function arguments.

@@ -9,11 +9,78 @@ pub mod hir;
 pub mod mir;
 pub mod pir;
 
-use std::{borrow::Cow, collections::HashMap, convert::{TryFrom, TryInto}, rc::Rc};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+use std::marker::PhantomData;
+use std::ops::{Index, IndexMut};
+use std::rc::Rc;
 use num::{BigInt, Signed};
 
 use crate::{AtomId, Environment, Remap, Remapper, TermId, LispVal, lisp::Syntax,
   EnvDisplay, FormatEnv, FileSpan};
+
+/// A trait for newtyped integers, that can be used as index types in vectors and sets.
+pub trait Idx: Copy + Clone {
+  /// Convert from `T` to `usize`
+  fn into_usize(self) -> usize;
+  /// Convert from `usize` to `T`
+  fn from_usize(_: usize) -> Self;
+}
+
+impl Idx for usize {
+  fn into_usize(self) -> usize { self }
+  fn from_usize(n: usize) -> Self { n }
+}
+
+/// A vector indexed by [`BlockId`]s.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
+
+impl<I, T> IdxVec<I, T> {
+  /// Construct a new [`IdxVec`] with the specified capacity.
+  #[must_use] pub fn with_capacity(capacity: usize) -> Self { Vec::with_capacity(capacity).into() }
+
+  /// The number of elements in the [`IdxVec`].
+  #[must_use] pub fn len(&self) -> usize { self.0.len() }
+
+  /// Insert a new value at the end of the vector.
+  pub fn push(&mut self, val: T) -> I where I: Idx {
+    let id = I::from_usize(self.0.len());
+    self.0.push(val);
+    id
+  }
+
+  /// An iterator including the indexes, like `iter().enumerate()`, as `BlockId`s.
+  pub fn enum_iter(&self) -> impl Iterator<Item = (I, &T)> where I: Idx {
+    self.0.iter().enumerate().map(|(n, val)| (I::from_usize(n), val))
+  }
+
+  /// Returns `true` if the vector contains no elements.
+  #[must_use] pub fn is_empty(&self) -> bool { self.0.is_empty() }
+}
+
+impl<I, T> From<Vec<T>> for IdxVec<I, T> {
+  fn from(vec: Vec<T>) -> Self { Self(vec, PhantomData) }
+}
+
+impl<I, T> Default for IdxVec<I, T> {
+  fn default() -> Self { vec![].into() }
+}
+
+impl<I, T: Remap> Remap for IdxVec<I, T> {
+  type Target = IdxVec<I, T::Target>;
+  fn remap(&self, r: &mut Remapper) -> Self::Target { self.0.remap(r).into() }
+}
+
+impl<I: Idx, T> Index<I> for IdxVec<I, T> {
+  type Output = T;
+  fn index(&self, index: I) -> &Self::Output { &self.0[I::into_usize(index)] }
+}
+
+impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
+  fn index_mut(&mut self, index: I) -> &mut Self::Output { &mut self.0[I::into_usize(index)] }
+}
 
 /// A variable ID. These are local to a given declaration (function, constant, global),
 /// but are not de Bruijn variables - they are unique identifiers within the declaration.

@@ -66,6 +66,8 @@ pub enum TypeError<'a> {
   MissingMuts(Vec<VarId>),
   /// A `(variant h)` clause was provided to a function or label that does not declare a variant
   UnexpectedVariant,
+  /// The `main` function cannot be called directly
+  ReentrantMain,
 }
 
 impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
@@ -114,6 +116,8 @@ impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
         Try adding:\n  (mut {})", muts.iter().unique().map(|v| p!(v)).format(" ")),
       TypeError::UnexpectedVariant => write!(f, "A (variant h) clause was provided \
         to a function or label that does not declare a variant"),
+      TypeError::ReentrantMain => write!(f, "The `main` function cannot be called directly; \
+        it is implicitly called by the operating system"),
     }
   }
 }
@@ -1716,7 +1720,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           Some(&ProcTy {kind, tyargs, ref args, ref rets, ..}) => {
             assert_eq!(tys.len(), u32_as_usize(tyargs));
             match kind {
-              ProcKind::Intrinsic(_) | ProcKind::Proc => unreachable!(),
+              ProcKind::Intrinsic(_) | ProcKind::Proc | ProcKind::Main => unreachable!(),
               ProcKind::Func => {
                 let (args, rets) = (args.clone(), rets.clone());
                 let args = args.from_global(self, tys);
@@ -2710,13 +2714,14 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let mut dep = false;
     arg.var().on_vars_rev(&mut |v| dep |= fvars.remove(&v));
     if !dep { attr |= ArgAttr::NONDEP }
+    let ty = arg.var().ty();
+    ty.on_vars(|v| { fvars.insert(v); });
+    if ty.ghostly() { attr |= ArgAttr::GHOST }
     (attr, match arg {
       UnelabArgKind::Lam(pat) => {
-        pat.ty().on_vars(|v| { fvars.insert(v); });
         hir::ArgKind::Lam(self.finish_tuple_pattern(&pat))
       }
       UnelabArgKind::Let(pat, pe, e) => {
-        pat.ty().on_vars(|v| { fvars.insert(v); });
         let pat = self.finish_tuple_pattern(&pat);
         pe.on_vars(|v| { fvars.insert(v); });
         hir::ArgKind::Let(pat, pe, e)
@@ -2810,11 +2815,20 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
     };
     if let TyKind::False = ret.k { rk = ReturnKind::Unreachable }
-    let pe = if matches!(kind, ProcKind::Func) {
-      pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
-        args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))
-    } else { Err(span) };
-    Some((hir::Call {f: hir::Spanned {span, k: f}, tys, args: es, variant, gen, rk}, (pe, ret)))
+    let (side_effect, pe) = match kind {
+      ProcKind::Func => (false, pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
+        args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))),
+      ProcKind::Proc | ProcKind::Intrinsic(_) => (true, Err(span)),
+      ProcKind::Main => {
+        self.errors.push(hir::Spanned {span, k: TypeError::ReentrantMain});
+        return None
+      }
+    };
+    let call = hir::Call {
+      f: hir::Spanned {span, k: f},
+      side_effect, tys, args: es, variant, gen, rk,
+    };
+    Some((call, (pe, ret)))
   }
 
   fn prop_to_expr(&mut self, sp: &'a FileSpan, p: Ty<'a>) -> Option<Expr<'a>> {
