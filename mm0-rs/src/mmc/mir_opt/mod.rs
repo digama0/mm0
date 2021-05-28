@@ -316,33 +316,67 @@ impl<K: Clone + Hash + Eq> DualDomain for im::HashSet<K> {
   }
 }
 
+trait Domains {
+  type Item;
+  fn cloned(&self, id: BlockId) -> Self::Item;
+  fn join(&mut self, id: BlockId, other: &Self::Item) -> bool;
+}
+
+impl<D: Domains> Domains for &mut D {
+  type Item = D::Item;
+  fn cloned(&self, id: BlockId) -> D::Item { (**self).cloned(id) }
+  fn join(&mut self, id: BlockId, other: &D::Item) -> bool { (**self).join(id, other) }
+}
+
+impl<D: Domain> Domains for BlockVec<D> {
+  type Item = D;
+  fn cloned(&self, id: BlockId) -> D { self[id].clone() }
+  fn join(&mut self, id: BlockId, other: &D) -> bool { self[id].join(other) }
+}
+
+impl<D: DualDomain> Domains for Dual<BlockVec<D>> {
+  type Item = D;
+  fn cloned(&self, id: BlockId) -> D { self.0[id].clone() }
+  fn join(&mut self, id: BlockId, other: &D) -> bool { self.0[id].meet(other) }
+}
+
+impl Domains for BitSet<BlockId> {
+  type Item = bool;
+  fn cloned(&self, id: BlockId) -> bool { self.contains(id) }
+  fn join(&mut self, id: BlockId, other: &bool) -> bool { *other && self.insert(id) }
+}
+
+impl Domains for Dual<BitSet<BlockId>> {
+  type Item = bool;
+  fn cloned(&self, id: BlockId) -> bool { self.0.contains(id) }
+  fn join(&mut self, id: BlockId, other: &bool) -> bool { !*other && self.0.remove(id) }
+}
+
 trait Analysis {
-  type Dom: Domain;
   type Dir: Direction;
-  type Doms: std::ops::IndexMut<BlockId, Output = Self::Dom>;
+  type Doms: Domains;
 
   /// Compute the initial value of the blocks (from the top for forward passes,
   /// and from the bottom for backward passes).
   fn bottom(&mut self, cfg: &Cfg) -> Self::Doms;
 
-  fn apply_statement(&mut self, _: Location, _: &Statement, _: &mut Self::Dom) {}
+  fn apply_statement(&mut self,
+    _: Location, _: &Statement, _: &mut <Self::Doms as Domains>::Item) {}
 
-  fn apply_terminator(&mut self, _: BlockId, _: &Terminator, _: &mut Self::Dom) {}
+  fn apply_terminator(&mut self,
+    _: BlockId, _: &Terminator, _: &mut <Self::Doms as Domains>::Item) {}
 
-  fn apply_trans_for_block(&mut self, id: BlockId, bl: &BasicBlock, d: &mut Self::Dom) {
+  fn apply_trans_for_block(&mut self,
+    id: BlockId, bl: &BasicBlock, d: &mut <Self::Doms as Domains>::Item
+  ) {
     self.do_apply_trans_for_block(id, bl, d)
   }
 
   /* Default implementations of methods, not intended for overriding: */
 
-  fn do_bottom(cfg: &Cfg) -> BlockVec<Self::Dom> where Self::Dom: Default {
-    BlockVec::from(
-      std::iter::repeat_with(Self::Dom::default)
-        .take(cfg.blocks.len())
-        .collect::<Vec<_>>())
-  }
-
-  fn do_apply_trans_for_block(&mut self, id: BlockId, bl: &BasicBlock, d: &mut Self::Dom) {
+  fn do_apply_trans_for_block(&mut self,
+    id: BlockId, bl: &BasicBlock, d: &mut <Self::Doms as Domains>::Item
+  ) {
     Self::Dir::map_block(bl, &mut (self, d),
       |n, stmt, (this, d)| this.apply_statement(id.at_stmt(n), stmt, d),
       |term, (this, d)| this.apply_terminator(id, term, d))
@@ -362,10 +396,10 @@ trait Analysis {
   ) {
     while let Some(id) = queue.pop() {
       let bl = &cfg[id];
-      let mut state = entry_sets[id].clone();
+      let mut state = entry_sets.cloned(id);
       self.apply_trans_for_block(id, bl, &mut state);
       Self::Dir::join_state_into_successors(cfg, id, &state, |tgt, state| {
-        if entry_sets[tgt].join(state) { queue.insert(tgt); }
+        if entry_sets.join(tgt, state) { queue.insert(tgt); }
       })
     }
   }

@@ -41,6 +41,16 @@ impl<I, T> IdxVec<I, T> {
   /// Construct a new [`IdxVec`] with the specified capacity.
   #[must_use] pub fn with_capacity(capacity: usize) -> Self { Vec::with_capacity(capacity).into() }
 
+  /// Construct a new [`IdxVec`] by calling the specified function.
+  #[must_use] pub fn from_fn(size: usize, f: impl FnMut() -> T) -> Self {
+    Self::from(std::iter::repeat_with(f).take(size).collect::<Vec<_>>())
+  }
+
+  /// Construct a new [`IdxVec`] using the default element `size` times.
+  #[must_use] pub fn from_default(size: usize) -> Self where T: Default {
+    Self::from_fn(size, T::default)
+  }
+
   /// The number of elements in the [`IdxVec`].
   #[must_use] pub fn len(&self) -> usize { self.0.len() }
 

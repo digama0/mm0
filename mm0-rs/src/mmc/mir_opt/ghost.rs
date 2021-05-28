@@ -30,28 +30,25 @@ use entity::{Entity, ProcTc};
 /// ```
 /// where `pf` is a proof of false in the context of block `l2`.
 fn reachability_analysis(cfg: &mut Cfg) -> BitSet<BlockId> {
-  cfg.compute_predecessors();
-  let mut reachable = BitSet::with_capacity(cfg.blocks.len());
-  let queue = &mut WorkQueue::with_capacity(cfg.blocks.len());
-  let mut f = |id, bl: &BasicBlock, queue: &mut WorkQueue<_>| if !reachable.contains(id) {
-    let new = match *bl.terminator() {
-      Terminator::Return(_) |
-      Terminator::Assert(_, _, _) => true,
-      Terminator::Unreachable(_) => false,
-      Terminator::Jump(tgt, _) => reachable.contains(tgt),
-      Terminator::If(_, [(_, tgt1), (_, tgt2)]) =>
-        reachable.contains(tgt1) || reachable.contains(tgt2),
-      Terminator::Call(_, se, _, _, ref tgt) =>
-        se || tgt.as_ref().map_or(false, |&(tgt, _)| reachable.contains(tgt)),
-    };
-    if new {
-      for &x in &cfg.predecessors()[id] { queue.insert(x); }
-      reachable.insert(id);
+  struct ReachabilityAnalysis;
+  impl Analysis for ReachabilityAnalysis {
+    type Dir = Backward;
+    type Doms = BitSet<BlockId>;
+
+    fn bottom(&mut self, cfg: &Cfg) -> Self::Doms { BitSet::with_capacity(cfg.blocks.len()) }
+
+    fn apply_trans_for_block(&mut self, _: BlockId, bl: &BasicBlock, d: &mut bool) {
+      match *bl.terminator() {
+        Terminator::Return(_) |
+        Terminator::Assert(_, _, _) => *d = true,
+        Terminator::Call(_, se, _, _, _) => *d |= se,
+        Terminator::Unreachable(_) |
+        Terminator::Jump(..) |
+        Terminator::If(..) => {}
+      }
     }
-  };
-  for (id, bl) in cfg.postorder(BlockId::ENTRY) { f(id, bl, queue) }
-  while let Some(id) = queue.pop() { f(id, &cfg[id], queue) }
-  reachable
+  }
+  ReachabilityAnalysis.iterate_to_fixpoint(cfg)
 }
 
 fn ghost_analysis(cfg: &mut Cfg,
@@ -134,13 +131,12 @@ fn ghost_analysis(cfg: &mut Cfg,
   }
 
   impl Analysis for GhostAnalysis<'_> {
-    type Dom = GhostDom;
     type Dir = Backward;
-    type Doms = BlockVec<Self::Dom>;
+    type Doms = BlockVec<GhostDom>;
 
-    fn bottom(&mut self, cfg: &Cfg) -> Self::Doms { Self::do_bottom(cfg) }
+    fn bottom(&mut self, cfg: &Cfg) -> Self::Doms { BlockVec::from_default(cfg.blocks.len()) }
 
-    fn apply_statement(&mut self, _: Location, stmt: &Statement, d: &mut Self::Dom) {
+    fn apply_statement(&mut self, _: Location, stmt: &Statement, d: &mut GhostDom) {
       match stmt {
         Statement::Let(lk, _, rv) => {
           let needed = match *lk {
@@ -166,7 +162,7 @@ fn ghost_analysis(cfg: &mut Cfg,
       }
     }
 
-    fn apply_terminator(&mut self, _: BlockId, term: &Terminator, d: &mut Self::Dom) {
+    fn apply_terminator(&mut self, _: BlockId, term: &Terminator, d: &mut GhostDom) {
       match term {
         Terminator::Jump(_, args) => {
           let tgt = std::mem::take(d);
@@ -202,7 +198,7 @@ fn ghost_analysis(cfg: &mut Cfg,
       }
     }
 
-    fn apply_trans_for_block(&mut self, id: BlockId, bl: &BasicBlock, d: &mut Self::Dom) {
+    fn apply_trans_for_block(&mut self, id: BlockId, bl: &BasicBlock, d: &mut GhostDom) {
       if !self.reachable.contains(id) { *d = Default::default(); return }
       self.do_apply_trans_for_block(id, bl, d)
     }
