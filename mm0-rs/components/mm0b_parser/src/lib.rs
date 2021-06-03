@@ -536,8 +536,8 @@ pub struct Header {
   pub p_proof: U32<LE>,
   /// Padding.
   pub reserved2: [u8; 4],
-  /// The pointer to the index header, an array of `1 + num_sorts + num_terms + num_thms`
-  /// pointers to [`IndexEntry`] nodes.
+  /// The pointer to the index header, an array of `id, data` fields that are parsed by
+  /// [`MmbIndexBuilder::build`].
   pub p_index: U64<LE>,
 }
 

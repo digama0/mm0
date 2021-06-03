@@ -2,7 +2,7 @@
 //!
 //! This pass is responsible mainly for name resolution. The [parser](super::parser) works on-demand,
 //! so the entire parsed MMC syntax doesn't exist all at once, but conceptually it is made up of recursive
-//! applications of the constructors in [`types::parser`](super::types::parser). This contains `AtomId`s
+//! applications of the constructors in [`types::parse`](super::types::parse). This contains `AtomId`s
 //! referencing variable names as provided by the user, and the task here is to undo all the name shadowing
 //! and resolve references to loop labels, named constants, and so on, so that elaboration has a
 //! reasonably well formed input to work on.
@@ -51,7 +51,7 @@ fn let_var(sp: &FileSpan, name: AtomId, v: VarId, rhs: ast::Expr) -> ast::Stmt {
 pub struct BuildAst<'a> {
   /// The global mapping of names to entities (globals, constants, intrinsics).
   names: &'a HashMap<AtomId, Entity>,
-  /// The parser, which we use to parse `LispVal` terms into [`types::parser`](super::types::parser)
+  /// The parser, which we use to parse `LispVal` terms into [`types::parse`](super::types::parse)
   /// constructions.
   pub(crate) p: Parser<'a>,
   /// The mapping of user-level names to internal variable IDs. The vector represents name

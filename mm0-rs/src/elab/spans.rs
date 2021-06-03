@@ -23,7 +23,7 @@ pub struct Spans<T> {
   /// We will always set this value before storing the span in [`Environment.spans`].
   stmt: MaybeUninit<Span>,
   /// The name of the present declaration. This is left uninitialized for
-  /// declarations that don't have names, like [`delimiter`](crate::parser::ast::Delimiter).
+  /// declarations that don't have names, like [`delimiter`](mm1_parser::ast::Delimiter).
   decl: MaybeUninit<AtomId>,
   /// The local context as of the end of the proof. This is used to resolve variables
   /// and subproof names.

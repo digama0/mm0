@@ -33,7 +33,7 @@ impl Idx for usize {
   fn from_usize(n: usize) -> Self { n }
 }
 
-/// A vector indexed by [`BlockId`]s.
+/// A vector indexed by a custom indexing type `I`, usually a newtyped integer.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
 

@@ -1,7 +1,7 @@
 //! The AST, the result after parsing and name resolution.
 //!
 //! This is produced by the [`build_ast`](super::super::build_ast) pass,
-//! and consumed by the [`ast_lower`](super::super::ast_lower) pass.
+//! and consumed by the [`infer`](super::super::infer) pass.
 //! At this point all the renaming shenanigans in the surface syntax are gone
 //! and all variables are declared only once, so we can start to apply SSA-style
 //! analysis to the result. We still haven't typechecked anything, so it's

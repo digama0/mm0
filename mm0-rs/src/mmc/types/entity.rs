@@ -198,7 +198,7 @@ make_prims! {
     Own: "own",
     /// `(ref T)` is a type of borrowed values. This type is elaborated to
     /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
-    /// (see [`Lifetime`](super::types::Lifetime)).
+    /// (see [`Lifetime`](super::ty::Lifetime)).
     Ref: "ref",
     /// `&sn e` is a type of pointers to a place `e`.
     /// This type has the property that if `x: &sn e` then `*x` evaluates to
@@ -206,7 +206,7 @@ make_prims! {
     RefSn: "&sn",
     /// `(& T)` is a type of borrowed pointers. This type is elaborated to
     /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
-    /// (see [`Lifetime`](super::types::Lifetime)).
+    /// (see [`Lifetime`](super::ty::Lifetime)).
     Shr: "&",
     /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
     /// This is useful for asserting that a computationally relevant value can be

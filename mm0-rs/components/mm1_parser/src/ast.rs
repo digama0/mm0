@@ -242,17 +242,12 @@ mm0_deepsize::deep_size_0!(Atom);
 pub enum SExprKind {
   /// An atom, an unquoted string of identifier characters like `foo`. These are usually
   /// interpreted as variable accesses or variable declarations, unless they appear inside
-  /// a quoted context, in which case they evaluate to themselves as a [`LispKind::Atom`].
-  ///
-  /// [`LispKind::Atom`]: crate::elab::lisp::LispKind::Atom
+  /// a quoted context, in which case they evaluate to themselves as a `LispKind::Atom`.
   Atom(Atom),
   /// A proper list, like `(a b c)`. This is normally interpreted as a function application,
-  /// unless the head of the list is a [`Syntax`], in which case it has special semantics.
+  /// unless the head of the list is a `Syntax`, in which case it has special semantics.
   /// The empty list `()` evaluates to itself, and when quoted a list evaluates to a
-  /// [`LispKind::List`] of its contents.
-  ///
-  /// [`Syntax`]: crate::elab::lisp::Syntax
-  /// [`LispKind::List`]: crate::elab::lisp::LispKind::List
+  /// `LispKind::List` of its contents.
   List(Vec<SExpr>),
   /// A dotted list, like `(a b c . d)`. (The dot must appear at the second to last
   /// position as in the example, but there may be one or more subexpressions before the

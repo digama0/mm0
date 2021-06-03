@@ -272,7 +272,7 @@ impl Elaborator {
   ///
   /// # Parameters
   ///
-  /// - `ast`: The [`Ast`] of the parsed MM1/MM0 file (as created by [`parser::parse`](super::parser::parse))
+  /// - `ast`: The [`Ast`] of the parsed MM1/MM0 file (as created by [`mm1_parser::parse`])
   /// - `path`: The location of the file being elaborated.
   /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
   ///   the `do` command is disabled, type inference is disabled, modifiers are treated

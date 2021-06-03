@@ -627,7 +627,7 @@ impl Contexts {
   }
 }
 
-/// The iterator struct returned by [`CtxIter::rev_iter`].
+/// The iterator struct returned by [`Contexts::rev_iter`].
 #[derive(Clone, Debug)]
 pub struct CtxIter<'a> {
   ctxs: &'a Contexts,

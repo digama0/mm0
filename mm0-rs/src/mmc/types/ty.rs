@@ -536,7 +536,9 @@ pub enum TyKind<'a> {
 }
 
 /// A visitor trait for the `Ty` type.
-/// This is used as the callback type of [`TyS::visit`].
+/// This is used as the callback type of [`Ty::visit`].
+///
+/// [`Ty::visit`]: struct.WithMeta.html#method.visit
 pub trait TyVisit<'a> {
   /// Called on `Expr` subexpressions.
   fn visit_expr(&mut self, _: Expr<'a>) {}
@@ -902,7 +904,10 @@ pub enum ExprKind<'a> {
 }
 
 /// A visitor trait for the `Expr` type.
-/// This is used as the callback type of [`ExprS::visit`].
+/// This is used as the callback type of [`Expr::visit`] and [`Place::visit`].
+///
+/// [`Expr::visit`]: struct.WithMeta.html#method.visit-2
+/// [`Place::visit`]: struct.WithMeta.html#method.visit-1
 pub trait ExprVisit<'a> {
   /// Called on `Ty` subexpressions.
   fn visit_ty(&mut self, _: Ty<'a>) {}

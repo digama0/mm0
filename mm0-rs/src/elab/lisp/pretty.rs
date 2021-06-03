@@ -108,11 +108,12 @@ impl fmt::Debug for Pretty<'_> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Pretty") }
 }
 
-macro_rules! str {($s:expr) => {pretty::RefDoc(&pretty::Doc::BorrowedText($s))}}
+// Previously named str!, which breaks doc links. See rust#81633
+macro_rules! s {($s:expr) => {pretty::RefDoc(&pretty::Doc::BorrowedText($s))}}
 
 const NIL: RefDoc<'static> = pretty::RefDoc(&Doc::Nil);
 const HARDLINE: RefDoc<'static> = pretty::RefDoc(&Doc::Line);
-const SPACE: RefDoc<'static> = str!(" ");
+const SPACE: RefDoc<'static> = s!(" ");
 const LINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, SPACE));
 const LINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, NIL));
 const SOFTLINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE));
@@ -354,7 +355,7 @@ impl<'a> Pretty<'a> {
         } else {
           let mut u = Uncons::from(e.clone());
           if let Some(e) = u.next() { self.pp_lisp(&e) }
-          else if u.exactly(0) { return str!("()") }
+          else if u.exactly(0) { return s!("()") }
           else { return self.pp_lisp(&u.into()) }
         };
         for e in &mut u {
@@ -362,7 +363,7 @@ impl<'a> Pretty<'a> {
         }
         if !u.exactly(0) {
           doc = self.append_doc(doc,
-            self.append_doc(str!(" ."),
+            self.append_doc(s!(" ."),
               self.append_doc(Self::line(), self.pp_lisp(&u.into()))));
         }
         let doc = self.append_doc(self.lparen, self.append_doc(doc, self.rparen));
@@ -397,26 +398,26 @@ impl<'a> Pretty<'a> {
       let mut buf = Self::nil();
       match *ty {
         Type::Bound(s) => {
-          buf = self.append_doc(buf, str!("{"));
+          buf = self.append_doc(buf, s!("{"));
           let lhs = format!("{}", bis1.iter().map(|(a, _)| {
             bvars.push(a.unwrap_or(AtomId::UNDER));
             self.fe.to(a)
           }).format(" "));
           buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
-          buf = self.append_doc(buf, str!(": "));
+          buf = self.append_doc(buf, s!(": "));
           buf = self.append_annot(buf, Annot::SortName(s),
             self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
-          buf = self.append_doc(buf, str!("}"));
+          buf = self.append_doc(buf, s!("}"));
         }
         Type::Reg(s, ds) => {
-          buf = self.append_doc(buf, str!("("));
+          buf = self.append_doc(buf, s!("("));
           let lhs = format!("{}", bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "));
           buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
-          buf = self.append_doc(buf, str!(": "));
+          buf = self.append_doc(buf, s!(": "));
           buf = self.append_annot(buf, Annot::SortName(s),
             self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
           buf = self.dep_type(bvars, ds, buf);
-          buf = self.append_doc(buf, str!(")"));
+          buf = self.append_doc(buf, s!(")"));
         }
       }
       doc = self.append_doc(doc, self.append_doc(Self::softline(), buf));
@@ -429,7 +430,7 @@ impl<'a> Pretty<'a> {
   pub fn term(&'a self, tid: TermId, show_def: bool) -> RefDoc<'a> {
     let t = &self.fe.env.terms[tid];
     let mut doc = self.annot(Annot::Keyword,
-      if matches!(t.kind, TermKind::Term) {str!("term")} else {str!("def")});
+      if matches!(t.kind, TermKind::Term) {s!("term")} else {s!("def")});
     if !t.vis.is_empty() {
       doc = self.append_doc(self.annot(Annot::Visibility(t.vis),
         self.alloc(Doc::text(t.vis.to_string()))), doc);
@@ -439,7 +440,7 @@ impl<'a> Pretty<'a> {
       self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
-    let doc = self.append_doc(doc, str!(":"));
+    let doc = self.append_doc(doc, s!(":"));
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = self.annot(
       Annot::SortName(t.ret.0),
@@ -447,7 +448,7 @@ impl<'a> Pretty<'a> {
     );
     buf = self.dep_type(&bvars, t.ret.1, buf);
     if let (true, TermKind::Def(Some(expr))) = (show_def, &t.kind) {
-      buf = self.append_doc(buf, str!(" ="));
+      buf = self.append_doc(buf, s!(" ="));
       let doc = self.append_doc(doc, self.append_doc(Self::softline(), buf));
       let mut bvars = Vec::new();
       let mut heap = Vec::new();
@@ -461,7 +462,7 @@ impl<'a> Pretty<'a> {
         self.expr_delimited(val, "$ ", " $;")));
       self.alloc(Doc::Group(doc))
     } else {
-      buf = self.append_doc(buf, str!(";"));
+      buf = self.append_doc(buf, s!(";"));
       self.append_doc(doc, self.append_doc(Self::softline(), buf))
     }
   }
@@ -473,7 +474,7 @@ impl<'a> Pretty<'a> {
     for e in hs {
       doc = self.append_doc(doc,
         self.append_doc(self.expr(&e),
-          self.append_doc(str!(" >"), Self::line())));
+          self.append_doc(s!(" >"), Self::line())));
     }
     self.append_doc(doc, self.expr(ret))
   }
@@ -485,11 +486,11 @@ impl<'a> Pretty<'a> {
     let s = &self.fe.env.sorts[sid];
     let mut doc = self.annot(Annot::SortModifiers(s.mods),
       self.alloc(Doc::text(s.mods.to_string())));
-    doc = self.append_annot(doc, Annot::Keyword, str!("sort"));
+    doc = self.append_annot(doc, Annot::Keyword, s!("sort"));
     doc = self.append_doc(doc, Self::space());
     doc = self.append_annot(doc, Annot::SortName(sid),
       self.alloc(Doc::text(s.name.as_str())));
-    self.append_doc(doc, str!(";"))
+    self.append_doc(doc, s!(";"))
   }
 
   /// Pretty-prints an `axiom` or `theorem` declaration, for example
@@ -500,13 +501,13 @@ impl<'a> Pretty<'a> {
     let doc = self.annot(Annot::Visibility(t.vis),
       self.alloc(Doc::text(t.vis.to_string())));
     let doc = self.append_annot(doc, Annot::Keyword,
-      if matches!(t.kind, ThmKind::Axiom) {str!("axiom")} else {str!("theorem")});
+      if matches!(t.kind, ThmKind::Axiom) {s!("axiom")} else {s!("theorem")});
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::ThmName(tid),
       self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
-    let doc = self.append_doc(doc, str!(":"));
+    let doc = self.append_doc(doc, s!(":"));
     let doc = self.append_doc(self.alloc(Doc::Group(doc)), Self::line());
     let mut bvars = Vec::new();
     let mut heap = Vec::new();
@@ -518,16 +519,16 @@ impl<'a> Pretty<'a> {
     let doc = self.hyps_and_ret(doc,
       t.hyps.iter().map(|(_, e)| self.fe.expr_node(&heap, &mut None, e)),
       &self.fe.expr_node(&heap, &mut None, &t.ret));
-    let doc = self.append_doc(doc, str!(";"));
+    let doc = self.append_doc(doc, s!(";"));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }
 
   /// Pretty-prints a unification error, as `failed to unify: e1 =?= e2`.
   pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a> {
-    let doc = self.append_doc(str!("failed to unify:"), Self::line());
+    let doc = self.append_doc(s!("failed to unify:"), Self::line());
     let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)));
     let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
-      self.append_doc(Self::line(), str!("=?=")))));
+      self.append_doc(Self::line(), s!("=?=")))));
     let doc = self.append_doc(doc, Pretty::line());
     let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)));
     self.alloc(Doc::Group(doc))

@@ -36,7 +36,7 @@ pub type BasicMmbFile<'a> = MmbFile<'a, BasicIndex<'a>>;
 /// An MMB file parser with no index parser.
 pub type BareMmbFile<'a> = MmbFile<'a, ()>;
 
-/// A trait for populating the `data` field on [`MmbIndex`] given a table entry.
+/// A trait for populating the `data` field on the index `X` of an [`MmbFile`] given a table entry.
 pub trait MmbIndexBuilder<'a>: Default {
   /// Implementors are expected to match on the [`TableEntry::id`] field, and use the data if it
   /// matches a particular name.
@@ -58,13 +58,13 @@ impl<'a, A: MmbIndexBuilder<'a>, B: MmbIndexBuilder<'a>> MmbIndexBuilder<'a> for
   }
 }
 
-/// Constructs a new trait for accessing a subcomponent of the [`MmbIndex`] data, with automatic
+/// Constructs a new trait for accessing a subcomponent of the index data, with automatic
 /// impls for `()`, `(A, B)` and the subcomponent itself.
 #[macro_export]
 macro_rules! make_index_trait {
   ([<$($lft:lifetime),*>, $ty:ident, $trait:ident, $notrait:ident, $f:ident, $f_mut:ident]
     $($fns:item)*) => {
-    /// A trait for looking up a subcomponent of the data of [`MmbIndex`].
+    /// A trait for looking up a subcomponent of the index data.
     pub trait $trait<$($lft),*> {
       /// Get shared access to the subcomponent.
       fn $f(&self) -> Option<&$ty<$($lft),*>>;
@@ -154,7 +154,7 @@ make_index_trait! {
 impl<'a> NoSymbolNames for Option<VarNames<'a>> {}
 impl<'a> NoSymbolNames for Option<HypNames<'a>> {}
 
-/// This index subcomponent supplies names for sorts, terms, and theorems.
+/// This index subcomponent supplies variable names for terms and theorems.
 #[derive(Debug)]
 pub struct VarNames<'a> {
   /// Pointers to the index entries for the terms
@@ -187,7 +187,7 @@ make_index_trait! {
 impl<'a> NoVarNames for Option<SymbolNames<'a>> {}
 impl<'a> NoVarNames for Option<HypNames<'a>> {}
 
-/// This index subcomponent supplies names for sorts, terms, and theorems.
+/// This index subcomponent supplies hypothesis names for theorems.
 #[derive(Debug)]
 pub struct HypNames<'a> {
   /// Pointers to the index entries for the theorems
@@ -387,13 +387,11 @@ pub enum ParseError {
   /// If a malformed mmb file tries to sneak in a declar with a (cmd, data) pair
   /// whose data is a 0, `try_next_decl` will loop forever.
   BadProofLen(usize),
-  /// The u8 could not be converted to a [StmtCmd] via TryFrom
+  /// The u8 could not be converted to a [`StmtCmd`] via TryFrom
   StmtCmdConv(u8),
-  /// The u8 could not be converted to an [IndexKind] via TryFrom
-  IndexKindConv(u8),
-  /// The pair could not be converted to a [ProofCmd] via TryFrom
+  /// The pair could not be converted to a [`ProofCmd`] via TryFrom
   ProofCmdConv(u8, u32),
-  /// The pair could not be converted to a [UnifyCmd] via TryFrom
+  /// The pair could not be converted to a [`UnifyCmd`] via TryFrom
   UnifyCmdConv(u8, u32),
   /// Wrap other errors to allow for some backtracing.
   Trace(&'static str, u32, Box<ParseError>),
@@ -484,8 +482,6 @@ impl std::fmt::Display for ParseError {
     match self {
       ParseError::BadProofLen(start) =>
         write!(f, "proof starting at byte {} has an incorrect length", start),
-      ParseError::IndexKindConv(cmd) =>
-        write!(f, "bad IndexKind conversion (`TryFrom`); cmd was {}", cmd),
       ParseError::StmtCmdConv(cmd) =>
         write!(f, "bad StmtCmd conversion (`TryFrom`); cmd was {}", cmd),
       ParseError::ProofCmdConv(cmd, data) =>

@@ -1,5 +1,5 @@
 //! MMB exporter, which produces `.mmb` binary proof files from an
-//! [`Environment`](crate::elab::Environment) object.
+//! [`Environment`](crate::Environment) object.
 use std::convert::TryInto;
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};

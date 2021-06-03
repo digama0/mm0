@@ -244,7 +244,7 @@ trait DualDomain: Clone {
 /// The dual of a [`Domain`] as a [`DualDomain`] and vice versa.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
-pub struct Dual<T>(pub T);
+struct Dual<T>(T);
 
 impl<T: DualDomain> Domain for Dual<T> {
   fn join(&mut self, other: &Self) -> bool { self.0.meet(&other.0) }

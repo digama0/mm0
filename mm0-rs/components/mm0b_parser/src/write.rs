@@ -13,7 +13,7 @@ use std::io::{self, Write};
 ///   * `cmd | 0xC0, data:u32` for 32 bit `data`
 ///
 /// where we select the shortest available encoding given the value of `data`.
-fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
+pub fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
   if data == 0 {
     w.write_u8(cmd)
   } else if let Ok(data) = data.try_into() {

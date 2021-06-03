@@ -51,8 +51,7 @@ pub trait DeepSizeOf {
     ///
     /// If a struct and all of its children do not allocate or have references,
     /// this method should return `0`, as it cannot have any heap allocated
-    /// children.  There is a shortcut macro for this implementation, [`known_size_of`](known_size_of),
-    /// used like `known_deep_size!(0, (), u32, u64);` which generates the impls.
+    /// children.
     ///
     /// The most common way to use this method, and how the derive works,
     /// is to call this method on each of the structs members and sum the

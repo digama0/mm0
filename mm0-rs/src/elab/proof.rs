@@ -128,7 +128,7 @@ pub struct Dedup<H: NodeHash> {
   pub vec: Vec<(Rc<H>, bool, u64)>,
   /// `2 ^ n` where `n` is the number of bound variables currently allocated.
   /// (Yes, this puts a limit of 64 simultaneous bound variables. In fact the limit is
-  /// lower than that, [55](super::local_context::MAX_BOUND_VARS),
+  /// lower than that, [55](mm0b_parser::MAX_BOUND_VARS),
   /// due to the way BV sets are stored in the compiled `.mmb` format.)
   bv: u64,
 }
