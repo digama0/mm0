@@ -66,6 +66,11 @@ impl<I, T> IdxVec<I, T> {
     self.0.iter().enumerate().map(|(n, val)| (I::from_usize(n), val))
   }
 
+  /// An iterator including the indexes, like `iter_mut().enumerate()`, as `BlockId`s.
+  pub fn enum_iter_mut(&mut self) -> impl Iterator<Item = (I, &mut T)> where I: Idx {
+    self.0.iter_mut().enumerate().map(|(n, val)| (I::from_usize(n), val))
+  }
+
   /// Returns `true` if the vector contains no elements.
   #[must_use] pub fn is_empty(&self) -> bool { self.0.is_empty() }
 }

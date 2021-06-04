@@ -1,11 +1,42 @@
 //! MIR optimizations.
 
-use std::{collections::VecDeque, hash::Hash, marker::PhantomData};
+use std::{collections::{HashMap, VecDeque}, hash::Hash, marker::PhantomData};
+use crate::AtomId;
 use super::types;
-use types::{Idx, mir};
+use types::{Idx, mir, entity};
+use entity::Entity;
 #[allow(clippy::wildcard_imports)] use mir::*;
+pub use dominator::DominatorTree;
 
+pub mod dominator;
 pub mod ghost;
+
+/// A space-optimized `Option<BlockId>`.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct OptBlockId(BlockId);
+crate::deep_size_0!(OptBlockId);
+
+impl OptBlockId {
+  const NONE: OptBlockId = OptBlockId(BlockId(u32::MAX));
+  #[inline] fn new(b: BlockId) -> Self { Self(b) }
+  #[inline] fn get(self) -> Option<BlockId> {
+    if self == Self::NONE { None } else { Some(self.0) }
+  }
+  #[inline] fn get_unchecked(self) -> BlockId { self.0 }
+}
+
+impl Default for OptBlockId {
+  fn default() -> Self { Self::NONE }
+}
+
+impl std::fmt::Debug for OptBlockId {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self.get() {
+      Some(bl) => bl.fmt(f),
+      None => "None".fmt(f),
+    }
+  }
+}
 
 /// A bit set with a custom index type.
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -119,7 +150,7 @@ impl<'a> Postorder<'a> {
   /// After this function is called, the top of the visit stack will have an
   /// empty list of successors.
   fn traverse_successor(&mut self) {
-    while let Some(bb) = self.visit_stack.last_mut().and_then(|(_, it)| it.next()) {
+    while let Some((_, bb)) = self.visit_stack.last_mut().and_then(|(_, it)| it.next()) {
       if self.visited.insert(bb) {
         self.visit_stack.push((bb, self.cfg[bb].successors()));
       }
@@ -143,7 +174,6 @@ impl<'a> Iterator for Postorder<'a> {
 
 trait Direction {
   const FORWARD: bool;
-  const NEEDS_PREDS: bool;
 
   fn map_block<'a, D>(
     bl: &'a BasicBlock,
@@ -158,7 +188,7 @@ trait Direction {
     cfg: &Cfg,
     id: BlockId,
     exit_state: &'a D,
-    propagate: impl FnMut(BlockId, &'a D)
+    propagate: impl FnMut(Edge, BlockId, &'a D)
   );
 }
 
@@ -166,7 +196,6 @@ struct Backward;
 
 impl Direction for Backward {
   const FORWARD: bool = false;
-  const NEEDS_PREDS: bool = true;
 
   #[inline] fn map_block<'a, D>(
     bl: &'a BasicBlock,
@@ -184,9 +213,9 @@ impl Direction for Backward {
 
   fn join_state_into_successors<'a, D>(
     cfg: &Cfg, id: BlockId, exit_state: &'a D,
-    mut propagate: impl FnMut(BlockId, &'a D)
+    mut propagate: impl FnMut(Edge, BlockId, &'a D)
   ) {
-    cfg.predecessors()[id].iter().for_each(|&pred| propagate(pred, exit_state))
+    cfg.predecessors()[id].iter().for_each(|&(e, pred)| propagate(e, pred, exit_state))
   }
 }
 
@@ -194,7 +223,6 @@ struct Forward;
 
 impl Direction for Forward {
   const FORWARD: bool = true;
-  const NEEDS_PREDS: bool = false;
 
   #[inline] fn map_block<'a, D>(
     bl: &'a BasicBlock,
@@ -213,20 +241,20 @@ impl Direction for Forward {
 
   fn join_state_into_successors<'a, D>(
     cfg: &Cfg, id: BlockId, exit_state: &'a D,
-    mut propagate: impl FnMut(BlockId, &'a D)
+    mut propagate: impl FnMut(Edge, BlockId, &'a D)
   ) {
-    cfg[id].successors().for_each(|tgt| propagate(tgt, exit_state))
+    cfg[id].successors().for_each(|(e, tgt)| propagate(e, tgt, exit_state))
   }
 }
 
 struct Location {
-  _block: BlockId,
+  block: BlockId,
   _stmt: usize,
 }
 
 impl BlockId {
   #[inline] #[must_use]
-  fn at_stmt(self, stmt: usize) -> Location { Location { _block: self, _stmt: stmt } }
+  fn at_stmt(self, stmt: usize) -> Location { Location { block: self, _stmt: stmt } }
 }
 
 trait Domain: Clone {
@@ -316,6 +344,10 @@ impl<K: Clone + Hash + Eq> DualDomain for im::HashSet<K> {
   }
 }
 
+trait DomainsBottom {
+  fn bottom(n: usize) -> Self;
+}
+
 trait Domains {
   type Item;
   fn cloned(&self, id: BlockId) -> Self::Item;
@@ -328,10 +360,26 @@ impl<D: Domains> Domains for &mut D {
   fn join(&mut self, id: BlockId, other: &D::Item) -> bool { (**self).join(id, other) }
 }
 
+impl<A: Domains, B: Domains> Domains for (A, B) {
+  type Item = (A::Item, B::Item);
+  fn cloned(&self, id: BlockId) -> Self::Item { (self.0.cloned(id), self.1.cloned(id)) }
+  fn join(&mut self, id: BlockId, (a, b): &Self::Item) -> bool {
+    self.0.join(id, a) | self.1.join(id, b)
+  }
+}
+
+impl<A: DomainsBottom, B: DomainsBottom> DomainsBottom for (A, B) {
+  fn bottom(n: usize) -> Self { (A::bottom(n), B::bottom(n)) }
+}
+
 impl<D: Domain> Domains for BlockVec<D> {
   type Item = D;
   fn cloned(&self, id: BlockId) -> D { self[id].clone() }
   fn join(&mut self, id: BlockId, other: &D) -> bool { self[id].join(other) }
+}
+
+impl<D: Default> DomainsBottom for BlockVec<D> {
+  fn bottom(n: usize) -> Self { BlockVec::from_default(n) }
 }
 
 impl<D: DualDomain> Domains for Dual<BlockVec<D>> {
@@ -344,6 +392,10 @@ impl Domains for BitSet<BlockId> {
   type Item = bool;
   fn cloned(&self, id: BlockId) -> bool { self.contains(id) }
   fn join(&mut self, id: BlockId, other: &bool) -> bool { *other && self.insert(id) }
+}
+
+impl DomainsBottom for BitSet<BlockId> {
+  fn bottom(n: usize) -> Self { BitSet::with_capacity(n) }
 }
 
 impl Domains for Dual<BitSet<BlockId>> {
@@ -360,30 +412,31 @@ trait Analysis {
   /// and from the bottom for backward passes).
   fn bottom(&mut self, cfg: &Cfg) -> Self::Doms;
 
-  fn apply_statement(&mut self,
+  fn apply_statement(&mut self, _: &Self::Doms,
     _: Location, _: &Statement, _: &mut <Self::Doms as Domains>::Item) {}
 
-  fn apply_terminator(&mut self,
+  fn apply_terminator(&mut self, _: &Self::Doms,
     _: BlockId, _: &Terminator, _: &mut <Self::Doms as Domains>::Item) {}
 
   fn apply_trans_for_block(&mut self,
-    id: BlockId, bl: &BasicBlock, d: &mut <Self::Doms as Domains>::Item
+    ds: &Self::Doms, id: BlockId, bl: &BasicBlock,
+    d: &mut <Self::Doms as Domains>::Item
   ) {
-    self.do_apply_trans_for_block(id, bl, d)
+    self.do_apply_trans_for_block(ds, id, bl, d)
   }
 
   /* Default implementations of methods, not intended for overriding: */
 
   fn do_apply_trans_for_block(&mut self,
-    id: BlockId, bl: &BasicBlock, d: &mut <Self::Doms as Domains>::Item
+    ds: &Self::Doms, id: BlockId, bl: &BasicBlock,
+    d: &mut <Self::Doms as Domains>::Item
   ) {
     Self::Dir::map_block(bl, &mut (self, d),
-      |n, stmt, (this, d)| this.apply_statement(id.at_stmt(n), stmt, d),
-      |term, (this, d)| this.apply_terminator(id, term, d))
+      |n, stmt, (this, d)| this.apply_statement(ds, id.at_stmt(n), stmt, d),
+      |term, (this, d)| this.apply_terminator(ds, id, term, d))
   }
 
-  fn iterate_to_fixpoint(&mut self, cfg: &mut Cfg) -> Self::Doms {
-    if Self::Dir::NEEDS_PREDS { cfg.compute_predecessors(); }
+  fn iterate_to_fixpoint(&mut self, cfg: &Cfg) -> Self::Doms {
     let mut queue = WorkQueue::with_capacity(cfg.blocks.len());
     Self::Dir::preferred_traverse(cfg, |id, _| { queue.insert(id); });
     let mut entry_sets = self.bottom(cfg);
@@ -397,8 +450,8 @@ trait Analysis {
     while let Some(id) = queue.pop() {
       let bl = &cfg[id];
       let mut state = entry_sets.cloned(id);
-      self.apply_trans_for_block(id, bl, &mut state);
-      Self::Dir::join_state_into_successors(cfg, id, &state, |tgt, state| {
+      self.apply_trans_for_block(entry_sets, id, bl, &mut state);
+      Self::Dir::join_state_into_successors(cfg, id, &state, |_, tgt, state| {
         if entry_sets.join(tgt, state) { queue.insert(tgt); }
       })
     }
@@ -406,6 +459,12 @@ trait Analysis {
 }
 
 /// Perform MIR analysis and optimize the given procedure.
-pub fn optimize(_proc: &mut Proc) {
-
+#[allow(clippy::implicit_hasher)]
+pub fn optimize(proc: &mut Proc, names: &HashMap<AtomId, Entity>) {
+  let cfg = &mut proc.body;
+  cfg.compute_predecessors();
+  let reachable = cfg.reachability_analysis();
+  let ghost = cfg.ghost_analysis(names, &reachable, &proc.rets);
+  cfg.apply_reachability_analysis(&{reachable});
+  cfg.apply_ghost_analysis(&{ghost});
 }

@@ -121,7 +121,7 @@ impl Compiler {
         if ctx.errors.is_empty() {
           if let Some(item) = item {
             if let Some(n) = build_mir::BuildMir::default().build_item(mir, init, item) {
-              mir_opt::optimize(mir.get_mut(&n).expect("missing"));
+              mir_opt::optimize(mir.get_mut(&n).expect("missing"), names);
             }
           }
         } else {

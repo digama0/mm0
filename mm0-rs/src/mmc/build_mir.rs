@@ -499,20 +499,20 @@ impl<'a> BuildMir<'a> {
 
   fn new_block(&mut self) -> BlockId { self.cfg.new_block(self.cur_ctx) }
 
-  fn extend_ctx(&mut self, var: VarId, ty: ExprTy) {
-    self.cur_ctx = self.cfg.ctxs.extend(self.cur_ctx, var, ty)
+  fn extend_ctx(&mut self, var: VarId, r: bool, ty: ExprTy) {
+    self.cur_ctx = self.cfg.ctxs.extend(self.cur_ctx, var, r, ty)
   }
 
   fn push_stmt(&mut self, stmt: Statement) {
     match stmt {
-      Statement::Let(LetKind::Let(v, _, ref e), ref ty, _) =>
-        self.extend_ctx(v, (e.clone(), ty.clone())),
-      Statement::Let(LetKind::Own([(v, _, ref ty), (h, _, ref ty2)]), _, _) => {
-        self.extend_ctx(v, (None, ty.clone()));
-        self.extend_ctx(h, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
+      Statement::Let(LetKind::Let(v, r, ref e), ref ty, _) =>
+        self.extend_ctx(v, r, (e.clone(), ty.clone())),
+      Statement::Let(LetKind::Own([(v, vr, ref ty), (h, hr, ref ty2)]), _, _) => {
+        self.extend_ctx(v, vr, (None, ty.clone()));
+        self.extend_ctx(h, hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
-      Statement::Assign(_, _, ref vars) => for &(_, v, ref ety) in &**vars {
-        self.extend_ctx(v, ety.clone())
+      Statement::Assign(_, _, ref vars) => for v in &**vars {
+        self.extend_ctx(v.to, v.rel, v.ety.clone())
       }
     }
     self.cur_block().stmts.push(stmt);
@@ -532,9 +532,9 @@ impl<'a> BuildMir<'a> {
 
   fn assert(&mut self, v_cond: Operand, cond: Expr) -> VarId {
     let vh = self.fresh_var();
-    self.extend_ctx(vh, (None, Rc::new(TyKind::Pure(cond))));
+    self.extend_ctx(vh, false, (None, Rc::new(TyKind::Pure(cond))));
     let tgt = self.new_block();
-    self.cur_block().terminate(Terminator::Assert(v_cond, vh, tgt));
+    self.cur_block().terminate(Terminator::Assert(v_cond, vh, true, tgt));
     self.cur_block = tgt;
     vh
   }
@@ -895,8 +895,11 @@ impl<'a> BuildMir<'a> {
             let varmap = map.iter()
               .map(|&(new, old, _)| (old, this.tr(new))).collect::<HashMap<_, _>>();
             this.tr.add_gen(this.tr.cur_gen, gen, varmap);
-            let vars = map.into_vec().into_iter().map(|(new, _, ety)| {
-              (this.tr(new), this.tr_gen(new, gen), this.tr_gen(ety, gen))
+            let vars = map.into_vec().into_iter().map(|(new, _, ety)| Rename {
+              from: this.tr(new),
+              to: this.tr_gen(new, gen),
+              rel: true,
+              ety: this.tr_gen(ety, gen)
             }).collect::<Box<[_]>>();
             this.tr.cur_gen = gen;
             this.push_stmt(Statement::Assign(lhs, rhs, vars))
@@ -1008,7 +1011,7 @@ impl<'a> BuildMir<'a> {
         vs.push(var);
         let ty = self.tr(pat.k.ty());
         f(arg.0, var, &ty);
-        self.extend_ctx(var, (None, ty));
+        self.extend_ctx(var, !arg.0.contains(ty::ArgAttr::GHOST), (None, ty));
       }
     }
     vs
@@ -1055,7 +1058,7 @@ impl<'a> BuildMir<'a> {
     args.extend(muts.iter().filter_map(|&v| {
       let from = self.tr(v);
       let to = self.tr_gen(v, gen);
-      if from == to || self.cfg.ctxs.rev_iter(ctx).all(|&(u, _)| from != u) {return None}
+      if from == to || self.cfg.ctxs.rev_iter(ctx).all(|&(u, _, _)| from != u) {return None}
       Some((to, from.into()))
     }));
   }
@@ -1170,11 +1173,11 @@ impl<'a> BuildMir<'a> {
     let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
     let (_, base_ctx, base_gen) = self.cur();
     // tru_ctx is the current context with `vh: cond`
-    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh,
+    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
     let tru = self.cfg.new_block(tru_ctx);
     // fal_ctx is the current context with `vh: !cond`
-    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh,
+    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
     let fal = self.cfg.new_block(fal_ctx);
     //   if v_cond {vh. goto tru(vh)} else {vh. goto fal(vh)}
@@ -1326,11 +1329,11 @@ impl<'a> BuildMir<'a> {
         let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
         let test = self.cur();
         // tru_ctx is the current context with `vh: cond`
-        let tru_ctx = self.cfg.ctxs.extend(test.1, vh,
+        let tru_ctx = self.cfg.ctxs.extend(test.1, vh, false,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
         let tru = self.cfg.new_block(tru_ctx);
         // fal_ctx is the current context with `vh: !cond`
-        let fal_ctx = self.cfg.ctxs.extend(test.1, vh,
+        let fal_ctx = self.cfg.ctxs.extend(test.1, vh, false,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
         let fal = self.cfg.new_block(fal_ctx);
         //   if v_cond {vh. goto main(vh)} else {vh. goto after(vh)}
@@ -1382,14 +1385,23 @@ impl<'a> BuildMir<'a> {
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
-        self.cur_block().terminate(Terminator::Call(f.k, se, tys, args, None));
+        let v = self.fresh_var();
+        self.extend_ctx(v, false, (None, Rc::new(TyKind::False)));
+        let bl = self.new_block();
+        self.cur_block().terminate(Terminator::Call {
+          f: f.k, se, tys, args, reach: false, tgt: bl, rets: Box::new([v])
+        });
+        let bl = &mut self.cfg[bl];
+        bl.reachable = false;
+        bl.terminate(Terminator::Unreachable(v.into()));
         return Err(Diverged)
       }
       hir::ReturnKind::Unit => Box::new([]),
       hir::ReturnKind::One => {
         let v = self.tr(dest[0]);
+        let vr = !tgt.ghostly();
         let tgt = self.tr(tgt);
-        self.extend_ctx(v, (None, tgt));
+        self.extend_ctx(v, vr, (None, tgt));
         Box::new([v])
       }
       hir::ReturnKind::Struct(_) => {
@@ -1399,14 +1411,16 @@ impl<'a> BuildMir<'a> {
         dest.iter().zip(argtys).map(|(&dest, &Arg {attr, var, ref ty})| {
           let v = self.tr(dest);
           let ty = alph.alpha(ty);
-          self.extend_ctx(v, (None, ty));
+          self.extend_ctx(v, !attr.contains(ArgAttr::GHOST), (None, ty));
           if !attr.contains(ArgAttr::NONDEP) { alph.push(var, v) }
           v
         }).collect()
       }
     };
     let bl = self.new_block();
-    self.cur_block().terminate(Terminator::Call(f.k, se, tys, args, Some((bl, vars))));
+    self.cur_block().terminate(Terminator::Call {
+      f: f.k, se, tys, args, reach: true, tgt: bl, rets: vars
+    });
     self.cur_block = bl;
     Ok(())
   }

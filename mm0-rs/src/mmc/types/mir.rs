@@ -7,7 +7,8 @@ use mm0_util::u32_as_usize;
 use num::BigInt;
 use smallvec::SmallVec;
 use crate::{AtomId, LispVal, Remap, Remapper};
-use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir};
+use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir,
+  super::mir_opt::DominatorTree};
 pub use ast::TyVarId;
 
 /// The alpha conversion struct is a mapping from variables to variables.
@@ -551,7 +552,7 @@ impl HasAlpha for ExprKind {
 
 /// A basic block ID, which is used to look up blocks in the [`Cfg`].
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-pub struct BlockId(u32);
+pub struct BlockId(pub u32);
 crate::deep_size_0!(BlockId);
 
 impl BlockId {
@@ -614,8 +615,8 @@ impl Contexts {
   }
 
   /// Given a context, extend it with a variable and type to produce a new context.
-  pub fn extend(&mut self, mut ctx: CtxId, var: VarId, ty: ExprTy) -> CtxId {
-    self.unshare(&mut ctx).vars.push((var, ty));
+  pub fn extend(&mut self, mut ctx: CtxId, var: VarId, r: bool, ty: ExprTy) -> CtxId {
+    self.unshare(&mut ctx).vars.push((var, r, ty));
     ctx
   }
 
@@ -625,6 +626,30 @@ impl Contexts {
   #[must_use] pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxIter<'_> {
     CtxIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
   }
+
+  /// Get the last variable pushed on a context, and its type. Panics if used on the root context.
+  #[must_use] pub fn head(&self, id: CtxId) -> &(VarId, bool, ExprTy) {
+    self.rev_iter(id).next().expect("not the root context")
+  }
+
+  /// Clear all computational relevance settings in the contexts.
+  pub fn reset_ghost(&mut self) {
+    self.0.iter_mut().for_each(|ctx| ctx.vars.iter_mut().for_each(|v| v.1 = false))
+  }
+
+  /// Set computational relevance for all variables in the context for which `vars` returns true.
+  /// Note that because contexts are shared, a shared variable will be considered relevant if
+  /// it is relevant in any of the contexts that share it.
+  pub fn set_ghost(&mut self, mut id: CtxId, mut vars: impl FnMut(VarId) -> bool) {
+    loop {
+      let ctxbuf = &mut self[id.0];
+      for (v, r, _) in &mut ctxbuf.vars[..id.1 as usize] {
+        if !*r && vars(*v) { *r = true }
+      }
+      if id.0 == CtxBufId::ROOT { break }
+      id = ctxbuf.parent;
+    }
+  }
 }
 
 /// The iterator struct returned by [`Contexts::rev_iter`].
@@ -632,11 +657,11 @@ impl Contexts {
 pub struct CtxIter<'a> {
   ctxs: &'a Contexts,
   buf: CtxBufId,
-  iter: std::slice::Iter<'a, (VarId, ExprTy)>,
+  iter: std::slice::Iter<'a, (VarId, bool, ExprTy)>,
 }
 
 impl<'a> Iterator for CtxIter<'a> {
-  type Item = &'a (VarId, ExprTy);
+  type Item = &'a (VarId, bool, ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
     loop {
       if let Some(v) = self.iter.next_back() {return Some(v)}
@@ -647,7 +672,7 @@ impl<'a> Iterator for CtxIter<'a> {
 }
 
 /// The calculated predecessor information for blocks in the CFG.
-pub type Predecessors = BlockVec<SmallVec<[BlockId; 4]>>;
+pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 
 /// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
 /// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
@@ -659,7 +684,9 @@ pub struct Cfg {
   /// The set of basic blocks, containing the actual code.
   pub blocks: BlockVec<BasicBlock>,
   /// The mapping from basic blocks to their predecessors, calculated lazily.
-  predecessor_cache: Option<Predecessors>,
+  predecessors: Option<Predecessors>,
+  /// The dominator tree, calculated lazily.
+  dominator_tree: Option<DominatorTree>,
 }
 
 impl Remap for Cfg {
@@ -668,7 +695,8 @@ impl Remap for Cfg {
     Self {
       ctxs: self.ctxs.remap(r),
       blocks: self.blocks.remap(r),
-      predecessor_cache: self.predecessor_cache.clone()
+      predecessors: self.predecessors.clone(),
+      dominator_tree: self.dominator_tree.clone(),
     }
   }
 }
@@ -681,24 +709,47 @@ impl Cfg {
     self.blocks.push(BasicBlock::new(parent, None))
   }
 
+  /// Calculate the predecessor information for this CFG, bypassing the cache.
+  #[must_use] pub fn predecessors_uncached(&self) -> Predecessors {
+    let mut preds = BlockVec::from(vec![SmallVec::new(); self.blocks.len()]);
+    for (id, bl) in self.blocks.enum_iter() {
+      for (e, succ) in bl.successors() { preds[succ].push((e, id)) }
+    }
+    preds
+  }
+
   /// Calculate the predecessor information for this CFG, and return a reference to it.
   pub fn compute_predecessors(&mut self) -> &Predecessors {
-    if let Some(preds) = &self.predecessor_cache {
+    if let Some(preds) = &self.predecessors {
       // Safety: NLL case 3 (polonius validates this borrow pattern)
       #[allow(clippy::useless_transmute)]
       return unsafe { std::mem::transmute::<&Predecessors, &Predecessors>(preds) }
     }
-    let mut preds = BlockVec::from(vec![SmallVec::new(); self.blocks.len()]);
-    for (id, bl) in self.blocks.enum_iter() {
-      for succ in bl.successors() { preds[succ].push(id) }
+    let preds = self.predecessors_uncached();
+    self.predecessors.get_or_insert(preds)
+  }
+
+  /// Calculate the dominator information for this CFG, and return a reference to it.
+  pub fn compute_dominator_tree(&mut self) -> &DominatorTree {
+    if let Some(preds) = &self.dominator_tree {
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
+      #[allow(clippy::useless_transmute)]
+      return unsafe { std::mem::transmute::<&DominatorTree, &DominatorTree>(preds) }
     }
-    self.predecessor_cache.get_or_insert(preds)
+    let preds = self.dominator_tree_uncached();
+    self.dominator_tree.get_or_insert(preds)
   }
 
   /// Retrieve the predecessor information for this CFG.
   /// Panics if [`compute_predecessors`](Cfg::compute_predecessors) is not called first.
-  #[must_use] pub fn predecessors(&self) -> &Predecessors {
-    self.predecessor_cache.as_ref().expect("call compute_predecessors first")
+  #[inline] #[must_use] pub fn predecessors(&self) -> &Predecessors {
+    self.predecessors.as_ref().expect("call compute_predecessors first")
+  }
+
+  /// Retrieve the dominator tree information for this CFG.
+  /// Panics if [`compute_dominator_tree`](Cfg::compute_dominator_tree) is not called first.
+  #[inline] #[must_use] pub fn dominator_tree(&self) -> &DominatorTree {
+    self.dominator_tree.as_ref().expect("call compute_dominator_tree first")
   }
 }
 
@@ -744,7 +795,7 @@ pub struct CtxBuf {
   /// The parent context, which this buffer is viewed as extending.
   pub parent: CtxId,
   /// The additional variables that this buffer adds to the context.
-  pub vars: Vec<(VarId, ExprTy)>,
+  pub vars: Vec<(VarId, bool, ExprTy)>,
 }
 
 impl Remap for CtxBuf {
@@ -779,6 +830,24 @@ impl From<hir::ListKind> for ListKind {
   }
 }
 
+/// Records the types of edge in the control flow graph. This is yielded by the successor and
+/// predecessor iterators, to describe, for each edge between two blocks, what kind of terminator
+/// produced it.
+#[derive(Copy, Clone, Debug)]
+pub enum Edge {
+  /// An edge from an if terminator to the `cond = true` or `cond = false` target blocks.
+  If(bool),
+  /// An edge from a jump to its target.
+  Jump,
+  /// An edge from a simple jump to its target.
+  Jump1,
+  /// An edge from an assert to the following block.
+  Assert,
+  /// An edge from a function call to the following block.
+  Call,
+}
+crate::deep_size_0!(Edge);
+
 /// An iterator over the successors of a basic block.
 #[must_use] #[derive(Debug)]
 pub struct Successors<'a>(SuccessorsState<'a>);
@@ -786,7 +855,7 @@ pub struct Successors<'a>(SuccessorsState<'a>);
 #[derive(Debug)]
 enum SuccessorsState<'a> {
   New(&'a Terminator),
-  One(BlockId),
+  IfNeg(BlockId),
   Zero,
 }
 
@@ -798,30 +867,40 @@ impl<'a> Successors<'a> {
 }
 
 impl<'a> Iterator for Successors<'a> {
-  type Item = BlockId;
+  type Item = (Edge, BlockId);
   fn next(&mut self) -> Option<Self::Item> {
     match self.0 {
       SuccessorsState::New(t) => match *t {
         Terminator::If(_, [(_, bl1), (_, bl2)]) => {
-          self.0 = SuccessorsState::One(bl2);
-          Some(bl1)
+          self.0 = SuccessorsState::IfNeg(bl2);
+          Some((Edge::If(true), bl1))
         }
-        Terminator::Jump(bl, _) |
-        Terminator::Assert(_, _, bl) |
-        Terminator::Call(_, _, _, _, Some((bl, _))) => {
+        Terminator::Jump(bl, _) => {
           self.0 = SuccessorsState::Zero;
-          Some(bl)
+          Some((Edge::Jump, bl))
+        }
+        Terminator::Jump1(bl) => {
+          self.0 = SuccessorsState::Zero;
+          Some((Edge::Jump1, bl))
+        }
+        Terminator::Assert(_, _, _, bl) => {
+          self.0 = SuccessorsState::Zero;
+          Some((Edge::Assert, bl))
+        }
+        Terminator::Call {tgt, ..} => {
+          self.0 = SuccessorsState::Zero;
+          Some((Edge::Call, tgt))
         }
         Terminator::Return(_) |
         Terminator::Unreachable(_) |
-        Terminator::Call(_, _, _, _, None) => {
+        Terminator::Dead => {
           self.0 = SuccessorsState::Zero;
           None
         }
       }
-      SuccessorsState::One(bl) => {
+      SuccessorsState::IfNeg(bl) => {
         self.0 = SuccessorsState::Zero;
-        Some(bl)
+        Some((Edge::If(false), bl))
       }
       SuccessorsState::Zero => None
     }
@@ -937,6 +1016,11 @@ impl Constant {
   #[must_use] pub fn mm0_proof(ty: Ty, val: LispVal) -> Self {
     Self { ety: (Some(Rc::new(ExprKind::Unit)), ty), k: ConstKind::Mm0Proof(val) }
   }
+
+  /// Return a proof by contradiction: the referenced block adds the negation of
+  #[must_use] pub fn contra(ty: Ty, bl: BlockId, v: VarId) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), ty), k: ConstKind::Contra(bl, v) }
+  }
 }
 
 impl Remap for Constant {
@@ -966,6 +1050,9 @@ pub enum ConstKind {
   Sizeof,
   /// A proof embedded from MM0.
   Mm0Proof(LispVal),
+  /// A proof by contradiction: This has type `cond`, where the target block exists in a context
+  /// extended by `v: !cond` and ends in a proof of contradiction.
+  Contra(BlockId, VarId),
 }
 
 impl Remap for ConstKind {
@@ -980,6 +1067,7 @@ impl Remap for ConstKind {
       Self::Const(a) => Self::Const(a.remap(r)),
       Self::Sizeof => Self::Sizeof,
       Self::Mm0Proof(p) => Self::Mm0Proof(p.remap(r)),
+      &Self::Contra(bl, v) => Self::Contra(bl, v),
     }
   }
 }
@@ -1159,6 +1247,26 @@ impl Remap for LetKind {
   }
 }
 
+/// An individual rename `(from, to: T)` in [`Statement::Assign`].
+#[derive(Clone, Debug, DeepSizeOf)]
+pub struct Rename {
+  /// The variable before the rename.
+  pub from: VarId,
+  /// The variable after the rename.
+  pub to: VarId,
+  /// True if variable `to` is relevant (non-ghost).
+  pub rel: bool,
+  /// The type of the variable after the rename.
+  pub ety: ExprTy,
+}
+
+impl Remap for Rename {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Rename { from: self.from, to: self.to, rel: self.rel, ety: self.ety.remap(r) }
+  }
+}
+
 /// A statement is an operation in a basic block that does not end the block. Generally this means
 /// that it has simple control flow behavior, in that it always steps to the following statement
 /// after performing some action that cannot fail.
@@ -1169,7 +1277,7 @@ pub enum Statement {
   /// `Assign(lhs, rhs, vars)` is the statement `lhs <- rhs`.
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
-  Assign(Place, Operand, Box<[(VarId, VarId, ExprTy)]>),
+  Assign(Place, Operand, Box<[Rename]>),
 }
 
 impl Remap for Statement {
@@ -1194,6 +1302,9 @@ pub enum Terminator {
   /// are assumed to keep their values. Variables in the target context but not the source must
   /// be specified.
   Jump(BlockId, Vec<(VarId, Operand)>),
+  /// Semantically equivalent to `Jump(tgt, [])`, with the additional guarantee that this jump is
+  /// the only incoming edge to the target block. This is used to cheaply append basic blocks.
+  Jump1(BlockId),
   /// A `return(x -> arg,*);` statement - unconditionally return from the function.
   /// The `x -> arg` values assign values to variables, where `x` is a variable in the function
   /// returns and `arg` is an operand evaluated in the current basic block context.
@@ -1208,12 +1319,32 @@ pub enum Terminator {
   /// An assert expression `if cond {h. goto l1} else {fail}`.
   /// This is lowered the same as a branch, but there is no actual `fail` basic block to
   /// jump to.
-  Assert(Operand, VarId, BlockId),
+  /// The `bool` is true if the following block is reachable (i.e. this is not `assert false`).
+  Assert(Operand, VarId, bool, BlockId),
   /// A `f(tys, es) -> l(xs)` function call, which calls `f` with type arguments `tys` and
   /// values `es`, and jumps to `l`, using `xs` to store the return values.
-  /// If `l` and `xs` are none, then the return is unreachable.
-  /// The bool is true if the function is side-effectful.
-  Call(AtomId, bool, Box<[Ty]>, Box<[Operand]>, Option<(BlockId, Box<[VarId]>)>),
+  Call {
+    /// The function to call.
+    f: AtomId,
+    /// Is this a side-effectful function?
+    /// Side effect free functions can be removed by dead code elimination.
+    se: bool,
+    /// The list of type arguments to the function.
+    tys: Box<[Ty]>,
+    /// The list of regular arguments to the function.
+    args: Box<[Operand]>,
+    /// True if the block after the call is reachable (i.e. the function does not return `false`).
+    reach: bool,
+    /// The block after the call. This exists even if the call doesn't return, but in that case
+    /// the block is purely virtual.
+    tgt: BlockId,
+    /// The list of variables returned from the call, which are introduced into the context of the
+    /// target block.
+    rets: Box<[VarId]>
+  },
+  /// This block is not reachable from the entry block. Similar to `unreachable`, but
+  /// provides no proof of false, and it is a type error to jump to a dead block.
+  Dead,
 }
 
 impl Remap for Terminator {
@@ -1221,12 +1352,16 @@ impl Remap for Terminator {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Self::Jump(id, args) => Self::Jump(*id, args.remap(r)),
+      &Self::Jump1(id) => Self::Jump1(id),
       Self::Return(args) => Self::Return(args.remap(r)),
       Self::Unreachable(rv) => Self::Unreachable(rv.remap(r)),
       Self::If(cond, args) => Self::If(cond.remap(r), *args),
-      Self::Assert(cond, v, bl) => Self::Assert(cond.remap(r), *v, *bl),
-      Self::Call(f, se, tys, es, bl) =>
-        Self::Call(f.remap(r), *se, tys.remap(r), es.remap(r), bl.remap(r)),
+      Self::Assert(cond, v, reach, bl) => Self::Assert(cond.remap(r), *v, *reach, *bl),
+      Self::Call {f, se, tys, args, reach, tgt, rets} => Self::Call {
+        f: f.remap(r), se: *se, tys: tys.remap(r), args: args.remap(r),
+        reach: *reach, tgt: *tgt, rets: rets.remap(r)
+      },
+      Self::Dead => Self::Dead,
     }
   }
 }
@@ -1238,6 +1373,9 @@ impl Remap for Terminator {
 pub struct BasicBlock {
   /// The initial context on entry to the block.
   pub ctx: CtxId,
+  /// If false, then the current context is able to prove false,
+  /// and all control paths end in `unreachable`.
+  pub reachable: bool,
   /// The list of statements, which may extend the context.
   pub stmts: Vec<Statement>,
   /// The final statement, which may jump to another basic block or perform another control flow
@@ -1248,13 +1386,16 @@ pub struct BasicBlock {
 impl Remap for BasicBlock {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { ctx: self.ctx, stmts: self.stmts.remap(r), term: self.term.remap(r) }
+    Self {
+      ctx: self.ctx, reachable: self.reachable,
+      stmts: self.stmts.remap(r), term: self.term.remap(r)
+    }
   }
 }
 
 impl BasicBlock {
   fn new(ctx: CtxId, term: Option<Terminator>) -> Self {
-    Self { ctx, stmts: vec![], term }
+    Self { ctx, reachable: true, stmts: vec![], term }
   }
 
   /// Finish this basic block by adding the terminator.
@@ -1271,6 +1412,18 @@ impl BasicBlock {
 
   /// An iterator over the successors of this basic block.
   #[inline] pub fn successors(&self) -> Successors<'_> { Successors::new(self.terminator()) }
+
+  /// A dead block constant, which can be used as the contents of a dead block.
+  pub const DEAD: Self = BasicBlock {
+    ctx: CtxId::ROOT,
+    reachable: false,
+    stmts: Vec::new(),
+    term: Some(Terminator::Dead)
+  };
+
+  /// Returns true if this is a dead block, meaning that the block ID is not usable for jumping to.
+  #[must_use] #[inline]
+  pub fn is_dead(&self) -> bool { matches!(self.term, Some(Terminator::Dead)) }
 }
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.

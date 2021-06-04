@@ -633,6 +633,10 @@ impl Remap for AtomId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.atom[*self] }
 }
+impl Remap for bool {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
+}
 impl<A: Remap, B: Remap> Remap for (A, B) {
   type Target = (A::Target, B::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r)) }
