@@ -23,7 +23,7 @@ theorem bitb1Si (h: $ a = b1 b $) (h2: $ bit b n = c $): $ bit a (suc n) = c $ =
 '(eqtr (biteq1 h) @ eqtr bitb1S h2);
 
 -- Adds theorems such as
--- theorem xbita3: $ bit xa 3 = 0 $;
+-- theorem xbita3: $ bit xa 3 = 1 $;
 -- which evaluate the bits of an individual hex digit.
 -- Naming system is "xbit" + hex digit + index
 do {
