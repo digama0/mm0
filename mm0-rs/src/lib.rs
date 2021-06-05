@@ -28,15 +28,15 @@
 #![warn(clippy::else_if_without_else, clippy::float_arithmetic,
   clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
   clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
-  clippy::string_add, clippy::unwrap_used, clippy::wrong_pub_self_convention)]
+  clippy::string_add, clippy::unwrap_used)]
 // all the clippy lints we don't want
 #![allow(clippy::cognitive_complexity, clippy::comparison_chain,
   clippy::default_trait_access, clippy::enum_glob_use, clippy::inline_always,
   clippy::manual_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
   clippy::multiple_crate_versions, clippy::option_if_let_else,
-  clippy::shadow_unrelated, clippy::too_many_lines, clippy::unnested_or_patterns,
-  clippy::use_self)]
+  clippy::semicolon_if_nothing_returned, clippy::shadow_unrelated, clippy::too_many_lines,
+  clippy::unnested_or_patterns, clippy::use_self)]
 
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
