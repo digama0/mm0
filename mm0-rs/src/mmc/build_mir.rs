@@ -6,7 +6,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use types::IntTy;
 use crate::AtomId;
 use super::types;
-use types::{Binop, Size, Spanned, VarId as HVarId, hir, ty, mir};
+use types::{Spanned, VarId as HVarId, hir, ty, mir};
 use hir::GenId;
 use ty::{TuplePattern, TuplePatternKind, TupleMatchKind};
 #[allow(clippy::wildcard_imports)] use mir::*;
@@ -215,12 +215,6 @@ impl<'a> Translate<'a> for ty::Lifetime {
   }
 }
 
-#[must_use] #[inline] fn fresh_var(next_var: &mut VarId) -> VarId {
-  let n = *next_var;
-  next_var.0 += 1;
-  n
-}
-
 impl ty::TyS<'_> {
   fn is_unit_dest(&self) -> bool {
     matches!(self.k,
@@ -232,14 +226,14 @@ impl ty::TyS<'_> {
 }
 
 impl<'a> Translator<'a> {
-  #[must_use] fn fresh_var(&mut self) -> VarId { fresh_var(&mut self.next_var) }
+  #[must_use] fn fresh_var(&mut self) -> VarId { self.next_var.fresh() }
 
   fn tr_var(&mut self, v: HVarId, gen: GenId) -> VarId {
     let gm = self.gen_vars.get(&gen).expect("unknown generation");
     if let Some(&val) = gm.cache.get(&v) { return val }
     let val =
       if let Some(&val) = gm.value.get(&v) { val }
-      else if gen == GenId::ROOT { fresh_var(&mut self.next_var) }
+      else if gen == GenId::ROOT { self.next_var.fresh() }
       else { let dom = gm.dominator; self.tr_var(v, dom) };
     self.gen_vars.get_mut(&gen).expect("unknown generation").cache.insert(v, val);
     val
@@ -251,7 +245,7 @@ impl<'a> Translator<'a> {
 
   fn location(&mut self, var: HVarId) -> VarId {
     let next = &mut self.next_var;
-    *self.locations.entry(var).or_insert_with(|| fresh_var(next))
+    *self.locations.entry(var).or_insert_with(|| next.fresh())
   }
   // fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
   //   self.located.entry(var).or_insert_with(Vec::new)
@@ -411,7 +405,6 @@ struct LabelGroupData {
 pub struct Initializer {
   cfg: Cfg,
   cur_block: Block<BlockId>,
-  next_var: VarId,
 }
 
 impl crate::Remap for Initializer {
@@ -420,7 +413,6 @@ impl crate::Remap for Initializer {
     Initializer {
       cfg: self.cfg.remap(r),
       cur_block: self.cur_block,
-      next_var: self.next_var,
     }
   }
 }
@@ -429,7 +421,7 @@ impl Default for Initializer {
   fn default() -> Self {
     let mut cfg = Cfg::default();
     let cur_block = Ok(cfg.new_block(CtxId::ROOT));
-    Self {cfg, cur_block, next_var: Default::default()}
+    Self {cfg, cur_block}
   }
 }
 
@@ -548,12 +540,13 @@ impl<'a> BuildMir<'a> {
       Err(n) => {
         let vn = self.as_temp(n)?;
         let vb = self.fresh_var();
-        let cond = Rc::new(ExprKind::Binop(Binop::Lt,
+        let cond = Rc::new(ExprKind::Binop(types::Binop::Lt,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
           LetKind::Let(vb, true, Some(cond.clone())), Rc::new(TyKind::Bool),
-          RValue::Binop(Binop::Lt, Operand::Copy(vi.into()), vn.into())));
+          RValue::Binop(Binop::Lt(IntTy::NAT),
+            Operand::Copy(vi.into()), vn.into())));
         self.assert(vb.into(), cond)
       }
     }))
@@ -569,20 +562,21 @@ impl<'a> BuildMir<'a> {
       Err(n) => {
         let vn = self.as_temp(n)?;
         let v_add = self.fresh_var();
-        let add = Rc::new(ExprKind::Binop(Binop::Add,
+        let add = Rc::new(ExprKind::Binop(types::Binop::Add,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vl))));
         self.push_stmt(Statement::Let(
           LetKind::Let(v_add, true, Some(add.clone())),
-          Rc::new(TyKind::Int(IntTy::Int(Size::Inf))),
-          RValue::Binop(Binop::Add, Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
+          Rc::new(TyKind::Int(IntTy::INT)),
+          RValue::Binop(Binop::Add(IntTy::NAT),
+            Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
         let v_cond = self.fresh_var();
-        let cond = Rc::new(ExprKind::Binop(Binop::Le,
+        let cond = Rc::new(ExprKind::Binop(types::Binop::Le,
           add, Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
           LetKind::Let(v_cond, true, Some(cond.clone())),
           Rc::new(TyKind::Bool),
-          RValue::Binop(Binop::Le, v_add.into(), vn.into())));
+          RValue::Binop(Binop::Le(IntTy::NAT), v_add.into(), vn.into())));
         self.assert(v_cond.into(), cond)
       }
     }))
@@ -715,6 +709,12 @@ impl<'a> BuildMir<'a> {
         let v2 = self.as_temp(*e2)?;
         RValue::Binop(op, v1.into(), v2.into())
       }
+      hir::ExprKind::Eq(ty, inv, e1, e2) => {
+        let ty = self.tr(ty);
+        let v1 = self.as_temp(*e1)?;
+        let v2 = self.as_temp(*e2)?;
+        RValue::Eq(ty, inv, v1.into(), v2.into())
+      }
       hir::ExprKind::Sn(x, h) => {
         let vx = self.as_temp(*x)?;
         let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(|h| h.into());
@@ -745,7 +745,7 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Cast(e, ty, hir::CastKind::Subtype(h)) => {
         let e = self.operand(*e)?;
         let ty = self.tr(ty);
-        RValue::Cast(CastKind::Subtype(h.map(|h| self.operand(*h)).transpose()?), e, ty)
+        RValue::Cast(CastKind::Subtype(self.operand(*h)?), e, ty)
       }
       hir::ExprKind::Cast(e, ty, hir::CastKind::Wand(h)) => {
         let e = self.operand(*e)?;
@@ -755,7 +755,7 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Cast(e, ty, hir::CastKind::Mem(h)) => {
         let e = self.operand(*e)?;
         let ty = self.tr(ty);
-        RValue::Cast(CastKind::Mem(h.map(|h| self.operand(*h)).transpose()?), e, ty)
+        RValue::Cast(CastKind::Mem(self.operand(*h)?), e, ty)
       }
       hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
       hir::ExprKind::Sizeof(ty) => Constant::sizeof(self.tr(ty)).into(),
@@ -794,7 +794,7 @@ impl<'a> BuildMir<'a> {
         unreachable!()
       }
       hir::ExprKind::If {..} | hir::ExprKind::Block(_) |
-      hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!()
+      hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!(),
     })
   }
 
@@ -863,7 +863,8 @@ impl<'a> BuildMir<'a> {
           hir::ExprKind::Typeof(e) => return this.expr(*e, None),
           hir::ExprKind::Ref(e) |
           hir::ExprKind::Borrow(e) => return this.ignore_place(*e),
-          hir::ExprKind::Binop(_, e1, e2) => {
+          hir::ExprKind::Binop(_, e1, e2) |
+          hir::ExprKind::Eq(_, _, e1, e2) => {
             this.expr(*e1, None)?;
             this.expr(*e2, None)?;
           }
@@ -1464,6 +1465,7 @@ impl<'a> BuildMir<'a> {
           Ok(()) => unreachable!("bodies should end in unconditional return"),
           Err(Diverged) => {}
         }
+        self.cfg.max_var = self.tr.next_var;
         mir.insert(name.k, Proc {
           kind,
           name: Spanned {span: name.span.clone(), k: name.k},
@@ -1476,13 +1478,13 @@ impl<'a> BuildMir<'a> {
       }
       hir::ItemKind::Global { lhs, rhs } => {
         mem::swap(&mut init.cfg, &mut self.cfg);
-        self.tr.next_var = init.next_var;
+        self.tr.next_var = self.cfg.max_var;
         init.cur_block = (|| -> Block<BlockId> {
           self.cur_block = init.cur_block?;
           self.let_stmt(lhs, rhs)?;
           Ok(self.cur_block)
         })();
-        init.next_var = self.tr.next_var;
+        self.cfg.max_var = self.tr.next_var;
         mem::swap(&mut init.cfg, &mut self.cfg);
         None
       }

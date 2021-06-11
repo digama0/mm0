@@ -160,7 +160,7 @@ impl Cfg {
             self.active = OptBlockId::new(id);
             self.apply_operand(o)
           }
-          RValue::Binop(_, o1, o2) => {
+          RValue::Binop(_, o1, o2) | RValue::Eq(_, _, o1, o2) => {
             self.active = OptBlockId::new(id);
             self.apply_operand(o1);
             self.apply_operand(o2)
@@ -324,8 +324,8 @@ impl Cfg {
       let bl = &mut self.blocks[id];
       if bl.is_dead() { continue }
       self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v));
+      let update = |v, r: &mut bool| if !*r && res.contains(&v) { *r = true };
       for stmt in &mut bl.stmts {
-        let update = |v, r: &mut bool| if !*r && res.contains(&v) { *r = true };
         match stmt {
           Statement::Let(LetKind::Let(v, r, _), _, _) => update(*v, r),
           Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { update(*v, r) }
@@ -333,5 +333,15 @@ impl Cfg {
         }
       }
     }
+  }
+
+  /// Convenience function for applying the result of [`ghost_analysis`](Self::ghost_analysis).
+  pub fn do_ghost_analysis(&mut self,
+    names: &HashMap<AtomId, Entity>,
+    reachable: &BlockVec<Reachability>,
+    returns: &[Arg],
+  ) {
+    let ghost = self.ghost_analysis(names, reachable, returns);
+    self.apply_ghost_analysis(&ghost);
   }
 }

@@ -2871,22 +2871,19 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   fn binop_ty(&mut self, op: Binop,
     ty1: impl FnOnce(&mut Self) -> Option<IntTy>,
     ty2: impl FnOnce(&mut Self) -> Option<IntTy>,
-  ) -> (Ty<'a>, Ty<'a>) {
+  ) -> (IntTy, Ty<'a>) {
     let opty = op.ty();
     if opty.int_out() {
-      let ty = (|| -> Option<_> {
-        if !op.preserves_nat() {return None}
-        let sz1 = if let Some(IntTy::UInt(sz1)) = ty1(self) {sz1} else {return None};
-        let sz2 = if let Some(IntTy::UInt(sz2)) = ty2(self) {sz2} else {return None};
-        Some(if op.preserves_usize() {
-          intern!(self, TyKind::Int(IntTy::UInt(std::cmp::max(sz1, sz2))))
-        } else {
-          self.common.nat()
-        })
-      }()).unwrap_or_else(|| self.common.int());
-      (ty, ty)
+      let ity = (|| {
+        if !op.preserves_nat() {return IntTy::INT}
+        let sz1 = if let Some(IntTy::UInt(sz1)) = ty1(self) {sz1} else {return IntTy::INT};
+        let sz2 = if let Some(IntTy::UInt(sz2)) = ty2(self) {sz2} else {return IntTy::INT};
+        if op.preserves_usize() { IntTy::UInt(std::cmp::max(sz1, sz2)) }
+        else { IntTy::NAT }
+      })();
+      (ity, self.common.int_ty(ity))
     } else {
-      (self.common.int(), self.common.t_bool)
+      (IntTy::INT, self.common.t_bool)
     }
   }
 
@@ -2968,27 +2965,24 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
       ast::ExprKind::Unop(Unop::Neg, e) => {
         let (e, pe) = self.check_expr(e, self.common.int());
-        ret![Unop(self::Unop::Neg, Box::new(e)),
+        ret![Unop(hir::Unop::Neg(IntTy::INT), Box::new(e)),
           pe.map(|pe| intern!(self, ExprKind::Unop(Unop::Neg, pe))),
           self.common.int()]
       }
 
       ast::ExprKind::Unop(Unop::Not, e) => {
         let (e, pe) = self.check_expr(e, self.common.t_bool);
-        ret![Unop(self::Unop::Neg, Box::new(e)),
+        ret![Unop(hir::Unop::Not, Box::new(e)),
           pe.map(|pe| intern!(self, ExprKind::Unop(Unop::Not, pe))),
           self.common.t_bool]
       }
 
       ast::ExprKind::Unop(Unop::BitNot(_), e) => {
-        let sz = self.as_int_ty(span, expect)
-          .and_then(|ty| if let IntTy::UInt(sz) = ty { Some(sz) } else { None })
-          .unwrap_or(Size::Inf);
-        let ty =
-          if let Size::Inf = sz { self.common.int() }
-          else { self.common.t_uint(sz) };
+        let ity = self.as_int_ty(span, expect).unwrap_or(IntTy::INT);
+        let ty = self.common.int_ty(ity);
         let (e, pe) = self.check_expr(e, ty);
-        ret![Unop(self::Unop::BitNot(sz), Box::new(e)),
+        let sz = if let IntTy::UInt(sz) = ity { sz } else { Size::Inf };
+        ret![Unop(hir::Unop::BitNot(ity), Box::new(e)),
           pe.map(|pe| intern!(self, ExprKind::Unop(Unop::BitNot(sz), pe))),
           ty]
       }
@@ -2998,26 +2992,28 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
       &ast::ExprKind::Binop(op, ref e1, ref e2) => {
         let opty = op.ty();
-        let ((e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
-          let ityin = self.as_int_ty(span, expect).unwrap_or(IntTy::Int(Size::Inf));
+        let (ity, (e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
+          let ityin = self.as_int_ty(span, expect).unwrap_or(IntTy::INT);
           let tyin1 = self.common.int_ty(ityin);
           let (e1, pe1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin1));
           let tyin2 = if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
             self.common.t_uint(sz)
           } else { tyin1 };
           let (e2, pe2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin2));
-          let (tyin2, tyout) = self.binop_ty(op,
+          let (ityin2, tyout) = self.binop_ty(op,
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e1.ty())),
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e2.ty())));
+          let tyin2 = self.common.int_ty(ityin2);
           let e1 = self.coerce_expr(e1, pe1, tyin2);
           let e2 = self.coerce_expr(e2, pe2, tyin2);
-          ((e1, pe1), (e2, pe2), tyout)
+          (ityin2, (e1, pe1), (e2, pe2), tyout)
         } else {
-          (self.check_expr(e1, self.common.t_bool),
+          (IntTy::INT,
+           self.check_expr(e1, self.common.t_bool),
            self.check_expr(e2, self.common.t_bool),
            self.common.t_bool)
         };
-        ret![Binop(op, Box::new(e1), Box::new(e2)),
+        ret![Binop(op.as_hir(ity), Box::new(e1), Box::new(e2)),
           pe1.and_then(|pe1| pe2.map(|pe2|
             intern!(self, ExprKind::Binop(op, pe1, pe2)))),
           tyout]
@@ -3324,12 +3320,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           then {
             if ity <= ity2 {
               ret![Cast(Box::new(e), ty, hir::CastKind::Int), pe, tgt]
-            } else if let IntTy::UInt(Size::Inf) = ity2 {
+            } else if let IntTy::NAT = ity2 {
               fail!()
             } else {
-              let op = Unop::As(ity2);
-              let pe = pe.map(|e| intern!(self, ExprKind::Unop(op, e)));
-              ret![Unop(op, Box::new(e)), pe, tgt]
+              let pe = pe.map(|e| intern!(self, ExprKind::Unop(Unop::As(ity2), e)));
+              ret![Unop(hir::Unop::As(ity, ity2), Box::new(e)), pe, tgt]
             }
           }
           else {
@@ -3355,7 +3350,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             self.check_expr(h, hty).0
           })))
         } else {
-          hir::CastKind::Subtype(h.as_deref().map(|h| Box::new({
+          hir::CastKind::subtype(h.as_deref().map(|h| Box::new({
             let v = self.fresh_var(AtomId::UNDER);
             let x = intern!(self, ExprKind::Var(v));
             // A. x: ty, [x: ty] -* [x: tgt]
@@ -3375,7 +3370,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let ty = e.ty();
         let pe = self.as_pure(e.span, pe);
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
-        let ck = hir::CastKind::Mem(h.as_deref().map(|h| Box::new({
+        let ck = hir::CastKind::mem(h.as_deref().map(|h| Box::new({
           // [x: tgt]
           let hty = intern!(self, TyKind::HasTy(pe, tgt));
           self.check_expr(h, hty).0
@@ -3503,7 +3498,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           let ty = intern!(self, TyKind::Imp(from, tgt));
           let e = Box::new(hir::Spanned {span, k:
             (hir::ExprKind::List(ListKind::List, ps), (Some(unit!()), from))});
-          let ck = hir::CastKind::Subtype(Some(Box::new(self.elab_proof(span, ty, pf))));
+          let ck = hir::CastKind::Subtype(Box::new(self.elab_proof(span, ty, pf)));
           hir::ExprKind::Cast(e, from, ck)
         } else {
           let from = intern!(self, TyKind::List(self.alloc.alloc_slice_fill_iter(tys.into_iter())));
@@ -3715,20 +3710,29 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         hir::ExprKind::Int(n),
         if n.is_negative() { self.common.int() } else { self.common.nat() }
       ),
-      ExprKind::Unop(op, e) => (
-        hir::ExprKind::Unop(op, Box::new(self.eval_expr(span, e)?)),
-        match op {
-          Unop::Neg |
-          Unop::BitNot(_) => self.common.int(),
-          Unop::Not => self.common.t_bool,
-          Unop::As(ity) => self.common.int_ty(ity),
-        }
-      ),
+      ExprKind::Unop(op, e) => {
+        let e = Box::new(self.eval_expr(span, e)?); let ty = e.ty();
+        let (op, ty) = match op {
+          Unop::Neg => (hir::Unop::Neg(IntTy::INT), self.common.int()),
+          Unop::Not => (hir::Unop::Not, self.common.t_bool),
+          Unop::BitNot(sz) => {
+            let ity = ty.as_int_ty().unwrap_or_else(|| {
+              if sz == Size::Inf { IntTy::Int(sz) } else { IntTy::UInt(sz) }
+            });
+            (hir::Unop::BitNot(ity), self.common.int_ty(ity))
+          }
+          Unop::As(ity2) => {
+            let ity = ty.as_int_ty().unwrap_or(IntTy::INT);
+            (hir::Unop::As(ity, ity2), self.common.int_ty(ity2))
+          }
+        };
+        (hir::ExprKind::Unop(op, e), ty)
+      }
       ExprKind::Binop(op, e1, e2) => {
         let e1 = Box::new(self.eval_expr(span, e1)?); let ty1 = e1.ty();
         let e2 = Box::new(self.eval_expr(span, e2)?); let ty2 = e2.ty();
-        (hir::ExprKind::Binop(op, e1, e2),
-          self.binop_ty(op, |_| ty1.as_int_ty(), |_| ty2.as_int_ty()).1)
+        let (ity, ty) = self.binop_ty(op, |_| ty1.as_int_ty(), |_| ty2.as_int_ty());
+        (hir::ExprKind::Binop(op.as_hir(ity), e1, e2), ty)
       }
       ExprKind::Sizeof(ty) => {
         let e2 = self.whnf_expr(span, e);

@@ -7,9 +7,9 @@ use mm0_util::u32_as_usize;
 use num::BigInt;
 use smallvec::SmallVec;
 use crate::{AtomId, LispVal, Remap, Remapper};
-use super::{Binop, IntTy, Size, Spanned, Unop, ast::ProcKind, ast, global, hir,
+use super::{IntTy, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
-pub use ast::TyVarId;
+pub use {ast::TyVarId, hir::{Unop, Binop}};
 
 /// The alpha conversion struct is a mapping from variables to variables.
 #[derive(Debug, Default)]
@@ -66,6 +66,15 @@ impl<T: HasAlpha> HasAlpha for global::Mm0Expr<T> {
 /// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
 #[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq, Hash)]
 pub struct VarId(pub u32);
+
+impl VarId {
+  /// Generate a fresh variable from a `&mut VarId` counter.
+  #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
+    let n = *self;
+    self.0 += 1;
+    n
+  }
+}
 
 impl std::fmt::Display for VarId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -259,6 +268,13 @@ pub enum TyKind {
   Moved(Ty),
 }
 
+impl TyKind {
+  /// Get this type as an [`IntTy`].
+  #[must_use] pub fn as_int_ty(&self) -> Option<IntTy> {
+    if let TyKind::Int(ity) = *self { Some(ity) } else { None }
+  }
+}
+
 impl Remap for TyKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
@@ -439,9 +455,9 @@ pub enum ExprKind {
   /// A number literal.
   Int(BigInt),
   /// A unary operation.
-  Unop(Unop, Expr),
+  Unop(super::Unop, Expr),
   /// A binary operation.
-  Binop(Binop, Expr, Expr),
+  Binop(super::Binop, Expr, Expr),
   /// An index operation `a[i]: T` where `a: (array T n)` and `i: nat`.
   Index(Expr, Expr),
   /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
@@ -683,6 +699,8 @@ pub struct Cfg {
   pub ctxs: Contexts,
   /// The set of basic blocks, containing the actual code.
   pub blocks: BlockVec<BasicBlock>,
+  /// The largest variable in the CFG, used for generating fresh variables.
+  pub max_var: VarId,
   /// The mapping from basic blocks to their predecessors, calculated lazily.
   predecessors: Option<Predecessors>,
   /// The dominator tree, calculated lazily.
@@ -695,6 +713,7 @@ impl Remap for Cfg {
     Self {
       ctxs: self.ctxs.remap(r),
       blocks: self.blocks.remap(r),
+      max_var: self.max_var,
       predecessors: self.predecessors.clone(),
       dominator_tree: self.dominator_tree.clone(),
     }
@@ -997,7 +1016,7 @@ impl Constant {
   /// Returns the size of the specified type as a constant expression.
   #[must_use] pub fn sizeof(ty: Ty) -> Self {
     Self {
-      ety: (Some(Rc::new(ExprKind::Sizeof(ty))), Rc::new(TyKind::Int(IntTy::UInt(Size::Inf)))),
+      ety: (Some(Rc::new(ExprKind::Sizeof(ty))), Rc::new(TyKind::Int(IntTy::NAT))),
       k: ConstKind::Sizeof
     }
   }
@@ -1020,6 +1039,19 @@ impl Constant {
   /// Return a proof by contradiction: the referenced block adds the negation of
   #[must_use] pub fn contra(ty: Ty, bl: BlockId, v: VarId) -> Self {
     Self { ety: (Some(Rc::new(ExprKind::Unit)), ty), k: ConstKind::Contra(bl, v) }
+  }
+
+  /// Construct a constant `c as iN`, reducing integer constants and delaying anything else.
+  #[must_use] pub fn as_(&self, ity: IntTy) -> Self {
+    if let (ConstKind::Int, Some(ExprKind::Int(n))) = (&self.k, self.ety.0.as_deref()) {
+      if let Some(n) = super::Unop::As(ity).apply_int(n) {
+        return Self::int(ity, n.into_owned())
+      }
+    }
+    Self {
+      ety: (self.ety.0.clone(), Ty::new(TyKind::Int(ity))),
+      k: ConstKind::As(Box::new((self.clone(), ity)))
+    }
   }
 }
 
@@ -1053,6 +1085,8 @@ pub enum ConstKind {
   /// A proof by contradiction: This has type `cond`, where the target block exists in a context
   /// extended by `v: !cond` and ends in a proof of contradiction.
   Contra(BlockId, VarId),
+  /// A constant `c as iN`, when we can't immediately work out the expression.
+  As(Box<(Constant, IntTy)>),
 }
 
 impl Remap for ConstKind {
@@ -1068,6 +1102,7 @@ impl Remap for ConstKind {
       Self::Sizeof => Self::Sizeof,
       Self::Mm0Proof(p) => Self::Mm0Proof(p.remap(r)),
       &Self::Contra(bl, v) => Self::Contra(bl, v),
+      Self::As(p) => Self::As(p.remap(r)),
     }
   }
 }
@@ -1125,6 +1160,10 @@ pub enum PunKind {
   And(Vec<Operand>),
   /// `Pun(e, Ptr)` reinterprets a pointer as a `u64`.
   Ptr,
+  /// `Pun(v, DropAs(ck))` proves that `v @ x: iN`  given `v @ (x as iN): iN`, where the embedded
+  /// cast `ck` proves `x: iN` from `x: iM`. Here `iM` is the provided `IntTy` and `iN` is
+  /// implicit.
+  DropAs(Box<(IntTy, CastKind)>),
 }
 
 impl Remap for PunKind {
@@ -1134,6 +1173,7 @@ impl Remap for PunKind {
       PunKind::Sn(h) => PunKind::Sn(h.remap(r)),
       PunKind::And(es) => PunKind::And(es.remap(r)),
       PunKind::Ptr => PunKind::Ptr,
+      PunKind::DropAs(p) => PunKind::DropAs(p.remap(r)),
     }
   }
 }
@@ -1146,11 +1186,11 @@ pub enum CastKind {
   /// by the size of the input and output types.
   Int,
   /// Proof that `A` is a subtype of `B`
-  Subtype(Option<Operand>),
+  Subtype(Operand),
   /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast
   Wand(Option<Operand>),
   /// Proof that `[x : B]` for the particular `x` in the cast
-  Mem(Option<Operand>),
+  Mem(Operand),
 }
 
 impl Remap for CastKind {
@@ -1165,6 +1205,35 @@ impl Remap for CastKind {
   }
 }
 
+impl Unop {
+  /// Given an operation `x -> f(x)`, compute the corresponding operation
+  /// `x as ity -> f(x) as ity`, where possible.
+  #[must_use] pub fn as_(self, ity: IntTy) -> Option<Self> {
+    match self {
+      Unop::Neg(_) => Some(Unop::Neg(ity)),
+      Unop::BitNot(_) => Some(Unop::BitNot(ity)),
+      Unop::Not | Unop::As(_, _) => None,
+    }
+  }
+}
+
+impl Binop {
+  /// Given an operation `x, y -> f(x, y)`, compute the corresponding operation
+  /// `(x as ity, y as ity) -> f(x, y) as ity`, where possible.
+  #[must_use] pub fn as_(self, ity: IntTy) -> Option<Self> {
+    match self {
+      Binop::Add(_) => Some(Binop::Add(ity)),
+      Binop::Mul(_) => Some(Binop::Mul(ity)),
+      Binop::Sub(_) => Some(Binop::Sub(ity)),
+      Binop::BitAnd(_) => Some(Binop::BitAnd(ity)),
+      Binop::BitOr(_) => Some(Binop::BitOr(ity)),
+      Binop::BitXor(_) => Some(Binop::BitXor(ity)),
+      Binop::Max(_) | Binop::Min(_) | Binop::And | Binop::Or | Binop::Shl(_) | Binop::Shr(_) |
+      Binop::Le(_) | Binop::Lt(_) | Binop::Eq(_) | Binop::Ne(_) => None,
+    }
+  }
+}
+
 /// An rvalue is an expression that can be used as the right hand side of an assignment;
 /// most side-effect-free expressions fall in this category.
 #[derive(Clone, Debug, DeepSizeOf)]
@@ -1175,6 +1244,8 @@ pub enum RValue {
   Unop(Unop, Operand),
   /// Apply a binary operator.
   Binop(Binop, Operand, Operand),
+  /// Apply generic equality (or disequality if `inverted = true`).
+  Eq(Ty, bool, Operand, Operand),
   /// Construct an lvalue reference with the specified type, aka "bit-cast".
   Pun(PunKind, Place),
   /// Apply an identity function on values that can change the type.
@@ -1200,6 +1271,7 @@ impl Remap for RValue {
       RValue::Use(e) => RValue::Use(e.remap(r)),
       RValue::Unop(op, e) => RValue::Unop(*op, e.remap(r)),
       RValue::Binop(op, e1, e2) => RValue::Binop(*op, e1.remap(r), e2.remap(r)),
+      RValue::Eq(ty, inv, e1, e2) => RValue::Eq(ty.remap(r), *inv, e1.remap(r), e2.remap(r)),
       RValue::Pun(pk, e) => RValue::Pun(pk.remap(r), e.remap(r)),
       RValue::Cast(ck, ty, e) => RValue::Cast(ck.remap(r), ty.remap(r), e.remap(r)),
       RValue::List(e) => RValue::List(e.remap(r)),
@@ -1234,6 +1306,16 @@ pub enum LetKind {
   /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
   /// value `x` and a pointer `p: &sn x`.
   Own([(VarId, bool, Ty); 2]),
+}
+
+impl LetKind {
+  /// Returns true if the variables declared in this let binding are computationally relevant.
+  #[must_use] pub fn relevant(&self) -> bool {
+    match *self {
+      LetKind::Let(_, r, _) => r,
+      LetKind::Own([(_, xr, _), (_, yr, _)]) => xr || yr,
+    }
+  }
 }
 
 impl Remap for LetKind {
@@ -1286,6 +1368,31 @@ impl Remap for Statement {
     match self {
       Self::Let(lk, ty, rv) => Self::Let(lk.remap(r), ty.remap(r), rv.remap(r)),
       Self::Assign(lhs, rhs, vars) => Self::Assign(lhs.remap(r), rhs.remap(r), vars.remap(r)),
+    }
+  }
+}
+
+impl Statement {
+  /// The number of variables created by this statement.
+  #[must_use] pub fn num_defs(&self) -> usize {
+    match self {
+      Statement::Let(LetKind::Let(..), _, _) => 1,
+      Statement::Let(LetKind::Own(..), _, _) => 2,
+      Statement::Assign(_, _, vars) => vars.len(),
+    }
+  }
+
+  /// (Internal) iteration over the variables created by a statement.
+  pub fn foreach_def<'a>(&'a self, mut f: impl FnMut(VarId, bool, Option<&'a Expr>, &'a Ty)) {
+    match self {
+      &Statement::Let(LetKind::Let(v, r, ref e), ref ty, _) => f(v, r, e.as_ref(), ty),
+      &Statement::Let(LetKind::Own([(x, xr, ref xt), (y, yr, ref yt)]), _, _) => {
+        f(x, xr, None, xt);
+        f(y, yr, None, yt);
+      }
+      Statement::Assign(_, _, vars) => vars.iter().for_each(|Rename {to, rel, ety: (e, ty), ..}| {
+        f(*to, *rel, e.as_ref(), ty)
+      }),
     }
   }
 }

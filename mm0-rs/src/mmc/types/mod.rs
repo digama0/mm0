@@ -275,6 +275,11 @@ pub enum IntTy {
 }
 crate::deep_size_0!(IntTy);
 
+impl Remap for IntTy {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self::Target { *self }
+}
+
 impl std::fmt::Display for IntTy {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
@@ -282,6 +287,12 @@ impl std::fmt::Display for IntTy {
 }
 
 impl IntTy {
+  /// The type of unbounded nonnegative integers.
+  pub const NAT: Self = Self::UInt(Size::Inf);
+
+  /// The type of unbounded integers.
+  pub const INT: Self = Self::Int(Size::Inf);
+
   /// The size of this integral type.
   #[must_use] pub fn size(self) -> Size {
     match self { IntTy::Int(sz) | IntTy::UInt(sz) => sz }

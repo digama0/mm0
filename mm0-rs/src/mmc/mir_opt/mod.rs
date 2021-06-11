@@ -10,6 +10,7 @@ pub use dominator::DominatorTree;
 
 pub mod dominator;
 pub mod ghost;
+pub mod legalize;
 
 /// A space-optimized `Option<BlockId>`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -464,7 +465,9 @@ pub fn optimize(proc: &mut Proc, names: &HashMap<AtomId, Entity>) {
   let cfg = &mut proc.body;
   cfg.compute_predecessors();
   let reachable = cfg.reachability_analysis();
-  let ghost = cfg.ghost_analysis(names, &reachable, &proc.rets);
-  cfg.apply_reachability_analysis(&{reachable});
-  cfg.apply_ghost_analysis(&{ghost});
+  cfg.apply_reachability_analysis(&reachable);
+  cfg.do_ghost_analysis(names, &reachable, &proc.rets);
+  cfg.legalize();
+  // Do ghost analysis again because legalize produces dead values
+  cfg.do_ghost_analysis(names, &reachable, &proc.rets);
 }

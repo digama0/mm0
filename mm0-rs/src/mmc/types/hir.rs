@@ -2,7 +2,7 @@
 
 use num::BigInt;
 use crate::{AtomId, LispVal, FileSpan};
-use super::{Binop, Mm0Expr, Unop, VarId, ty};
+use super::{Mm0Expr, VarId, IntTy, ty};
 pub use super::ast::ProcKind;
 
 /// A "generation ID", which tracks the program points where mutation
@@ -348,6 +348,87 @@ pub enum PlaceKind<'a> {
   Error
 }
 
+/// (Elaborated) unary operations.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Unop {
+  /// Computes `-e as iN` from `e as iN`, or `-e` from `e` for `int`.
+  Neg(IntTy),
+  /// Logical (boolean) NOT
+  Not,
+  /// Computes `~e as iN` from `e as iN`, or `~e` from `e` for `int`.
+  BitNot(IntTy),
+  /// Truncation: Computes `e as i[to]` from `e as i[from]` (or `e`).
+  /// (Requires `!(from <= to)` and `to.size() != Inf`.)
+  As(IntTy, IntTy),
+}
+crate::deep_size_0!(Unop);
+
+/// (Elaborated) binary operations.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Binop {
+  /// Integer addition
+  Add(IntTy),
+  /// Integer multiplication
+  Mul(IntTy),
+  /// Integer subtraction
+  Sub(IntTy),
+  /// Maximum
+  Max(IntTy),
+  /// Minimum
+  Min(IntTy),
+  /// Logical (boolean) AND
+  And,
+  /// Logical (boolean) OR
+  Or,
+  /// Bitwise AND, for signed or unsigned integers of any size
+  BitAnd(IntTy),
+  /// Bitwise OR, for signed or unsigned integers of any size
+  BitOr(IntTy),
+  /// Bitwise XOR, for signed or unsigned integers of any size
+  BitXor(IntTy),
+  /// Shift left
+  Shl(IntTy),
+  /// Shift right (arithmetic)
+  Shr(IntTy),
+  /// Less than, for signed or unsigned integers of any size
+  Lt(IntTy),
+  /// Less than or equal, for signed or unsigned integers of any size
+  Le(IntTy),
+  /// Equal, for signed or unsigned integers of any size
+  Eq(IntTy),
+  /// Not equal, for signed or unsigned integers of any size
+  Ne(IntTy),
+}
+crate::deep_size_0!(Binop);
+
+impl super::Binop {
+  /// Convert [`types::Binop`](super::Binop) into [`hir::Binop`](Binop), which requires an
+  /// integral type, which represents the type of inputs and outputs for integer ops,
+  /// the type of the left input for `Shl`/`Shr`, and the type of the inputs for comparisons.
+  /// It is ignored for `And`/`Or`.
+  #[must_use] pub fn as_hir(self, ity: IntTy) -> Binop {
+    use super::Binop::*;
+    match self {
+      Add => Binop::Add(ity),
+      Mul => Binop::Mul(ity),
+      Sub => Binop::Sub(ity),
+      Max => Binop::Max(ity),
+      Min => Binop::Min(ity),
+      And => Binop::And,
+      Or => Binop::Or,
+      BitAnd => Binop::BitAnd(ity),
+      BitOr => Binop::BitOr(ity),
+      BitXor => Binop::BitXor(ity),
+      Shl => Binop::Shl(ity),
+      Shr => Binop::Shr(ity),
+      Lt => Binop::Lt(ity),
+      Le => Binop::Le(ity),
+      Eq => Binop::Eq(ity),
+      Ne => Binop::Ne(ity),
+    }
+  }
+}
+
 /// An expression.
 pub type Expr<'a> = Spanned<'a, (ExprKind<'a>, ty::ExprTy<'a>)>;
 
@@ -376,6 +457,8 @@ pub enum ExprKind<'a> {
   Unop(Unop, Box<Expr<'a>>),
   /// A binary operation.
   Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
+  /// Equality, or disequality if `inverted = true`.
+  Eq(ty::Ty<'a>, bool, Box<Expr<'a>>, Box<Expr<'a>>),
   /// `(sn x)` constructs the unique member of the type `(sn x)`.
   /// `(sn y h)` is also a member of `(sn x)` if `h` proves `y = x`.
   Sn(Box<Expr<'a>>, Option<Box<Expr<'a>>>),
@@ -493,11 +576,23 @@ pub enum CastKind<'a> {
   /// Casting a pointer type to `u64`
   Ptr,
   /// Proof that `A` is a subtype of `B`
-  Subtype(Option<Box<Expr<'a>>>),
+  Subtype(Box<Expr<'a>>),
   /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast
   Wand(Option<Box<Expr<'a>>>),
   /// Proof that `[x : B]` for the particular `x` in the cast
-  Mem(Option<Box<Expr<'a>>>),
+  Mem(Box<Expr<'a>>),
+}
+
+impl<'a> CastKind<'a> {
+  /// Constructor for [`CastKind::Mem`].
+  #[inline] #[must_use] pub fn mem(o: Option<Box<Expr<'a>>>) -> Self {
+    if let Some(e) = o { Self::Mem(e) } else { Self::Wand(None) }
+  }
+
+  /// Constructor for [`CastKind::Subtype`].
+  #[inline] #[must_use] pub fn subtype(o: Option<Box<Expr<'a>>>) -> Self {
+    if let Some(e) = o { Self::Subtype(e) } else { Self::Wand(None) }
+  }
 }
 
 /// A top level program item. (A program AST is a list of program items.)
