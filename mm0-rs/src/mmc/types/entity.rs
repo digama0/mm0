@@ -385,7 +385,14 @@ pub enum ConstTc {
   Unchecked,
   /// A user type that has been typechecked, with the original span,
   /// the (internal) declaration name, and the compiled value expression.
-  Checked(global::Ty, global::Expr),
+  Checked {
+    /// The type of the constant
+    ty: global::Ty,
+    /// The value of the constant
+    e: global::Expr,
+    /// The constant after weak head normalization, precomputed for convenience
+    whnf: global::Expr
+  }
 }
 
 impl Remap for ConstTc {
@@ -393,7 +400,8 @@ impl Remap for ConstTc {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       ConstTc::Unchecked => ConstTc::Unchecked,
-      ConstTc::Checked(ty, e) => ConstTc::Checked(ty.remap(r), e.remap(r))
+      ConstTc::Checked {ty, e, whnf} =>
+        ConstTc::Checked {ty: ty.remap(r), e: e.remap(r), whnf: whnf.remap(r)}
     }
   }
 }

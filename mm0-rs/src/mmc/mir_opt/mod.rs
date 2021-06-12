@@ -11,6 +11,7 @@ pub use dominator::DominatorTree;
 pub mod dominator;
 pub mod ghost;
 pub mod legalize;
+pub mod storage;
 
 /// A space-optimized `Option<BlockId>`.
 #[derive(Copy, Clone, PartialEq, Eq)]

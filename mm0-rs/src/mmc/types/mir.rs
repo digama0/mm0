@@ -3,11 +3,10 @@
 use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
-use mm0_util::u32_as_usize;
 use num::BigInt;
 use smallvec::SmallVec;
-use crate::{AtomId, LispVal, Remap, Remapper};
-use super::{IntTy, Spanned, ast::ProcKind, ast, global, hir,
+use crate::{AtomId, LispVal, Remap, Remapper, u32_as_usize};
+use super::{IntTy, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
 
@@ -63,28 +62,15 @@ impl<T: HasAlpha> HasAlpha for global::Mm0Expr<T> {
   }
 }
 
-/// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
-#[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq, Hash)]
-pub struct VarId(pub u32);
-
-impl VarId {
-  /// Generate a fresh variable from a `&mut VarId` counter.
-  #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
-    let n = *self;
-    self.0 += 1;
-    n
-  }
+mk_id! {
+  /// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
+  VarId
 }
 
 impl std::fmt::Display for VarId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "_{}", self.0)
   }
-}
-
-impl Remap for VarId {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
 impl HasAlpha for VarId {
@@ -566,26 +552,14 @@ impl HasAlpha for ExprKind {
   }
 }
 
-/// A basic block ID, which is used to look up blocks in the [`Cfg`].
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-pub struct BlockId(pub u32);
-crate::deep_size_0!(BlockId);
+mk_id! {
+  /// A basic block ID, which is used to look up blocks in the [`Cfg`].
+  BlockId
+}
 
 impl BlockId {
   /// The ID of the entry block.
   pub const ENTRY: Self = Self(0);
-}
-impl Remap for BlockId {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { *self }
-}
-impl From<BlockId> for usize {
-  fn from(id: BlockId) -> usize { u32_as_usize(id.0) }
-}
-
-impl super::Idx for BlockId {
-  fn into_usize(self) -> usize { self.into() }
-  fn from_usize(n: usize) -> Self { Self(n.try_into().expect("overflow")) }
 }
 
 /// A vector indexed by [`BlockId`]s.
@@ -687,6 +661,27 @@ impl<'a> Iterator for CtxIter<'a> {
   }
 }
 
+/// A function for visiting every variable in the tree contexts only once.
+#[derive(Default, Debug)]
+pub struct CtxVisitor(IdxVec<CtxBufId, u32>);
+
+impl CtxVisitor {
+  /// Visit all variables in the given `CtxId`, not including any variables
+  /// returned by previous calls to `visit`.
+  pub fn visit<'a>(&mut self,
+    ctxs: &'a Contexts, mut id: CtxId, mut f: impl FnMut(&'a [(VarId, bool, ExprTy)])
+  ) {
+    loop {
+      if self.0[id.0] >= id.1 { break }
+      let ctx = &ctxs[id.0];
+      f(&ctx.vars[u32_as_usize(self.0[id.0])..u32_as_usize(id.1)]);
+      self.0[id.0] = id.1;
+      if id.0 == CtxBufId::ROOT { break }
+      id = ctx.parent;
+    }
+  }
+}
+
 /// The calculated predecessor information for blocks in the CFG.
 pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 
@@ -699,7 +694,7 @@ pub struct Cfg {
   pub ctxs: Contexts,
   /// The set of basic blocks, containing the actual code.
   pub blocks: BlockVec<BasicBlock>,
-  /// The largest variable in the CFG, used for generating fresh variables.
+  /// The largest variable in the CFG plus one, used for generating fresh variables.
   pub max_var: VarId,
   /// The mapping from basic blocks to their predecessors, calculated lazily.
   predecessors: Option<Predecessors>,
@@ -787,10 +782,10 @@ impl IndexMut<BlockId> for Cfg {
   fn index_mut(&mut self, index: BlockId) -> &mut BasicBlock { &mut self.blocks[index] }
 }
 
-/// A "context buffer ID", which points to one of the context buffers in the [`Contexts`] struct.
-#[derive(Copy, Clone, Debug, Default, DeepSizeOf, PartialEq, Eq)]
-pub struct CtxBufId(u32);
-
+mk_id! {
+  /// A "context buffer ID", which points to one of the context buffers in the [`Contexts`] struct.
+  CtxBufId
+}
 impl CtxBufId {
   /// The root context buffer is the first one; this is its own parent.
   pub const ROOT: Self = Self(0);
@@ -1119,6 +1114,16 @@ pub enum Operand {
   Ref(Place),
   /// Synthesize a constant value.
   Const(Box<Constant>),
+}
+
+impl Operand {
+  /// Get the `Place` of this operand, unless it is not a place.
+  pub fn place(&self) -> Result<&Place, &Constant> {
+    match self {
+      Self::Copy(p) | Self::Move(p) | Self::Ref(p) => Ok(p),
+      Self::Const(c) => Err(c)
+    }
+  }
 }
 
 impl Remap for Operand {

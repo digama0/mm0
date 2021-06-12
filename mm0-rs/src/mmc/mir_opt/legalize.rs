@@ -146,18 +146,16 @@ impl<'a> Legalizer<'a> {
   }
 
   fn try_legalize_operand(&mut self, o: &Operand, pred: Predicate) -> Option<PackedOp> {
-    match o {
-      Operand::Copy(p) |
-      Operand::Move(p) |
-      Operand::Ref(p) => self.try_legalize_place(p, pred),
-      Operand::Const(c) => match pred {
+    match o.place() {
+      Ok(p) => self.try_legalize_place(p, pred),
+      Err(c) => match pred {
         Predicate::As(ity) => Some(PackedOp::Const(Box::new(c.as_(ity))))
       }
     }
   }
 
   fn is_infinite_var(&self, o: &Operand) -> bool {
-    if let Operand::Copy(p) | Operand::Move(p) | Operand::Ref(p) = o {
+    if let Ok(p) = o.place() {
       if p.proj.is_empty() { return self.infinite_vars.contains_key(&p.local) }
     }
     false

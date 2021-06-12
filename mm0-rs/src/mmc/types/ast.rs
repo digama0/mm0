@@ -493,7 +493,7 @@ pub enum ExprKind {
     /// Distinguishes if statements from short-circuiting boolean operators.
     ik: IfKind,
     /// The hypothesis name.
-    hyp: Option<VarId>,
+    hyp: Option<[VarId; 2]>,
     /// The if condition.
     cond: Box<Expr>,
     /// The then case.

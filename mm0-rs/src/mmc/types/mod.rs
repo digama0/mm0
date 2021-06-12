@@ -21,7 +21,7 @@ use crate::{AtomId, Environment, Remap, Remapper, TermId, LispVal, lisp::Syntax,
   EnvDisplay, FormatEnv, FileSpan};
 
 /// A trait for newtyped integers, that can be used as index types in vectors and sets.
-pub trait Idx: Copy + Clone {
+pub trait Idx: Copy + Eq {
   /// Convert from `T` to `usize`
   fn into_usize(self) -> usize;
   /// Convert from `usize` to `T`
@@ -97,20 +97,16 @@ impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
   fn index_mut(&mut self, index: I) -> &mut Self::Output { &mut self.0[I::into_usize(index)] }
 }
 
-/// A variable ID. These are local to a given declaration (function, constant, global),
-/// but are not de Bruijn variables - they are unique identifiers within the declaration.
-#[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq, Hash)]
-pub struct VarId(pub u32);
+mk_id! {
+  /// A variable ID. These are local to a given declaration (function, constant, global),
+  /// but are not de Bruijn variables - they are unique identifiers within the declaration.
+  VarId
+}
 
 impl std::fmt::Display for VarId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "_{}", self.0)
   }
-}
-
-impl Remap for VarId {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
 /// A spanned expression.

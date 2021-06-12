@@ -157,18 +157,11 @@ impl<T: AddFlags> WithMeta<T> {
   }
 }
 
-macro_rules! mk_id {($($id:ident),*) => {$(
-  /// A newtype wrapper around IDs to avoid mixing ID types.
-  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-  pub struct $id(pub u32);
-  crate::deep_size_0!($id);
-
-  impl<'a> super::super::union_find::UnifyKey for $id {
-    fn index(&self) -> u32 { self.0 }
-    fn from_index(u: u32) -> Self { $id(u) }
-  }
-)*}}
-mk_id!(TyMVarId, PropMVarId, ExprMVarId, LftMVarId);
+mk_id! {
+  /** A type metavariable. */ TyMVarId,
+  /** An expression metavariable. */ ExprMVarId,
+  /** A lifetime metavariable. */ LftMVarId
+}
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as

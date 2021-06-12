@@ -14,7 +14,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use std::convert::TryInto;
 use std::rc::Rc;
 use crate::{ElabError, elab::Result, AtomId, LispVal, Uncons, FileSpan};
-use super::types::{Binop, Mm0Expr, Size, Spanned, FieldName, Unop, VarId, ast};
+use super::types::{Binop, Idx, Mm0Expr, Size, Spanned, FieldName, Unop, VarId, ast};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 use super::types::entity::Entity;
 use super::parser::{Parser, spanned};
@@ -81,7 +81,7 @@ pub struct BuildAst<'a> {
 }
 
 fn fresh_var(var_names: &mut Vec<AtomId>, name: AtomId) -> VarId {
-  let v = VarId(var_names.len().try_into().expect("overflow"));
+  let v = VarId::from_usize(var_names.len());
   var_names.push(name);
   v
 }
@@ -383,12 +383,18 @@ impl<'a> BuildAst<'a> {
       ExprKind::Label(Label {args, body, ..}) if args.is_empty() => ast::ExprKind::Block(self.build_block(&span, body)?),
       ExprKind::Label(_) => return Err(ElabError::new_e(&span, "a labeled block is a statement, not an expression")),
       ExprKind::If {branches, els} => self.with_ctx(|this| -> Result<_> {
-        let branches = branches.into_iter().map(|(h, cond, then)| {
+        let branches = branches.into_iter().map(|(h, cond, then)| Ok({
           let cond = Box::new(this.build_expr(&span, cond)?);
-          let h = h.map(|h| this.push_fresh(h));
-          let then = Box::new(this.build_expr(&span, then)?);
-          Ok((h, cond, then))
-        }).collect::<Result<Vec<_>>>()?;
+          if let Some(h) = h {
+            let (h1, then) = this.with_ctx(|this| {
+              let h1 = this.push_fresh(h);
+              this.build_expr(&span, then).map(|then| (h1, Box::new(then)))
+            })?;
+            (Some([h1, this.push_fresh(h)]), cond, then)
+          } else {
+            (None, cond, Box::new(this.build_expr(&span, then)?))
+          }
+        })).collect::<Result<Vec<_>>>()?;
         let mut ret = if let Some(els) = els {this.push_expr(&span, els)?.k} else {ast::ExprKind::Unit};
         for (hyp, cond, then) in branches.into_iter().rev() {
           let els = Box::new(Spanned {span: span.clone(), k: ret});
@@ -437,7 +443,7 @@ impl<'a> BuildAst<'a> {
     scvar: Option<VarId>, scrut: &Rc<ast::Expr>, branches: Vec<Spanned<(LispVal, LispVal)>>,
     allow_hyps: bool,
     mut mkblock: impl FnMut(Vec<ast::Stmt>, Spanned<T>) -> T,
-    mut mkif: impl FnMut(Option<VarId>, Box<ast::Expr>, Box<Spanned<T>>, Box<Spanned<T>>) -> T,
+    mut mkif: impl FnMut(Option<[VarId; 2]>, Box<ast::Expr>, Box<Spanned<T>>, Box<Spanned<T>>) -> T,
     mut case: impl FnMut(&mut Self, LispVal) -> Result<Spanned<T>>
   ) -> Result<T> {
     macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
@@ -566,8 +572,10 @@ impl<'a> BuildAst<'a> {
       let mut iter = branches.into_iter();
       let mut e = loop {
         if let Some(Spanned {span, k: (lhs, rhs)}) = iter.next() {
-          let hyp = this.fresh_var(AtomId::UNDER);
-          let hvar = || Spanned {span: span.clone(), k: ast::ExprKind::Var(hyp)};
+          let hyp1 = this.fresh_var(AtomId::UNDER);
+          let hyp2 = this.fresh_var(AtomId::UNDER);
+          let hvar1 = || Spanned {span: span.clone(), k: ast::ExprKind::Var(hyp1)};
+          let hvar2 = || Spanned {span: span.clone(), k: ast::ExprKind::Var(hyp2)};
           let mut pp = PushPattern {
             ba: this,
             bind: allow_hyps,
@@ -577,7 +585,7 @@ impl<'a> BuildAst<'a> {
             posblock: vec![],
             negblock: vec![],
           };
-          let result = pp.push_pattern(&span, Some(&hvar), Some(&hvar), &lhs)?;
+          let result = pp.push_pattern(&span, Some(&hvar1), Some(&hvar2), &lhs)?;
           let PushPattern {posblock, negblock, uses_hyp, ..} = pp;
           let rhs = this.with_ctx(|this| {
             push_stmts(this, &posblock);
@@ -586,7 +594,7 @@ impl<'a> BuildAst<'a> {
           let rhs = block(&span, posblock, rhs);
           if let Some(cond) = result {
             stack.push((
-              if uses_hyp {Some(hyp)} else {None},
+              if uses_hyp {Some([hyp1, hyp2])} else {None},
               Box::new(cond),
               Box::new(rhs),
               negblock,

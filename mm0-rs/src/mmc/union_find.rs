@@ -13,7 +13,7 @@
 //! Union-find implementation. The main type is `UnificationTable`.
 //!
 //! You can define your own type for the *keys* in the table, but you
-//! must implement `UnifyKey` for that type. The assumption is that
+//! must implement `Idx` for that type. The assumption is that
 //! keys will be newtyped integers, hence we require that they
 //! implement `Copy`.
 //!
@@ -30,25 +30,9 @@
 //! type also unlocks various more ergonomic methods (e.g., `union()`
 //! in place of `unify_var_var()`).
 
-use std::{convert::TryInto, fmt::Debug};
+use std::fmt::Debug;
 
-/// This trait is implemented by any type that can serve as a type
-/// variable. We call such variables *unification keys*. For example,
-/// this trait is implemented by `IntVid`, which represents integral
-/// variables.
-///
-/// Each key type has an associated value type `V`. For example, for
-/// `IntVid`, this is `Option<IntVarValue>`, representing some
-/// (possibly not yet known) sort of integer.
-///
-/// Clients are expected to provide implementations of this trait; you
-/// can see some examples in the `test` module.
-pub trait UnifyKey: Copy + Clone + Debug + PartialEq {
-  /// Unwrap the newtype.
-  fn index(&self) -> u32;
-  /// Wrap the newtype.
-  fn from_index(u: u32) -> Self;
-}
+use super::types::{Idx, IdxVec};
 
 /// Trait implemented for a context that defines how to merge the values from two keys that
 /// are unioned together. This merging can be fallible. If you attempt
@@ -75,6 +59,11 @@ pub trait UnifyCtx<V> {
   fn unify_values(&mut self, value1: &V, value2: &V) -> Result<V, Self::Error>;
 }
 
+impl UnifyCtx<()> for () {
+  type Error = std::convert::Infallible;
+  fn unify_values(&mut self, _: &(), _: &()) -> Result<(), Self::Error> { Ok(()) }
+}
+
 /// Value of a unification key. We implement Tarjan's union-find
 /// algorithm: when two keys are unified, one of them is converted
 /// into a "redirect" pointing at the other. These redirects form a
@@ -91,25 +80,14 @@ struct VarValue<K, V> {
 }
 
 /// Table of unification keys and their values. You must define a key type K
-/// that implements the `UnifyKey` trait. Unification tables can be used in two-modes:
-///
-/// - in-place (`UnificationTable<InPlace<K>>` or `InPlaceUnificationTable<K>`):
-///   - This is the standard mutable mode, where the array is modified
-///   in place.
-///   - To do backtracking, you can employ the `snapshot` and `rollback_to`
-///   methods.
-/// - persistent (`UnificationTable<Persistent<K>>` or `PersistentUnificationTable<K>`):
-///   - In this mode, we use a persistent vector to store the data, so that
-///   cloning the table is an O(1) operation.
-///   - This implies that ordinary operations are quite a bit slower though.
-///   - Requires the `persistent` feature be selected in your Cargo.toml file.
+/// that implements the `Idx` trait.
 #[derive(Clone, Debug)]
 pub struct UnificationTable<K, V> {
-  values: Vec<VarValue<K, V>>,
+  values: IdxVec<K, VarValue<K, V>>,
 }
 
 impl<K, V> Default for UnificationTable<K, V> {
-  fn default() -> Self { Self { values: vec![] } }
+  fn default() -> Self { Self { values: Default::default() } }
 }
 
 impl<K, V> VarValue<K, V> {
@@ -150,25 +128,34 @@ impl<K, V> UnificationTable<K, V> {
   /// Reserve memory for `num_new_keys` to be created. Does not
   /// actually create the new keys; you must then invoke `new_key`.
   pub fn reserve(&mut self, num_new_keys: usize) {
-    self.values.reserve(num_new_keys);
+    self.values.0.reserve(num_new_keys);
   }
 }
 
-impl<K: UnifyKey, V> UnificationTable<K, V> {
+impl<K: Idx, V> UnificationTable<K, V> {
   /// Creates a fresh key with the given value.
   pub fn new_key(&mut self, value: V) -> K {
     let len = self.values.len();
-    let key: K = UnifyKey::from_index(len.try_into().expect("overflow"));
+    let key: K = Idx::from_usize(len);
     self.values.push(VarValue::new_var(key, value));
     key
+  }
+
+  /// Initializes a unification table with a function that computes all
+  /// the values from all the keys up to some bound.
+  pub fn from_fn(sz: K, mut value: impl FnMut(K) -> V) -> Self {
+    let it = (0..sz.into_usize()).map(|i| {
+      let key = K::from_usize(i);
+      VarValue::new_var(key, value(key))
+    });
+    Self { values: it.collect::<Vec<_>>().into() }
   }
 
   /// Clears all unifications that have been performed, resetting to
   /// the initial state. The values of each variable are given by
   /// the closure.
   pub fn reset_unifications(&mut self, mut value: impl FnMut(K) -> V) {
-    for (i, vv) in self.values.iter_mut().enumerate() {
-      let key = UnifyKey::from_index(i.try_into().expect("overflow"));
+    for (key, vv) in self.values.enum_iter_mut() {
       let value = value(key);
       *vv = VarValue::new_var(key, value)
     }
@@ -177,7 +164,7 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
   /// Obtains the current value for a particular key.
   /// Not for end-users; they can use `probe_value`.
   fn value(&self, key: K) -> &VarValue<K, V> {
-    &self.values[key.index() as usize]
+    &self.values[key]
   }
 
   /// Find the root node for `vid`. This uses the standard
@@ -215,7 +202,7 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
   }
 
   fn update_value(&mut self, key: K, op: impl FnOnce(&mut VarValue<K, V>)) {
-    op(&mut self.values[key.index() as usize])
+    op(&mut self.values[key])
   }
 
   /// Either redirects `node_a` to `node_b` or vice versa, depending
@@ -297,7 +284,9 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
 
   /// Sets the value of the key `a_id` to `b`, attempting to merge
   /// with the previous value.
-  pub fn unify_var_value<S: UnifyCtx<V>>(&mut self, ctx: &mut S, a_id: impl Into<K>, b: &V) -> Result<(), S::Error> {
+  pub fn unify_var_value<S: UnifyCtx<V>>(&mut self,
+    ctx: &mut S, a_id: impl Into<K>, b: &V
+  ) -> Result<(), S::Error> {
     let a_id = a_id.into();
     let root_a = self.uninlined_get_root_key(a_id);
     let value = ctx.unify_values(&self.value(root_a).value, b)?;
@@ -306,7 +295,7 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
   }
 }
 
-impl<K: UnifyKey, V> UnificationTable<K, V> {
+impl<K: Idx, V> UnificationTable<K, V> {
   /// Returns the current value for the given key. If the key has
   /// been union'd, this will give the value from the current root.
   pub fn probe_value(&mut self, id: impl Into<K>) -> &V {

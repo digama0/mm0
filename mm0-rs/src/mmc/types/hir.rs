@@ -530,7 +530,7 @@ pub enum ExprKind<'a> {
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
     /// The hypothesis name.
-    hyp: Option<VarId>,
+    hyp: Option<[VarId; 2]>,
     /// The if condition.
     cond: Box<Expr<'a>>,
     /// The then/else cases.

@@ -12,12 +12,13 @@ use num::Signed;
 use types::IntTy;
 use crate::{AtomId, FileSpan, FormatEnv, LispVal, lisp::print::alphanumber, u32_as_usize};
 use super::{parser::try_get_fspan, types};
-use types::{Binop, BinopType, FieldName, Mm0ExprNode, Size, Spanned, Unop, VarId, ast, global, hir};
+use types::{Binop, BinopType, FieldName, Idx, IdxVec, Mm0ExprNode, Size, Spanned, Unop, VarId,
+  ast, global, hir};
 use ast::{ProcKind, ArgAttr};
 use global::{ToGlobal, ToGlobalCtx};
 use hir::{GenId, ListKind, ReturnKind};
 use types::entity::{Entity, ConstTc, GlobalTc, ProcTy, ProcTc, TypeTc, TypeTy};
-use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
+use super::union_find::{UnifyCtx, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
 
 /// The possible errors that can occur during type inference and type checking.
@@ -218,16 +219,16 @@ impl<'a, T: PartialEq + Copy> UnifyCtx<MVarValue<'a, T>> for () {
 
 #[derive(Debug)]
 struct Assignments<'a, K, V> {
-  mvars: Vec<MVarData<'a>>,
+  mvars: IdxVec<K, MVarData<'a>>,
   table: UnificationTable<K, MVarValue<'a, V>>,
 }
 impl<K, V> Default for Assignments<'_, K, V> {
-  fn default() -> Self { Self { mvars: vec![], table: Default::default() } }
+  fn default() -> Self { Self { mvars: Default::default(), table: Default::default() } }
 }
 
-impl<'a, K: UnifyKey, V> Assignments<'a, K, V> {
+impl<'a, K: Idx, V> Assignments<'a, K, V> {
   fn new_mvar(&mut self, span: &'a FileSpan, ctx: Context<'a>) -> K {
-    let n = K::from_index(self.mvars.len().try_into().expect("overflow"));
+    let n = K::from_usize(self.mvars.len());
     self.mvars.push(MVarData {span});
     self.table.new_key(MVarValue::Unassigned(ctx));
     n
@@ -253,9 +254,9 @@ impl<'a, K: UnifyKey, V> Assignments<'a, K, V> {
   }
 }
 
-impl<'a, K: UnifyKey, V> Index<K> for Assignments<'a, K, V> {
+impl<'a, K: Idx, V> Index<K> for Assignments<'a, K, V> {
   type Output = MVarData<'a>;
-  fn index(&self, k: K) -> &Self::Output { &self.mvars[u32_as_usize(k.index())] }
+  fn index(&self, k: K) -> &Self::Output { &self.mvars[k] }
 }
 
 impl Unop {
@@ -1991,8 +1992,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       (ExprKind::Const(c), _) => {
         match let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
           ConstTc::Unchecked => {}
-          ConstTc::Checked(_, ref e) => {
-            let a = e.clone().from_global(self, &[]);
+          ConstTc::Checked {ref whnf, ..} => {
+            let a = whnf.clone().from_global(self, &[]);
             return self.equate_expr(a, b)
           }
         }
@@ -2268,7 +2269,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ExprKind::Const(c) =>
         match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
           ConstTc::Unchecked => return None,
-          ConstTc::Checked(ty, _) => ty.clone().from_global(self, &[]),
+          ConstTc::Checked {ty, ..} => ty.clone().from_global(self, &[]),
         },
       ExprKind::Bool(_) => self.common.t_bool,
       ExprKind::Int(n) => if n.is_negative() {self.common.int()} else {self.common.nat()},
@@ -2942,7 +2943,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       &ast::ExprKind::Const(c) =>
         match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
           ConstTc::Unchecked => error!(),
-          ConstTc::Checked(ty, _) => {
+          ConstTc::Checked {ty, ..} => {
             let ty = ty.clone().from_global(self, &[]);
             ret![Const(c), Ok(intern!(self, ExprKind::Const(c))), ty]
           }
@@ -3521,15 +3522,15 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let (dc1, dc2, e1, e2);
         let base = self.dc.clone();
-        if let Some(v) = hyp {
+        if let Some([v1, v2]) = hyp {
           let pe = self.as_pure(cond.span, pe);
           let ty = intern!(self, TyKind::Pure(pe));
-          let ctx1 = self.new_context_next(v, Some(unit!()), ty);
+          let ctx1 = self.new_context_next(v1, Some(unit!()), ty);
           self.dc.context = ctx1.into();
           e1 = self.check_expr(then, tgt);
           dc1 = mem::replace(&mut self.dc, base.clone());
           let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
-          let ctx2 = self.new_context_next(v, Some(unit!()), ty);
+          let ctx2 = self.new_context_next(v2, Some(unit!()), ty);
           self.dc.context = ctx2.into();
           e2 = self.check_expr(els, tgt);
           dc2 = mem::replace(&mut self.dc, base);
@@ -3700,7 +3701,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ExprKind::Const(c) =>
         match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
           ConstTc::Unchecked => error!(),
-          ConstTc::Checked(ty, _) => {
+          ConstTc::Checked {ty, ..} => {
             let ty = ty.clone().from_global(self, &[]);
             (hir::ExprKind::Const(c), ty)
           }
@@ -4156,11 +4157,16 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let ctx = self.dc.context;
         let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
+        let rhs_sp = &rhs.span;
         let rhs = self.check_pure_expr(rhs, lhs.ty());
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
         if let TuplePatternKind::Name(name, _, _) = lhs.k {
           let_unchecked!(Some(Entity::Const(tc)) = self.names.get_mut(&name), tc).k =
-            ConstTc::Checked(lhs.k.ty().to_global(self), rhs.to_global(self))
+            ConstTc::Checked {
+              ty: lhs.k.ty().to_global(self),
+              e: rhs.to_global(self),
+              whnf: self.whnf_expr(rhs_sp, rhs).to_global(self),
+            };
         } else { todo!() }
         return None
       }

@@ -7,6 +7,32 @@
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 
+macro_rules! mk_id {($($(#[$attr:meta])* $id:ident),*) => {$(
+  $(#[$attr])*
+  #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+  pub struct $id(pub u32);
+  crate::deep_size_0!($id);
+  impl $id {
+    /// Generate a fresh variable from a `&mut ID` counter.
+    #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
+      let n = *self;
+      self.0 += 1;
+      n
+    }
+  }
+  impl From<$id> for usize {
+    fn from(id: $id) -> usize { crate::u32_as_usize(id.0) }
+  }
+  impl crate::Remap for $id {
+    type Target = Self;
+    fn remap(&self, _: &mut crate::Remapper) -> Self { *self }
+  }
+  impl crate::mmc::types::Idx for $id {
+    fn into_usize(self) -> usize { self.into() }
+    fn from_usize(n: usize) -> Self { $id(std::convert::TryFrom::try_from(n).expect("overflow")) }
+  }
+)*}}
+
 pub mod types;
 pub mod parser;
 pub mod predef;

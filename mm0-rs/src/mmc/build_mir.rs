@@ -1150,7 +1150,7 @@ impl<'a> BuildMir<'a> {
   }
 
   fn expr_if(&mut self,
-    hyp: Option<HVarId>,
+    hyp: Option<[HVarId; 2]>,
     cond: hir::Expr<'a>,
     [e_tru, e_fal]: [hir::Expr<'a>; 2],
     gen: GenId,
@@ -1171,18 +1171,21 @@ impl<'a> BuildMir<'a> {
     //   v_cond := cond
     let v_cond = self.as_temp(cond)?;
     let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
-    let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
+    let (vh1, vh2) = match hyp {
+      None => (self.fresh_var(), self.fresh_var()),
+      Some([vh1, vh2]) => (self.tr(vh1), self.tr(vh2)),
+    };
     let (_, base_ctx, base_gen) = self.cur();
     // tru_ctx is the current context with `vh: cond`
-    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh, false,
+    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
     let tru = self.cfg.new_block(tru_ctx);
     // fal_ctx is the current context with `vh: !cond`
-    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh, false,
+    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh2, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
     let fal = self.cfg.new_block(fal_ctx);
     //   if v_cond {vh. goto tru(vh)} else {vh. goto fal(vh)}
-    self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh, tru), (vh, fal)]));
+    self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh1, tru), (vh2, fal)]));
 
     let (trans, dest) = match dest {
       None => (None, None),
