@@ -2,47 +2,9 @@
 //! compilable expressions.
 
 use std::collections::HashMap;
-use smallvec::SmallVec;
 
 use super::super::types::{self, Size, IntTy};
 #[allow(clippy::wildcard_imports)] use super::*;
-
-struct VecPatch<T, R> {
-  insert: SmallVec<[(usize, T); 2]>,
-  replace: SmallVec<[(usize, R); 2]>,
-}
-
-impl<T, R> Default for VecPatch<T, R> {
-  fn default() -> Self { Self {insert: SmallVec::new(), replace: SmallVec::new()} }
-}
-
-trait Replace<T> {
-  fn replace(self, t: &mut T);
-}
-
-impl<T, R> VecPatch<T, R> {
-  fn insert(&mut self, idx: usize, val: T) { self.insert.push((idx, val)) }
-  fn replace(&mut self, idx: usize, val: R) { self.replace.push((idx, val)) }
-
-  fn apply(mut self, vec: &mut Vec<T>) where R: Replace<T> {
-    for (i, val) in self.replace { val.replace(&mut vec[i]) }
-    if self.insert.is_empty() { return }
-    self.insert.sort_by_key(|p| p.0);
-    vec.reserve(self.insert.len());
-    let mut end = vec.len();
-    let mut diff = self.insert.len();
-    let new_len = end + diff;
-    for (i, val) in self.insert.into_iter().rev() {
-      assert!(i <= end, "index out of bounds or unsorted insertion");
-      let p = unsafe { vec.as_mut_ptr().add(i) };
-      unsafe { std::ptr::copy(p, p.add(diff), end - i); }
-      diff -= 1;
-      unsafe { std::ptr::write(p.add(diff), val); }
-      end = i;
-    }
-    unsafe { vec.set_len(new_len); }
-  }
-}
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 enum Predicate {

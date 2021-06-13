@@ -765,6 +765,16 @@ impl Cfg {
   #[inline] #[must_use] pub fn dominator_tree(&self) -> &DominatorTree {
     self.dominator_tree.as_ref().expect("call compute_dominator_tree first")
   }
+
+  /// Iterator over all blocks that have not been deleted.
+  pub fn blocks(&self) -> impl Iterator<Item=(BlockId, &BasicBlock)> {
+    self.blocks.enum_iter().filter(|(_, bl)| !bl.is_dead())
+  }
+
+  /// Iterator over all blocks that have not been deleted.
+  pub fn blocks_mut(&mut self) -> impl Iterator<Item=(BlockId, &mut BasicBlock)> {
+    self.blocks.enum_iter_mut().filter(|(_, bl)| !bl.is_dead())
+  }
 }
 
 impl Index<CtxBufId> for Cfg {
@@ -957,6 +967,19 @@ impl Place {
   #[must_use] pub fn local(local: VarId) -> Self { Self {local, proj: vec![]} }
   /// Push a projection onto a place.
   #[must_use] pub fn proj(mut self, p: Projection) -> Self { self.proj.push(p); self }
+
+  /// (Internal) iteration over the variables used by a place (in computationally relevant
+  /// positions).
+  pub fn foreach_use(&self, mut f: impl FnMut(VarId)) {
+    f(self.local);
+    for proj in &self.proj {
+      match *proj {
+        Projection::Index(v, _) => f(v),
+        Projection::Slice(x, l, _) => { f(x); f(l) }
+        Projection::Proj(_, _) | Projection::Deref => {}
+      }
+    }
+  }
 }
 
 impl From<VarId> for Place {
@@ -1124,6 +1147,12 @@ impl Operand {
       Self::Const(c) => Err(c)
     }
   }
+
+  /// (Internal) iteration over the variables used by an operand (in computationally relevant
+  /// positions).
+  pub fn foreach_use(&self, f: impl FnMut(VarId)) {
+    if let Ok(p) = self.place() { p.foreach_use(f) }
+  }
 }
 
 impl Remap for Operand {
@@ -1269,6 +1298,27 @@ pub enum RValue {
   Typeof(Operand),
 }
 
+impl RValue {
+  /// (Internal) iteration over the variables used by an rvalue (in computationally relevant
+  /// positions).
+  pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
+    match self {
+      RValue::Use(o) |
+      RValue::Unop(_, o) |
+      RValue::Cast(_, o, _) => o.foreach_use(f),
+      RValue::Binop(_, o1, o2) |
+      RValue::Eq(_, _, o1, o2) => { o1.foreach_use(&mut *f); o2.foreach_use(f) }
+      RValue::Pun(_, p) |
+      RValue::Borrow(p) => p.foreach_use(f),
+      RValue::List(args) |
+      RValue::Array(args) => for o in &**args { o.foreach_use(&mut *f) }
+      RValue::Ghost(_) |
+      RValue::Mm0(_) |
+      RValue::Typeof(_) => {}
+    }
+  }
+}
+
 impl Remap for RValue {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
@@ -1400,6 +1450,21 @@ impl Statement {
       }),
     }
   }
+
+  /// (Internal) iteration over the variables used by a statement (in computationally relevant
+  /// positions).
+  pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
+    match self {
+      Statement::Assign(lhs, rhs, vars) => {
+        let mut needed = false;
+        for r in &**vars {
+          if r.rel { needed = true; f(r.from) }
+        }
+        if needed { lhs.foreach_use(&mut *f); rhs.foreach_use(f) }
+      }
+      Statement::Let(lk, _, rv) => if lk.relevant() { rv.foreach_use(f) }
+    }
+  }
 }
 
 /// A terminator is the final statement in a basic block. Anything with nontrivial control flow
@@ -1474,6 +1539,24 @@ impl Remap for Terminator {
         reach: *reach, tgt: *tgt, rets: rets.remap(r)
       },
       Self::Dead => Self::Dead,
+    }
+  }
+}
+
+impl Terminator {
+  /// (Internal) iteration over the variables used by a terminator (in computationally relevant
+  /// positions).
+  pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
+    match self {
+      Terminator::Jump(_, args) |
+      Terminator::Return(args) => for (_, o) in args { o.foreach_use(&mut *f) }
+      Terminator::Call { args, .. } => for o in &**args { o.foreach_use(&mut *f) }
+      Terminator::Unreachable(o) |
+      Terminator::If(o, _) |
+      Terminator::Assert(o, _, true, _) => o.foreach_use(f),
+      Terminator::Assert(_, _, false, _) |
+      Terminator::Jump1(_) |
+      Terminator::Dead => {}
     }
   }
 }
