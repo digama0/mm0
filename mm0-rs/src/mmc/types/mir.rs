@@ -1478,14 +1478,14 @@ pub enum Terminator {
   /// intersection of the two contexts are optional, where if they are not specified then they
   /// are assumed to keep their values. Variables in the target context but not the source must
   /// be specified.
-  Jump(BlockId, Vec<(VarId, Operand)>),
+  Jump(BlockId, Vec<(VarId, bool, Operand)>),
   /// Semantically equivalent to `Jump(tgt, [])`, with the additional guarantee that this jump is
   /// the only incoming edge to the target block. This is used to cheaply append basic blocks.
   Jump1(BlockId),
   /// A `return(x -> arg,*);` statement - unconditionally return from the function.
   /// The `x -> arg` values assign values to variables, where `x` is a variable in the function
   /// returns and `arg` is an operand evaluated in the current basic block context.
-  Return(Vec<(VarId, Operand)>),
+  Return(Vec<(VarId, bool, Operand)>),
   /// A `unreachable e;` statement takes a proof `e` of false and cancels this basic block.
   /// Later optimization passes will attempt to delete the entire block.
   Unreachable(Operand),
@@ -1509,7 +1509,7 @@ pub enum Terminator {
     /// The list of type arguments to the function.
     tys: Box<[Ty]>,
     /// The list of regular arguments to the function.
-    args: Box<[Operand]>,
+    args: Box<[(bool, Operand)]>,
     /// True if the block after the call is reachable (i.e. the function does not return `false`).
     reach: bool,
     /// The block after the call. This exists even if the call doesn't return, but in that case
@@ -1549,8 +1549,8 @@ impl Terminator {
   pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
     match self {
       Terminator::Jump(_, args) |
-      Terminator::Return(args) => for (_, o) in args { o.foreach_use(&mut *f) }
-      Terminator::Call { args, .. } => for o in &**args { o.foreach_use(&mut *f) }
+      Terminator::Return(args) => for (_, r, o) in args { if *r { o.foreach_use(&mut *f) } }
+      Terminator::Call { args, .. } => for (r, o) in &**args { if *r { o.foreach_use(&mut *f) } }
       Terminator::Unreachable(o) |
       Terminator::If(o, _) |
       Terminator::Assert(o, _, true, _) => o.foreach_use(f),

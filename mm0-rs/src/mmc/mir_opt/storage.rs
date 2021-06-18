@@ -1,6 +1,6 @@
 //! The storage pass, which computes the stack and register allocations for a function.
 
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
 
 use crate::AtomId;
@@ -155,9 +155,12 @@ impl Cfg {
     let sizeof = |ty: &TyKind| ty.sizeof(names).expect("can't get size of type");
     let mut allocs = Allocations::default();
 
+    let init = self.blocks.0.iter().map(|bl| {
+      self.ctxs.rev_iter(bl.ctx).filter(|p| p.1).map(|p| p.0).collect()
+    }).collect();
     for (_, bl) in self.blocks.enum_iter_mut() {
       if bl.is_dead() { continue }
-      let last_use = bl.liveness();
+      let last_use = bl.liveness(&init);
       let mut patch: VecPatch<Statement, StorageEdit> = Default::default();
       let mut ctx = HashMap::new();
       for &(v, r, (ref e, ref ty)) in self.ctxs.rev_iter(bl.ctx) {
@@ -255,12 +258,23 @@ impl BasicBlock {
   /// In the returned map, if `v` maps to `n` then statement `n` is the last
   /// (computationally relevant) use of `v`; the terminator is considered as statement
   /// `stmts.len()`. If `v` is not in the map then it is never used.
-  fn liveness(&self) -> HashMap<VarId, usize> {
+  fn liveness(&self, init: &BlockVec<HashSet<VarId>>) -> HashMap<VarId, usize> {
     let mut map = HashMap::new();
+    let term = self.terminator();
+    let mut jump_implicits = |id, args: &[(VarId, _, _)]| {
+      let i = self.stmts.len();
+      for &v in &init[id] { map.insert(v, i); }
+      for (v, _, _) in args { map.remove(v); }
+    };
+    match *term {
+      Terminator::Jump(id, ref args) => jump_implicits(id, args),
+      Terminator::Jump1(id) => jump_implicits(id, &[]),
+      _ => {}
+    }
     let mut use_var = |i: usize, v: VarId| {
       if let Entry::Vacant(e) = map.entry(v) { e.insert(i); }
     };
-    self.terminator().foreach_use(&mut |v| use_var(self.stmts.len(), v));
+    term.foreach_use(&mut |v| use_var(self.stmts.len(), v));
     for (i, s) in self.stmts.iter().enumerate().rev() {
       s.foreach_use(&mut |v| use_var(i, v));
     }

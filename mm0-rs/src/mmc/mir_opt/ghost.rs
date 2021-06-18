@@ -3,11 +3,8 @@
 //! This is a MIR -> MIR pass, but it is required since without it most programs will fail
 //! legalization.
 
-use std::{collections::HashMap, mem};
+use std::{collections::HashSet, mem};
 
-use crate::AtomId;
-use super::super::types::{ty, entity, Spanned};
-use entity::{Entity, ProcTc};
 #[allow(clippy::wildcard_imports)] use super::*;
 
 /// The reachability status of a block.
@@ -133,7 +130,6 @@ impl Cfg {
   /// determination of the computational relevance of each variable in the program based on
   /// whether its result is needed.
   #[must_use] pub fn ghost_analysis(&self,
-    names: &HashMap<AtomId, Entity>,
     reachable: &BlockVec<Reachability>,
     returns: &[Arg],
   ) -> GhostAnalysisResult {
@@ -180,24 +176,8 @@ impl Cfg {
     }
 
     struct GhostAnalysis<'a> {
-      names: &'a HashMap<AtomId, Entity>,
       reachable: &'a BlockVec<Reachability>,
-      cache: HashMap<AtomId, BitSet<usize>>,
       returns: &'a [Arg],
-    }
-
-    impl GhostAnalysis<'_> {
-      fn func_data(&mut self, a: AtomId) -> &BitSet {
-        let GhostAnalysis {cache, names, ..} = self;
-        cache.entry(a).or_insert_with(|| {
-          let_unchecked!(ty as Entity::Proc(Spanned {k: ProcTc::Typed(ty), ..}) = &names[&a]);
-          let mut needs_args = BitSet::with_capacity(ty.args.len());
-          for (i, arg) in ty.args.iter().enumerate() {
-            if !arg.0.contains(ty::ArgAttr::GHOST) { needs_args.insert(i); }
-          }
-          needs_args
-        })
-      }
     }
 
     struct GhostDoms {
@@ -268,8 +248,8 @@ impl Cfg {
         match term {
           Terminator::Jump(_, args) => {
             let GhostDom {vars, ..} = mem::take(d);
-            for (v, o) in args {
-              if vars.contains(v) {
+            for &(v, vr, ref o) in args {
+              if vr && vars.contains(&v) {
                 d.active = OptBlockId::new(id);
                 d.apply_operand(o)
               }
@@ -278,8 +258,8 @@ impl Cfg {
           Terminator::Jump1(_) => {}
           Terminator::Return(args) => {
             d.active = OptBlockId::new(id);
-            for ((_, o), ret) in args.iter().zip(self.returns) {
-              if !ret.attr.contains(ArgAttr::GHOST) { d.apply_operand(o) }
+            for ((_, vr, o), ret) in args.iter().zip(self.returns) {
+              if *vr && !ret.attr.contains(ArgAttr::GHOST) { d.apply_operand(o) }
             }
           }
           Terminator::Unreachable(_) | Terminator::Dead => unreachable!(),
@@ -290,12 +270,11 @@ impl Cfg {
             d.active = OptBlockId::new(id);
             d.apply_operand(o)
           }
-          &Terminator::Call {f, se: side_effect, ref args, reach, ref rets, ..} => {
-            let needs_args = self.func_data(f);
+          &Terminator::Call {se: side_effect, ref args, reach, ref rets, ..} => {
             let needed = !reach || side_effect || rets.iter().any(|v| d.vars.contains(v));
             if needed {
               d.active = OptBlockId::new(id);
-              for i in needs_args.iter() { d.apply_operand(&args[i]) }
+              for &(r, ref o) in &**args { if r { d.apply_operand(o) } }
             }
           }
         }
@@ -308,13 +287,13 @@ impl Cfg {
       }
     }
 
-    let mut analysis = GhostAnalysis { names, reachable, returns, cache: Default::default() };
+    let mut analysis = GhostAnalysis { reachable, returns };
     let result = analysis.iterate_to_fixpoint(self);
     GhostAnalysisResult((0..self.blocks.len()).map(BlockId::from_usize).map(|id| {
       let mut state = result.cloned(id);
       analysis.apply_trans_for_block(&result, id, &self[id], &mut state);
       state.vars
-    }).collect::<Vec<_>>().into())
+    }).collect())
   }
 
   /// Modify the CFG in place to apply the result of ghost analysis.
@@ -333,15 +312,26 @@ impl Cfg {
         }
       }
     }
+    let mut cache = BlockVec::<Option<HashSet<VarId>>>::from_default(self.blocks.len());
+    let Cfg {ctxs, blocks, ..} = self;
+    for id in (0..blocks.len()).map(BlockId::from_usize) {
+      let bl = &mut blocks[id];
+      if let Some(Terminator::Jump(tgt, ref mut args)) = bl.term {
+        let ctx = bl.ctx;
+        let s = cache[tgt].get_or_insert_with(|| {
+          ctxs.rev_iter(ctx).filter(|p| p.1).map(|p| p.0).collect()
+        });
+        for (v, r, _) in args { *r = s.contains(v) }
+      }
+    }
   }
 
   /// Convenience function for applying the result of [`ghost_analysis`](Self::ghost_analysis).
   pub fn do_ghost_analysis(&mut self,
-    names: &HashMap<AtomId, Entity>,
     reachable: &BlockVec<Reachability>,
     returns: &[Arg],
   ) {
-    let ghost = self.ghost_analysis(names, reachable, returns);
+    let ghost = self.ghost_analysis(reachable, returns);
     self.apply_ghost_analysis(&ghost);
   }
 }

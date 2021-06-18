@@ -387,7 +387,7 @@ type JoinPoint = (GenId, Rc<[HVarId]>);
 struct JoinBlock(BlockId, JoinPoint);
 
 /// Data to support the `(jump label[i])` operation.
-type LabelData = (BlockId, Rc<[VarId]>);
+type LabelData = (BlockId, Rc<[(VarId, bool)]>);
 
 #[derive(Debug)]
 struct LabelGroupData {
@@ -437,7 +437,7 @@ pub struct BuildMir<'a> {
   labels: Vec<(HVarId, LabelGroupData)>,
   /// If this is `Some(args)` then `args` are the names of the return places.
   /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
-  returns: Option<Rc<[VarId]>>,
+  returns: Option<Rc<[(VarId, bool)]>>,
   /// Some variables are replaced by places when referenced; this keeps track of them.
   vars: HashMap<VarId, Place>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -925,8 +925,8 @@ impl<'a> BuildMir<'a> {
               .1.jumps.as_ref().expect("label does not expect jump");
             let (tgt, args) = jumps[usize::from(i)].clone();
             let jb = JoinBlock(tgt, jp.clone());
-            let args = args.iter().zip(es).map(|(&v, e)| {
-              Ok((v, this.operand(e)?))
+            let args = args.iter().zip(es).map(|(&(v, r), e)| {
+              Ok((v, r, this.operand(e)?))
             }).collect::<Block<Vec<_>>>()?;
             this.join(&jb, args)
           }
@@ -936,7 +936,7 @@ impl<'a> BuildMir<'a> {
               .1.brk.as_ref().expect("label does not expect break").clone();
             let args = match dest {
               None => { this.expr(*e, None)?; vec![] }
-              Some(v) => vec![(v, this.operand(*e)?)]
+              Some(v) => vec![(v, !e.k.1 .1.ghostly(), this.operand(*e)?)]
             };
             this.join(&jb, args)
           }
@@ -1004,13 +1004,14 @@ impl<'a> BuildMir<'a> {
 
   fn push_args_raw(&mut self,
     args: &[hir::Arg<'a>], mut f: impl FnMut(ty::ArgAttr, VarId, &Ty)
-  ) -> Vec<VarId> {
+  ) -> Vec<(VarId, bool)> {
     let mut vs = Vec::with_capacity(args.len());
     for arg in args {
       if let hir::ArgKind::Lam(pat) = arg.1 {
         let var = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
-        vs.push(var);
-        let ty = self.tr(pat.k.ty());
+        let ty = pat.k.ty();
+        vs.push((var, !ty.ghostly()));
+        let ty = self.tr(ty);
         f(arg.0, var, &ty);
         self.extend_ctx(var, !arg.0.contains(ty::ArgAttr::GHOST), (None, ty));
       }
@@ -1020,7 +1021,7 @@ impl<'a> BuildMir<'a> {
 
   fn push_args(&mut self,
     args: Box<[hir::Arg<'a>]>, f: impl FnMut(ty::ArgAttr, VarId, &Ty)
-  ) -> (BlockId, Rc<[VarId]>) {
+  ) -> (BlockId, Rc<[(VarId, bool)]>) {
     let vs = self.push_args_raw(&args, f);
     let bl = self.new_block();
     self.cur_block = bl;
@@ -1030,7 +1031,7 @@ impl<'a> BuildMir<'a> {
       for arg in args.into_vec() {
         match arg.1 {
           hir::ArgKind::Lam(pat) => {
-            let v = *unwrap_unchecked!(it.next());
+            let v = unwrap_unchecked!(it.next()).0;
             self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
             self.tup_pat(pat, &mut v.into());
             pats.push(pat);
@@ -1054,17 +1055,18 @@ impl<'a> BuildMir<'a> {
   }
 
   fn join_args(&mut self, ctx: CtxId, &(gen, ref muts): &JoinPoint,
-    args: &mut Vec<(VarId, Operand)>
+    args: &mut Vec<(VarId, bool, Operand)>
   ) {
     args.extend(muts.iter().filter_map(|&v| {
       let from = self.tr(v);
       let to = self.tr_gen(v, gen);
-      if from == to || self.cfg.ctxs.rev_iter(ctx).all(|&(u, _, _)| from != u) {return None}
-      Some((to, from.into()))
+      if from == to {return None}
+      let r = self.cfg.ctxs.rev_iter(ctx).find(|&&(u, _, _)| from == u)?.1;
+      Some((to, r, from.into()))
     }));
   }
 
-  fn join(&mut self, &JoinBlock(tgt, ref jp): &JoinBlock, mut args: Vec<(VarId, Operand)>) {
+  fn join(&mut self, &JoinBlock(tgt, ref jp): &JoinBlock, mut args: Vec<(VarId, bool, Operand)>) {
     let ctx = self.cfg[tgt].ctx;
     self.join_args(ctx, jp, &mut args);
     self.cur_block().terminate(Terminator::Jump(tgt, args))
@@ -1120,7 +1122,7 @@ impl<'a> BuildMir<'a> {
           self.cur_block = bl;
           self.tr.cur_gen = base_gen;
           if let Ok(()) = self.block(body, dest.map(PreVar::Ok)) {
-            self.join(brk, match dest { None => vec![], Some(v) => vec![(v, v.into())] })
+            self.join(brk, match dest { None => vec![], Some(v) => vec![(v, true, v.into())] })
           }
         }
         self.cur_ctx = base_ctx;
@@ -1222,9 +1224,9 @@ impl<'a> BuildMir<'a> {
         // If neither diverges, we put `goto after` at the end of each block
         let join = JoinBlock(self.new_block(), (gen, muts.into()));
         self.set(tru);
-        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, v.into())] });
+        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, true, v.into())] });
         self.set(fal);
-        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, v.into())] });
+        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, true, v.into())] });
         // And the after block is the end of the statement
         self.set((join.0, base_ctx, gen));
       }
@@ -1385,7 +1387,8 @@ impl<'a> BuildMir<'a> {
     dest: &[PreVar],
   ) -> Block<()> {
     let tys = self.tr(tys);
-    let args = args.into_iter().map(|e| self.operand(e)).collect::<Block<Box<[_]>>>()?;
+    let args = args.into_iter().map(|e| Ok((!e.k.1 .1.ghostly(), self.operand(e)?)))
+      .collect::<Block<Box<[_]>>>()?;
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
@@ -1434,8 +1437,8 @@ impl<'a> BuildMir<'a> {
     mut f: impl FnMut(&mut Self, T) -> Block<Place>,
   ) -> Block<std::convert::Infallible> {
     let args = self.returns.as_ref().expect("can't return here").clone();
-    let args = es(args.len()).zip(&*args).map(|(e, &v)| {
-      Ok((v, f(self, e)?.into()))
+    let args = es(args.len()).zip(&*args).map(|(e, &(v, r))| {
+      Ok((v, r, f(self, e)?.into()))
     }).collect::<Block<Vec<_>>>()?;
     self.cur_block().terminate(Terminator::Return(args));
     Err(Diverged)

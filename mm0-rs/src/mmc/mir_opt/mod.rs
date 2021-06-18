@@ -500,13 +500,13 @@ trait Analysis {
 
 /// Perform MIR analysis and optimize the given procedure.
 #[allow(clippy::implicit_hasher)]
-pub fn optimize(proc: &mut Proc, names: &HashMap<AtomId, Entity>) {
+pub fn optimize(proc: &mut Proc, _names: &HashMap<AtomId, Entity>) {
   let cfg = &mut proc.body;
   cfg.compute_predecessors();
   let reachable = cfg.reachability_analysis();
   cfg.apply_reachability_analysis(&reachable);
-  cfg.do_ghost_analysis(names, &reachable, &proc.rets);
+  cfg.do_ghost_analysis(&reachable, &proc.rets);
   cfg.legalize();
   // Do ghost analysis again because legalize produces dead values
-  cfg.do_ghost_analysis(names, &reachable, &proc.rets);
+  cfg.do_ghost_analysis(&reachable, &proc.rets);
 }

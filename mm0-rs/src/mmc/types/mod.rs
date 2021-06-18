@@ -79,6 +79,10 @@ impl<I, T> From<Vec<T>> for IdxVec<I, T> {
   fn from(vec: Vec<T>) -> Self { Self(vec, PhantomData) }
 }
 
+impl<I, T> std::iter::FromIterator<T> for IdxVec<I, T> {
+  fn from_iter<J: IntoIterator<Item = T>>(iter: J) -> Self { Vec::from_iter(iter).into() }
+}
+
 impl<I, T> Default for IdxVec<I, T> {
   fn default() -> Self { vec![].into() }
 }
