@@ -648,6 +648,7 @@ impl EnvDisplay for FieldName {
 /// An embedded MM0 expression inside MMC. This representation is designed to make it easy
 /// to produce substitutions of the free variables.
 #[derive(Clone, Debug, DeepSizeOf)]
+#[allow(variant_size_differences)]
 pub enum Mm0ExprNode {
   /// A constant expression, containing no free variables,
   /// or a dummy variable that will not be substituted.

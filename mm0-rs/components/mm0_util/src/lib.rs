@@ -597,7 +597,7 @@ impl<'a> From<&'a FileSpan> for Span {
 /// Try to get memory usage (resident set size) in bytes using the
 /// [`getrusage()`](libc::getrusage) function from libc.
 #[allow(unused)]
-#[cfg(feature = "memory")]
+#[cfg(all(feature = "memory", not(target_arch = "wasm32")))]
 fn get_memory_rusage() -> usize {
   use std::convert::TryInto;
   let usage = unsafe {
@@ -608,6 +608,12 @@ fn get_memory_rusage() -> usize {
   let x: usize = usage.ru_maxrss.try_into().expect("negative memory?");
   x * 1024
 }
+
+/// Try to get memory usage (resident set size) in bytes using the
+/// [`getrusage()`](libc::getrusage) function from libc.
+#[allow(unused)]
+#[cfg(all(feature = "memory", target_arch = "wasm32"))]
+fn get_memory_rusage() -> usize { 0 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.

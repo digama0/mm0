@@ -28,15 +28,23 @@ module.exports = {
     }, {
       test: /\.(mm0|mm1|mmu)$/,
       use: ['raw-loader']
+    }, {
+      test: /\.wasm$/,
+      type: 'webassembly/sync',
     }]
   },
+  experiments: {
+    syncWebAssembly: true
+  },
   plugins: [
-    new CopyPlugin([
-      "static",
-      { from: "../examples/*.mm0", to: examples },
-      { from: "../examples/*.mm1", to: examples },
-      { from: "../examples/*.mmu", to: examples },
-    ]),
+    new CopyPlugin({
+      patterns: [
+        "static",
+        { from: "../examples/*.mm0", to: examples },
+        { from: "../examples/*.mm1", to: examples },
+        { from: "../examples/*.mmu", to: examples },
+      ]
+    }),
 
     new WasmPackPlugin({
       crateDirectory: __dirname,

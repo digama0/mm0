@@ -399,7 +399,7 @@ impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     }
 }
 
-#[cfg(feature = "memmap")]
+#[cfg(all(feature = "memmap", not(target_arch = "wasm32")))]
 impl DeepSizeOf for memmap::Mmap {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { size_of_val(&**self) }
 }
