@@ -50,9 +50,9 @@ impl InferSort {
   /// The sort of this variable. For an unknown variable, it returns a sort iff
   /// this variable has inferred exactly one sort, not counting the "[`None`]" provable sort.
   #[must_use] pub fn sort(&self) -> Option<SortId> {
-    match self {
-      &InferSort::Bound(sort) | &InferSort::Reg(sort, _) => Some(sort),
-      InferSort::Unknown {sorts, ..} => {
+    match *self {
+      InferSort::Bound(sort) | InferSort::Reg(sort, _) => Some(sort),
+      InferSort::Unknown {ref sorts, ..} => {
         let mut res = None;
         for s in sorts.keys() {
           if let Some(s) = *s {
@@ -302,8 +302,7 @@ impl<'a> ElabTerm<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
-        Some(&(_, InferSort::Bound(sort))) |
-        Some(&(_, InferSort::Reg(sort, _))) => Ok(sort),
+        Some(&(_, InferSort::Bound(sort) | InferSort::Reg(sort, _))) => Ok(sort),
         Some((_, InferSort::Unknown {..})) => panic!("finalized vars already"),
       },
       LispKind::List(es) if !es.is_empty() => {
@@ -368,8 +367,8 @@ impl<'a> ElabTermMut<'a> {
         let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
         Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt, Some(sp))).clone())
       }
-      (&mut InferSort::Reg(sort, _), tgt) |
-      (&mut InferSort::Bound(sort), tgt) => self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
+      (&mut (InferSort::Reg(sort, _) | InferSort::Bound(sort)), tgt) =>
+        self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
     };
     self.spans_insert(e, || ObjectKind::Var(a));
     res

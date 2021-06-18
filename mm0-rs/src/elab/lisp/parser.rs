@@ -136,13 +136,13 @@ impl Ir {
 
   /// The span of a code segment.
   #[must_use] pub fn span(&self) -> Option<Span> {
-    match self {
-      &Ir::Global(sp, _) |
-      &Ir::List(sp, _) |
-      &Ir::App(sp, _, _, _) |
-      &Ir::Focus(sp, _) |
-      &Ir::Lambda(sp, _, _, _) |
-      &Ir::Match(sp, _, _) => Some(sp),
+    match *self {
+      Ir::Global(sp, _) |
+      Ir::List(sp, _) |
+      Ir::App(sp, _, _, _) |
+      Ir::Focus(sp, _) |
+      Ir::Lambda(sp, _, _, _) |
+      Ir::Match(sp, _, _) => Some(sp),
       _ => None
     }
   }

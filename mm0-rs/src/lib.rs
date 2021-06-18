@@ -36,7 +36,7 @@
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
   clippy::multiple_crate_versions, clippy::option_if_let_else,
   clippy::semicolon_if_nothing_returned, clippy::shadow_unrelated, clippy::too_many_lines,
-  clippy::unnested_or_patterns, clippy::use_self)]
+  clippy::use_self)]
 
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;

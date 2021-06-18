@@ -937,8 +937,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
                 FrozenLispKind::Atom(_) |
                 FrozenLispKind::MVar(_, _) |
                 FrozenLispKind::Goal(_) => SymbolKind::Constant,
-                r @ FrozenLispKind::List(_) |
-                r @ FrozenLispKind::DottedList(_, _) =>
+                r @ (FrozenLispKind::List(_) | FrozenLispKind::DottedList(_, _)) =>
                   if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
                 FrozenLispKind::Number(_) => SymbolKind::Number,
                 FrozenLispKind::String(_) => SymbolKind::String,

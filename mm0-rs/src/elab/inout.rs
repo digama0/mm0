@@ -212,9 +212,7 @@ impl Environment {
         Some(InoutStringType::S0) => {}
         Some(InoutStringType::S1) =>
           self.process_node(terms, args, &ns[0], heap, out)?,
-        Some(InoutStringType::SAdd) |
-        Some(InoutStringType::SCons) |
-        Some(InoutStringType::Ch) => {
+        Some(InoutStringType::SAdd | InoutStringType::SCons | InoutStringType::Ch) => {
           self.process_node(terms, args, &ns[0], heap, out)?;
           self.process_node(terms, args, &ns[1], heap, out)?;
         }
@@ -244,9 +242,7 @@ impl Environment {
         Some(InoutStringType::S0) => Ok(()),
         Some(InoutStringType::S1) =>
           self.write_node(terms, heap, &ns[0], w),
-        Some(InoutStringType::SAdd) |
-        Some(InoutStringType::SCons) |
-        Some(InoutStringType::Ch) => {
+        Some(InoutStringType::SAdd | InoutStringType::SCons | InoutStringType::Ch) => {
           self.write_node(terms, heap, &ns[0], w)?;
           self.write_node(terms, heap, &ns[1], w)
         }

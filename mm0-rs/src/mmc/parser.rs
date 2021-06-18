@@ -251,8 +251,7 @@ impl<'a> Parser<'a> {
         }
       },
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
-        Some((Keyword::ColonEq, _)) |
-        Some((Keyword::ArrowL, _)) => self.parse_decl_asgn(base, &e)?,
+        Some((Keyword::ColonEq | Keyword::ArrowL, _)) => self.parse_decl_asgn(base, &e)?,
         Some((Keyword::With, mut u)) => {
           let mut ret = self.parse_decl_asgn(base, &u.next().ok_or_else(||
             ElabError::new_e(&span, "'with' syntax error"))?)?;
@@ -609,7 +608,7 @@ impl<'a> Parser<'a> {
             (PrimType::RefSn, [e]) => TypeKind::RefSn(e.clone()),
             (PrimType::Shr, [ty]) => TypeKind::Shr(None, ty.clone()),
             (PrimType::Sn, [e]) => TypeKind::Sn(e.clone()),
-            (PrimType::List, _) | (PrimType::Star, _) => TypeKind::List(args),
+            (PrimType::List | PrimType::Star, _) => TypeKind::List(args),
             (PrimType::Struct, _) => {
               let mut out = vec![];
               for e in args { self.parse_arg(base, Default::default(), e, &mut out)? }
@@ -698,7 +697,7 @@ impl<'a> Parser<'a> {
           _ => err!("expected 2 or 3 arguments"),
         },
         (PrimOp::List, _) => CallKind::NAry(NAryCall::List, args),
-        (PrimOp::Max, _) | (PrimOp::Min, _) if args.is_empty() =>
+        (PrimOp::Max | PrimOp::Min, _) if args.is_empty() =>
           err!("expected 2 arguments"),
         (PrimOp::Max, _) => CallKind::NAry(NAryCall::Max, args),
         (PrimOp::Min, _) => CallKind::NAry(NAryCall::Min, args),
@@ -721,8 +720,8 @@ impl<'a> Parser<'a> {
         (PrimOp::Shr, [a, b]) => CallKind::Shr(a.clone(), b.clone()),
         (PrimOp::Typed, [e, ty]) => CallKind::Typed(e.clone(), ty.clone()),
         (PrimOp::As, [e, ty]) => CallKind::As(e.clone(), ty.clone()),
-        (PrimOp::Shl, _) | (PrimOp::Shr, _) |
-        (PrimOp::Typed, _) | (PrimOp::As, _) => err!("expected 2 arguments"),
+        (PrimOp::Shl | PrimOp::Shr |
+         PrimOp::Typed | PrimOp::As, _) => err!("expected 2 arguments"),
         (PrimOp::Cast, args) => match args {
           [e] => CallKind::Cast(e.clone(), None),
           [e, pf] => CallKind::Cast(e.clone(), Some(pf.clone())),
@@ -754,8 +753,8 @@ impl<'a> Parser<'a> {
         (PrimOp::TypeofBang, [e]) => CallKind::TypeofBang(e.clone()),
         (PrimOp::Typeof, [e]) => CallKind::Typeof(e.clone()),
         (PrimOp::Sizeof, [ty]) => CallKind::Sizeof(ty.clone()),
-        (PrimOp::Ref, _) | (PrimOp::Borrow, _) | (PrimOp::TypeofBang, _) |
-        (PrimOp::Typeof, _) |  (PrimOp::Sizeof, _) => err!("expected 1 argument"),
+        (PrimOp::Ref | PrimOp::Borrow | PrimOp::TypeofBang |
+         PrimOp::Typeof | PrimOp::Sizeof, _) => err!("expected 1 argument"),
         (PrimOp::Unreachable, args) => match args {
           [] => CallKind::Unreachable(None),
           [e] => CallKind::Unreachable(Some(e.clone())),

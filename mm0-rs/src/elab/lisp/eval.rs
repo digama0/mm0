@@ -242,11 +242,11 @@ fn pattern_match<'b>(stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
         Pattern::MVar(p) => e.unwrapped(|e| match e {
           LispKind::MVar(_, is) => match (p, is) {
             (MVarPattern::Any, _) |
-            (MVarPattern::Unknown, InferTarget::Unknown) |
-            (MVarPattern::Unknown, InferTarget::Provable) => PatternState::Ret(true),
+            (MVarPattern::Unknown, InferTarget::Unknown | InferTarget::Provable) =>
+              PatternState::Ret(true),
             (MVarPattern::Unknown, _) |
-            (MVarPattern::Simple(_), InferTarget::Unknown) |
-            (MVarPattern::Simple(_), InferTarget::Provable) => PatternState::Ret(false),
+            (MVarPattern::Simple(_), InferTarget::Unknown | InferTarget::Provable) =>
+              PatternState::Ret(false),
             (MVarPattern::Simple(p), &InferTarget::Bound(s)) => {
               stack.push(PatternStack::Bool(&p.1, true));
               PatternState::Eval(&p.0, LispVal::atom(s))
@@ -495,26 +495,26 @@ impl Elaborator {
 
   fn proof_node(&self, hyps: &[(Option<AtomId>, ExprNode)],
     heap: &[LispVal], ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
-    match p {
-      &ProofNode::Ref(n) => heap[n].clone(),
-      &ProofNode::Dummy(a, s) => {
+    match *p {
+      ProofNode::Ref(n) => heap[n].clone(),
+      ProofNode::Dummy(a, s) => {
         let a = LispVal::atom(a);
         ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.env.sorts[s].atom)]));
         a
       }
-      &ProofNode::Term {term, args: ref es} |
-      &ProofNode::Cong {term, args: ref es} => {
+      ProofNode::Term {term, args: ref es} |
+      ProofNode::Cong {term, args: ref es} => {
         let mut args = vec![LispVal::atom(self.terms[term].atom)];
         args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
         LispVal::list(args)
       }
-      &ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
-      &ProofNode::Thm {thm, args: ref es, ..} => {
+      ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
+      ProofNode::Thm {thm, args: ref es, ..} => {
         let mut args = vec![LispVal::atom(self.thms[thm].atom)];
         args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
         LispVal::list(args)
       }
-      ProofNode::Conv(es) => {
+      ProofNode::Conv(ref es) => {
         let (t, c, p) = &**es;
         LispVal::list(vec![LispVal::atom(AtomId::CONV),
           self.proof_node(hyps, heap, ds, t),
@@ -522,10 +522,10 @@ impl Elaborator {
           self.proof_node(hyps, heap, ds, p),
         ])
       }
-      ProofNode::Refl(p) => self.proof_node(hyps, heap, ds, p),
-      ProofNode::Sym(p) =>
+      ProofNode::Refl(ref p) => self.proof_node(hyps, heap, ds, p),
+      ProofNode::Sym(ref p) =>
         LispVal::list(vec![LispVal::atom(AtomId::SYM), self.proof_node(hyps, heap, ds, p)]),
-      &ProofNode::Unfold {term, ref args, ref res} =>
+      ProofNode::Unfold {term, ref args, ref res} =>
         LispVal::list(vec![LispVal::atom(AtomId::UNFOLD),
           LispVal::atom(self.terms[term].atom),
           LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect::<Vec<_>>()),

@@ -104,8 +104,8 @@ impl Cfg {
         Reachability::Reachable => {}
       }
       match bl.term.as_mut() {
-        Some(Terminator::Assert(_, _, reach, tgt)) |
-        Some(Terminator::Call {reach, tgt, ..}) => *reach = reachable[*tgt].reach(),
+        Some(Terminator::Assert(_, _, reach, tgt) | Terminator::Call {reach, tgt, ..}) =>
+          *reach = reachable[*tgt].reach(),
         Some(&mut Terminator::If(_, [(_, tgt1), (_, tgt2)])) => {
           let reach1 = reachable[tgt1].reach();
           if reach1 == reachable[tgt2].reach() { continue }
