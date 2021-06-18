@@ -22,6 +22,12 @@ jobs:
       with:
         path: mm0-rs/target/release/mm0-rs
         key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
+    - name: Install stable rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
     - name: Cache build mm0-rs
       id: cache-build-mm0-rs
       if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
