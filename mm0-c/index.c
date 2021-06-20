@@ -29,36 +29,34 @@ typedef struct {
 bool init_index() {
   if (gi_init) return true;
   gi_header = (header*)g_file;
-  if (gi_header->p_index) {
-    u64* p = (u64*)&g_file[gi_header->p_index];
-    if ((u8*)(p+1) >= g_end) return false;
-    u64 num = *p++;
-    index_record* ir = (index_record*)p;
-    index_record* end = &ir[num];
-    if ((u8*)end > g_end) return false;
-    for (; ir < end; ir++) {
-      switch (ir->id) {
-        case 0x656d614eU: { // "Name"
-          gi_sort_names = (name_entry*)&g_file[ir->ptr];
-          gi_term_names = &gi_sort_names[gi_header->num_sorts];
-          gi_thm_names = &gi_term_names[gi_header->num_terms];
-          if ((u8*)&gi_thm_names[gi_header->num_thms] > g_end) return false;
-        } break;
-        case 0x4e726156U: { // "VarN"
-          gi_term_vars = (u64*)&g_file[ir->ptr];
-          gi_thm_vars = &gi_term_vars[gi_header->num_terms];
-          if ((u8*)&gi_thm_vars[gi_header->num_thms] > g_end) return false;
-        } break;
-        case 0x4e707948U: { // "HypN"
-          gi_thm_hyps = (u64*)&g_file[ir->ptr];
-          if ((u8*)&gi_thm_hyps[gi_header->num_thms] > g_end) return false;
-        } break;
-        default:;
-      }
+  if (!gi_header->p_index) return false;
+  if (gi_header->p_index >= g_end - g_file) return false;
+  u64* p = (u64*)&g_file[gi_header->p_index];
+  u64 num = *p++;
+  index_record* ir = (index_record*)p;
+  index_record* end = &ir[num];
+  if ((u8*)end > g_end) return false;
+  for (; ir < end; ir++) {
+    switch (ir->id) {
+      case 0x656d614eU: { // "Name"
+        gi_sort_names = (name_entry*)&g_file[ir->ptr];
+        gi_term_names = &gi_sort_names[gi_header->num_sorts];
+        gi_thm_names = &gi_term_names[gi_header->num_terms];
+        if ((u8*)&gi_thm_names[gi_header->num_thms] > g_end) return false;
+      } break;
+      case 0x4e726156U: { // "VarN"
+        gi_term_vars = (u64*)&g_file[ir->ptr];
+        gi_thm_vars = &gi_term_vars[gi_header->num_terms];
+        if ((u8*)&gi_thm_vars[gi_header->num_thms] > g_end) return false;
+      } break;
+      case 0x4e707948U: { // "HypN"
+        gi_thm_hyps = (u64*)&g_file[ir->ptr];
+        if ((u8*)&gi_thm_hyps[gi_header->num_thms] > g_end) return false;
+      } break;
+      default:;
     }
-    return gi_init = true;
   }
-  return false;
+  return gi_init = true;
 }
 
 char* name_value(name_entry* p) {

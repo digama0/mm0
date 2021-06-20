@@ -477,6 +477,7 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       if (ch('>')) {
         ENSURE("variable type does not match theorem", type == args[arg_idx++]);
       } else {
+        ENSURE("the return type of a theorem should end be a statement", kind != KW_THEOREM);
         ENSURE("return type does not match theorem", type == ret);
         break;
       }
