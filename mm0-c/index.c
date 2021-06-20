@@ -29,7 +29,8 @@ typedef struct {
 bool init_index() {
   if (gi_init) return true;
   gi_header = (header*)g_file;
-  if (gi_header->p_index) {
+  if (gi_header->p_index &&
+      gi_header->p_index < (g_end - g_file)) {
     u64* p = (u64*)&g_file[gi_header->p_index];
     if ((u8*)(p+1) >= g_end) return false;
     u64 num = *p++;
