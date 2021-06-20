@@ -42,7 +42,7 @@ The file header contains basic information about the format and pointers to the 
 | `num_terms` | `u32`                        | The number of `term` and `def` in the file.         |
 | `num_thms`  | `u32`                        | The number of `axiom` and `theorem` in the file.    |
 | `p_terms`   | `p32<[term; num_terms]>`     | The pointer to the [term table](#term-table).       |
-| `p_thms`    | `p64<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table). |
+| `p_thms`    | `p32<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table). |
 | `p_proof`   | `p32<proof_stream>`          | The pointer to the [proof stream](#proof-stream).   |
 | `reserved2` | `u32`                        | Reserved, should be set to `0`.                     |
 | `p_index`   | `p64<index>`                 | The pointer to the [index](#debugging-index).       |
