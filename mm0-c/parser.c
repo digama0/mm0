@@ -477,6 +477,7 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       if (ch('>')) {
         ENSURE("variable type does not match theorem", type == args[arg_idx++]);
       } else {
+        ENSURE("the return type of a theorem should end be a statement", kind != KW_THEOREM);
         ENSURE("return type does not match theorem", type == ret);
         break;
       }
@@ -663,9 +664,8 @@ void parse_until(u8 stmt_type) {
         thm* t = &g_thms[g_num_thms];
         trie x = parse_new_ident(gt_thms, &gt_thms_end, THM_TRIE_SIZE);
         u64* args = (u64*)&g_file[t->p_args];
-        u32 binders_value = binders(KW_THEOREM, t->num_args, args, 0);
-        ENSURE ("binders overflow", binders_value < STORE_SIZE);
-        parse_expr_list hyps_ret = *(parse_expr_list*)&g_store[binders_value];
+        parse_expr_list hyps_ret =
+          *(parse_expr_list*)&g_store[binders(KW_THEOREM, t->num_args, args, 0)];
         check_expr(t->num_args, (u8*)&args[t->num_args], hyps_ret.hd, hyps_ret.tl);
         ENSURE("duplicate term/def name", x->data == 0);
         x->data = ~g_num_thms;
