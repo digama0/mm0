@@ -37,20 +37,20 @@ u8 g_store[STORE_SIZE];
 u32 g_store_size = 0;
 
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag;
 } store_expr;
 
 #define EXPR_VAR 0
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag; // = EXPR_VAR
   u16 var;
 } store_var;
 
 #define EXPR_TERM 1
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag; // = EXPR_TERM
   u16 num_args;
   u32 termid;
