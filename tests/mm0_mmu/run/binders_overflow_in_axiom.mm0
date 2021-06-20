@@ -1,0 +1,10 @@
+-- This file is generated from examples/tutorial/02-mm0-intro.mm0
+
+delimiter $ ( ~ $  $ ) $;
+
+provable sort wff;
+
+term imp: wff > wff > wff;
+term not: wff > wff;
+
+axiom ax_1 (a b: wff): wff;
