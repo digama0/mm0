@@ -302,7 +302,7 @@ impl Cfg {
     for (id, res) in res.0.enum_iter() {
       let bl = &mut self.blocks[id];
       if bl.is_dead() { continue }
-      self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v));
+      bl.relevance = Some(self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v)));
       let update = |v, r: &mut bool| if !*r && res.contains(&v) { *r = true };
       for stmt in &mut bl.stmts {
         match stmt {
@@ -314,10 +314,8 @@ impl Cfg {
     }
     let mut cache = BlockVec::<Option<HashSet<VarId>>>::from_default(self.blocks.len());
     let Cfg {ctxs, blocks, ..} = self;
-    for id in (0..blocks.len()).map(BlockId::from_usize) {
-      let bl = &mut blocks[id];
-      if let Some(Terminator::Jump(tgt, ref mut args)) = bl.term {
-        let ctx = bl.ctx;
+    for (_, &mut BasicBlock {ctx, ref mut term, ..}) in blocks.enum_iter_mut() {
+      if let Some(Terminator::Jump(tgt, ref mut args)) = *term {
         let s = cache[tgt].get_or_insert_with(|| {
           ctxs.rev_iter(ctx).filter(|p| p.1).map(|p| p.0).collect()
         });

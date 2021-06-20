@@ -3,6 +3,7 @@
 use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
+use bit_vec::BitVec;
 use num::BigInt;
 use smallvec::SmallVec;
 use crate::{AtomId, LispVal, Remap, Remapper, u32_as_usize};
@@ -597,8 +598,9 @@ impl Contexts {
       #[allow(clippy::useless_transmute)]
       unsafe { std::mem::transmute::<&mut CtxBuf, &mut CtxBuf>(ctx) }
     } else {
+      let size = ctx.size;
       let buf_id = CtxBufId(self.0.len().try_into().expect("overflow"));
-      self.0.push(CtxBuf {parent: *id, vars: vec![]});
+      self.0.push(CtxBuf {parent: *id, size: size + id.1, vars: vec![]});
       *id = CtxId(buf_id, 1);
       unwrap_unchecked!(self.0.last_mut())
     }
@@ -630,14 +632,21 @@ impl Contexts {
   /// Set computational relevance for all variables in the context for which `vars` returns true.
   /// Note that because contexts are shared, a shared variable will be considered relevant if
   /// it is relevant in any of the contexts that share it.
-  pub fn set_ghost(&mut self, mut id: CtxId, mut vars: impl FnMut(VarId) -> bool) {
+  ///
+  /// Returns the relevance settings applied by this method (not the shared relevance settings
+  /// applied to the context).
+  pub fn set_ghost(&mut self, mut id: CtxId, mut vars: impl FnMut(VarId) -> bool) -> BitVec {
+    let mut buf = &mut self[id.0];
+    let mut rel = BitVec::from_elem(u32_as_usize(buf.size), false);
     loop {
-      let ctxbuf = &mut self[id.0];
-      for (v, r, _) in &mut ctxbuf.vars[..id.1 as usize] {
-        if !*r && vars(*v) { *r = true }
+      for (i, (v, r, _)) in (buf.size..buf.size + id.1).zip(&mut buf.vars[..id.1 as usize]) {
+        let new = vars(*v);
+        *r = new;
+        rel.set(u32_as_usize(i), new);
       }
-      if id.0 == CtxBufId::ROOT { break }
-      id = ctxbuf.parent;
+      if id.0 == CtxBufId::ROOT { return rel }
+      id = buf.parent;
+      buf = &mut self[id.0];
     }
   }
 }
@@ -659,6 +668,37 @@ impl<'a> Iterator for CtxIter<'a> {
       *self = self.ctxs.rev_iter(self.ctxs[self.buf].parent);
     }
   }
+  fn size_hint(&self) -> (usize, Option<usize>) { let l = self.len(); (l, Some(l)) }
+  fn count(self) -> usize { self.len() }
+}
+
+impl ExactSizeIterator for CtxIter<'_> {
+  fn len(&self) -> usize { u32_as_usize(self.ctxs[self.buf].size) + self.iter.len() }
+}
+
+/// The iterator struct returned by [`Contexts::ctx_rev_iter`].
+#[derive(Clone)]
+pub struct CtxIterWithRel<'a> {
+  a: CtxIter<'a>,
+  b: bit_vec::Iter<'a>,
+}
+
+impl std::fmt::Debug for CtxIterWithRel<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "CtxIterWithRel".fmt(f) }
+}
+
+impl<'a> Iterator for CtxIterWithRel<'a> {
+  type Item = (VarId, bool, &'a ExprTy);
+  fn next(&mut self) -> Option<Self::Item> {
+    let (v, _, ref ety) = *self.a.next()?;
+    Some((v, self.b.next_back()?, ety))
+  }
+  fn size_hint(&self) -> (usize, Option<usize>) { self.b.size_hint() }
+  fn count(self) -> usize { self.len() }
+}
+
+impl ExactSizeIterator for CtxIterWithRel<'_> {
+  fn len(&self) -> usize { self.b.len() }
 }
 
 /// A function for visiting every variable in the tree contexts only once.
@@ -818,6 +858,8 @@ impl CtxId {
 pub struct CtxBuf {
   /// The parent context, which this buffer is viewed as extending.
   pub parent: CtxId,
+  /// The cached size of the parent context
+  pub size: u32,
   /// The additional variables that this buffer adds to the context.
   pub vars: Vec<(VarId, bool, ExprTy)>,
 }
@@ -825,7 +867,7 @@ pub struct CtxBuf {
 impl Remap for CtxBuf {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { parent: self.parent, vars: self.vars.remap(r) }
+    Self { parent: self.parent, size: self.size, vars: self.vars.remap(r) }
   }
 }
 
@@ -1568,6 +1610,9 @@ impl Terminator {
 pub struct BasicBlock {
   /// The initial context on entry to the block.
   pub ctx: CtxId,
+  /// The computational relevance of all the variables on entry to the block
+  /// (filled by ghost propagation pass).
+  pub relevance: Option<BitVec>,
   /// If false, then the current context is able to prove false,
   /// and all control paths end in `unreachable`.
   pub reachable: bool,
@@ -1582,7 +1627,7 @@ impl Remap for BasicBlock {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Self {
-      ctx: self.ctx, reachable: self.reachable,
+      ctx: self.ctx, relevance: self.relevance.clone(), reachable: self.reachable,
       stmts: self.stmts.remap(r), term: self.term.remap(r)
     }
   }
@@ -1590,7 +1635,17 @@ impl Remap for BasicBlock {
 
 impl BasicBlock {
   fn new(ctx: CtxId, term: Option<Terminator>) -> Self {
-    Self { ctx, reachable: true, stmts: vec![], term }
+    Self { ctx, relevance: None, reachable: true, stmts: vec![], term }
+  }
+
+  /// Construct an iterator over the variables in the context, using the relevance values after
+  /// ghost analysis, instead of the relevance values stored in the context itself.
+  /// Only callable after ghost analysis is done.
+  pub fn ctx_rev_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxIterWithRel<'a> {
+    let rel = self.relevance.as_ref().expect("ghost analysis not done yet");
+    let a = ctxs.rev_iter(self.ctx);
+    debug_assert_eq!(rel.len(), a.len());
+    CtxIterWithRel { a, b: rel.iter() }
   }
 
   /// Finish this basic block by adding the terminator.
@@ -1611,6 +1666,7 @@ impl BasicBlock {
   /// A dead block constant, which can be used as the contents of a dead block.
   pub const DEAD: Self = BasicBlock {
     ctx: CtxId::ROOT,
+    relevance: None,
     reachable: false,
     stmts: Vec::new(),
     term: Some(Terminator::Dead)

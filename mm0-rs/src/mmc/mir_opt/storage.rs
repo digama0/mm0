@@ -74,7 +74,9 @@ impl Allocations {
     }
     self.vars.insert(v, a);
   }
-  fn push(&mut self, v: VarId, sz: u64) -> AllocId {
+  fn push(&mut self, v: VarId, sz: impl FnOnce() -> u64) -> AllocId {
+    if let Some(&a) = self.vars.get(&v) { return a }
+    let sz = sz();
     let a = if sz == 0 { AllocId::ZERO } else {
       self.allocs.push(Allocation { size: sz, vars: vec![v] })
     };
@@ -152,21 +154,21 @@ impl Cfg {
   /// a given point in time, and any variable whose storage is overwritten by a later variable in
   /// the same group is dead.
   #[must_use] pub fn storage(&mut self, names: &HashMap<AtomId, Entity>) -> Allocations {
-    let sizeof = |ty: &TyKind| ty.sizeof(names).expect("can't get size of type");
+    let sizeof = |ty: &Ty| ty.sizeof(names).expect("can't get size of type");
     let mut allocs = Allocations::default();
 
     let init = self.blocks.0.iter().map(|bl| {
-      self.ctxs.rev_iter(bl.ctx).filter(|p| p.1).map(|p| p.0).collect()
+      bl.ctx_rev_iter(&self.ctxs).filter(|p| p.1).map(|p| p.0).collect()
     }).collect();
     for (_, bl) in self.blocks.enum_iter_mut() {
       if bl.is_dead() { continue }
       let last_use = bl.liveness(&init);
       let mut patch: VecPatch<Statement, StorageEdit> = Default::default();
       let mut ctx = HashMap::new();
-      for &(v, r, (ref e, ref ty)) in self.ctxs.rev_iter(bl.ctx) {
+      for (v, r, (e, ty)) in bl.ctx_rev_iter(&self.ctxs) {
         if r {
           ctx.insert(v, (e.as_ref(), ty));
-          allocs.push(v, sizeof(ty));
+          allocs.push(v, || sizeof(ty));
         }
       }
 
@@ -219,7 +221,7 @@ impl Cfg {
                   LetKind::Let(v, true, e.cloned()), ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
-                a = allocs.push(v, sizeof(ty))
+                a = allocs.push(v, || sizeof(ty))
               } else if split { a = allocs.split(r.from) } else {}
               allocs.insert(a, r.to, sizeof(&r.ety.1));
             }
@@ -241,7 +243,7 @@ impl Cfg {
               if let Some(&a) = allocs.vars.get(&from) {
                 allocs.insert(a, v, sizeof(ty));
               }
-            } else { allocs.push(v, sizeof(ty)); }
+            } else { allocs.push(v, || sizeof(ty)); }
           }
         }
         s.foreach_def(|v, r, e, ty| if r { ctx.insert(v, (e, ty)); })

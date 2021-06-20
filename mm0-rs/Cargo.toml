@@ -51,13 +51,14 @@ serde_json = "1.0"
 serde_repr = "0.1"
 annotate-snippets = { version = "0.9", features = ["color"] }
 libc = "0.2"
-zerocopy = "0.4"
+zerocopy = "0.5"
 memchr = "2.3"
+bit-vec = "0.6"
 bit-set = "0.5"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [
-  "num", "typed-arena", "futures", "owning_ref", "smallvec"] }
+  "num", "typed-arena", "futures", "owning_ref", "smallvec", "bit-vec", "bit-set"] }
 mm0_util = { path = "components/mm0_util", default-features = false }
 mm0b_parser = { path = "components/mm0b_parser" }
 mm1_parser = { path = "components/mm1_parser" }

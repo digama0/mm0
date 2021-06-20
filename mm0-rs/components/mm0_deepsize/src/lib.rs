@@ -414,3 +414,17 @@ impl<T: smallvec::Array + DeepSizeOf> DeepSizeOf for smallvec::SmallVec<T> {
         n
     }
 }
+
+#[cfg(feature = "bit-vec")]
+impl<B: bit_vec::BitBlock> DeepSizeOf for bit_vec::BitVec<B> {
+    fn deep_size_of_children(&self, _: &mut Context) -> usize {
+        std::mem::size_of_val(self.storage())
+    }
+}
+
+#[cfg(feature = "bit-set")]
+impl DeepSizeOf for bit_set::BitSet {
+    fn deep_size_of_children(&self, _: &mut Context) -> usize {
+        self.capacity() / 8
+    }
+}
