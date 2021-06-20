@@ -556,7 +556,7 @@ impl Default for Ast {
 
 /// Iteartor over the AST's stmts while also traversing into the nested
 /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 pub struct StmtIter<'a> {
   stmts: std::slice::Iter<'a, Stmt>,
   nested: Option<&'a Stmt>,

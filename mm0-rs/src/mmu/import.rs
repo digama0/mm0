@@ -194,7 +194,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   }
 }
 
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {

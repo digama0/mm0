@@ -271,7 +271,7 @@ pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), Parse
 }
 
 /// An iterator over a proof command stream.
-#[derive(Debug, Clone)]
+#[must_use] #[derive(Debug, Clone)]
 pub struct ProofIter<'a> {
   /// The full mmb file
   mmb_source: &'a [u8],
@@ -320,7 +320,7 @@ impl<'a> Iterator for ProofIter<'a> {
 }
 
 /// An iterator over a unify command stream.
-#[derive(Debug, Clone)]
+#[must_use] #[derive(Debug, Clone)]
 pub struct UnifyIter<'a> {
   /// The full mmb file.
   mmb_file: &'a [u8],
@@ -1084,7 +1084,7 @@ fn try_next_decl(
 }
 
 /// An iterator over the declaration stream.
-#[derive(Debug, Clone)]
+#[must_use] #[derive(Debug, Clone)]
 pub struct DeclIter<'a> {
   /// The full source file.
   mmb_file: &'a [u8],

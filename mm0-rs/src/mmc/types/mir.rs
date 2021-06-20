@@ -615,7 +615,7 @@ impl Contexts {
   /// Returns an iterator over the variables and their values, in reverse order (from most
   /// recently added to least recent). This is more efficient than forward iteration, which must
   /// keep a stack.
-  #[must_use] pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxIter<'_> {
+  pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxIter<'_> {
     CtxIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
   }
 
@@ -652,7 +652,7 @@ impl Contexts {
 }
 
 /// The iterator struct returned by [`Contexts::rev_iter`].
-#[derive(Clone, Debug)]
+#[must_use] #[derive(Clone, Debug)]
 pub struct CtxIter<'a> {
   ctxs: &'a Contexts,
   buf: CtxBufId,
@@ -677,7 +677,7 @@ impl ExactSizeIterator for CtxIter<'_> {
 }
 
 /// The iterator struct returned by [`Contexts::ctx_rev_iter`].
-#[derive(Clone)]
+#[must_use] #[derive(Clone)]
 pub struct CtxIterWithRel<'a> {
   a: CtxIter<'a>,
   b: bit_vec::Iter<'a>,

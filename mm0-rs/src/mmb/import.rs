@@ -109,7 +109,7 @@ impl IDedup<ProofHash> for Dedup {
   }
 }
 
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 struct DedupIter<'a>(std::slice::Iter<'a, (ProofHash, bool)>);
 
 impl<'a> Iterator for DedupIter<'a> {

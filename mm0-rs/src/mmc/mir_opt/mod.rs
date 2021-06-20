@@ -167,6 +167,7 @@ impl<T> WorkQueue<T> {
   }
 }
 
+#[must_use]
 struct Postorder<'a> {
   cfg: &'a Cfg,
   visited: BitSet<BlockId>,

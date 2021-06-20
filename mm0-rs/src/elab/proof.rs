@@ -236,7 +236,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
 
 /// An iterator over the elements allocated by a [`Dedup`], created by
 /// the [`IntoIterator`] implementation for [`Dedup`].
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool, u64)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {

@@ -234,7 +234,7 @@ impl FrozenLispVal {
   #[must_use] pub unsafe fn thaw(&self) -> &LispVal { &self.0 }
 
   /// Get a iterator over frozen lisp values, for dealing with lists.
-  #[must_use] pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
+  pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
 }
 
 impl FrozenLispKind {
@@ -442,7 +442,7 @@ impl FrozenProc {
 /// An iterator over the contents of a [`LispVal`], like [`Uncons`](super::lisp::Uncons),
 /// but borrowing from the original data instead of cloning
 /// (which is not allowed for frozen values).
-#[derive(Clone, Debug)]
+#[must_use] #[derive(Clone, Debug)]
 pub enum FrozenUncons<'a> {
   /// The initial state, pointing to a lisp value.
   New(&'a FrozenLispKind),

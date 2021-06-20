@@ -139,7 +139,7 @@ impl<'a> IntoIterator for Context<'a> {
 
 /// An iterator over the context, from the most recently introduced variable
 /// to the beginning.
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 pub struct ContextIter<'a>(Option<&'a ContextNext<'a>>);
 
 impl<'a> Iterator for ContextIter<'a> {

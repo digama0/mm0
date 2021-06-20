@@ -324,7 +324,7 @@ impl<T> ArcList<T> {
 }
 
 /// An iterator over an [`ArcList`].
-#[derive(Debug, Clone)]
+#[must_use] #[derive(Debug, Clone)]
 pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 
 impl<'a, T> Iterator for ArcListIter<'a, T> {

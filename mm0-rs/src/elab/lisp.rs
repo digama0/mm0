@@ -1356,7 +1356,7 @@ impl std::fmt::Display for BuiltinProc {
 /// the same as a [`LispVal`], but in order to decrease allocations this allows
 /// holding on to incomplete subparts of the arrays used in [`LispKind::List`]
 /// and [`LispKind::DottedList`].
-#[derive(Debug, DeepSizeOf)]
+#[must_use] #[derive(Debug, DeepSizeOf)]
 pub enum Uncons {
   /// The initial state, pointing to a lisp value.
   New(LispVal),
@@ -1372,7 +1372,7 @@ impl From<LispVal> for Uncons {
 
 impl Uncons {
   /// Create an empty [`Uncons`].
-  #[must_use] pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
+  pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
 
   /// Returns true if this is a proper list of length `n`.
   #[must_use] pub fn exactly(&self, n: usize) -> bool {
