@@ -1,0 +1,48 @@
+-- The MU puzzle <https://en.wikipedia.org/wiki/MU_puzzle> from Douglas Hofstadter's book
+-- Godel, Escher, Bach.
+
+-- The puzzle describes the "MIU" formal system, and asks whether MU is derivable.
+-- Spoilers, it's not, so this is an example of an MM0 file which has no proof -
+-- there is no accompanying proof file for which a correct MM0 verifier will validate this file.
+
+delimiter $ ( . ) $; -- This says that spaces are not needed around punctuation
+
+-- We need two proof judgements, so `wff` is used as the target for these.
+provable sort wff;
+-- The type of strings.
+sort str;
+-- `prov` holds for a string if it is provable in the MIU system.
+term prov: str > wff; coercion prov: str > wff;
+
+-- Because MIU works on strings, and MM0 deals with term trees, we have to explicitly encode a
+-- logic of string concatenation and string equality. Here, `.` is the string concatenation
+-- operator, and Z is the empty string.
+
+term cat: str > str > str; infixl cat: $.$ prec 1;
+term eq: str > str > wff; infixl eq: $=$ prec 0;
+term Z: str;
+
+-- The monoid axioms
+axiom rfl (a: str): $ a = a $;
+axiom sym (a b: str): $ a = b $ > $ b = a $;
+axiom tr (a b c: str): $ a = b $ > $ b = c $ > $ a = c $;
+axiom catl (a b c: str): $ a = b $ > $ a.b = a.c $;
+axiom catr (a b c: str): $ a = b $ > $ a.c = b.c $;
+axiom zl (a: str): $ Z.a = a $;
+axiom zr (a: str): $ a.Z = a $;
+axiom ass (a b c: str): $ (a.b).c = a.(b.c) $;
+
+-- Equality respects provability
+axiom mp (a b: str): $ a = b $ > $ a $ > $ b $;
+
+-- The actual MIU axioms
+term M: str; term I: str; term U: str;
+axiom A0: $ M.I $;
+axiom A1 (x: str): $ x.I $ > $ x.I.U $;
+axiom A2 (x: str): $ M.x $ > $ M.x.x $;
+axiom A3 (x y: str): $ x.I.I.I.y $ > $ x.U.y $;
+axiom A4 (x y: str): $ x.U.U.y $ > $ x.y $;
+
+-- Assert that MU is provable. Since this is false, this entire file constitutes the statement of
+-- an unprovable theorem.
+theorem MU: $ M.U $;
