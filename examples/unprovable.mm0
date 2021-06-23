@@ -1,0 +1,5 @@
+-- A simple example of an unprovable MM0 file
+provable sort S;
+term F: S > S;
+axiom yes (a: S): $ F a $ > $ a $;
+theorem no (a: S): $ a $;
