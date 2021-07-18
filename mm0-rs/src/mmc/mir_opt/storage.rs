@@ -1,5 +1,6 @@
 //! The storage pass, which computes the stack and register allocations for a function.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
 
@@ -39,6 +40,8 @@ mk_id! {
 }
 
 impl AllocId {
+  /// Allocations of zero size get the special allocation ID `ZERO`, which is considered disjoint
+  /// from all other allocations, including itself.
   const ZERO: Self = Self(0);
 }
 
@@ -83,13 +86,14 @@ impl Allocations {
     self.vars.insert(v, a);
     a
   }
-  fn split(&mut self, v: VarId) -> AllocId {
+  fn split(&mut self, v: VarId) -> (AllocId, AllocId) {
     let a = self.vars.get_mut(&v).expect("variable not allocated");
-    if *a == AllocId::ZERO { return AllocId::ZERO }
-    let Allocation { size, ref mut vars } = self.allocs[*a];
+    let old = *a;
+    if old == AllocId::ZERO { return (AllocId::ZERO, AllocId::ZERO) }
+    let Allocation { size, ref mut vars } = self.allocs[old];
     if let Some(i) = vars.iter().position(|x| *x == v) { vars.swap_remove(i); }
     *a = self.allocs.push(Allocation { size, vars: vec![v] });
-    *a
+    (old, *a)
   }
 }
 
@@ -148,13 +152,37 @@ impl TyKind {
   }
 }
 
+#[derive(Default)]
+struct Interference(HashSet<(AllocId, AllocId)>);
+
+impl Interference {
+  fn insert(&mut self, a1: AllocId, a2: AllocId) {
+    let (a1, a2) = match a1.cmp(&a2) {
+      Ordering::Less => (a1, a2),
+      Ordering::Equal => return,
+      Ordering::Greater => (a2, a1),
+    };
+    if a1 != AllocId::ZERO { self.0.insert((a1, a2)); }
+  }
+
+  fn get(&self, a1: AllocId, a2: AllocId) -> bool {
+    let (a1, a2) = match a1.cmp(&a2) {
+      Ordering::Less => (a1, a2),
+      Ordering::Equal => return false,
+      Ordering::Greater => (a2, a1),
+    };
+    a1 != AllocId::ZERO && self.0.contains(&(a1, a2))
+  }
+}
+
 impl Cfg {
-  /// Compute the storage requirements of the CFG. This is a partitioning of the `VarId`'s into
-  /// groups, as few as possible, such that all variables in a group have the same bit pattern at
-  /// a given point in time, and any variable whose storage is overwritten by a later variable in
-  /// the same group is dead.
-  #[must_use] pub fn storage(&mut self, names: &HashMap<AtomId, Entity>) -> Allocations {
+  #[must_use] fn build_allocations(&mut self,
+    names: &HashMap<AtomId, Entity>
+  ) -> (Allocations, Interference) {
     let sizeof = |ty: &Ty| ty.sizeof(names).expect("can't get size of type");
+
+    let mut interference = Interference::default();
+
     let mut allocs = Allocations::default();
 
     let init = self.blocks.0.iter().map(|bl| {
@@ -164,10 +192,10 @@ impl Cfg {
       if bl.is_dead() { continue }
       let last_use = bl.liveness(&init);
       let mut patch: VecPatch<Statement, StorageEdit> = Default::default();
-      let mut ctx = HashMap::new();
+      let mut live = HashMap::new();
       for (v, r, (e, ty)) in bl.ctx_rev_iter(&self.ctxs) {
         if r {
-          ctx.insert(v, (e.as_ref(), ty));
+          live.insert(v, (e.as_ref(), ty));
           allocs.push(v, || sizeof(ty));
         }
       }
@@ -214,15 +242,27 @@ impl Cfg {
                   if x == r.from { copy = true } else { split = true }
                 }
               }
+              let mut interfere = |(old, new), allocs: &mut Allocations| {
+                interference.insert(old, new);
+                for u in live.keys() {
+                  if last_use.get(u).map_or(false, |&j| j > i) {
+                    interference.insert(new, allocs.vars[u]);
+                  }
+                }
+                new
+              };
               if copy {
-                let (e, ty) = ctx[&r.from];
+                let (e, ty) = live[&r.from];
+                let old = allocs.vars[&r.from];
                 let v = self.max_var.fresh();
                 patch.insert(i, Statement::Let(
                   LetKind::Let(v, true, e.cloned()), ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
-                a = allocs.push(v, || sizeof(ty))
-              } else if split { a = allocs.split(r.from) } else {}
+                a = interfere((old, allocs.push(v, || sizeof(ty))), &mut allocs);
+              } else if split {
+                a = interfere(allocs.split(r.from), &mut allocs)
+              } else {}
               allocs.insert(a, r.to, sizeof(&r.ety.1));
             }
           }
@@ -243,14 +283,30 @@ impl Cfg {
               if let Some(&a) = allocs.vars.get(&from) {
                 allocs.insert(a, v, sizeof(ty));
               }
-            } else { allocs.push(v, || sizeof(ty)); }
+            } else {
+              let a = allocs.push(v, || sizeof(ty));
+              live.retain(|u, _| last_use.get(u).map_or(false, |&j| j > i) && {
+                interference.insert(a, allocs.vars[u]);
+                true
+              });
+            }
           }
         }
-        s.foreach_def(|v, r, e, ty| if r { ctx.insert(v, (e, ty)); })
+        s.foreach_def(|v, r, e, ty| if r { live.insert(v, (e, ty)); })
       }
 
       patch.apply(&mut bl.stmts);
     }
+
+    (allocs, interference)
+  }
+
+  /// Compute the storage requirements of the CFG. This is a partitioning of the `VarId`'s into
+  /// groups, as few as possible, such that all variables in a group have the same bit pattern at
+  /// a given point in time, and any variable whose storage is overwritten by a later variable in
+  /// the same group is dead.
+  #[must_use] pub fn storage(&mut self, names: &HashMap<AtomId, Entity>) -> Allocations {
+    let (allocs, _) = self.build_allocations(names);
     allocs
   }
 }

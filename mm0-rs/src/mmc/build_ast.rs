@@ -758,7 +758,7 @@ impl<'a> BuildAst<'a> {
   fn build_call_expr(&mut self, span: FileSpan, e: CallExpr) -> Result<ast::Expr> {
     macro_rules! lassoc1 {
       ($args:expr, $zero:expr, $op:expr) => { lassoc1!($args, $zero, $op, |e| return Ok(e)) };
-      ($args:expr, $zero:expr, $op:expr, |$e:pat| $arg:expr) => {
+      ($args:expr, $zero:expr, $op:expr, |$e:pat_param| $arg:expr) => {
         if let Some($e) = self.build_lassoc1(&span, $args, {use Binop::*; $op})? { $arg }
         else { #[allow(unused)] use ast::ExprKind::*; $zero }
       }

@@ -9,7 +9,7 @@
 
 macro_rules! mk_id {($($(#[$attr:meta])* $id:ident),*) => {$(
   $(#[$attr])*
-  #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+  #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct $id(pub u32);
   crate::deep_size_0!($id);
   impl $id {
