@@ -1,5 +1,4 @@
 //! MMC type checking pass.
-#![allow(unused)]
 
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
@@ -7,7 +6,7 @@ use std::convert::TryInto;
 use std::mem;
 use crate::elab::{ElabError, Elaborator, Environment,
   Result as EResult,
-  environment::{AtomId, AtomData, Type as EType},
+  environment::{Symbol, AtomData, Type as EType},
   lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}},
   local_context::{try_get_span_from, try_get_span}};
 use crate::{Span, FileSpan};
@@ -108,11 +107,11 @@ impl Default for PreTuplePattern {
 
 impl PreTuplePattern {
   /// The name of a variable binding (or `_` for a tuple pattern)
-  #[must_use] fn name(&self) -> AtomId {
+  #[must_use] fn name(&self) -> Symbol {
     match self {
       &PreTuplePattern::Name(_, a, _) => a,
       PreTuplePattern::Typed(p, _) => p.name(),
-      _ => AtomId::UNDER
+      _ => Symbol::UNDER
     }
   }
 
@@ -140,7 +139,7 @@ impl PreTuplePattern {
   #[must_use] fn ty(&self) -> LispVal {
     match self {
       PreTuplePattern::Typed(_, ty) => ty.clone(),
-      _ => LispVal::atom(AtomId::UNDER)
+      _ => LispVal::atom(Symbol::UNDER)
     }
   }
 }
@@ -198,7 +197,7 @@ enum GType {
 #[derive(Debug)]
 struct Variable {
   /// The user-facing name of this variable, or `_` for auto names.
-  user: AtomId,
+  user: Symbol,
   /// The target name of this variable.
   decl: VarId,
   /// The type of this variable.
@@ -227,9 +226,9 @@ pub struct TypeChecker<'a> {
   next_var: VarId,
   /// Maps names from the MMC source in scope to their internal names.
   /// The vector contains shadowed variables in outer scopes.
-  user_locals: HashMap<AtomId, Vec<VarId>>,
+  user_locals: HashMap<Symbol, Vec<VarId>>,
   /// The set of globals that are mutable in the current context (and their mapping to internal names).
-  mut_globals: HashMap<AtomId, VarId>,
+  mut_globals: HashMap<Symbol, VarId>,
   /// Maps internal indexes for variables in scope to their variable record.
   context: Vec<Variable>,
 }
@@ -255,7 +254,7 @@ impl ArgsContext {
   }
 }
 
-fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(AtomId, &AtomData) -> bool) -> AtomId {
+fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(Symbol, &AtomData) -> bool) -> Symbol {
   if !base.is_empty() {
     let a = env.get_atom(&base);
     if !bad(a, &env.data[a]) {return a}
@@ -278,8 +277,8 @@ impl Compiler {
   }
 }
 
-fn pop_user_local(m: &mut HashMap<AtomId, Vec<VarId>>, user: AtomId) -> Option<()> {
-  if user != AtomId::UNDER {
+fn pop_user_local(m: &mut HashMap<Symbol, Vec<VarId>>, user: Symbol) -> Option<()> {
+  if user != Symbol::UNDER {
     if let Some(vec) = m.get_mut(&user) { vec.pop()?; }
   }
   Some(())
@@ -317,7 +316,7 @@ impl<'a> TypeChecker<'a> {
     try_get_span(&self.fsp, e)
   }
 
-  fn get_fresh_decl(&mut self, base: AtomId) -> AtomId {
+  fn get_fresh_decl(&mut self, base: Symbol) -> Symbol {
     let mut s = self.mmc.prefix.clone();
     s.extend_from_slice(&self.elab.data[base].name);
     get_fresh_name(&mut self.elab, s, |_, ad| ad.decl.is_some())
@@ -338,12 +337,12 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn apply_rename<E>(&mut self,
-    it: impl Iterator<Item=(AtomId, AtomId)>,
+    it: impl Iterator<Item=(Symbol, Symbol)>,
     err: impl FnOnce(String) -> E
   ) -> Result<(), E> {
     let mut vec = vec![];
     for (from, to) in it {
-      if from == AtomId::UNDER { return Err(err("can't rename variable '_'".into())) }
+      if from == Symbol::UNDER { return Err(err("can't rename variable '_'".into())) }
       let var =
         if let Some(v) = self.user_locals.get_mut(&from).and_then(Vec::pop) { v }
         else { return Err(err(format!("unknown variable '{}'", self.elab.print(&from)))) };
@@ -558,7 +557,7 @@ impl<'a> TypeChecker<'a> {
       Some(head) => (head, Some(u)),
     };
     let name = if let Some(name) = head.as_atom() {name} else {return false};
-    if name == AtomId::UNDER { return true }
+    if name == Symbol::UNDER { return true }
     match self.mmc.names.get(&name) {
       Some(Entity::Type(_)) => true,
       Some(Entity::Prim(Prim {ty: Some(prim), ..})) => match prim {
@@ -585,7 +584,7 @@ impl<'a> TypeChecker<'a> {
     }}}
     let name = head.as_atom().ok_or_else(||
       ElabError::new_e(self.try_get_span(&head), "expected an atom"))?;
-    if name == AtomId::UNDER {
+    if name == Symbol::UNDER {
       return Err(ElabError::new_e(self.try_get_span(&head), "expecting a type"));
     }
     match self.mmc.names.get(&name) {
@@ -637,9 +636,9 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_mm0_expr(&self, e: LispVal) -> Result<Mm0Expr, ElabError> {
-    type Subst = (Vec<PureExpr>, HashMap<AtomId, u32>, Vec<AtomId>);
+    type Subst = (Vec<PureExpr>, HashMap<Symbol, u32>, Vec<Symbol>);
     fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut Subst,
-      e: &LispVal, head: AtomId, args: Option<Uncons>
+      e: &LispVal, head: Symbol, args: Option<Uncons>
     ) -> Result<Option<Mm0ExprNode>, ElabError> {
       let tid = tc.elab.term(head).ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
         format!("term '{}' not declared", tc.elab.data[head].name)))?;
@@ -829,7 +828,7 @@ impl<'a> TypeChecker<'a> {
       }
     }}
     if let Some(name) = head.as_atom() {
-      if name == AtomId::UNDER { return err!("holes not implemented") }
+      if name == Symbol::UNDER { return err!("holes not implemented") }
       match self.mmc.names.get(&name) {
         Some(Entity::Const(GlobalTc::Unchecked)) => err!("forward referencing constants is not allowed"),
         Some(Entity::Prim(Prim {op: Some(prim), ..})) => match (prim, &*args) {
@@ -1016,7 +1015,7 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn push_user_local(&mut self, user: AtomId, decl: VarId) {
+  fn push_user_local(&mut self, user: Symbol, decl: VarId) {
     self.user_locals.entry(user).or_default().push(decl)
   }
 
@@ -1032,13 +1031,13 @@ impl<'a> TypeChecker<'a> {
       }
       let user = arg.name();
       let decl = self.get_fresh_local();
-      if user != AtomId::UNDER { self.push_user_local(user, decl) }
-      let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == AtomId::UNDER ||
+      if user != Symbol::UNDER { self.push_user_local(user, decl) }
+      let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == Symbol::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
       let ty = if is_ty {GType::Star} else {
         let ty = arg.ty();
         if !ctx.hyp_allowed() || self.probably_a_type(&ty) {
-          let ty = if ty.as_atom().map_or(false, |a| a == AtomId::UNDER) {
+          let ty = if ty.as_atom().map_or(false, |a| a == Symbol::UNDER) {
             if let Some(ty) = ctx.default_value() {ty}
             else {self.check_ty(&ty)?}
           } else {self.check_ty(&ty)?};
@@ -1095,7 +1094,7 @@ impl<'a> TypeChecker<'a> {
     Ok(match pat {
       PreTuplePattern::Name(g, user, sp) => {
         let decl = self.get_fresh_local();
-        if user != AtomId::UNDER { self.push_user_local(user, decl) }
+        if user != Symbol::UNDER { self.push_user_local(user, decl) }
         let ty = tgt.to_type();
         let copy = self.copy_type(&ty);
         self.context.push(Variable {decl, user, ty: GType::Ty(g, ty.clone(), copy)});
@@ -1443,7 +1442,7 @@ impl<'a> TypeChecker<'a> {
         }
         let ty = lhs.ty();
         let (e, ty2);
-        if ty.as_atom().map_or(false, |a| a == AtomId::UNDER) {
+        if ty.as_atom().map_or(false, |a| a == Symbol::UNDER) {
           e = self.check_pure_expr(rhs, None)?;
           ty2 = self.infer_type(&e).to_type()
         } else {
@@ -1451,7 +1450,7 @@ impl<'a> TypeChecker<'a> {
           e = self.check_pure_expr(rhs, Some(&ty2))?;
         };
         let user = lhs.name();
-        if user != AtomId::UNDER {
+        if user != Symbol::UNDER {
           let decl = self.get_fresh_decl(user);
           if let Entity::Const(ty @ GlobalTc::Unchecked) = self.mmc.names.get_mut(&user).unwrap() {
             *ty = GlobalTc::Checked(full.clone(), decl, Rc::new(ty2), Rc::new(Expr::Pure(e)))

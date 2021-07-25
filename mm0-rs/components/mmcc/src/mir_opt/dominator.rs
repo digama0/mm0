@@ -1,8 +1,11 @@
 //! The dominator tree for a CFG.
 #[allow(clippy::wildcard_imports)] use super::*;
 
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+
 /// The computed dominator tree information.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct DominatorTree {
   idom: BlockVec<OptBlockId>,
   postorder: BlockVec<usize>,

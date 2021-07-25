@@ -2,31 +2,30 @@
 
 use std::{convert::TryInto, fmt::Display, ops::BitOrAssign};
 use num::BigInt;
-use crate::{AtomId, EnvDisplay, FormatEnv, FileSpan};
-use super::{Binop, IntTy, Mm0ExprNode, Unop, VarId, ast::TyVarId};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{FileSpan, Symbol};
+use super::{Binop, IntTy, LambdaId, Unop, VarId, ast::TyVarId};
 pub use super::ast::ArgAttr;
 
 /// A trait for displaying with a "context" struct. This is a generalization of [`EnvDisplay`] to
 /// other forms of context.
-pub trait CtxDisplay<C> {
+pub trait CtxDisplay<C> where C: ?Sized {
   /// Display this object, using the given context and printing into the given formatter.
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
 /// A printing struct for printing a [`CtxDisplay`] type.
 #[derive(Debug)]
-pub struct CtxPrint<'a, C, A>(pub &'a C, pub &'a A);
+pub struct CtxPrint<'a, C: ?Sized, A: ?Sized>(pub &'a C, pub &'a A);
 
-impl<C, A: CtxDisplay<C>> Display for CtxPrint<'_, C, A> {
+impl<C: ?Sized, A: CtxDisplay<C> + ?Sized> Display for CtxPrint<'_, C, A> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.1.fmt(self.0, f)
   }
 }
 
 /// A display context sufficient to print the types in this module.
-pub trait DisplayCtx {
-  /// Get a [`FormatEnv`] from the context, so that we can print [`EnvDisplay`] objects.
-  fn format_env(&self) -> FormatEnv<'_>;
+pub trait DisplayCtx<'a> {
   /// Print a variable.
   fn fmt_var(&self, v: VarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
   /// Print a lifetime metavariable.
@@ -35,9 +34,11 @@ pub trait DisplayCtx {
   fn fmt_expr_mvar(&self, v: ExprMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
   /// Print a type metavariable.
   fn fmt_ty_mvar(&self, v: TyMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+  /// Print a lambda with given substitutions.
+  fn fmt_lambda(&self, v: LambdaId, subst: &[Expr<'a>], f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for VarId {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for VarId {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     ctx.fmt_var(*self, f)
   }
@@ -69,7 +70,7 @@ bitflags! {
     const IS_RELEVANT   = 1 << 7;
   }
 }
-crate::deep_size_0!(Flags);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Flags);
 
 /// A trait for types that can accumulate flag data.
 /// (We use `T: AddFlags` roughly interchangeably with
@@ -111,7 +112,8 @@ where Flags: BitOrAssign<A> + BitOrAssign<B> + BitOrAssign<C> {
 
 /// A `T` together with precomputed flag data for it. If `T: AddFlags`,
 /// then the [`WithMeta::new`] function can be used to perform the precomputation.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct WithMeta<T> {
   /// The flags.
   pub flags: Flags,
@@ -133,11 +135,7 @@ impl<T: std::fmt::Display> std::fmt::Display for WithMeta<T> {
     self.k.fmt(f)
   }
 }
-impl<T: EnvDisplay> EnvDisplay for WithMeta<T> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    self.k.fmt(fe, f)
-  }
-}
+
 impl<C, T: CtxDisplay<C>> CtxDisplay<C> for WithMeta<T> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.k.fmt(ctx, f)
@@ -178,9 +176,9 @@ pub enum Lifetime {
   /// A lifetime that has not been inferred yet.
   Infer(LftMVarId),
 }
-crate::deep_size_0!(Lifetime);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Lifetime);
 
-impl<C: DisplayCtx> CtxDisplay<C> for Lifetime {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for Lifetime {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       Lifetime::Extern => "extern".fmt(f),
@@ -202,7 +200,8 @@ impl BitOrAssign<Lifetime> for Flags {
 
 /// An adjustment to an expr that can happen with no syntax,
 /// simply because types don't line up.
-#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Coercion {
   /// An error coercion maps `X -> Y` for any `X, Y`. To use this variant,
   /// an error must have been previously reported regarding this type error.
@@ -223,10 +222,11 @@ pub type TuplePattern<'a> = &'a TuplePatternS<'a>;
 pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
 
 /// A strongly typed tuple pattern.
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
-  Name(AtomId, VarId, Ty<'a>),
+  Name(Symbol, VarId, Ty<'a>),
   /// A tuple destructuring pattern.
   Tuple(&'a [TuplePattern<'a>], TupleMatchKind, Ty<'a>),
   /// An error that has been reported.
@@ -258,7 +258,7 @@ pub enum TupleMatchKind {
   /// An `own` pattern match `(x, h): own T` returns `& x`.
   Own,
 }
-crate::deep_size_0!(TupleMatchKind);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(TupleMatchKind);
 
 impl<'a> TuplePatternKind<'a> {
   /// The type of values that will be matched by the pattern.
@@ -271,7 +271,7 @@ impl<'a> TuplePatternKind<'a> {
   }
 
   /// Calls function `f` on all variables in the pattern.
-  pub fn on_vars(&self, f: &mut impl FnMut(AtomId, VarId)) {
+  pub fn on_vars(&self, f: &mut impl FnMut(Symbol, VarId)) {
     match *self {
       TuplePatternKind::Name(n, v, _) => f(n, v),
       TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
@@ -284,7 +284,7 @@ impl<'a> TuplePatternKind<'a> {
     if let TuplePatternKind::Name(_, v, _) = *self { Some(v) } else { None }
   }
 
-  fn find_field(&self, f: AtomId, idxs: &mut Vec<u32>) -> bool {
+  fn find_field(&self, f: Symbol, idxs: &mut Vec<u32>) -> bool {
     match *self {
       TuplePatternKind::Name(a, _, _) => a == f,
       TuplePatternKind::Error(pat, _) => pat.k.find_field(f, idxs),
@@ -309,7 +309,7 @@ impl AddFlags for TuplePatternKind<'_> {
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for TuplePatternKind<'_> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TuplePatternKind<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
@@ -327,7 +327,8 @@ pub type Arg<'a> = &'a WithMeta<ArgS<'a>>;
 pub type ArgS<'a> = (ArgAttr, ArgKind<'a>);
 
 /// An argument declaration for a function.
-#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind<'a> {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(TuplePattern<'a>),
@@ -349,7 +350,7 @@ impl<'a> ArgKind<'a> {
   /// On success, returns a pair `(n, path)` where `n` is the first argument
   /// with a matching field name and `path` is the sub-indexing path required
   /// to get to the field (since the name could be in a tuple pattern).
-  #[must_use] pub fn find_field(args: &'a [Arg<'a>], f: AtomId) -> Option<(u32, Vec<u32>)> {
+  #[must_use] pub fn find_field(args: &'a [Arg<'a>], f: Symbol) -> Option<(u32, Vec<u32>)> {
     let mut path = vec![];
     for (i, &arg) in args.iter().enumerate() {
       if arg.k.1.var().k.find_field(f, &mut path) {
@@ -370,7 +371,7 @@ impl AddFlags for ArgS<'_> {
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for ArgS<'_> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ArgS<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.1 {
       ArgKind::Lam(pat) =>
@@ -383,47 +384,19 @@ impl<C: DisplayCtx> CtxDisplay<C> for ArgS<'_> {
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<'a> {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
   pub subst: &'a [Expr<'a>],
   /// The root node of the expression.
-  pub expr: &'a std::rc::Rc<Mm0ExprNode>,
+  pub expr: LambdaId,
 }
 
-impl std::hash::Hash for Mm0Expr<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.subst.hash(state);
-    (&**self.expr as *const Mm0ExprNode).hash(state);
-  }
-}
-
-impl PartialEq for Mm0Expr<'_> {
-  fn eq(&self, other: &Self) -> bool {
-    self.subst == other.subst && std::ptr::eq(&**self.expr, &**other.expr)
-  }
-}
-impl Eq for Mm0Expr<'_> {}
-
-impl<'a, C: DisplayCtx> CtxDisplay<(&'a C, &'a [Expr<'a>])> for Mm0ExprNode {
-  fn fmt(&self, ctx: &(&'a C, &'a [Expr<'a>]), f: &mut std::fmt::Formatter<'_>
-  ) -> std::fmt::Result {
-    match self {
-      Mm0ExprNode::Const(e) => e.fmt(ctx.0.format_env(), f),
-      &Mm0ExprNode::Var(i) => ctx.1[i as usize].fmt(ctx.0, f),
-      Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", ctx.0.format_env().to(t))?;
-        for expr in es { write!(f, " {}", CtxPrint(ctx, expr))? }
-        write!(f, ")")
-      }
-    }
-  }
-}
-
-impl<'a, C: DisplayCtx> CtxDisplay<C> for Mm0Expr<'a> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for Mm0Expr<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    self.expr.fmt(&(ctx, self.subst), f)
+    ctx.fmt_lambda(self.expr, self.subst, f)
   }
 }
 
@@ -433,7 +406,8 @@ pub type Ty<'a> = &'a TyS<'a>;
 pub type TyS<'a> = WithMeta<TyKind<'a>>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind<'a> {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -511,7 +485,7 @@ pub enum TyKind<'a> {
   /// A boolean expression, interpreted as a pure proposition
   Pure(Expr<'a>),
   /// A user-defined type-former.
-  User(AtomId, &'a [Ty<'a>], &'a [Expr<'a>]),
+  User(Symbol, &'a [Ty<'a>], &'a [Expr<'a>]),
   /// A heap assertion `l |-> (v: |T|)`.
   Heap(Expr<'a>, Expr<'a>, Ty<'a>),
   /// An explicit typing assertion `[v : T]`.
@@ -661,7 +635,7 @@ impl AddFlags for TyKind<'_> {
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for TyKind<'_> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TyKind<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
@@ -697,7 +671,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for TyKind<'_> {
       TyKind::Uninit(ty) => write!(f, "(? {})", p!(ty)),
       TyKind::Pure(e) => e.fmt(ctx, f),
       TyKind::User(name, tys, es) => {
-        write!(f, "({}", ctx.format_env().to(&name))?;
+        write!(f, "({}", name)?;
         for &ty in tys { " ".fmt(f)?; ty.fmt(ctx, f)? }
         for &e in es { " ".fmt(f)?; e.fmt(ctx, f)? }
         ")".fmt(f)
@@ -751,7 +725,8 @@ pub type RPlace<'a> = Result<Place<'a>, &'a FileSpan>;
 pub type RPlaceTy<'a> = (RPlace<'a>, Ty<'a>);
 
 /// A place expression.
-#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PlaceKind<'a> {
   /// A variable reference.
   Var(VarId),
@@ -796,7 +771,7 @@ impl AddFlags for PlaceKind<'_> {
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for PlaceKind<'_> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for PlaceKind<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
     match *self {
@@ -830,14 +805,15 @@ pub type RExprTy<'a> = (RExpr<'a>, Ty<'a>);
 pub type ExprTy<'a> = (OExpr<'a>, Ty<'a>);
 
 /// A pure expression.
-#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind<'a> {
   /// A `()` literal.
   Unit,
   /// A variable reference.
   Var(VarId),
   /// A user constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A number literal.
   Bool(bool),
   /// A number literal.
@@ -874,7 +850,7 @@ pub enum ExprKind<'a> {
   /// A function call
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// The type arguments.
     tys: &'a [Ty<'a>],
     /// The function arguments.
@@ -984,14 +960,14 @@ impl AddFlags for ExprKind<'_> {
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ExprKind<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
     match *self {
       ExprKind::Unit => "()".fmt(f),
       ExprKind::Var(v) => ctx.fmt_var(v, f),
-      ExprKind::Const(c) => c.fmt(ctx.format_env(), f),
+      ExprKind::Const(c) => c.fmt(f),
       // ExprKind::Global(v) => v.fmt(fe, f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),
@@ -1013,7 +989,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
       ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", p!(ty)),
       ExprKind::Mm0(ref e) => e.fmt(ctx, f),
       ExprKind::Call {f: x, tys, args} => {
-        write!(f, "({}", ctx.format_env().to(&x))?;
+        write!(f, "({}", x)?;
         for &ty in tys { write!(f, " {}", p!(ty))? }
         for &arg in args { write!(f, " {}", p!(arg))? }
         ")".fmt(f)

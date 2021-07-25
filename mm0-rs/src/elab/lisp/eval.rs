@@ -1337,8 +1337,7 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::string(bytes.into())
   },
   #[cfg(feature = "mmc")]
-  MmcInit: Exact(0) => LispVal::proc(Proc::MmcCompiler(
-    RefCell::new(Box::new(crate::mmc::Compiler::new(self))))),
+  MmcInit: Exact(0) => LispVal::proc(Proc::MmcCompiler(Default::default())),
 }
 
 impl<'a> Evaluator<'a> {

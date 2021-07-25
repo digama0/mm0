@@ -2,8 +2,9 @@
 use std::sync::Arc;
 use std::rc::Rc;
 use num::BigInt;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::FileSpan;
-use crate::elab::{environment::AtomId,
+use crate::elab::{environment::Symbol,
   lisp::{LispVal, Uncons, print::{EnvDisplay, FormatEnv}}};
 use super::{Binop, Mm0Expr, Size, Unop, VarId, ast};
 
@@ -22,7 +23,7 @@ pub enum Lifetime {
   /// A lifetime that has not been inferred yet.
   Unknown,
 }
-crate::deep_size_0!(Lifetime);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Lifetime);
 
 impl std::fmt::Display for Lifetime {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,10 +36,11 @@ impl std::fmt::Display for Lifetime {
 }
 
 // /// An argument to a function.
-// #[derive(Debug, DeepSizeOf)]
+// #[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 // pub struct Arg {
 //   /// The name of the argument, if not `_`.
-//   pub name: Option<(AtomId, FileSpan)>,
+//   pub name: Option<(Symbol, FileSpan)>,
 //   /// True if the argument is a ghost variable (computationally irrelevant).
 //   pub ghost: bool,
 //   /// The (unparsed) type of the argument.
@@ -58,7 +60,8 @@ impl std::fmt::Display for Lifetime {
 // impl Eq for Arg {}
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -75,7 +78,8 @@ pub enum VariantType {
 pub type Variant = (LispVal, VariantType);
 
 /// A strongly typed tuple pattern.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePattern {
   /// A variable binding. The `bool` is true if the variable is ghost.
   Name(bool, VarId, Option<FileSpan>, Box<Type>),
@@ -109,16 +113,17 @@ impl TuplePattern {
 }
 
 /// A pattern, the left side of a switch statement.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Pattern {
   /// A variable binding, unless this is the name of a constant in which case
   /// it is a constant value.
-  VarOrConst(AtomId),
+  VarOrConst(Symbol),
   /// A numeric literal.
   Number(BigInt),
   /// A hypothesis pattern, which binds the first argument to a proof that the
   /// scrutinee satisfies the pattern argument.
-  Hyped(AtomId, Box<Pattern>),
+  Hyped(Symbol, Box<Pattern>),
   /// A pattern guard: Matches the inner pattern, and then if the expression returns
   /// true, this is also considered to match.
   With(Box<(Pattern, LispVal)>),
@@ -127,7 +132,8 @@ pub enum Pattern {
 }
 
 /// An expression or statement. A block is a list of expressions.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PExpr {
   /// A variable move expression. Unlike `Pure(Var(v))`, this will take the value in `v`,
   /// leaving it moved out.
@@ -168,7 +174,7 @@ pub enum PExpr {
   /// A function call or intrinsic.
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// The span of the head of the function.
     fsp: Option<FileSpan>,
     /// The function arguments.
@@ -185,7 +191,7 @@ pub enum PExpr {
   /// They are called like regular functions but can only appear in tail position.
   Label {
     /// The name of the label
-    name: AtomId,
+    name: Symbol,
     /// The arguments of the label
     args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
@@ -195,13 +201,13 @@ pub enum PExpr {
   },
   // /// An if-then-else expression (at either block or statement level). The initial atom names
   // /// a hypothesis that the expression is true in one branch and false in the other.
-  // If(Box<(Option<AtomId>, PExpr, PExpr, PExpr)>),
+  // If(Box<(Option<Symbol>, PExpr, PExpr, PExpr)>),
   // /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   // Switch(Box<PExpr>, Box<[(Pattern, PExpr)]>),
   /// A while loop.
   While {
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<AtomId>,
+    hyp: Option<Symbol>,
     /// The loop condition.
     cond: Box<PExpr>,
     /// The variant, which must decrease on every round around the loop.
@@ -216,7 +222,8 @@ pub enum PExpr {
 }
 
 /// An expression or statement. A block is a list of expressions.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Expr {
   /// A pure expression.
   Pure(PureExpr),
@@ -251,7 +258,7 @@ pub enum Expr {
   /// A function call or intrinsic.
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// The span of the head of the function.
     fsp: Option<FileSpan>,
     /// The function arguments.
@@ -268,7 +275,7 @@ pub enum Expr {
   /// They are called like regular functions but can only appear in tail position.
   Label {
     /// The name of the label
-    name: AtomId,
+    name: Symbol,
     /// The arguments of the label
     args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
@@ -278,13 +285,13 @@ pub enum Expr {
   },
   // /// An if-then-else expression (at either block or statement level). The initial atom names
   // /// a hypothesis that the expression is true in one branch and false in the other.
-  // If(Box<(Option<AtomId>, Expr, Expr, Expr)>),
+  // If(Box<(Option<Symbol>, Expr, Expr, Expr)>),
   // /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   // Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
   /// A while loop.
   While {
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<AtomId>,
+    hyp: Option<Symbol>,
     /// The loop condition.
     cond: Box<Expr>,
     /// The variant, which must decrease on every round around the loop.
@@ -312,21 +319,22 @@ pub enum ProcKind {
   /// called until they are declared using an `intrinsic` declaration.
   Intrinsic,
 }
-crate::deep_size_0!(ProcKind);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ProcKind);
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Proc {
   /// The type of declaration: `func`, `proc`, `proc` with no body, or `intrinsic`.
   pub kind: ProcKind,
   /// The name of the procedure.
-  pub name: AtomId,
+  pub name: Symbol,
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
   pub args: (Vec<bool>, Vec<ast::TuplePattern>),
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: (Vec<Option<AtomId>>, Vec<ast::TuplePattern>),
+  pub rets: (Vec<Option<Symbol>>, Vec<ast::TuplePattern>),
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
 }
@@ -343,10 +351,11 @@ pub struct Proc {
 // }
 
 /// A field of a struct.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Field {
   /// The name of the field.
-  pub name: AtomId,
+  pub name: Symbol,
   /// True if the field is computationally irrelevant.
   pub ghost: bool,
   /// The type of the field (unparsed).
@@ -354,7 +363,8 @@ pub struct Field {
 }
 
 /// A top level program item. (A program AST is a list of program items.)
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Ast {
   /// A procedure, behind an Arc so it can be cheaply copied.
   Proc(Arc<Proc>, Uncons),
@@ -379,7 +389,7 @@ pub enum Ast {
   /// A type definition.
   Typedef {
     /// The name of the newly declared type
-    name: AtomId,
+    name: Symbol,
     /// The span of the name
     span: Option<FileSpan>,
     /// The arguments of the type declaration, for a parametric type
@@ -390,7 +400,7 @@ pub enum Ast {
   /// A structure definition.
   Struct {
     /// The name of the structure
-    name: AtomId,
+    name: Symbol,
     /// The span of the name
     span: Option<FileSpan>,
     /// The parameters of the type
@@ -408,7 +418,8 @@ impl Ast {
 /// A "place", or lvalue, is a position in the context that can be read or written.
 /// Expressions can evaluate to places, for example if `x: &sn y` then `*x` evaluates
 /// to the place `y`.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Place {
   /// A variable.
   Var(VarId),
@@ -442,7 +453,8 @@ impl EnvDisplay for Place {
 
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PureExpr {
   /// A variable.
   Var(VarId),
@@ -506,7 +518,8 @@ impl EnvDisplay for PureExpr {
 }
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Type {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -567,7 +580,7 @@ pub enum Type {
   /// A propositional type, used for hypotheses.
   Prop(Box<Prop>),
   /// A user-defined type-former.
-  User(AtomId, Box<[Type]>, Box<[Rc<PureExpr>]>),
+  User(Symbol, Box<[Type]>, Box<[Rc<PureExpr>]>),
   /// The input token.
   Input,
   /// The output token.
@@ -653,7 +666,8 @@ impl EnvDisplay for Type {
 }
 
 /// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Prop {
   // /// An unresolved metavariable.
   // MVar(usize),

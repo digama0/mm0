@@ -3,8 +3,9 @@
 use std::{rc::Rc, fmt::Debug, mem};
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use types::IntTy;
-use crate::AtomId;
+use crate::Symbol;
 use super::types;
 use types::{Spanned, VarId as HVarId, hir, ty, mir};
 use hir::GenId;
@@ -401,20 +402,11 @@ struct LabelGroupData {
 }
 
 /// The global initializer, which contains let bindings for every global variable.
-#[derive(Debug, DeepSizeOf)]
-pub struct Initializer {
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub(crate) struct Initializer {
   cfg: Cfg,
   cur_block: Block<BlockId>,
-}
-
-impl crate::Remap for Initializer {
-  type Target = Self;
-  fn remap(&self, r: &mut crate::Remapper) -> Self {
-    Initializer {
-      cfg: self.cfg.remap(r),
-      cur_block: self.cur_block,
-    }
-  }
 }
 
 impl Default for Initializer {
@@ -427,7 +419,7 @@ impl Default for Initializer {
 
 /// The main context struct for the MIR builder.
 #[derive(Debug)]
-pub struct BuildMir<'a> {
+pub(crate) struct BuildMir<'a> {
   /// The main data structure, the MIR control flow graph
   cfg: Cfg,
   /// Contains the current generation and other information relevant to the [`tr`](Self::tr)
@@ -448,13 +440,14 @@ pub struct BuildMir<'a> {
 }
 
 /// Indicates that construction diverged. See [`Block`].
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
-pub struct Diverged;
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub(crate) struct Diverged;
 
 /// This is the return type of functions that construct a `T` but may choose instead to perform
 /// some kind of non-local exit, in which case [`cur_block`](BuildMir::cur_block) will be
 /// terminated.
-pub type Block<T> = Result<T, Diverged>;
+pub(crate) type Block<T> = Result<T, Diverged>;
 
 impl Default for BuildMir<'_> {
   fn default() -> Self {
@@ -1445,11 +1438,11 @@ impl<'a> BuildMir<'a> {
   }
 
   /// Build the MIR for an item (function, procedure, or static variable).
-  pub fn build_item(mut self,
-    mir: &mut HashMap<AtomId, Proc>,
+  pub(crate) fn build_item(mut self,
+    mir: &mut HashMap<Symbol, Proc>,
     init: &mut Initializer,
     it: hir::Item<'a>
-  ) -> Option<AtomId> {
+  ) -> Option<Symbol> {
     match it.k {
       hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant: _, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {

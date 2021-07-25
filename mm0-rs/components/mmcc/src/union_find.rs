@@ -47,7 +47,7 @@ use super::types::{Idx, IdxVec};
 /// See also `EqUnifyValue`, which is a convenience trait for cases
 /// where the "merge" operation succeeds only if the two values are
 /// equal.
-pub trait UnifyCtx<V> {
+pub(crate) trait UnifyCtx<V> {
   /// Defines the type to return when merging of two values fails.
   /// If merging is infallible, use the special struct `NoError`
   /// found in this crate, which unlocks various more convenient
@@ -82,7 +82,7 @@ struct VarValue<K, V> {
 /// Table of unification keys and their values. You must define a key type K
 /// that implements the `Idx` trait.
 #[derive(Clone, Debug)]
-pub struct UnificationTable<K, V> {
+pub(crate) struct UnificationTable<K, V> {
   values: IdxVec<K, VarValue<K, V>>,
 }
 
@@ -117,24 +117,24 @@ impl<K: PartialEq + Copy, V> VarValue<K, V> {
 
 impl<K, V> UnificationTable<K, V> {
   /// Returns the number of keys created so far.
-  #[must_use] pub fn len(&self) -> usize {
+  #[must_use] pub(crate) fn len(&self) -> usize {
     self.values.len()
   }
   /// Returns true if there are no keys.
-  #[must_use] pub fn is_empty(&self) -> bool {
+  #[must_use] pub(crate) fn is_empty(&self) -> bool {
     self.values.is_empty()
   }
 
   /// Reserve memory for `num_new_keys` to be created. Does not
   /// actually create the new keys; you must then invoke `new_key`.
-  pub fn reserve(&mut self, num_new_keys: usize) {
+  pub(crate) fn reserve(&mut self, num_new_keys: usize) {
     self.values.0.reserve(num_new_keys);
   }
 }
 
 impl<K: Idx, V> UnificationTable<K, V> {
   /// Creates a fresh key with the given value.
-  pub fn new_key(&mut self, value: V) -> K {
+  pub(crate) fn new_key(&mut self, value: V) -> K {
     let len = self.values.len();
     let key: K = Idx::from_usize(len);
     self.values.push(VarValue::new_var(key, value));
@@ -143,7 +143,7 @@ impl<K: Idx, V> UnificationTable<K, V> {
 
   /// Initializes a unification table with a function that computes all
   /// the values from all the keys up to some bound.
-  pub fn from_fn(sz: K, mut value: impl FnMut(K) -> V) -> Self {
+  pub(crate) fn from_fn(sz: K, mut value: impl FnMut(K) -> V) -> Self {
     let it = (0..sz.into_usize()).map(|i| {
       let key = K::from_usize(i);
       VarValue::new_var(key, value(key))
@@ -154,7 +154,7 @@ impl<K: Idx, V> UnificationTable<K, V> {
   /// Clears all unifications that have been performed, resetting to
   /// the initial state. The values of each variable are given by
   /// the closure.
-  pub fn reset_unifications(&mut self, mut value: impl FnMut(K) -> V) {
+  pub(crate) fn reset_unifications(&mut self, mut value: impl FnMut(K) -> V) {
     for (key, vv) in self.values.enum_iter_mut() {
       let value = value(key);
       *vv = VarValue::new_var(key, value)
@@ -250,12 +250,12 @@ impl<K: Idx, V> UnificationTable<K, V> {
   }
 
   /// Given two keys, indicates whether they have been unioned together.
-  pub fn unioned(&mut self, a_id: impl Into<K>, b_id: impl Into<K>) -> bool {
+  pub(crate) fn unioned(&mut self, a_id: impl Into<K>, b_id: impl Into<K>) -> bool {
     self.find(a_id) == self.find(b_id)
   }
 
   /// Given a key, returns the (current) root key.
-  pub fn find(&mut self, id: impl Into<K>) -> K {
+  pub(crate) fn find(&mut self, id: impl Into<K>) -> K {
     let id = id.into();
     self.uninlined_get_root_key(id)
   }
@@ -263,7 +263,7 @@ impl<K: Idx, V> UnificationTable<K, V> {
   /// Unions together two variables, merging their values. If
   /// merging the values fails, the error is propagated and this
   /// method has no effect.
-  pub fn unify_var_var<S: UnifyCtx<V>>(&mut self,
+  pub(crate) fn unify_var_var<S: UnifyCtx<V>>(&mut self,
     ctx: &mut S, a_id: impl Into<K>, b_id: impl Into<K>
   ) -> Result<(), S::Error> {
     let a_id = a_id.into();
@@ -284,7 +284,7 @@ impl<K: Idx, V> UnificationTable<K, V> {
 
   /// Sets the value of the key `a_id` to `b`, attempting to merge
   /// with the previous value.
-  pub fn unify_var_value<S: UnifyCtx<V>>(&mut self,
+  pub(crate) fn unify_var_value<S: UnifyCtx<V>>(&mut self,
     ctx: &mut S, a_id: impl Into<K>, b: &V
   ) -> Result<(), S::Error> {
     let a_id = a_id.into();
@@ -298,13 +298,13 @@ impl<K: Idx, V> UnificationTable<K, V> {
 impl<K: Idx, V> UnificationTable<K, V> {
   /// Returns the current value for the given key. If the key has
   /// been union'd, this will give the value from the current root.
-  pub fn probe_value(&mut self, id: impl Into<K>) -> &V {
+  pub(crate) fn probe_value(&mut self, id: impl Into<K>) -> &V {
     self.inlined_probe_value(id)
   }
 
   /// An always-inlined version of `probe_value`, for hot callsites.
   #[inline(always)]
-  pub fn inlined_probe_value(&mut self, id: impl Into<K>) -> &V {
+  pub(crate) fn inlined_probe_value(&mut self, id: impl Into<K>) -> &V {
     let id = id.into();
     let id = self.inlined_get_root_key(id);
     &self.value(id).value

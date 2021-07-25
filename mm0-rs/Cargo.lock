@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "ahash"
-version = "0.7.2"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f200cbb1e856866d9eade941cf3aa0c5d7dd36f74311c4273b494f4ef036957"
+checksum = "43bb833f0bf979d8475d38fbf09ed3b8a55e1885fe93ad3f93239fc6a4f17b98"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -93,9 +93,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63396b8a4b9de3f4fdfb320ab6080762242f66a8ef174c49d8e19b674db4cdbe"
+checksum = "9c59e7af012c713f529e7a3ee57ce9b31ddd858d4b512923602f74608b009631"
 
 [[package]]
 name = "byteorder"
@@ -350,9 +350,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9495705279e7140bf035dde1f6e750c162df8b625267cd52cc44e0b156732c8"
+checksum = "7fcd999463524c52659517fe2cea98493cfe485d10565e7b0fb07dbba7ad2753"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
@@ -514,11 +514,8 @@ name = "mm0-rs"
 version = "0.1.0"
 dependencies = [
  "annotate-snippets",
- "arrayvec 0.7.0",
  "bit-set",
- "bit-vec",
  "bitflags",
- "bumpalo",
  "byteorder",
  "clap",
  "console_error_panic_hook",
@@ -526,9 +523,7 @@ dependencies = [
  "debug_derive",
  "either",
  "futures",
- "hashbrown",
  "if_chain",
- "im",
  "itertools",
  "lazy_static",
  "libc",
@@ -542,6 +537,7 @@ dependencies = [
  "mm0_util",
  "mm0b_parser",
  "mm1_parser",
+ "mmcc",
  "num",
  "owning_ref",
  "pathdiff",
@@ -552,7 +548,6 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "simplelog",
- "smallvec",
  "typed-arena",
  "wasm-bindgen",
  "web-sys",
@@ -621,6 +616,28 @@ dependencies = [
  "mm0_util",
  "num",
  "zerocopy",
+]
+
+[[package]]
+name = "mmcc"
+version = "0.1.0"
+dependencies = [
+ "arrayvec 0.7.0",
+ "bit-set",
+ "bit-vec",
+ "bitflags",
+ "bumpalo",
+ "hashbrown",
+ "if_chain",
+ "im",
+ "itertools",
+ "lazy_static",
+ "mm0_deepsize",
+ "mm0_deepsize_derive",
+ "mm0_util",
+ "num",
+ "smallvec",
+ "typed-arena",
 ]
 
 [[package]]
@@ -717,9 +734,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.7.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8b08b04175473088b46763e51ee54da5f9a164bc162f615b91bc179dbf15a3"
+checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 
 [[package]]
 name = "owning_ref"

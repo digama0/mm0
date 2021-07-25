@@ -1,8 +1,9 @@
 //! The high level IR, used during type inference.
 
 use num::BigInt;
-use crate::{AtomId, LispVal, FileSpan};
-use super::{Mm0Expr, VarId, IntTy, ty};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{FileSpan, Symbol};
+use super::{Mm0Expr, VarId, IntTy, ProofId, ty};
 pub use super::ast::ProcKind;
 
 /// A "generation ID", which tracks the program points where mutation
@@ -12,7 +13,7 @@ pub use super::ast::ProcKind;
 /// and which do not.
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct GenId(pub u32);
-crate::deep_size_0!(GenId);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(GenId);
 
 impl GenId {
   /// This is a special generation ID that tracks the latest version
@@ -24,7 +25,8 @@ impl GenId {
 }
 
 /// A spanned expression.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<'a, T> {
   /// The span of the expression
   pub span: &'a FileSpan,
@@ -162,7 +164,8 @@ impl<'a> ContextNext<'a> {
 }
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Clone, Copy, Debug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType<'a> {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -176,14 +179,16 @@ pub enum VariantType<'a> {
 
 /// A variant is a pure expression, together with a
 /// well founded order that decreases on all calls.
-#[derive(Clone, Copy, Debug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Variant<'a>(pub ty::Expr<'a>, pub VariantType<'a>);
 
 /// An argument declaration for a function.
 pub type Arg<'a> = (ty::ArgAttr, ArgKind<'a>);
 
 /// An argument declaration for a function.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind<'a> {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(ty::TuplePattern<'a>),
@@ -203,7 +208,8 @@ impl<'a> From<&ArgKind<'a>> for ty::ArgKind<'a> {
 
 /// A label in a label group declaration. Individual labels in the group
 /// are referred to by their index in the list.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Label<'a> {
   /// The arguments of the label
   pub args: Box<[Arg<'a>]>,
@@ -214,7 +220,8 @@ pub struct Label<'a> {
 }
 
 /// A block is a list of statements, with an optional terminating expression.
-#[derive(Default, Debug, DeepSizeOf)]
+#[derive(Default, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Block<'a> {
   /// The list of statements in the block.
   pub stmts: Vec<Stmt<'a>>,
@@ -230,7 +237,8 @@ pub struct Block<'a> {
 pub type Stmt<'a> = Spanned<'a, StmtKind<'a>>;
 
 /// A statement in a block.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum StmtKind<'a> {
   /// A let binding.
   Let {
@@ -258,12 +266,13 @@ pub enum ListKind {
   /// A projection `a.i` which views a conjunction type as its `i`th conjunct.
   And,
 }
-crate::deep_size_0!(ListKind);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ListKind);
 
 /// A while loop expression. An additional field `has_break` is stored in the return type
 /// of the expression: If `cond` is a pure expression and there are no early `break`s inside the
 /// loop, then the return type is `!cond`; otherwise `()`.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct While<'a> {
   /// The name of this loop, which can be used as a target for jumps.
   pub label: VarId,
@@ -296,13 +305,14 @@ pub enum ReturnKind {
   /// This function has more than one return value, and is packed into a struct.
   Struct(u16),
 }
-crate::deep_size_0!(ReturnKind);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ReturnKind);
 
 /// A call expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Call<'a> {
   /// The function to call.
-  pub f: Spanned<'a, AtomId>,
+  pub f: Spanned<'a, Symbol>,
   /// True if this function contains side effects.
   pub side_effect: bool,
   /// The type arguments.
@@ -327,7 +337,8 @@ impl<'a> Place<'a> {
 }
 
 /// A place expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PlaceKind<'a> {
   /// A variable reference.
   Var(VarId),
@@ -361,7 +372,7 @@ pub enum Unop {
   /// (Requires `!(from <= to)` and `to.size() != Inf`.)
   As(IntTy, IntTy),
 }
-crate::deep_size_0!(Unop);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Unop);
 
 /// (Elaborated) binary operations.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -399,7 +410,7 @@ pub enum Binop {
   /// Not equal, for signed or unsigned integers of any size
   Ne(IntTy),
 }
-crate::deep_size_0!(Binop);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Binop);
 
 impl super::Binop {
   /// Convert [`types::Binop`](super::Binop) into [`hir::Binop`](Binop), which requires an
@@ -438,7 +449,8 @@ impl<'a> Expr<'a> {
 }
 
 /// An expression. A block is a list of expressions.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(clippy::type_complexity)]
 pub enum ExprKind<'a> {
   /// A `()` literal.
@@ -448,7 +460,7 @@ pub enum ExprKind<'a> {
   /// A variable reference.
   Var(VarId, GenId),
   /// A user constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A boolean literal.
   Bool(bool),
   /// A number literal.
@@ -523,7 +535,7 @@ pub enum ExprKind<'a> {
   /// A function call (or something that looks like one at parse time).
   Call(Call<'a>),
   /// A proof of a closed pure proposition.
-  Mm0Proof(&'a LispVal),
+  Mm0Proof(ProofId),
   /// A block scope.
   Block(Block<'a>),
   /// An if-then-else expression (at either block or statement level). The initial atom names
@@ -569,7 +581,8 @@ pub enum ExprKind<'a> {
 }
 
 /// A `cast` kind, which determines what the type of `h` in `(cast x h)` is.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum CastKind<'a> {
   /// Casting integral types `u32 -> i64` and so on
   Int,
@@ -599,14 +612,15 @@ impl<'a> CastKind<'a> {
 pub type Item<'a> = Spanned<'a, ItemKind<'a>>;
 
 /// A top level program item. (A program AST is a list of program items.)
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ItemKind<'a> {
   /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
   Proc {
     /// The type of declaration: `func`, `proc`, or `intrinsic`.
     kind: ProcKind,
     /// The name of the procedure.
-    name: Spanned<'a, AtomId>,
+    name: Spanned<'a, Symbol>,
     /// The number of type arguments
     tyargs: u32,
     /// The arguments of the procedure.

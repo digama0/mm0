@@ -186,6 +186,24 @@ pub fn u32_as_usize(n: u32) -> usize {
   n.try_into().expect("here's a nickel, get a better computer")
 }
 
+/// Translate a number into an alphabetic numbering system, indexing into the following infinite
+/// sequence:
+/// ```ignore
+/// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
+/// ```
+pub fn alphanumber(n: usize) -> String {
+  let mut out = Vec::with_capacity(2);
+  let mut n = n + 1;
+  while n != 0 {
+    #[allow(clippy::cast_possible_truncation)]
+    { out.push(b'a' + ((n - 1) % 26) as u8); }
+    #[allow(clippy::integer_division)]
+    { n = (n - 1) / 26; }
+  }
+  out.reverse();
+  unsafe { String::from_utf8_unchecked(out) }
+}
+
 /// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
 pub trait MutexExt<T> {
   /// Like `lock`, but propagates instead of catches panics.

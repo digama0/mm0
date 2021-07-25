@@ -6,8 +6,9 @@ use std::mem;
 use bit_vec::BitVec;
 use num::BigInt;
 use smallvec::SmallVec;
-use crate::{AtomId, LispVal, Remap, Remapper, u32_as_usize};
-use super::{IntTy, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{u32_as_usize, Symbol};
+use super::{IntTy, ProofId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
 
@@ -91,7 +92,7 @@ pub enum Lifetime {
   /// (or derived from other references derived from `x`).
   Place(VarId),
 }
-crate::deep_size_0!(Lifetime);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Lifetime);
 
 impl HasAlpha for Lifetime {
   fn alpha(&self, a: &mut Alpha) -> Self {
@@ -124,7 +125,7 @@ bitflags! {
     const GHOST = 1 << 3;
   }
 }
-crate::deep_size_0!(ArgAttr);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ArgAttr);
 
 impl ArgAttr {
   /// The [`GHOST`](Self::GHOST) flag modulated by a boolean.
@@ -133,13 +134,9 @@ impl ArgAttr {
   }
 }
 
-impl Remap for ArgAttr {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { *self }
-}
-
 /// An argument in a struct (dependent tuple).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Arg {
   /// Extra properties of the binding
   pub attr: ArgAttr,
@@ -149,17 +146,6 @@ pub struct Arg {
   pub ty: Ty,
 }
 
-impl Remap for Arg {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self {
-      attr: self.attr,
-      var: self.var,
-      ty: self.ty.remap(r),
-    }
-  }
-}
-
 /// The type of embedded MM0 expressions.
 pub type Mm0Expr = global::Mm0Expr<Expr>;
 
@@ -167,7 +153,8 @@ pub type Mm0Expr = global::Mm0Expr<Expr>;
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -242,7 +229,7 @@ pub enum TyKind {
   /// A boolean expression, interpreted as a pure proposition
   Pure(Expr),
   /// A user-defined type-former.
-  User(AtomId, Box<[Ty]>, Box<[Expr]>),
+  User(Symbol, Box<[Ty]>, Box<[Expr]>),
   /// A heap assertion `l |-> (v: |T|)`.
   Heap(Expr, Expr, Ty),
   /// An explicit typing assertion `[v : T]`.
@@ -259,43 +246,6 @@ impl TyKind {
   /// Get this type as an [`IntTy`].
   #[must_use] pub fn as_int_ty(&self) -> Option<IntTy> {
     if let TyKind::Int(ity) = *self { Some(ity) } else { None }
-  }
-}
-
-impl Remap for TyKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      TyKind::Unit => TyKind::Unit,
-      TyKind::True => TyKind::True,
-      TyKind::False => TyKind::False,
-      TyKind::Bool => TyKind::Bool,
-      &TyKind::Var(v) => TyKind::Var(v),
-      &TyKind::Int(ity) => TyKind::Int(ity),
-      TyKind::Array(ty, n) => TyKind::Array(ty.remap(r), n.remap(r)),
-      TyKind::Own(ty) => TyKind::Own(ty.remap(r)),
-      TyKind::Ref(lft, ty) => TyKind::Ref(*lft, ty.remap(r)),
-      TyKind::RefSn(e) => TyKind::RefSn(e.remap(r)),
-      TyKind::Sn(a, ty) => TyKind::Sn(a.remap(r), ty.remap(r)),
-      TyKind::Struct(args) => TyKind::Struct(args.remap(r)),
-      TyKind::All(v, pat, ty) => TyKind::All(*v, pat.remap(r), ty.remap(r)),
-      TyKind::Imp(p, q) => TyKind::Imp(p.remap(r), q.remap(r)),
-      TyKind::Wand(p, q) => TyKind::Wand(p.remap(r), q.remap(r)),
-      TyKind::Not(p) => TyKind::Not(p.remap(r)),
-      TyKind::And(ps) => TyKind::And(ps.remap(r)),
-      TyKind::Or(ps) => TyKind::Or(ps.remap(r)),
-      TyKind::If(c, t, e) => TyKind::If(c.remap(r), t.remap(r), e.remap(r)),
-      TyKind::Ghost(ty) => TyKind::Ghost(ty.remap(r)),
-      TyKind::Uninit(ty) => TyKind::Uninit(ty.remap(r)),
-      TyKind::Pure(e) => TyKind::Pure(e.remap(r)),
-      TyKind::User(f, tys, es) => TyKind::User(*f, tys.remap(r), es.remap(r)),
-      TyKind::Heap(e, v, ty) =>
-        TyKind::Heap(e.remap(r), v.remap(r), ty.remap(r)),
-      TyKind::HasTy(e, ty) => TyKind::HasTy(e.remap(r), ty.remap(r)),
-      TyKind::Input => TyKind::Input,
-      TyKind::Output => TyKind::Output,
-      TyKind::Moved(ty) => TyKind::Moved(ty.remap(r)),
-    }
   }
 }
 
@@ -355,7 +305,8 @@ impl HasAlpha for TyKind {
 }
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -369,7 +320,8 @@ pub enum VariantType {
 
 /// A variant is a pure expression, together with a
 /// well founded order that decreases on all calls.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Variant(pub Expr, pub VariantType);
 
 /// A place expression.
@@ -380,7 +332,8 @@ pub type EPlace = Rc<EPlaceKind>;
 pub type EPlaceTy = (Option<EPlace>, Ty);
 
 /// A place expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum EPlaceKind {
   /// A variable reference.
   Var(VarId),
@@ -393,19 +346,6 @@ pub enum EPlaceKind {
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(EPlace, Ty, u32),
-}
-
-impl Remap for EPlaceKind {
-  type Target = Self;
-  #[allow(clippy::many_single_char_names)]
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &EPlaceKind::Var(v) => EPlaceKind::Var(v),
-      EPlaceKind::Index(a, ty, i) => EPlaceKind::Index(a.remap(r), ty.remap(r), i.remap(r)),
-      EPlaceKind::Slice(a, ty, il) => EPlaceKind::Slice(a.remap(r), ty.remap(r), il.remap(r)),
-      EPlaceKind::Proj(a, ty, i) => EPlaceKind::Proj(a.remap(r), ty.remap(r), *i),
-    }
-  }
 }
 
 impl HasAlpha for EPlaceKind {
@@ -429,14 +369,15 @@ pub type Expr = Rc<ExprKind>;
 pub type ExprTy = (Option<Expr>, Ty);
 
 /// A pure expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.
   Unit,
   /// A variable reference.
   Var(VarId),
   /// A user constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A number literal.
   Bool(bool),
   /// A number literal.
@@ -472,7 +413,7 @@ pub enum ExprKind {
   /// A function call
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// The type arguments.
     tys: Box<[Ty]>,
     /// The function arguments.
@@ -488,38 +429,6 @@ pub enum ExprKind {
     /// The else case.
     els: Expr
   },
-}
-
-impl Remap for ExprKind {
-  type Target = Self;
-  #[allow(clippy::many_single_char_names)]
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      ExprKind::Unit => ExprKind::Unit,
-      &ExprKind::Var(v) => ExprKind::Var(v),
-      &ExprKind::Const(c) => ExprKind::Const(c),
-      &ExprKind::Bool(b) => ExprKind::Bool(b),
-      ExprKind::Int(n) => ExprKind::Int(n.clone()),
-      ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),
-      ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
-      ExprKind::Index(a, i) => ExprKind::Index(a.remap(r), i.remap(r)),
-      ExprKind::Slice(a, i, l) => ExprKind::Slice(a.remap(r), i.remap(r), l.remap(r)),
-      ExprKind::Proj(a, i) => ExprKind::Proj(a.remap(r), *i),
-      ExprKind::UpdateIndex(a, i, v) => ExprKind::UpdateIndex(a.remap(r), i.remap(r), v.remap(r)),
-      ExprKind::UpdateSlice(a, i, l, v) =>
-        ExprKind::UpdateSlice(a.remap(r), i.remap(r), l.remap(r), v.remap(r)),
-      ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(a.remap(r), *i, v.remap(r)),
-      ExprKind::List(es) => ExprKind::List(es.remap(r)),
-      ExprKind::Array(es) => ExprKind::Array(es.remap(r)),
-      ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.remap(r)),
-      ExprKind::Ref(e) => ExprKind::Ref(e.remap(r)),
-      ExprKind::Mm0(e) => ExprKind::Mm0(e.remap(r)),
-      &ExprKind::Call {f, ref tys, ref args} =>
-        ExprKind::Call {f, tys: tys.remap(r), args: args.remap(r)},
-      ExprKind::If {cond, then, els} => ExprKind::If {
-        cond: cond.remap(r), then: then.remap(r), els: els.remap(r)},
-    }
-  }
 }
 
 impl HasAlpha for ExprKind {
@@ -569,13 +478,9 @@ pub type BlockVec<T> = super::IdxVec<BlockId, T>;
 /// A collection of contexts, maintaining a tree structure. The underlying data structure is a list
 /// of `CtxBuf` structs, each of which is a `CtxId` pointer to another context, plus an additional
 /// list of variables and types. The context at index 0 is the root context, and is its own parent.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Contexts(Vec<CtxBuf>);
-
-impl Remap for Contexts {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self { Self(self.0.remap(r)) }
-}
 
 impl Index<CtxBufId> for Contexts {
   type Output = CtxBuf;
@@ -728,7 +633,8 @@ pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 /// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
 /// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
 /// logical context at the beginning of each basic block.
-#[derive(Default, Debug, DeepSizeOf)]
+#[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Cfg {
   /// The set of logical contexts for the basic blocks.
   pub ctxs: Contexts,
@@ -740,19 +646,6 @@ pub struct Cfg {
   predecessors: Option<Predecessors>,
   /// The dominator tree, calculated lazily.
   dominator_tree: Option<DominatorTree>,
-}
-
-impl Remap for Cfg {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self {
-      ctxs: self.ctxs.remap(r),
-      blocks: self.blocks.remap(r),
-      max_var: self.max_var,
-      predecessors: self.predecessors.clone(),
-      dominator_tree: self.dominator_tree.clone(),
-    }
-  }
 }
 
 impl Cfg {
@@ -845,7 +738,8 @@ impl CtxBufId {
 /// [`Contexts`]), plus an index into that buffer. The logical context denoted includes all
 /// contexts in the parent chain up to the root, plus the selected context buffer up to the
 /// specified index (which may be any number `<= buf.len()`).
-#[derive(Copy, Clone, Debug, Default, DeepSizeOf)]
+#[derive(Copy, Clone, Debug, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct CtxId(CtxBufId, u32);
 
 impl CtxId {
@@ -854,7 +748,8 @@ impl CtxId {
 }
 
 /// A context buffer.
-#[derive(Default, Debug, DeepSizeOf)]
+#[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct CtxBuf {
   /// The parent context, which this buffer is viewed as extending.
   pub parent: CtxId,
@@ -862,13 +757,6 @@ pub struct CtxBuf {
   pub size: u32,
   /// The additional variables that this buffer adds to the context.
   pub vars: Vec<(VarId, bool, ExprTy)>,
-}
-
-impl Remap for CtxBuf {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self { parent: self.parent, size: self.size, vars: self.vars.remap(r) }
-  }
 }
 
 /// The different kinds of projection, used in defining places.
@@ -883,7 +771,7 @@ pub enum ListKind {
   /// A projection `a.0` which views a value `a: (sn {x : T})` type as `a.0: T`.
   Sn
 }
-crate::deep_size_0!(ListKind);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ListKind);
 
 impl From<hir::ListKind> for ListKind {
   fn from(lk: hir::ListKind) -> Self {
@@ -912,7 +800,7 @@ pub enum Edge {
   /// An edge from a function call to the following block.
   Call,
 }
-crate::deep_size_0!(Edge);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Edge);
 
 /// An iterator over the successors of a basic block.
 #[must_use] #[derive(Debug)]
@@ -989,15 +877,11 @@ pub enum Projection {
   /// A dereference operation `(* _)` on a pointer.
   Deref,
 }
-crate::deep_size_0!(Projection);
-
-impl Remap for Projection {
-  type Target = Self;
-  #[inline] fn remap(&self, _: &mut Remapper) -> Self { *self }
-}
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Projection);
 
 /// A place is a location in memory that can be read and written to.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Place {
   /// A local variable as the source of the place.
   pub local: VarId,
@@ -1028,13 +912,9 @@ impl From<VarId> for Place {
   fn from(v: VarId) -> Place { Place::local(v) }
 }
 
-impl Remap for Place {
-  type Target = Self;
-  #[inline] fn remap(&self, _: &mut Remapper) -> Self { self.clone() }
-}
-
 /// A constant value.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Constant {
   /// The type and value of the constant.
   pub ety: ExprTy,
@@ -1092,7 +972,7 @@ impl Constant {
   }
 
   /// Return a MM0 proof constant expression.
-  #[must_use] pub fn mm0_proof(ty: Ty, val: LispVal) -> Self {
+  #[must_use] pub fn mm0_proof(ty: Ty, val: ProofId) -> Self {
     Self { ety: (Some(Rc::new(ExprKind::Unit)), ty), k: ConstKind::Mm0Proof(val) }
   }
 
@@ -1115,15 +995,9 @@ impl Constant {
   }
 }
 
-impl Remap for Constant {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self { ety: self.ety.remap(r), k: self.k.remap(r) }
-  }
-}
-
 /// The different types of constant.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ConstKind {
   /// A unit constant `()`.
   Unit,
@@ -1137,11 +1011,11 @@ pub enum ConstKind {
   /// this means the target place can receive any bit pattern.
   Uninit,
   /// A named constant.
-  Const(AtomId),
+  Const(Symbol),
   /// The size of a type, which must be evaluable at compile time.
   Sizeof,
   /// A proof embedded from MM0.
-  Mm0Proof(LispVal),
+  Mm0Proof(ProofId),
   /// A proof by contradiction: This has type `cond`, where the target block exists in a context
   /// extended by `v: !cond` and ends in a proof of contradiction.
   Contra(BlockId, VarId),
@@ -1149,27 +1023,10 @@ pub enum ConstKind {
   As(Box<(Constant, IntTy)>),
 }
 
-impl Remap for ConstKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Self::Unit => Self::Unit,
-      Self::ITrue => Self::ITrue,
-      Self::Bool => Self::Bool,
-      Self::Int => Self::Int,
-      Self::Uninit => Self::Uninit,
-      Self::Const(a) => Self::Const(a.remap(r)),
-      Self::Sizeof => Self::Sizeof,
-      Self::Mm0Proof(p) => Self::Mm0Proof(p.remap(r)),
-      &Self::Contra(bl, v) => Self::Contra(bl, v),
-      Self::As(p) => Self::As(p.remap(r)),
-    }
-  }
-}
-
 /// An rvalue is an expression that can be used as the right hand side of an assignment;
 /// most side-effect-free expressions fall in this category.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Operand {
   /// Copies the value at the given place. Requires that the type of the place is a copy type.
   Copy(Place),
@@ -1197,18 +1054,6 @@ impl Operand {
   }
 }
 
-impl Remap for Operand {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Operand::Copy(x) => Operand::Copy(x.remap(r)),
-      Operand::Move(x) => Operand::Move(x.remap(r)),
-      Operand::Ref(x) => Operand::Ref(x.remap(r)),
-      Operand::Const(x) => Operand::Const(x.remap(r)),
-    }
-  }
-}
-
 impl From<Constant> for Operand {
   #[inline] fn from(c: Constant) -> Operand { Operand::Const(Box::new(c)) }
 }
@@ -1226,7 +1071,8 @@ impl Operand {
 
 /// A proof that `v @ x: T` can be retyped as `v @ x': U`. That is, this operation can change
 /// the pure value `x` but the bit representation `v` is unchanged.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PunKind {
   /// * `Pun(x, Sn(None))` proves that `x: sn x`
   /// * `Pun(x, Sn(Some(h)))` proves that `x: sn y` where `h: x = y`
@@ -1242,21 +1088,10 @@ pub enum PunKind {
   DropAs(Box<(IntTy, CastKind)>),
 }
 
-impl Remap for PunKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      PunKind::Sn(h) => PunKind::Sn(h.remap(r)),
-      PunKind::And(es) => PunKind::And(es.remap(r)),
-      PunKind::Ptr => PunKind::Ptr,
-      PunKind::DropAs(p) => PunKind::DropAs(p.remap(r)),
-    }
-  }
-}
-
 /// A proof that `v @ x: T` can be retyped as `v' @ x: U`. That is, this operation can change
 /// the bit representation `v` but the pure value `x` is unchanged.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum CastKind {
   /// Convert between integral types `ity <= ity2`. The sizes are determined
   /// by the size of the input and output types.
@@ -1267,18 +1102,6 @@ pub enum CastKind {
   Wand(Option<Operand>),
   /// Proof that `[x : B]` for the particular `x` in the cast
   Mem(Operand),
-}
-
-impl Remap for CastKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      CastKind::Int => CastKind::Int,
-      CastKind::Subtype(h) => CastKind::Subtype(h.remap(r)),
-      CastKind::Wand(h) => CastKind::Wand(h.remap(r)),
-      CastKind::Mem(h) => CastKind::Mem(h.remap(r)),
-    }
-  }
 }
 
 impl Unop {
@@ -1312,7 +1135,8 @@ impl Binop {
 
 /// An rvalue is an expression that can be used as the right hand side of an assignment;
 /// most side-effect-free expressions fall in this category.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum RValue {
   /// Directly use a place value or constant.
   Use(Operand),
@@ -1361,26 +1185,6 @@ impl RValue {
   }
 }
 
-impl Remap for RValue {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      RValue::Use(e) => RValue::Use(e.remap(r)),
-      RValue::Unop(op, e) => RValue::Unop(*op, e.remap(r)),
-      RValue::Binop(op, e1, e2) => RValue::Binop(*op, e1.remap(r), e2.remap(r)),
-      RValue::Eq(ty, inv, e1, e2) => RValue::Eq(ty.remap(r), *inv, e1.remap(r), e2.remap(r)),
-      RValue::Pun(pk, e) => RValue::Pun(pk.remap(r), e.remap(r)),
-      RValue::Cast(ck, ty, e) => RValue::Cast(ck.remap(r), ty.remap(r), e.remap(r)),
-      RValue::List(e) => RValue::List(e.remap(r)),
-      RValue::Array(e) => RValue::Array(e.remap(r)),
-      RValue::Ghost(e) => RValue::Ghost(e.remap(r)),
-      RValue::Borrow(e) => RValue::Borrow(e.remap(r)),
-      RValue::Mm0(e) => RValue::Mm0(e.remap(r)),
-      RValue::Typeof(e) => RValue::Typeof(e.remap(r)),
-    }
-  }
-}
-
 impl From<Operand> for RValue {
   #[inline] fn from(op: Operand) -> RValue { op.rv() }
 }
@@ -1395,7 +1199,8 @@ impl From<VarId> for RValue {
 }
 
 /// The different kinds of let statement.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum LetKind {
   /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
   /// variable is non-ghost.
@@ -1415,19 +1220,9 @@ impl LetKind {
   }
 }
 
-impl Remap for LetKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match *self {
-      Self::Let(x, g, ref ty) => Self::Let(x, g, ty.remap(r)),
-      Self::Own([(x, xg, ref xt), (y, yg, ref yt)]) =>
-        Self::Own([(x, xg, xt.remap(r)), (y, yg, yt.remap(r))])
-    }
-  }
-}
-
 /// An individual rename `(from, to: T)` in [`Statement::Assign`].
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Rename {
   /// The variable before the rename.
   pub from: VarId,
@@ -1439,17 +1234,11 @@ pub struct Rename {
   pub ety: ExprTy,
 }
 
-impl Remap for Rename {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Rename { from: self.from, to: self.to, rel: self.rel, ety: self.ety.remap(r) }
-  }
-}
-
 /// A statement is an operation in a basic block that does not end the block. Generally this means
 /// that it has simple control flow behavior, in that it always steps to the following statement
 /// after performing some action that cannot fail.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Statement {
   /// A let or tuple destructuring of values from an [`RValue`] of the specified type.
   Let(LetKind, Ty, RValue),
@@ -1457,16 +1246,6 @@ pub enum Statement {
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
   Assign(Place, Operand, Box<[Rename]>),
-}
-
-impl Remap for Statement {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Self::Let(lk, ty, rv) => Self::Let(lk.remap(r), ty.remap(r), rv.remap(r)),
-      Self::Assign(lhs, rhs, vars) => Self::Assign(lhs.remap(r), rhs.remap(r), vars.remap(r)),
-    }
-  }
 }
 
 impl Statement {
@@ -1511,7 +1290,8 @@ impl Statement {
 
 /// A terminator is the final statement in a basic block. Anything with nontrivial control flow
 /// is a terminator, and it determines where to jump afterward.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Terminator {
   /// A `goto label(x -> arg,*);` statement - unconditionally jump to the basic block `label`.
   /// The `x -> arg` values assign values to variables, where `x` is a variable in the context of
@@ -1544,7 +1324,7 @@ pub enum Terminator {
   /// values `es`, and jumps to `l`, using `xs` to store the return values.
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// Is this a side-effectful function?
     /// Side effect free functions can be removed by dead code elimination.
     se: bool,
@@ -1564,25 +1344,6 @@ pub enum Terminator {
   /// This block is not reachable from the entry block. Similar to `unreachable`, but
   /// provides no proof of false, and it is a type error to jump to a dead block.
   Dead,
-}
-
-impl Remap for Terminator {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Self::Jump(id, args) => Self::Jump(*id, args.remap(r)),
-      &Self::Jump1(id) => Self::Jump1(id),
-      Self::Return(args) => Self::Return(args.remap(r)),
-      Self::Unreachable(rv) => Self::Unreachable(rv.remap(r)),
-      Self::If(cond, args) => Self::If(cond.remap(r), *args),
-      Self::Assert(cond, v, reach, bl) => Self::Assert(cond.remap(r), *v, *reach, *bl),
-      Self::Call {f, se, tys, args, reach, tgt, rets} => Self::Call {
-        f: f.remap(r), se: *se, tys: tys.remap(r), args: args.remap(r),
-        reach: *reach, tgt: *tgt, rets: rets.remap(r)
-      },
-      Self::Dead => Self::Dead,
-    }
-  }
 }
 
 impl Terminator {
@@ -1606,7 +1367,8 @@ impl Terminator {
 /// A basic block, which consists of an initial context (containing the logical parameters to the
 /// block), followed by a list of statements, and ending with a terminator. The terminator is
 /// optional only during MIR construction, and represents an "unfinished" block.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct BasicBlock {
   /// The initial context on entry to the block.
   pub ctx: CtxId,
@@ -1621,16 +1383,6 @@ pub struct BasicBlock {
   /// The final statement, which may jump to another basic block or perform another control flow
   /// function.
   pub term: Option<Terminator>,
-}
-
-impl Remap for BasicBlock {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self {
-      ctx: self.ctx, relevance: self.relevance.clone(), reachable: self.reachable,
-      stmts: self.stmts.remap(r), term: self.term.remap(r)
-    }
-  }
 }
 
 impl BasicBlock {
@@ -1678,12 +1430,13 @@ impl BasicBlock {
 }
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Proc {
   /// The type of declaration: `func`, `proc`, or `intrinsic`.
   pub kind: ProcKind,
   /// The name of the procedure.
-  pub name: Spanned<AtomId>,
+  pub name: Spanned<Symbol>,
   /// The number of type arguments
   pub tyargs: u32,
   /// The arguments of the procedure.
@@ -1692,18 +1445,4 @@ pub struct Proc {
   pub rets: Vec<Arg>,
   /// The body of the procedure.
   pub body: Cfg,
-}
-
-impl Remap for Proc {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self {
-      kind: self.kind,
-      name: self.name.remap(r),
-      tyargs: self.tyargs,
-      args: self.args.remap(r),
-      rets: self.rets.remap(r),
-      body: self.body.remap(r),
-    }
-  }
 }

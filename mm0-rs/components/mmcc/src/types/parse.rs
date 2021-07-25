@@ -9,7 +9,8 @@
 //! types in the [`types::ast`](super::ast) module.
 
 use num::BigInt;
-use crate::{AtomId, LispVal, Uncons, EnvDisplay, FormatEnv, FileSpan};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{Symbol, LispVal, Uncons, EnvDisplay, FormatEnv, FileSpan};
 use super::{Spanned, Size, FieldName};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
@@ -23,11 +24,11 @@ pub enum Lifetime {
   Extern,
   /// A variable lifetime `x` is the annotation on references derived from `x`
   /// (or derived from other references derived from `x`).
-  Place(AtomId),
+  Place(Symbol),
   /// A lifetime that has not been inferred yet.
   Infer,
 }
-crate::deep_size_0!(Lifetime);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Lifetime);
 
 impl EnvDisplay for Lifetime {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -46,11 +47,12 @@ pub type TuplePattern = Spanned<TuplePatternKind>;
 
 /// A tuple pattern, which destructures the results of assignments from functions with
 /// mutiple return values, as well as explicit tuple values and structs.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind {
   /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
   /// is ghost.
-  Name(bool, AtomId),
+  Name(bool, Symbol),
   /// A type ascription. The type is unparsed.
   Typed(Box<TuplePattern>, LispVal),
   /// A tuple, with the given arguments.
@@ -60,11 +62,11 @@ pub enum TuplePatternKind {
 impl TuplePatternKind {
   /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
   /// it is always safe to make irrelevant.
-  pub const UNDER: Self = Self::Name(true, AtomId::UNDER);
+  pub const UNDER: Self = Self::Name(true, Symbol::UNDER);
 
   /// Extracts the single name of this tuple pattern, or `None`
   /// if this does any tuple destructuring.
-  #[must_use] pub fn as_single_name(&self) -> Option<AtomId> {
+  #[must_use] pub fn as_single_name(&self) -> Option<Symbol> {
     match self {
       &Self::Name(_, v) => Some(v),
       Self::Typed(pat, _) => pat.k.as_single_name(),
@@ -75,7 +77,7 @@ impl TuplePatternKind {
 
 impl TuplePattern {
   /// Map a function over the names in the pattern.
-  pub fn on_names<E>(&self, f: &mut impl FnMut(&FileSpan, AtomId) -> Result<(), E>) -> Result<(), E> {
+  pub fn on_names<E>(&self, f: &mut impl FnMut(&FileSpan, Symbol) -> Result<(), E>) -> Result<(), E> {
     match self.k {
       TuplePatternKind::Name(_, v) => f(&self.span, v)?,
       TuplePatternKind::Typed(ref pat, _) => pat.on_names(f)?,
@@ -89,7 +91,8 @@ impl TuplePattern {
 pub type Arg = Spanned<(ArgAttr, ArgKind)>;
 
 /// An argument declaration for a function.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(TuplePatternKind),
@@ -114,14 +117,14 @@ pub type Pattern = Spanned<PatternKind>;
 #[derive(Debug)]
 pub enum PatternKind {
   /// A variable binding.
-  Var(AtomId),
+  Var(Symbol),
   /// A user-defined constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A numeric literal.
   Number(BigInt),
   /// A hypothesis pattern, which binds the first argument to a proof that the
   /// scrutinee satisfies the pattern argument.
-  Hyped(AtomId, LispVal),
+  Hyped(Symbol, LispVal),
   /// A pattern guard: Matches the inner pattern, and then if the expression returns
   /// true, this is also considered to match.
   With(LispVal, LispVal),
@@ -131,23 +134,25 @@ pub enum PatternKind {
 
 /// A rename is a `{old -> old'}` or `{new' <- new}` clause appearing in a `with`
 /// associated to a let binding or assignment, as in `{{x <- 2} with {x -> x_old}}`.
-#[derive(Clone, Debug, Default, DeepSizeOf)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Renames {
   /// `{from -> to}` means that the variable `from` should be renamed to `to`
   /// (after evaluation of the main expression).
   /// The elements of this list are `(from, to)` pairs.
-  pub old: Vec<(AtomId, AtomId)>,
+  pub old: Vec<(Symbol, Symbol)>,
   /// `{to <- from}` means that the new value of the variable `from` should be called `to`,
   /// so that the old value of variable `from` is available by that name.
   /// The elements of this list are `(from, to)` pairs.
-  pub new: Vec<(AtomId, AtomId)>,
+  pub new: Vec<(Symbol, Symbol)>,
 }
 
 /// A type expression.
 pub type Type = Spanned<TypeKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TypeKind {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -158,7 +163,7 @@ pub enum TypeKind {
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
-  Var(AtomId),
+  Var(Symbol),
   /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
   Int(Size),
   /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
@@ -230,7 +235,7 @@ pub enum TypeKind {
   /// A boolean expression, interpreted as a pure proposition
   Pure(Box<ExprKind>),
   /// A user-defined type-former.
-  User(AtomId, Box<[LispVal]>, Box<[LispVal]>),
+  User(Symbol, Box<[LispVal]>, Box<[LispVal]>),
   /// A heap assertion `l |-> (v: T)`.
   Heap(LispVal, LispVal),
   /// An explicit typing assertion `[v : T]`.
@@ -248,7 +253,8 @@ pub enum TypeKind {
 }
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -267,10 +273,11 @@ pub type Variant = Spanned<(LispVal, VariantType)>;
 /// A call expression, which requires a second round of parsing depending
 /// on the context of declared entities - it might still be a primitive
 /// operation like `(return e)` but it looks basically like a function call.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct CallExpr {
   /// The function to call.
-  pub f: Spanned<AtomId>,
+  pub f: Spanned<Symbol>,
   /// The function arguments.
   pub args: Vec<LispVal>,
   /// The variant, if needed.
@@ -278,10 +285,11 @@ pub struct CallExpr {
 }
 
 /// A parsed label expression `((begin (lab x y)) body)`.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Label {
   /// The name of the label
-  pub name: AtomId,
+  pub name: Symbol,
   /// The arguments of the label
   pub args: Vec<Arg>,
   /// The variant, for recursive calls
@@ -294,12 +302,13 @@ pub struct Label {
 pub type Expr = Spanned<ExprKind>;
 
 /// An expression or statement. A block is a list of expressions.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.
   Unit,
   /// A variable reference.
-  Var(AtomId),
+  Var(Symbol),
   /// A boolean literal.
   Bool(bool),
   /// A number literal.
@@ -338,7 +347,7 @@ pub enum ExprKind {
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
     /// The list of `(h,C,T)` triples in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
-    branches: Vec<(Option<AtomId>, LispVal, LispVal)>,
+    branches: Vec<(Option<Symbol>, LispVal, LispVal)>,
     /// The else case, the `E` in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
     els: Option<LispVal>
   },
@@ -347,9 +356,9 @@ pub enum ExprKind {
   /// A while loop.
   While {
     /// The set of variables that are mutated in the while loop.
-    muts: Vec<Spanned<AtomId>>,
+    muts: Vec<Spanned<Symbol>>,
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<Spanned<AtomId>>,
+    hyp: Option<Spanned<Symbol>>,
     /// The loop condition.
     cond: LispVal,
     /// The variant, which must decrease on every round around the loop.
@@ -413,9 +422,9 @@ pub enum NAryCall {
 #[derive(Debug)]
 pub enum CallKind {
   /// A user-defined constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A user-defined global variable.
-  Global(AtomId),
+  Global(Symbol),
   /// An application of an [`NAryCall`] to zero or more arguments.
   NAry(NAryCall, Vec<LispVal>),
   /// `(- x)` is the negation of x.
@@ -429,7 +438,7 @@ pub enum CallKind {
   Shr(LispVal, LispVal),
   /// A `(pure)` expression, which embeds MM0 syntax to produce an expression
   /// of numeric or boolean type.
-  Mm0(Box<[(AtomId, LispVal)]>, LispVal),
+  Mm0(Box<[(Symbol, LispVal)]>, LispVal),
   /// `{e : T}` is `e`, with the type `T`. This is used only to direct
   /// type inference, it has no effect otherwise.
   Typed(LispVal, LispVal),
@@ -471,11 +480,11 @@ pub enum CallKind {
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Option<LispVal>),
   /// `(lab e1 ... en)` jumps to label `lab` with `e1 ... en` as arguments.
-  Jump(Option<AtomId>, std::vec::IntoIter<LispVal>, Option<LispVal>),
+  Jump(Option<Symbol>, std::vec::IntoIter<LispVal>, Option<LispVal>),
   /// * `(break e)` jumps out of the nearest enclosing loop, returning `e` to the enclosing scope.
   /// * `(break lab e)` jumps out of the scope containing label `lab`,
   ///   returning `e` as the result of the block.
-  Break(Option<AtomId>, std::vec::IntoIter<LispVal>),
+  Break(Option<Symbol>, std::vec::IntoIter<LispVal>),
   /// `(f e1 ... en)` calls a user-defined or intrinsic function called `f` with
   /// `e1 ... en` as arguments.
   Call(CallExpr, u32),
@@ -484,10 +493,11 @@ pub enum CallKind {
 }
 
 /// A field of a struct.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Field {
   /// The name of the field.
-  pub name: AtomId,
+  pub name: Symbol,
   /// True if the field is computationally irrelevant.
   pub ghost: bool,
   /// The type of the field (unparsed).
@@ -514,19 +524,20 @@ pub struct ArgAttr {
   /// (which must be a `(mut x)` in the function arguments) is being mutated to
   /// `x'`; this acts as a binder declaring variable `x'`, and both `x` and `x'`
   /// can be used in subsequent types.
-  pub out: Option<AtomId>,
+  pub out: Option<Symbol>,
 }
-crate::deep_size_0!(ArgAttr);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ArgAttr);
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Proc {
   /// The type of declaration: `func`, `proc`, or `intrinsic`.
   pub kind: ProcKind,
   /// The name of the procedure.
-  pub name: Spanned<AtomId>,
+  pub name: Spanned<Symbol>,
   /// The type arguments of the procedure.
-  pub tyargs: Vec<Spanned<AtomId>>,
+  pub tyargs: Vec<Spanned<Symbol>>,
   /// The arguments of the procedure.
   pub args: Vec<Arg>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
@@ -541,7 +552,8 @@ pub struct Proc {
 pub type Item = Spanned<ItemKind>;
 
 /// A top level program item. (A program AST is a list of program items.)
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ItemKind {
   /// A procedure, behind an Arc so it can be cheaply copied.
   Proc(Proc),
@@ -552,9 +564,9 @@ pub enum ItemKind {
   /// A type definition.
   Typedef {
     /// The name of the newly declared type
-    name: Spanned<AtomId>,
+    name: Spanned<Symbol>,
     /// The type arguments of the type declaration, for a parametric type
-    tyargs: Vec<Spanned<AtomId>>,
+    tyargs: Vec<Spanned<Symbol>>,
     /// The arguments of the type declaration, for a parametric type
     args: Vec<Arg>,
     /// The value of the declaration (another type)
@@ -563,9 +575,9 @@ pub enum ItemKind {
   /// A structure definition.
   Struct {
     /// The name of the structure
-    name: Spanned<AtomId>,
+    name: Spanned<Symbol>,
     /// The type arguments of the type
-    tyargs: Vec<Spanned<AtomId>>,
+    tyargs: Vec<Spanned<Symbol>>,
     /// The parameters of the type
     args: Vec<Arg>,
     /// The fields of the structure

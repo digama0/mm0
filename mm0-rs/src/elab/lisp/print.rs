@@ -12,6 +12,7 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
+use mm0_util::alphanumber;
 use crate::{AtomId, LispKind, LispVal, lisp::{Uncons, InferTarget, Proc, ProcPos},
   LinedString, Environment, Elaborator, TermId, ThmId, SortId,
   Sort, Term, Thm, DeclKey, ast::{SExpr, SExprKind, span_atom}};
@@ -93,24 +94,6 @@ fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv<'
     Some(e) if e.exactly(0) => if start {write!(f, "()")} else {write!(f, ")")},
     Some(e) => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
   }
-}
-
-/// Translate a number into an alphabetic numbering system, indexing into the following infinite
-/// sequence:
-/// ```ignore
-/// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
-/// ```
-pub(crate) fn alphanumber(n: usize) -> String {
-  let mut out = Vec::with_capacity(2);
-  let mut n = n + 1;
-  while n != 0 {
-    #[allow(clippy::cast_possible_truncation)]
-    { out.push(b'a' + ((n - 1) % 26) as u8); }
-    #[allow(clippy::integer_division)]
-    { n = (n - 1) / 26; }
-  }
-  out.reverse();
-  unsafe { String::from_utf8_unchecked(out) }
 }
 
 impl EnvDisplay for AtomId {

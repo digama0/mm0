@@ -2,10 +2,11 @@
 
 use std::{collections::HashMap, rc::Rc};
 use num::BigInt;
-use crate::{AtomId, Remap, Remapper};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::Symbol;
 use super::{ty, super::infer::InferCtx};
 pub use ty::{WithMeta, TupleMatchKind, Lifetime, ArgAttr};
-use super::{Binop, Mm0ExprNode, IntTy, Unop, VarId, ast::TyVarId, hir};
+use super::{Binop, IntTy, LambdaId, Unop, VarId, ast::TyVarId, hir};
 
 type Mapper<'a, T> = HashMap<&'a WithMeta<T>, <&'a WithMeta<T> as ToGlobal<'a>>::Output>;
 
@@ -21,7 +22,6 @@ pub(crate) struct ToGlobalCtx<'a> {
   expr: Mapper<'a, ty::ExprKind<'a>>,
   place: Mapper<'a, ty::PlaceKind<'a>>,
   ty: Mapper<'a, ty::TyKind<'a>>,
-  mm0: HashMap<*const Mm0ExprNode, Rc<Mm0ExprNode>>,
 }
 
 impl<'a> Internable<'a> for ty::TuplePatternKind<'a> {
@@ -85,10 +85,11 @@ impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
 pub type TuplePattern = Rc<TuplePatternKind>;
 
 /// A strongly typed tuple pattern.
-#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind {
   /// A variable binding.
-  Name(AtomId, VarId, Ty),
+  Name(Symbol, VarId, Ty),
   /// A tuple destructuring pattern.
   Tuple(Box<[TuplePattern]>, TupleMatchKind, Ty),
   /// An error that has been reported.
@@ -109,26 +110,14 @@ impl<'a> ToGlobal<'a> for ty::TuplePatternKind<'a> {
   }
 }
 
-impl Remap for TuplePatternKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      TuplePatternKind::Name(a, v, ty) => TuplePatternKind::Name(a.remap(r), *v, ty.remap(r)),
-      TuplePatternKind::Tuple(pats, mk, ty) =>
-        TuplePatternKind::Tuple(pats.remap(r), *mk, ty.remap(r)),
-      TuplePatternKind::Error(pat, ty) =>
-        TuplePatternKind::Error(pat.remap(r), ty.remap(r)),
-    }
-  }
-}
-
 /// An argument declaration for a function.
 pub type Arg = Rc<ArgS>;
 /// An argument declaration for a function.
 pub type ArgS = (ArgAttr, ArgKind);
 
 /// An argument declaration for a function.
-#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(TuplePattern),
@@ -147,59 +136,29 @@ impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
   }
 }
 
-impl Remap for ArgKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      ArgKind::Lam(arg) => ArgKind::Lam(arg.remap(r)),
-      ArgKind::Let(arg, e) => ArgKind::Let(arg.remap(r), e.remap(r)),
-    }
-  }
-}
-
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<T=Expr> {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
   pub subst: Box<[T]>,
   /// The root node of the expression.
-  pub expr: Rc<Mm0ExprNode>,
+  pub expr: LambdaId,
 }
 
 impl<T: std::hash::Hash> std::hash::Hash for Mm0Expr<T> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.subst.hash(state);
-    (&*self.expr as *const Mm0ExprNode).hash(state);
-  }
-}
-
-impl<T: PartialEq> PartialEq for Mm0Expr<T> {
-  fn eq(&self, other: &Self) -> bool {
-    self.subst == other.subst && std::ptr::eq(&*self.expr, &*other.expr)
-  }
-}
-impl<T: Eq> Eq for Mm0Expr<T> {}
-
-impl ToGlobal<'_> for &Mm0ExprNode {
-  type Output = Rc<Mm0ExprNode>;
-  fn to_global(&self, ctx: &mut InferCtx<'_, '_>) -> Self::Output {
-    ctx.gctx.mm0.entry(*self).or_insert_with(|| Rc::new((*self).clone())).clone()
+    self.expr.hash(state);
   }
 }
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {
   type Output = Mm0Expr<Expr>;
   fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
-    Mm0Expr { subst: self.subst.to_global(ctx), expr: self.expr.clone() }
-  }
-}
-
-impl<T: Remap> Remap for Mm0Expr<T> {
-  type Target = Mm0Expr<T::Target>;
-  fn remap(&self, r: &mut Remapper) -> Mm0Expr<T::Target> {
-    Mm0Expr { subst: self.subst.remap(r), expr: self.expr.remap(r) }
+    Mm0Expr { subst: self.subst.to_global(ctx), expr: self.expr }
   }
 }
 
@@ -217,7 +176,8 @@ impl ToGlobal<'_> for Lifetime {
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -295,7 +255,7 @@ pub enum TyKind {
   /// A boolean expression, interpreted as a pure proposition
   Pure(Expr),
   /// A user-defined type-former.
-  User(AtomId, Box<[Ty]>, Box<[Expr]>),
+  User(Symbol, Box<[Ty]>, Box<[Expr]>),
   /// A heap assertion `l |-> (v: |T|)`.
   Heap(Expr, Expr, Ty),
   /// An explicit typing assertion `[v : T]`.
@@ -350,47 +310,9 @@ impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
   }
 }
 
-impl Remap for TyKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      TyKind::Unit => TyKind::Unit,
-      TyKind::True => TyKind::True,
-      TyKind::False => TyKind::False,
-      TyKind::Bool => TyKind::Bool,
-      &TyKind::Var(v) => TyKind::Var(v),
-      &TyKind::Int(ity) => TyKind::Int(ity),
-      TyKind::Array(ty, n) => TyKind::Array(ty.remap(r), n.remap(r)),
-      TyKind::Own(ty) => TyKind::Own(ty.remap(r)),
-      TyKind::Ref(lft, ty) => TyKind::Ref(*lft, ty.remap(r)),
-      TyKind::RefSn(e) => TyKind::RefSn(e.remap(r)),
-      TyKind::List(tys) => TyKind::List(tys.remap(r)),
-      TyKind::Sn(a, ty) => TyKind::Sn(a.remap(r), ty.remap(r)),
-      TyKind::Struct(args) => TyKind::Struct(args.remap(r)),
-      TyKind::All(pat, ty) => TyKind::All(pat.remap(r), ty.remap(r)),
-      TyKind::Imp(p, q) => TyKind::Imp(p.remap(r), q.remap(r)),
-      TyKind::Wand(p, q) => TyKind::Wand(p.remap(r), q.remap(r)),
-      TyKind::Not(p) => TyKind::Not(p.remap(r)),
-      TyKind::And(ps) => TyKind::And(ps.remap(r)),
-      TyKind::Or(ps) => TyKind::Or(ps.remap(r)),
-      TyKind::If(c, t, e) => TyKind::If(c.remap(r), t.remap(r), e.remap(r)),
-      TyKind::Ghost(ty) => TyKind::Ghost(ty.remap(r)),
-      TyKind::Uninit(ty) => TyKind::Uninit(ty.remap(r)),
-      TyKind::Pure(e) => TyKind::Pure(e.remap(r)),
-      TyKind::User(f, tys, es) => TyKind::User(*f, tys.remap(r), es.remap(r)),
-      TyKind::Heap(e, v, ty) =>
-        TyKind::Heap(e.remap(r), v.remap(r), ty.remap(r)),
-      TyKind::HasTy(e, ty) => TyKind::HasTy(e.remap(r), ty.remap(r)),
-      TyKind::Input => TyKind::Input,
-      TyKind::Output => TyKind::Output,
-      TyKind::Moved(ty) => TyKind::Moved(ty.remap(r)),
-      TyKind::Error => TyKind::Error,
-    }
-  }
-}
-
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -413,20 +335,10 @@ impl<'a> ToGlobal<'a> for hir::VariantType<'a> {
   }
 }
 
-impl Remap for VariantType {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      VariantType::Down => VariantType::Down,
-      VariantType::UpLt(e) => VariantType::UpLt(e.remap(r)),
-      VariantType::UpLe(e) => VariantType::UpLe(e.remap(r)),
-    }
-  }
-}
-
 /// A variant is a pure expression, together with a
 /// well founded order that decreases on all calls.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Variant(pub Expr, pub VariantType);
 
 impl<'a> ToGlobal<'a> for hir::Variant<'a> {
@@ -436,19 +348,13 @@ impl<'a> ToGlobal<'a> for hir::Variant<'a> {
   }
 }
 
-impl Remap for Variant {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self(self.0.remap(r), self.1.remap(r))
-  }
-}
-
 /// A pure expression. (Regular expressions are not manipulated like types,
 /// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
 pub type Place = Rc<PlaceKind>;
 
 /// A pure expression.
-#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PlaceKind {
   /// A variable reference.
   Var(VarId),
@@ -479,35 +385,20 @@ impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
   }
 }
 
-impl Remap for PlaceKind {
-  type Target = Self;
-  #[allow(clippy::many_single_char_names)]
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &PlaceKind::Var(v) => PlaceKind::Var(v),
-      PlaceKind::Index(a, ty, i) =>
-        PlaceKind::Index(a.remap(r), ty.remap(r), i.remap(r)),
-      PlaceKind::Slice(a, ty, il) =>
-        PlaceKind::Slice(a.remap(r), ty.remap(r), il.remap(r)),
-      PlaceKind::Proj(a, ty, i) => PlaceKind::Proj(a.remap(r), ty.remap(r), *i),
-      PlaceKind::Error => PlaceKind::Error,
-    }
-  }
-}
-
 /// A pure expression. (Regular expressions are not manipulated like types,
 /// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression.
-#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.
   Unit,
   /// A variable reference.
   Var(VarId),
   /// A user constant.
-  Const(AtomId),
+  Const(Symbol),
   /// A number literal.
   Bool(bool),
   /// A number literal.
@@ -544,7 +435,7 @@ pub enum ExprKind {
   /// A function call
   Call {
     /// The function to call.
-    f: AtomId,
+    f: Symbol,
     /// The type arguments.
     tys: Box<[Ty]>,
     /// The function arguments.
@@ -597,39 +488,5 @@ impl<'a> ToGlobal<'a> for ty::ExprKind<'a> {
       ty::ExprKind::Infer(v) => return ctx.err_if_not_assigned_expr(v).to_global(ctx),
       ty::ExprKind::Error => ExprKind::Error,
     })
-  }
-}
-
-impl Remap for ExprKind {
-  type Target = Self;
-  #[allow(clippy::many_single_char_names)]
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      ExprKind::Unit => ExprKind::Unit,
-      &ExprKind::Var(v) => ExprKind::Var(v),
-      &ExprKind::Const(c) => ExprKind::Const(c),
-      &ExprKind::Bool(b) => ExprKind::Bool(b),
-      ExprKind::Int(n) => ExprKind::Int(n.clone()),
-      ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),
-      ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
-      ExprKind::Index(a, i) => ExprKind::Index(a.remap(r), i.remap(r)),
-      ExprKind::Slice([a, i, l]) => ExprKind::Slice([a.remap(r), i.remap(r), l.remap(r)]),
-      ExprKind::Proj(a, i) => ExprKind::Proj(a.remap(r), *i),
-      ExprKind::UpdateIndex([a, i, v]) =>
-        ExprKind::UpdateIndex([a.remap(r), i.remap(r), v.remap(r)]),
-      ExprKind::UpdateSlice([a, i, l, v]) =>
-        ExprKind::UpdateSlice([a.remap(r), i.remap(r), l.remap(r), v.remap(r)]),
-      ExprKind::UpdateProj(a, i, v) => ExprKind::UpdateProj(a.remap(r), *i, v.remap(r)),
-      ExprKind::List(es) => ExprKind::List(es.remap(r)),
-      ExprKind::Array(es) => ExprKind::Array(es.remap(r)),
-      ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.remap(r)),
-      ExprKind::Ref(e) => ExprKind::Ref(e.remap(r)),
-      ExprKind::Mm0(e) => ExprKind::Mm0(e.remap(r)),
-      &ExprKind::Call {f, ref tys, ref args} =>
-        ExprKind::Call {f, tys: tys.remap(r), args: args.remap(r)},
-      ExprKind::If {cond, then, els} => ExprKind::If {
-        cond: cond.remap(r), then: then.remap(r), els: els.remap(r)},
-      ExprKind::Error => ExprKind::Error,
-    }
   }
 }

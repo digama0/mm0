@@ -2,22 +2,22 @@
 
 use std::{collections::{HashMap, VecDeque}, hash::Hash, marker::PhantomData};
 use smallvec::SmallVec;
-use crate::AtomId;
+use crate::Symbol;
 use super::types;
 use types::{Idx, mir, entity};
 use entity::Entity;
 #[allow(clippy::wildcard_imports)] use mir::*;
-pub use dominator::DominatorTree;
+pub(crate) use dominator::DominatorTree;
 
-pub mod dominator;
-pub mod ghost;
-pub mod legalize;
-pub mod storage;
+pub(crate) mod dominator;
+pub(crate) mod ghost;
+pub(crate) mod legalize;
+pub(crate) mod storage;
 
 /// A space-optimized `Option<BlockId>`.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct OptBlockId(BlockId);
-crate::deep_size_0!(OptBlockId);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(OptBlockId);
 
 impl OptBlockId {
   const NONE: OptBlockId = OptBlockId(BlockId(u32::MAX));
@@ -43,7 +43,7 @@ impl std::fmt::Debug for OptBlockId {
 
 /// A bit set with a custom index type.
 #[derive(Default, Debug, PartialEq, Eq)]
-pub struct BitSet<T = usize>(bit_set::BitSet, PhantomData<T>);
+pub(crate) struct BitSet<T = usize>(bit_set::BitSet, PhantomData<T>);
 
 impl<T> Clone for BitSet<T> {
   fn clone(&self) -> Self { BitSet(self.0.clone(), PhantomData) }
@@ -52,37 +52,37 @@ impl<T> Clone for BitSet<T> {
 impl<T> BitSet<T> {
   /// Creates a new `BitSet` with initially no contents, able to
   /// hold `nbits` elements without resizing.
-  #[inline] #[must_use] pub fn with_capacity(nbits: usize) -> Self {
+  #[inline] #[must_use] pub(crate) fn with_capacity(nbits: usize) -> Self {
     Self(bit_set::BitSet::with_capacity(nbits), PhantomData)
   }
 
   /// Returns the number of set bits in this set.
-  #[inline] #[must_use] pub fn len(&self) -> usize { self.0.len() }
+  #[inline] #[must_use] pub(crate) fn len(&self) -> usize { self.0.len() }
 
   /// Returns whether there are no bits set in this set
-  #[inline] #[must_use] pub fn is_empty(&self) -> bool { self.0.is_empty() }
+  #[inline] #[must_use] pub(crate) fn is_empty(&self) -> bool { self.0.is_empty() }
 
   /// Adds a value to the set. Returns `true` if the value was not already
   /// present in the set.
-  #[inline] #[must_use] pub fn contains(&self, value: T) -> bool where T: Idx {
+  #[inline] #[must_use] pub(crate) fn contains(&self, value: T) -> bool where T: Idx {
     self.0.contains(value.into_usize())
   }
 
   /// Adds a value to the set. Returns `true` if the value was not already
   /// present in the set.
-  #[inline] pub fn insert(&mut self, value: T) -> bool where T: Idx {
+  #[inline] pub(crate) fn insert(&mut self, value: T) -> bool where T: Idx {
     self.0.insert(value.into_usize())
   }
 
   /// Removes a value from the set. Returns `true` if the value was
   /// present in the set.
-  #[inline] pub fn remove(&mut self, value: T) -> bool where T: Idx {
+  #[inline] pub(crate) fn remove(&mut self, value: T) -> bool where T: Idx {
     self.0.remove(value.into_usize())
   }
 
   /// Unions in-place with the specified other bit vector.
   /// Returns `true` if `self` was changed.
-  #[inline] pub fn union_with(&mut self, other: &Self) -> bool {
+  #[inline] pub(crate) fn union_with(&mut self, other: &Self) -> bool {
     if other.0.is_subset(&self.0) {
       false
     } else {
@@ -93,7 +93,7 @@ impl<T> BitSet<T> {
 
   /// Intersects in-place with the specified other bit vector.
   /// Returns `true` if `self` was changed.
-  #[inline] pub fn intersect_with(&mut self, other: &Self) -> bool {
+  #[inline] pub(crate) fn intersect_with(&mut self, other: &Self) -> bool {
     if self.0.is_subset(&other.0) {
       false
     } else {
@@ -103,7 +103,7 @@ impl<T> BitSet<T> {
   }
 
   /// Iterator over each value stored in the `BitSet`.
-  pub fn iter(&self) -> impl Iterator<Item=T> + '_ where T: Idx {
+  pub(crate) fn iter(&self) -> impl Iterator<Item=T> + '_ where T: Idx {
     self.0.iter().map(Idx::from_usize)
   }
 }
@@ -501,7 +501,7 @@ trait Analysis {
 
 /// Perform MIR analysis and optimize the given procedure.
 #[allow(clippy::implicit_hasher)]
-pub fn optimize(proc: &mut Proc, _names: &HashMap<AtomId, Entity>) {
+pub(crate) fn optimize(proc: &mut Proc, _names: &HashMap<Symbol, Entity>) {
   let cfg = &mut proc.body;
   cfg.compute_predecessors();
   let reachable = cfg.reachability_analysis();

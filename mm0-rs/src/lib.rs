@@ -44,8 +44,6 @@
 #[macro_use] extern crate mm0_util;
 
 #[cfg(feature = "mmc")]
-#[macro_use] extern crate bitflags;
-#[cfg(feature = "mmc")]
 #[macro_use] extern crate if_chain;
 
 #[cfg(feature = "memory")]

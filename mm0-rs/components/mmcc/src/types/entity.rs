@@ -2,8 +2,9 @@
 //! previous declarations, in addition to intrinsics and primops.
 
 use std::collections::HashMap;
-use crate::{Environment, AtomId, Remap, Remapper, FileSpan};
-use crate::mmc::{Compiler, types::{ast, global}};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{Compiler, FileSpan, Symbol, intern, symbol::{Interner, init_dense_symbol_map},
+  types::{ast, global, Idx}};
 use super::Spanned;
 
 macro_rules! make_prims {
@@ -12,7 +13,7 @@ macro_rules! make_prims {
       $(#[$attr0])*
       #[derive(Debug, PartialEq, Eq, Copy, Clone)]
       pub enum $name { $($(#[$attr])* $x),* }
-      $crate::deep_size_0!($name);
+      #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($name);
 
       impl $name {
         /// Evaluate a function on all elements of the type, with their names.
@@ -27,6 +28,24 @@ macro_rules! make_prims {
             _ => None
           }
         }
+
+        /// Get the MMC keyword for a symbol.
+        #[must_use] pub fn from_symbol(s: Symbol) -> Option<Self> {
+          lazy_static! {
+            static ref SYMBOL_MAP: Box<[Option<$name>]> =
+              init_dense_symbol_map(&[$((intern($e), $name::$x)),*]);
+          }
+          SYMBOL_MAP.get(s.into_usize()).map_or(None, |x| *x)
+        }
+
+        /// Get the symbol for this primitive.
+        #[must_use] pub fn as_symbol(self) -> Symbol {
+          lazy_static! {
+            static ref INTERNED: [Symbol; [$($name::$x),*].len()] = [$(intern($e)),*];
+          }
+          INTERNED[self as usize]
+        }
+
         /// Convert a byte string into this type.
         #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
           // Safety: the function we defined just above doesn't do anything
@@ -251,36 +270,28 @@ make_prims! {
 }
 
 /// The typechecking status of a typedef.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TypeTc {
   /// We have determined that this is a type but we have not yet examined the body.
-  Unchecked,
+  ForwardDeclared,
   /// We have the type of the type constructor.
   Typed(TypeTy)
-}
-
-impl Remap for TypeTc {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      TypeTc::Unchecked => TypeTc::Unchecked,
-      TypeTc::Typed(ty) => TypeTc::Typed(ty.remap(r))
-    }
-  }
 }
 
 impl TypeTc {
   /// Get the type of the typedef, if it has been deduced.
   #[must_use] pub fn ty(&self) -> Option<&TypeTy> {
     match self {
-      TypeTc::Unchecked => None,
+      TypeTc::ForwardDeclared => None,
       TypeTc::Typed(ty) => Some(ty)
     }
   }
 }
 
 /// An entity representing a type.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub struct TypeTy {
   /// The number of type arguments (not included in `args`). There are no higher
@@ -293,18 +304,12 @@ pub struct TypeTy {
   pub val: global::Ty,
 }
 
-impl Remap for TypeTy {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self { tyargs: self.tyargs, args: self.args.remap(r), val: self.val.remap(r) }
-  }
-}
-
 /// The typechecking status of a procedure.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProcTc {
   /// We have determined that this is a procedure but we have not yet examined the body.
-  Unchecked,
+  ForwardDeclared,
   /// We have determined the type of the procedure.
   Typed(ProcTy),
 }
@@ -313,24 +318,15 @@ impl ProcTc {
   /// Get the type of the procedure, if it has been deduced.
   #[must_use] pub fn ty(&self) -> Option<&ProcTy> {
     match self {
-      ProcTc::Unchecked => None,
+      ProcTc::ForwardDeclared => None,
       ProcTc::Typed(ty) => Some(ty)
     }
   }
 }
 
-impl Remap for ProcTc {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      ProcTc::Unchecked => ProcTc::Unchecked,
-      ProcTc::Typed(ty) => ProcTc::Typed(ty.remap(r))
-    }
-  }
-}
-
 /// The type of a procedure.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ProcTy {
   /// The kind of the procedure (`func`, `proc`, `intrinsic`)
   pub kind: ast::ProcKind,
@@ -346,43 +342,22 @@ pub struct ProcTy {
   pub variant: Option<global::Variant>,
 }
 
-impl Remap for ProcTy {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self {
-      kind: self.kind,
-      tyargs: self.tyargs,
-      args: self.args.remap(r),
-      rets: self.rets.remap(r),
-      variant: self.variant.remap(r),
-    }
-  }
-}
-
 /// The typechecking status of a global variable.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum GlobalTc {
   /// We know this is a global but have not typechecked the body.
-  Unchecked,
+  ForwardDeclared,
   /// A user global that has been typechecked, to an expression with the given type.
   Checked(global::Ty),
 }
 
-impl Remap for GlobalTc {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      GlobalTc::Unchecked => GlobalTc::Unchecked,
-      GlobalTc::Checked(ty) => GlobalTc::Checked(ty.remap(r))
-    }
-  }
-}
-
 /// The typechecking status of a constant.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ConstTc {
   /// We know this is a const but have not typechecked the body.
-  Unchecked,
+  ForwardDeclared,
   /// A user type that has been typechecked, with the original span,
   /// the (internal) declaration name, and the compiled value expression.
   Checked {
@@ -395,17 +370,6 @@ pub enum ConstTc {
   }
 }
 
-impl Remap for ConstTc {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      ConstTc::Unchecked => ConstTc::Unchecked,
-      ConstTc::Checked {ty, e, whnf} =>
-        ConstTc::Checked {ty: ty.remap(r), e: e.remap(r), whnf: whnf.remap(r)}
-    }
-  }
-}
-
 /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Prim {
@@ -414,11 +378,12 @@ pub struct Prim {
   /// The primitive operation record, if applicable.
   pub op: Option<PrimOp>,
 }
-crate::deep_size_0!(Prim);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Prim);
 
 /// An operator, function, or type. These all live in one namespace so user types and
 // functions cannot name-overlap.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub enum Entity {
   /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
@@ -431,19 +396,6 @@ pub enum Entity {
   Global(Spanned<GlobalTc>),
   /// A named constant.
   Const(Spanned<ConstTc>),
-}
-
-impl Remap for Entity {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Entity::Prim(c) => Entity::Prim(*c),
-      Entity::Type(c) => Entity::Type(c.remap(r)),
-      Entity::Proc(c) => Entity::Proc(c.remap(r)),
-      Entity::Global(c) => Entity::Global(c.remap(r)),
-      Entity::Const(c) => Entity::Const(c.remap(r)),
-    }
-  }
 }
 
 impl Entity {
@@ -459,9 +411,9 @@ impl Entity {
   }
 }
 // impl TuplePattern {
-//   fn on_names<E>(&self, f: &mut impl FnMut(bool, AtomId, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
+//   fn on_names<E>(&self, f: &mut impl FnMut(bool, Symbol, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
 //     match self {
-//       &TuplePattern::Name(ghost, n, ref sp) => if n != AtomId::UNDER { f(ghost, n, sp)? },
+//       &TuplePattern::Name(ghost, n, ref sp) => if n != Symbol::UNDER { f(ghost, n, sp)? },
 //       TuplePattern::Typed(p, _) => p.on_names(f)?,
 //       TuplePattern::Tuple(ps, _) => for p in &**ps { p.on_names(f)? }
 //       TuplePattern::Ready(_) => unreachable!("for unelaborated tuple patterns"),
@@ -470,16 +422,16 @@ impl Entity {
 //   }
 // }
 
-impl Compiler {
+impl<C> Compiler<C> {
   /// Construct the initial list of primitive entities.
-  pub fn make_names(env: &mut Environment) -> HashMap<AtomId, Entity> {
-    fn get(names: &mut HashMap<AtomId, Entity>, a: AtomId) -> &mut Prim {
+  pub fn make_names(i: &mut Interner) -> HashMap<Symbol, Entity> {
+    fn get(names: &mut HashMap<Symbol, Entity>, a: Symbol) -> &mut Prim {
       let e = names.entry(a).or_insert_with(|| Entity::Prim(Prim::default()));
       if let Entity::Prim(p) = e {p} else {unreachable!()}
     }
     let mut names = HashMap::new();
-    PrimType::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).ty = Some(p));
-    PrimOp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).op = Some(p));
+    PrimType::scan(|p, s| get(&mut names, i.intern(s)).ty = Some(p));
+    PrimOp::scan(|p, s| get(&mut names, i.intern(s)).op = Some(p));
     names
   }
 }

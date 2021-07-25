@@ -21,9 +21,9 @@ server = [
 doc = ["pulldown-cmark"]
 memory = [
   "mm0_deepsize", "mm0_deepsize_derive/nodummy",
-  "mm0_util/memory", "mm1_parser/memory"]
+  "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
 wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
-mmc = ["bumpalo"]
+mmc = ["mmcc"]
 
 [profile.release]
 debug = true
@@ -34,15 +34,10 @@ owning_ref = "0.4"
 bitflags = "1.2"
 byteorder = "1.4"
 lazy_static = "1.4"
-itertools = "0.10"
 if_chain = "1.0"
+itertools = "0.10"
 pathdiff = "0.2"
 num = "0.4"
-typed-arena = "2.0"
-arrayvec = "0.7"
-smallvec = "1.6"
-hashbrown = "0.11"
-im = "15.0"
 pretty = "0.10"
 clap = "2.33"
 futures = { version = "0.3", features = ["thread-pool"] }
@@ -53,12 +48,12 @@ annotate-snippets = { version = "0.9", features = ["color"] }
 libc = "0.2"
 zerocopy = "0.5"
 memchr = "2.3"
-bit-vec = "0.6"
 bit-set = "0.5"
+typed-arena = "2.0"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [
-  "num", "typed-arena", "futures", "owning_ref", "smallvec", "bit-vec", "bit-set"] }
+  "num", "typed-arena", "futures", "owning_ref", "bit-set"] }
 mm0_util = { path = "components/mm0_util", default-features = false }
 mm0b_parser = { path = "components/mm0b_parser" }
 mm1_parser = { path = "components/mm1_parser" }
@@ -80,7 +75,7 @@ web-sys = { version = "0.3", optional = true, features = [
   "console", "Window", "Document", "HtmlElement"] }
 
 # For "mmc" feature
-bumpalo = { version = "3.6", optional = true, features = ["boxed", "collections"] }
+mmcc = { path = "components/mmcc", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4"

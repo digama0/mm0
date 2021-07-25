@@ -1,6 +1,6 @@
 //! Types used in the stages of the compiler.
 
-pub mod parse;
+// pub mod parse;
 pub mod ast;
 pub mod entity;
 pub mod ty;
@@ -10,15 +10,13 @@ pub mod mir;
 pub mod pir;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use std::rc::Rc;
 use num::{BigInt, Signed};
-
-use crate::{AtomId, Environment, Remap, Remapper, TermId, LispVal, lisp::Syntax,
-  EnvDisplay, FormatEnv, FileSpan};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use crate::{FileSpan, Symbol};
 
 /// A trait for newtyped integers, that can be used as index types in vectors and sets.
 pub trait Idx: Copy + Eq {
@@ -34,10 +32,14 @@ impl Idx for usize {
 }
 
 /// A vector indexed by a custom indexing type `I`, usually a newtyped integer.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
 
 impl<I, T> IdxVec<I, T> {
+  /// Construct a new empty [`IdxVec`].
+  pub const fn new() -> Self { Self(vec![], PhantomData) }
+
   /// Construct a new [`IdxVec`] with the specified capacity.
   #[must_use] pub fn with_capacity(capacity: usize) -> Self { Vec::with_capacity(capacity).into() }
 
@@ -87,11 +89,6 @@ impl<I, T> Default for IdxVec<I, T> {
   fn default() -> Self { vec![].into() }
 }
 
-impl<I, T: Remap> Remap for IdxVec<I, T> {
-  type Target = IdxVec<I, T::Target>;
-  fn remap(&self, r: &mut Remapper) -> Self::Target { self.0.remap(r).into() }
-}
-
 impl<I: Idx, T> Index<I> for IdxVec<I, T> {
   type Output = T;
   fn index(&self, index: I) -> &Self::Output { &self.0[I::into_usize(index)] }
@@ -104,7 +101,14 @@ impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
 mk_id! {
   /// A variable ID. These are local to a given declaration (function, constant, global),
   /// but are not de Bruijn variables - they are unique identifiers within the declaration.
-  VarId
+  VarId,
+
+  /// An ID for an opaque "lambda", an expression modulo an ordered list of free variables.
+  /// This is used to embed arbitrary term constructors in the expression language.
+  LambdaId,
+
+  /// An ID for an opaque proof object, used in `Entail` nodes in the AST.
+  ProofId
 }
 
 impl std::fmt::Display for VarId {
@@ -114,7 +118,8 @@ impl std::fmt::Display for VarId {
 }
 
 /// A spanned expression.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<T> {
   /// The span of the expression
   pub span: FileSpan,
@@ -128,92 +133,6 @@ impl<T> Spanned<T> {
   pub fn map_into<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
     Spanned { span: self.span, k: f(self.k) }
   }
-}
-
-impl<T: Remap> Remap for Spanned<T> {
-  type Target = Spanned<T::Target>;
-  fn remap(&self, r: &mut Remapper) -> Spanned<T::Target> {
-    Spanned {span: self.span.clone(), k: self.k.remap(r)}
-  }
-}
-
-macro_rules! make_keywords {
-  {$($(#[$attr:meta])* $x:ident: $e:expr,)*} => {
-    make_keywords! {@IMPL $($(#[$attr])* $x concat!("The keyword `", $e, "`.\n"), $e,)*}
-  };
-  {@IMPL $($(#[$attr:meta])* $x:ident $doc0:expr, $e:expr,)*} => {
-    /// The type of MMC keywords, which are atoms with a special role in the MMC parser.
-    #[derive(Debug, EnvDebug, PartialEq, Eq, Copy, Clone)]
-    pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
-    crate::deep_size_0!(Keyword);
-
-    lazy_static! {
-      static ref SYNTAX_MAP: Box<[Option<Keyword>]> = {
-        let mut vec = vec![];
-        Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
-        vec.into()
-      };
-    }
-
-    impl Keyword {
-      #[must_use] fn from_str(s: &str) -> Option<Self> {
-        match s {
-          $($e => Some(Self::$x),)*
-          _ => None
-        }
-      }
-
-      /// Get the MMC keyword corresponding to a lisp [`Syntax`].
-      #[must_use] pub fn from_syntax(s: Syntax) -> Option<Self> {
-        SYNTAX_MAP[s as usize]
-      }
-    }
-
-    impl Environment {
-      /// Make the initial MMC keyword map in the given environment.
-      #[allow(clippy::string_lit_as_bytes)]
-      pub fn make_keywords(&mut self) -> HashMap<AtomId, Keyword> {
-        let mut atoms = HashMap::new();
-        $(if Syntax::from_str($e).is_none() {
-          atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);
-        })*
-        atoms
-      }
-    }
-  }
-}
-
-make_keywords! {
-  Add: "+",
-  Arrow: "=>",
-  ArrowL: "<-",
-  ArrowR: "->",
-  Begin: "begin",
-  Colon: ":",
-  ColonEq: ":=",
-  Const: "const",
-  Else: "else",
-  Entail: "entail",
-  Func: "func",
-  Finish: "finish",
-  Ghost: "ghost",
-  Global: "global",
-  Implicit: "implicit",
-  Intrinsic: "intrinsic",
-  If: "if",
-  Le: "<=",
-  Lt: "<",
-  Match: "match",
-  Mut: "mut",
-  Or: "or",
-  Out: "out",
-  Proc: "proc",
-  Star: "*",
-  Struct: "struct",
-  Typedef: "typedef",
-  Variant: "variant",
-  While: "while",
-  With: "with",
 }
 
 /// Possible sizes for integer operations and types.
@@ -233,7 +152,7 @@ pub enum Size {
   /// bignum compilation.)
   Inf,
 }
-crate::deep_size_0!(Size);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Size);
 
 impl Default for Size {
   fn default() -> Self { Self::Inf }
@@ -273,12 +192,7 @@ pub enum IntTy {
   /// The type of unsigned integers of given bit width, or all nonnegative integers.
   UInt(Size),
 }
-crate::deep_size_0!(IntTy);
-
-impl Remap for IntTy {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self::Target { *self }
-}
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(IntTy);
 
 impl std::fmt::Display for IntTy {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -372,7 +286,7 @@ pub enum Unop {
   /// for `int` this is the identity, and for `nat` this is invalid.
   As(IntTy),
 }
-crate::deep_size_0!(Unop);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Unop);
 
 impl Unop {
   /// Return a string representation of the [`Unop`].
@@ -506,7 +420,7 @@ pub enum Binop {
   /// Not equal, for signed or unsigned integers of any size
   Ne,
 }
-crate::deep_size_0!(Binop);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Binop);
 
 impl Binop {
   /// Return a string representation of the [`Binop`].
@@ -631,97 +545,27 @@ pub enum FieldName {
   /// A numbered field access like `x.1`.
   Number(u32),
   /// A named field access like `x.foo`.
-  Named(AtomId),
+  Named(Symbol),
 }
-crate::deep_size_0!(FieldName);
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(FieldName);
 
-impl EnvDisplay for FieldName {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    use std::fmt::Display;
+impl Display for FieldName {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       FieldName::Number(n) => n.fmt(f),
-      FieldName::Named(a) => a.fmt(fe, f),
-    }
-  }
-}
-
-/// An embedded MM0 expression inside MMC. This representation is designed to make it easy
-/// to produce substitutions of the free variables.
-#[derive(Clone, Debug, DeepSizeOf)]
-#[allow(variant_size_differences)]
-pub enum Mm0ExprNode {
-  /// A constant expression, containing no free variables,
-  /// or a dummy variable that will not be substituted.
-  Const(LispVal),
-  /// A free variable. This is an index into the [`Mm0Expr::subst`] array.
-  Var(u32),
-  /// A term constructor, where at least one subexpression is non-constant
-  /// (else we would use [`Const`](Self::Const)).
-  Expr(TermId, Vec<Mm0ExprNode>),
-}
-
-impl Remap for Mm0ExprNode {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Mm0ExprNode::Const(c) => Mm0ExprNode::Const(c.remap(r)),
-      &Mm0ExprNode::Var(i) => Mm0ExprNode::Var(i),
-      Mm0ExprNode::Expr(t, es) => Mm0ExprNode::Expr(t.remap(r), es.remap(r)),
-    }
-  }
-}
-
-struct Mm0ExprNodePrint<'a, T>(&'a [T], &'a Mm0ExprNode);
-impl<'a, T: EnvDisplay> EnvDisplay for Mm0ExprNodePrint<'a, T> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self.1 {
-      Mm0ExprNode::Const(e) => e.fmt(fe, f),
-      &Mm0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
-      Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", fe.to(t))?;
-        for e in es {
-          write!(f, " {}", fe.to(&Self(self.0, e)))?
-        }
-        write!(f, ")")
-      }
+      FieldName::Named(a) => a.fmt(f),
     }
   }
 }
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<T> {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
   pub subst: Vec<T>,
   /// The root node of the expression.
-  pub expr: Rc<Mm0ExprNode>,
-}
-
-impl<T: std::hash::Hash> std::hash::Hash for Mm0Expr<T> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.subst.hash(state);
-    Rc::as_ptr(&self.expr).hash(state);
-  }
-}
-
-impl<T: PartialEq> PartialEq for Mm0Expr<T> {
-  fn eq(&self, other: &Self) -> bool {
-    self.subst == other.subst && Rc::ptr_eq(&self.expr, &other.expr)
-  }
-}
-impl<T: Eq> Eq for Mm0Expr<T> {}
-
-impl<T: Remap> Remap for Mm0Expr<T> {
-  type Target = Mm0Expr<T::Target>;
-  fn remap(&self, r: &mut Remapper) -> Mm0Expr<T::Target> {
-    Mm0Expr {subst: self.subst.remap(r), expr: self.expr.remap(r)}
-  }
-}
-
-impl<T: EnvDisplay> EnvDisplay for Mm0Expr<T> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    Mm0ExprNodePrint(&self.subst, &self.expr).fmt(fe, f)
-  }
+  pub expr: LambdaId,
 }

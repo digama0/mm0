@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
 
-use crate::AtomId;
+use crate::Symbol;
 use super::{VecPatch, Replace, types::{IdxVec, entity, mir, global}};
 use entity::{Entity, ConstTc};
 #[allow(clippy::wildcard_imports)] use mir::*;
@@ -98,7 +98,7 @@ impl Allocations {
 }
 
 impl ExprKind {
-  fn eval_u64(&self, ns: &HashMap<AtomId, Entity>) -> Option<u64> {
+  fn eval_u64(&self, ns: &HashMap<Symbol, Entity>) -> Option<u64> {
     match self {
         ExprKind::Const(c) => if_chain! {
           if let Some(Entity::Const(tc)) = ns.get(c);
@@ -116,7 +116,7 @@ impl ExprKind {
 }
 
 impl TyKind {
-  fn sizeof(&self, ns: &HashMap<AtomId, Entity>) -> Option<u64> {
+  fn sizeof(&self, ns: &HashMap<Symbol, Entity>) -> Option<u64> {
     match self {
       TyKind::Unit |
       TyKind::True |
@@ -177,7 +177,7 @@ impl Interference {
 
 impl Cfg {
   #[must_use] fn build_allocations(&mut self,
-    names: &HashMap<AtomId, Entity>
+    names: &HashMap<Symbol, Entity>
   ) -> (Allocations, Interference) {
     let sizeof = |ty: &Ty| ty.sizeof(names).expect("can't get size of type");
 
@@ -305,7 +305,7 @@ impl Cfg {
   /// groups, as few as possible, such that all variables in a group have the same bit pattern at
   /// a given point in time, and any variable whose storage is overwritten by a later variable in
   /// the same group is dead.
-  #[must_use] pub fn storage(&mut self, names: &HashMap<AtomId, Entity>) -> Allocations {
+  #[must_use] pub fn storage(&mut self, names: &HashMap<Symbol, Entity>) -> Allocations {
     let (allocs, _) = self.build_allocations(names);
     allocs
   }
