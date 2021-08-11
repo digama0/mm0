@@ -61,7 +61,7 @@ macro_rules! make_keywords {
     impl Environment {
       /// Make the initial MMC keyword map in the given environment.
       #[allow(clippy::string_lit_as_bytes)]
-      pub fn make_keywords() -> HashMap<Symbol, Keyword> {
+      #[must_use] pub fn make_keywords() -> HashMap<Symbol, Keyword> {
         let mut atoms = HashMap::new();
         mmcc::Interner::with(|i| {
           $(if Syntax::from_str($e).is_none() {
@@ -308,7 +308,7 @@ impl<'a, C> Parser<'a, C> {
   /// and return the pair `(KEYWORD, args)` on success.
   fn head_keyword(&mut self, e: &LispVal) -> Option<(Keyword, Uncons)> {
     let u = Uncons::from(e.clone());
-    Some((self.as_keyword(&e)?, u))
+    Some((self.as_keyword(e)?, u))
   }
 
   fn with_ctx<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
@@ -447,10 +447,10 @@ impl<'a, C> Parser<'a, C> {
   fn push_tuple_pattern_args(&mut self,
     base: &FileSpan, ghost: bool, u: Uncons
   ) -> Result<Box<[(VarId, TuplePattern)]>> {
-    Ok(u.map(|e| {
+    u.map(|e| {
       let v = self.ba.fresh_var(Symbol::UNDER);
       Ok((v, self.push_tuple_pattern(base, ghost, e, Some(v))?))
-    }).collect::<Result<_>>()?)
+    }).collect::<Result<_>>()
   }
 
   /// Simplified version of `push_tuple_pattern` that visits the names of the
@@ -461,17 +461,17 @@ impl<'a, C> Parser<'a, C> {
     if let Some(a) = e.as_atom() {
       if a != AtomId::UNDER {
         let name = self.as_symbol(a);
-        f(self, try_get_fspan(base, &e), name)?
+        f(self, try_get_fspan(base, e), name)?
       }
     } else if e.is_list() {
-      match self.head_keyword(&e) {
+      match self.head_keyword(e) {
         Some((Keyword::Colon, mut u)) => if let Some(e) = u.next() {
           self.on_names(base, &e, f)?
         }
         Some((Keyword::Ghost, mut u)) => u.try_for_each(|e| self.on_names(base, &e, f))?,
         _ => Uncons::from(e.clone()).try_for_each(|e| self.on_names(base, &e, f))?,
       }
-    }
+    } else {}
     Ok(())
   }
 
@@ -527,13 +527,14 @@ impl<'a, C> Parser<'a, C> {
   fn push_decl(&mut self, base: &FileSpan, e: &LispVal, is_const: bool) -> Result<Item> {
     let span = try_get_fspan(base, e);
     if let DeclAssign::Let(lhs, rhs) = self.parse_decl_asgn(&span, e)? {
-      self.on_names(&span, &lhs, &mut |this, span, name| Ok({
+      self.on_names(&span, &lhs, &mut |this, span, name| {
         if is_const {
           this.compiler.forward_declare_const(&span, name)?
         } else {
           this.compiler.forward_declare_global(&span, name)?
         }
-      }))?;
+        Ok(())
+      })?;
       let rhs = self.parse_expr(&span, rhs)?;
       let lhs = self.push_tuple_pattern(&span, false, lhs, None)?;
       let k = if is_const { ItemKind::Const(lhs, rhs) } else { ItemKind::Global(lhs, rhs) };
@@ -672,10 +673,10 @@ impl<'a, C> Parser<'a, C> {
           let mut els;
           loop {
             els = u.next();
-            if let Some(Keyword::Else) = els.as_ref().and_then(|e| self.as_keyword(&e)) {
+            if let Some(Keyword::Else) = els.as_ref().and_then(|e| self.as_keyword(e)) {
               els = u.next()
             }
-            if let Some(Keyword::If) = els.as_ref().and_then(|e| self.as_keyword(&e)) {
+            if let Some(Keyword::If) = els.as_ref().and_then(|e| self.as_keyword(e)) {
               push(self, mem::replace(&mut cond_tru,
                 (u.next().ok_or_else(err)?, u.next().ok_or_else(err)?)))?;
             } else {break}
@@ -692,16 +693,16 @@ impl<'a, C> Parser<'a, C> {
         Some((Keyword::Match, u)) =>
           self.parse_match(&span, u, |this, e| this.parse_expr(&span, e))?.k,
         Some((Keyword::While, mut u)) => {
-          let c = u.next().ok_or_else(||
+          let cond = u.next().ok_or_else(||
             ElabError::new_e(&span, "while: syntax error"))?;
-          let (hyp, cond) = if let Some((Keyword::Colon, mut u)) = self.head_keyword(&c) {
+          let (hyp, cond) = if let Some((Keyword::Colon, mut u)) = self.head_keyword(&cond) {
             let h = u.next().and_then(|e| Some(spanned(&span, &e, self.as_symbol(e.as_atom()?))));
             if let (Some(h), Some(c), true) = (h, u.next(), u.is_empty()) {
               (Some(h), c)
             } else {
               return Err(ElabError::new_e(&span, "while: bad pattern"))
             }
-          } else {(None, c)};
+          } else {(None, cond)};
           let mut var = None;
           let mut muts = Vec::new();
           while let Some(e) = u.head() {
@@ -816,9 +817,9 @@ impl<'a, C> Parser<'a, C> {
           }
           ExprOrStmt::Let(e_span, lhs, rhs, Renames {old, new}) => {
             clear_jumps!();
-            let rhs = this.parse_expr(&span, rhs)?;
+            let rhs = this.parse_expr(span, rhs)?;
             this.ba.apply_rename(&old).map_err(|e| (span, e))?;
-            let lhs = this.push_tuple_pattern(&span, false, lhs, None)?;
+            let lhs = this.push_tuple_pattern(span, false, lhs, None)?;
             this.ba.apply_rename(&new).map_err(|e| (span, e))?;
             stmts.push(Spanned {span: e_span, k: ast::StmtKind::Let {lhs, rhs}})
           }
@@ -842,16 +843,16 @@ impl<'a, C> Parser<'a, C> {
   }
 
   fn parse_proc(&mut self, span: FileSpan, kind: &dyn Fn(Symbol) -> Result<ProcKind>, mut u: Uncons) -> Result<Item> {
-    let e = match u.next() {
-      None => return Err(ElabError::new_e(try_get_span(&span, &LispVal::from(u)), "func/proc: syntax error")),
-      Some(e) => e,
-    };
     struct OutVal {
       ghost: bool,
       index: u32,
       name: Symbol,
       used: bool,
     }
+    let e = match u.next() {
+      None => return Err(ElabError::new_e(try_get_span(&span, &LispVal::from(u)), "func/proc: syntax error")),
+      Some(e) => e,
+    };
     // self.tyvars.extend(tyargs.iter().map(|p| p.k));
     // let tyargs = tyargs.len().try_into().expect("too many type arguments");
     let mut outmap: Vec<OutVal> = vec![];
@@ -860,7 +861,7 @@ impl<'a, C> Parser<'a, C> {
     let (name, header) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (spanned(&span, &e, self.as_symbol(a)), None),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
-        let mut u = Uncons::from(e.clone());
+        let mut u = Uncons::from(e);
         let e = u.next().ok_or_else(||
           ElabError::new_e(&span, "func/proc syntax error: expecting function name"))?;
         let name = self.as_symbol_or(&span, &e, || "func/proc syntax error: expecting an atom")?;
@@ -1024,7 +1025,7 @@ impl<'a, C> Parser<'a, C> {
         let (name, tyargs, args) = self.parse_name_and_tyargs(base, &e1)?;
         let mut fields = vec![];
         for e in u { self.push_args(base, false, e, &mut fields)? }
-        let val = Spanned {span: span.clone(), k: TypeKind::Struct(fields.into())};
+        let val = Spanned {span, k: TypeKind::Struct(fields.into())};
         ItemGroup::Item(spanned(base, e, ItemKind::Typedef {name, tyargs, args, val}))
       }
       _ => return Err(ElabError::new_e(try_get_span(base, e),
@@ -1127,12 +1128,12 @@ impl<'a, C> Parser<'a, C> {
             let span = try_get_fspan(base, &lhs);
             let mut pb = mb.branch(&mut this.ba).map_err(|UnreachablePattern|
               ElabError::new_e(&span, "unreachable pattern"))?;
-            let res = this.parse_pattern(base, &mut pb, &lhs)?;
+            let pat = this.parse_pattern(base, &mut pb, &lhs)?;
             let rhs = this.with_ctx(|this| {
               pb.prepare_rhs(&mut this.ba);
               f(this, rhs)
             })?;
-            pb.finish(&span, res, rhs, &mut mb)
+            pb.finish(&span, pat, rhs, &mut mb)
           } else {
             return Err(ElabError::new_e(base, "match: syntax error"))
           }

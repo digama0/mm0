@@ -50,6 +50,7 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::redundant_pub_crate,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self

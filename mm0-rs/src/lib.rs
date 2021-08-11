@@ -34,7 +34,7 @@
   clippy::default_trait_access, clippy::enum_glob_use, clippy::inline_always,
   clippy::manual_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
-  clippy::multiple_crate_versions, clippy::option_if_let_else,
+  clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::redundant_pub_crate,
   clippy::semicolon_if_nothing_returned, clippy::shadow_unrelated, clippy::too_many_lines,
   clippy::use_self)]
 
