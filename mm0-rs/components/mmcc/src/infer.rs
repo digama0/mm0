@@ -1,4 +1,5 @@
 //! Type inference and elaboration
+#![allow(clippy::needless_collect)]
 
 use std::borrow::{Borrow, Cow};
 use std::{cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
@@ -736,7 +737,6 @@ impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for std::rc::Rc<T> {
 
 impl<'a, T: FromGlobal<'a>> FromGlobal<'a> for Box<[T]> {
   type Output = &'a [T::Output];
-  #[allow(clippy::needless_collect)]
   fn from_global(&self, c: &mut InferCtx<'a, '_>, subst: &[Ty<'a>]) -> Self::Output {
     let vec = self.iter().map(|t| t.from_global(c, subst)).collect::<Vec<_>>();
     c.alloc.alloc_slice_fill_iter(vec.into_iter())
@@ -3977,7 +3977,6 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     tgt: &mut RExprTy<'a>,
     breaks: &mut Vec<DynContext<'a>>,
   ) -> hir::Stmt<'a> {
-    #[allow(clippy::needless_collect)]
     hir::Spanned {span, k: match stmt {
       UnelabStmt::Let {lhs, rhs} => {
         let lhs = self.finish_tuple_pattern(&lhs);
