@@ -854,8 +854,8 @@ impl<'a> LispParser<'a> {
                   ElabError::new_e(arg.span, "expected at least one argument"))?;
                 break Ir::dotted_list(e.span, cs, self.expr(false, r)?)
               }
-              cs.push(self.expr(true, arg)?)
-            } else {cs.push(self.expr(true, arg)?)}
+            }
+            cs.push(self.expr(true, arg)?)
           } else {break Ir::list(self.fspan(e.span), cs)}
         })
       } else if let SExprKind::Atom(a) = es[0].k {
