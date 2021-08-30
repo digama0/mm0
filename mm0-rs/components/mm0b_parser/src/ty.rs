@@ -2,7 +2,7 @@
 
 use byteorder::LE;
 use mm0_util::SortId;
-use zerocopy::{FromBytes, Unaligned, U64};
+use zerocopy::{AsBytes, FromBytes, Unaligned, U64};
 
 /// bound mask: `10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
 pub const TYPE_BOUND_MASK: u64 = 1 << 63;
@@ -19,7 +19,7 @@ pub const TYPE_DEPS_MASK: u64 = (1 << 56) - 1;
 /// * Bits 0-55 (the low 7 bytes) are a bitset giving the set of bound variables
 ///   earlier in the list that this variable is allowed to depend on.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromBytes, AsBytes, Unaligned)]
 pub struct Type(U64<LE>);
 
 /// Newtype for `Type` that makes some situations easier to read.
@@ -35,6 +35,7 @@ impl From<u64> for Type {
 
 impl Type {
   /// Get the u64 comprising a type
+  #[must_use]
   pub fn into_inner(self) -> u64 { self.0.get() }
 
   /// Make a new `Type` of sort `sort_num`

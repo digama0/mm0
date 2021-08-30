@@ -146,7 +146,7 @@ The `CMD_END` terminator is redundant because it is possible to predict the end 
 
 The proof stream contains the proofs of all the theorems that have been declared in the term and theorem tables. It is an unaligned stream of `(cmd, data)` pairs like the unify stream, but it has a two-level structure to enable fast scanning through the file.
 
-The first command in the stream is a *statement*, and the `data` field is a relative pointer that gives the number of bytes from the start of this statement to the start of the following statement. For statements that need a proof stream,
+The first command in the stream is a *statement*, and the `data` field is a relative pointer that gives the number of bytes from the start of this statement to the start of the following statement.
 
 The valid statements are:
 

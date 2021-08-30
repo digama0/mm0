@@ -49,6 +49,7 @@ impl LinedString {
   /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the [`Span`] used in the index
   /// was generated from the file that is being indexed.
   #[allow(unused)]
+  #[must_use]
   pub fn str_at(&self, s: Span) -> &str { unsafe { std::str::from_utf8_unchecked(&self[s]) } }
 
   /// Calculate and store information about the positions of any newline
@@ -267,6 +268,6 @@ impl From<String> for LinedString {
   fn from(s: String) -> LinedString {
     let mut unicode = false;
     let lines = LinedString::get_lines(&mut unicode, &s);
-    LinedString { unicode, lines, s }
+    LinedString { s, unicode, lines }
   }
 }

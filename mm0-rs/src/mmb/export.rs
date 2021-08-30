@@ -485,7 +485,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.write_u32(num_thms.try_into().expect("too many thms"))?; // num_thms
     let p_terms = self.fixup32()?;
     let p_thms = self.fixup32()?;
-    let p_proof = self.fixup64()?;
+    let p_proof = self.fixup32()?;
+    self.write_u32(0)?;
     let p_index = self.fixup64()?;
 
     // sort data

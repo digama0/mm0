@@ -14,19 +14,18 @@ use zerocopy::{FromBytes, LayoutVerified, U16, U32, U64};
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct MmbFile<'a, X = BasicIndex<'a>> {
   /// The file's header.
   pub header: Header,
   /// The full file
-  buf: &'a [u8],
+  pub buf: &'a [u8],
   /// The sort table
-  sorts: &'a [SortData],
+  pub sorts: &'a [SortData],
   /// The term table
-  terms: &'a [TermEntry],
+  pub terms: &'a [TermEntry],
   /// The theorem table
-  thms: &'a [ThmEntry],
-  /// The index of the beginning of the proof stream
-  proof: usize,
+  pub thms: &'a [ThmEntry],
   /// The index, if provided.
   pub index: X,
 }
@@ -271,7 +270,8 @@ pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), Parse
 }
 
 /// An iterator over a proof command stream.
-#[must_use] #[derive(Debug, Clone)]
+#[must_use]
+#[derive(Debug, Clone)]
 pub struct ProofIter<'a> {
   /// The full mmb file
   mmb_source: &'a [u8],
@@ -320,7 +320,8 @@ impl<'a> Iterator for ProofIter<'a> {
 }
 
 /// An iterator over a unify command stream.
-#[must_use] #[derive(Debug, Clone)]
+#[must_use]
+#[derive(Debug, Clone)]
 pub struct UnifyIter<'a> {
   /// The full mmb file.
   mmb_file: &'a [u8],
@@ -335,6 +336,24 @@ impl<'a> UnifyIter<'a> {
   /// Peek the next element.
   #[must_use]
   pub fn peek(&self) -> Option<Result<UnifyCmd, ParseError>> { self.clone().next() }
+
+  /// Scan until the `END` command, and return the file position just after the `END` command.
+  pub fn after_end(&self) -> Result<usize, ParseError> {
+    let UnifyIter { mmb_file: mmb, mut pos } = *self;
+    loop {
+      let (cmd, _, new_pos) = parse_cmd(mmb, pos)?;
+      if cmd == 0 {
+        return Ok(new_pos)
+      }
+      pos = new_pos;
+    }
+  }
+
+  /// Scan until the `END` command, and return the byte slice from the current position until
+  /// the `END` command (inclusive).
+  pub fn as_bytes(&self) -> Result<&'a [u8], ParseError> {
+    Ok(&self.mmb_file[self.pos..self.after_end()?])
+  }
 }
 
 impl<'a> Iterator for UnifyIter<'a> {
@@ -645,8 +664,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
         BadThms(u32_as_usize(header.p_thms.get())..u32_as_usize(header.p_proof.get()))
       })?
       .0;
-    let proof = u32_as_usize(header.p_proof.get());
-    let mut file = MmbFile { header: *header, buf, sorts, terms, thms, proof, index: X::default() };
+    let mut file = MmbFile { header: *header, buf, sorts, terms, thms, index: X::default() };
     let n = u64_as_usize(header.p_index);
     if n != 0 {
       let (entries, _) = (|| -> Option<_> {
@@ -772,11 +790,10 @@ impl<'a, X> MmbFile<'a, X> {
 
   /// Get the proof stream for the file.
   #[inline]
-  #[must_use]
   pub fn proof(&self) -> DeclIter<'a> {
     DeclIter {
       mmb_file: self.buf,
-      pos: self.proof,
+      pos: u32_as_usize(self.header.p_proof.get()),
       next_sort_id: 0_u8,
       next_term_id: 0_u32,
       next_thm_id: 0_u32,
@@ -836,11 +853,39 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
     }
   }
 
+  /// Get the name of a sort, if present.
+  #[must_use]
+  pub fn try_sort_name(&self, n: SortId) -> Option<&'a str> {
+    self.sort_index(n).and_then(|t| t.value())
+  }
+
+  /// Get the name of a term, if present.
+  #[must_use]
+  pub fn try_term_name(&self, n: TermId) -> Option<&'a str> {
+    self.term_index(n).and_then(|t| t.value())
+  }
+
+  /// Get the name of a theorem, if present.
+  #[must_use]
+  pub fn try_thm_name(&self, n: ThmId) -> Option<&'a str> {
+    self.thm_index(n).and_then(|t| t.value())
+  }
+
+  /// Get the name of a sort, supplying a default name
+  /// of the form `s123` if the index is not present.
+  #[must_use]
+  pub fn sort_name(&self, n: SortId) -> Cow<'a, str> {
+    match self.try_sort_name(n) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("s{}", n.0)),
+    }
+  }
+
   /// Get the name of a term, supplying a default name
   /// of the form `t123` if the index is not present.
   #[must_use]
   pub fn term_name(&self, n: TermId) -> Cow<'a, str> {
-    match self.term_index(n).and_then(|t| t.value()) {
+    match self.try_term_name(n) {
       Some(v) => Cow::Borrowed(v),
       None => Cow::Owned(format!("t{}", n.0)),
     }
@@ -850,19 +895,9 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
   /// of the form `T123` if the index is not present.
   #[must_use]
   pub fn thm_name(&self, n: ThmId) -> Cow<'a, str> {
-    match self.thm_index(n).and_then(|t| t.value()) {
+    match self.try_thm_name(n) {
       Some(v) => Cow::Borrowed(v),
       None => Cow::Owned(format!("T{}", n.0)),
-    }
-  }
-
-  /// Get the name of a sort, supplying a default name
-  /// of the form `s123` if the index is not present.
-  #[must_use]
-  pub fn sort_name(&self, n: SortId) -> Cow<'a, str> {
-    match self.sort_index(n).and_then(|t| t.value()) {
-      Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("s{}", n.0)),
     }
   }
 }
@@ -902,9 +937,11 @@ macro_rules! str_list_wrapper {
       fn new(buf: &'a [u8]) -> Self { Self(StrListRef::new(buf)) }
 
       /// Get the name of the string with index `n`. The range of valid `n` is `self.strs.len()`,
+      #[must_use]
       pub fn get_opt(&self, n: usize) -> Option<&'a str> { self.0.get(n) }
 
       /// Get the name of the string with index `n`, with a fallback if the value cannot be found.
+      #[must_use]
       pub fn get(&self, n: usize) -> Cow<'a, str> {
         match self.get_opt(n) {
           Some(v) => Cow::Borrowed(v),
@@ -1026,10 +1063,9 @@ impl<'a> TermRef<'a> {
   #[must_use]
   pub fn args(&self) -> &[Arg] { self.args_and_ret.split_last().expect("nonempty").1 }
 
+  /// Get the termdef's arguments as a slice, INCLUDING the return type
   #[inline]
   #[must_use]
-  /// Get the termdef's arguments as a slice, INCLUDING the
-  /// return type
   pub fn args_and_ret(&self) -> &[Arg] { self.args_and_ret }
 
   /// The return sort and dependencies.
@@ -1039,7 +1075,6 @@ impl<'a> TermRef<'a> {
 
   /// The beginning of the unify stream for the term.
   #[inline]
-  #[must_use]
   pub fn unify(&self) -> UnifyIter<'a> { UnifyIter::new(self.unify) }
 }
 
@@ -1051,7 +1086,6 @@ impl<'a> ThmRef<'a> {
 
   /// The beginning of the unify stream.
   #[inline]
-  #[must_use]
   pub fn unify(&self) -> UnifyIter<'a> { UnifyIter::new(self.unify) }
 }
 
@@ -1061,9 +1095,7 @@ impl<'a> ThmRef<'a> {
 /// Try to parse the next declaration in the mmb file; in this case, a
 /// declaration is represented by a pair `[(StmtCmd, ProofIter)]`.
 /// On success, will also return the new start position for the [`DeclIter`]
-fn try_next_decl(
-  mmb: &[u8], pos: usize,
-) -> Result<Option<(StmtCmd, ProofIter<'_>, usize)>, ParseError> {
+fn try_next_decl(mmb: &[u8], pos: usize) -> Result<Option<(StmtCmd, ProofIter<'_>)>, ParseError> {
   // The `data` u32 you get back from try_next_cmd is (in this context)
   // the length of the corresponding proof. `new_start_pos` is just
   // the position after the (u8, u32) pair in the mmb stream.
@@ -1074,17 +1106,18 @@ fn try_next_decl(
 
   let proof_ends_at = pos + proof_len as usize;
 
-  if (pos + proof_len as usize) < proof_starts_at {
+  if proof_ends_at < proof_starts_at {
     return Err(ParseError::BadProofLen(pos))
   }
 
-  let pr = ProofIter { mmb_source: mmb, pos: proof_starts_at, ends_at: pos + (proof_len as usize) };
+  let pr = ProofIter { mmb_source: mmb, pos: proof_starts_at, ends_at: proof_ends_at };
 
-  Ok(Some((StmtCmd::try_from(stmt_cmd)?, pr, proof_ends_at)))
+  Ok(Some((StmtCmd::try_from(stmt_cmd)?, pr)))
 }
 
 /// An iterator over the declaration stream.
-#[must_use] #[derive(Debug, Clone)]
+#[must_use]
+#[derive(Debug, Clone)]
 pub struct DeclIter<'a> {
   /// The full source file.
   mmb_file: &'a [u8],
@@ -1101,6 +1134,23 @@ impl<'a> DeclIter<'a> {
   pub fn peek(&self) -> Option<Result<(NumdStmtCmd, ProofIter<'a>), ParseError>> {
     self.clone().next()
   }
+
+  /// Scan until the end of the proof stream, and return the file position just after the
+  /// `END` command.
+  pub fn after_end(&self) -> Result<usize, ParseError> {
+    let mut pos = self.pos;
+    loop {
+      let (cmd, stmt_len, next_cmd) = parse_cmd(self.mmb_file, pos)?;
+      if cmd == 0 {
+        return Ok(next_cmd)
+      }
+      let new_pos = pos + (stmt_len as usize);
+      if new_pos < next_cmd {
+        return Err(ParseError::BadProofLen(pos))
+      }
+      pos = new_pos;
+    }
+  }
 }
 
 impl<'a> Iterator for DeclIter<'a> {
@@ -1109,8 +1159,8 @@ impl<'a> Iterator for DeclIter<'a> {
     match try_next_decl(self.mmb_file, self.pos) {
       Err(e) => Some(Err(e)),
       Ok(None) => None,
-      Ok(Some((stmt, proof_iter, rest))) => {
-        self.pos = rest;
+      Ok(Some((stmt, proof_iter))) => {
+        self.pos = proof_iter.ends_at;
         let cmd = match stmt {
           StmtCmd::Sort => {
             let out = NumdStmtCmd::Sort { sort_id: SortId(self.next_sort_id) };
@@ -1146,6 +1196,6 @@ impl<'a> NameEntryRef<'a> {
 
   /// The statement that sourced this entry.
   pub fn decl(&self) -> Result<Option<(StmtCmd, ProofIter<'a>)>, ParseError> {
-    Ok(try_next_decl(self.buf, u64_as_usize(self.p_proof))?.map(|(stmt, proof, _)| (stmt, proof)))
+    try_next_decl(self.buf, u64_as_usize(self.p_proof))
   }
 }

@@ -30,16 +30,15 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
+  clippy::manual_filter_map,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
   clippy::missing_errors_doc,
@@ -47,6 +46,7 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -617,7 +617,7 @@ pub struct TermEntry {
   pub p_args: U32<LE>,
 }
 
-/// An entry in the term table, which describes the "signature" of the axiom/theorem,
+/// An entry in the theorem table, which describes the "signature" of the axiom/theorem,
 /// the information needed to apply the theorem to use it in other theorems.
 #[repr(C, align(8))]
 #[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
@@ -638,12 +638,12 @@ pub struct ThmEntry {
 pub struct TableEntry {
   /// A magic number that identifies this table entry, and determines the interpretation of the
   /// rest of the data.
-  id: [u8; 4],
+  pub id: [u8; 4],
   /// A 4 byte data field whose interpretation depends on the entry type.
-  data: U32<LE>,
+  pub data: U32<LE>,
   /// An 8 byte data field whose interpretation depends on the entry type, but is generally a
   /// pointer to the actual table data.
-  ptr: U64<LE>,
+  pub ptr: U64<LE>,
 }
 
 /// An individual symbol name entry in the index.

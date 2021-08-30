@@ -29,16 +29,15 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
+  clippy::manual_filter_map,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
   clippy::missing_errors_doc,
@@ -46,6 +45,7 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -182,6 +182,7 @@ macro_rules! const_panic {
 /// Converts `n` from `u32` to `usize` or panics (which should not happen since we don't support
 /// 16 bit systems).
 #[inline]
+#[must_use]
 pub fn u32_as_usize(n: u32) -> usize {
   n.try_into().expect("here's a nickel, get a better computer")
 }
@@ -191,6 +192,7 @@ pub fn u32_as_usize(n: u32) -> usize {
 /// ```ignore
 /// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
 /// ```
+#[must_use]
 pub fn alphanumber(n: usize) -> String {
   let mut out = Vec::with_capacity(2);
   let mut n = n + 1;
@@ -276,6 +278,7 @@ impl ArcString {
   ///
   /// # Safety
   /// This is potentially unsafe because `ArcString` do not have to be valid unicode.
+  #[must_use]
   pub fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
 }
 

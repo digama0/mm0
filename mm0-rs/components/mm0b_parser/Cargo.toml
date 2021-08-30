@@ -1,9 +1,9 @@
 [package]
 name = "mm0b_parser"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
-description = "parsing tools for Metamath Zero's mmb binary format"
+description = "parsing tools for Metamath Zero's MMB binary format"
 repository = "https://github.com/digama0/mm0"
 include = ["Cargo.toml", "src/**/*.rs", "../../README.md", "rustfmt.toml"]
 readme = "../../README.md"
@@ -17,4 +17,4 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 byteorder = "1.4"
 zerocopy = "0.5"
 memchr = "2.3"
-mm0_util = { version = "0.1.1", path = "../mm0_util", default-features = false }
+mm0_util = { version = "0.1.4", path = "../mm0_util", default-features = false }
