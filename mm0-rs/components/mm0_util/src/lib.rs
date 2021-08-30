@@ -196,9 +196,13 @@ pub fn alphanumber(n: usize) -> String {
   let mut n = n + 1;
   while n != 0 {
     #[allow(clippy::cast_possible_truncation)]
-    { out.push(b'a' + ((n - 1) % 26) as u8); }
+    {
+      out.push(b'a' + ((n - 1) % 26) as u8);
+    }
     #[allow(clippy::integer_division)]
-    { n = (n - 1) / 26; }
+    {
+      n = (n - 1) / 26;
+    }
   }
   out.reverse();
   unsafe { String::from_utf8_unchecked(out) }
@@ -342,7 +346,8 @@ impl<T> ArcList<T> {
 }
 
 /// An iterator over an [`ArcList`].
-#[must_use] #[derive(Debug, Clone)]
+#[must_use]
+#[derive(Debug, Clone)]
 pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 
 impl<'a, T> Iterator for ArcListIter<'a, T> {

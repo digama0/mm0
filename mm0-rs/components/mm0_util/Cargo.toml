@@ -1,6 +1,6 @@
 [package]
 name = "mm0_util"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
 description = "MM0/MM1 language utilities"

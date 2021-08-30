@@ -46,6 +46,18 @@ macro_rules! id_wrapper {
       pub fn enum_iter(&self) -> impl Iterator<Item = ($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
+
+      /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
+      pub fn enum_iter_mut(&mut self) -> impl Iterator<Item = ($id, &mut T)> {
+        self.0.iter_mut().enumerate().map(|(i, t)| ($id(i as $ty), t))
+      }
+
+      /// Push a new element to the vector, and return the ID of the element just pushed.
+      pub fn push(&mut self, t: T) -> $id {
+        let n = $id(self.0.len() as $ty);
+        self.0.push(t);
+        n
+      }
     }
 
     impl<T> Default for $vec<T> {
