@@ -105,12 +105,12 @@ pub trait Reopen: Write {
   type Reopened: Read;
   /// Consume this writer and reopen it as another type `Self::Reopened`, which supports reading to
   /// read what was just written.
-  fn reopen(self) -> Self::Reopened;
+  fn reopen(self) -> io::Result<Self::Reopened>;
 }
 
 impl Reopen for Vec<u8> {
   type Reopened = Cursor<Self>;
-  fn reopen(self) -> Self::Reopened { Cursor::new(self) }
+  fn reopen(self) -> io::Result<Self::Reopened> { Ok(Cursor::new(self)) }
 }
 
 #[derive(Debug)]
@@ -300,7 +300,7 @@ impl<W: Reopen> Mm0Writer<W> {
       thm_names,
     } = self;
     proof.write_u8(0)?;
-    let (mut proof, proof_size) = (proof.0.reopen(), proof.1);
+    let (mut proof, proof_size) = (proof.0.reopen()?, proof.1);
     let num_sorts = sorts.len();
     assert!(num_sorts <= 128, "too many sorts (max 128)");
     let num_terms = terms.len();
