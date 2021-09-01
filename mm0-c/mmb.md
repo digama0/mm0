@@ -17,6 +17,7 @@ All numbers are expressed in little endian fixed width types. Some tables requir
 * `[T; n]`: a list of exactly `n` elements of type `T`
 * `p32<T>`: a 32 bit pointer to `T`, relative to the start of the file
 * `p64<T>`: a 64 bit pointer to `T`, relative to the start of the file
+* `p32?<T>` / `p64?<T>`: a nullable pointer. If the value is zero then it is null, else it is a pointer to `T`
 * `str4`: a fixed length 4 byte string
 * `cstr`: a UTF-8 null terminated string
 * `(cmd, data)`: see below
@@ -45,7 +46,7 @@ The file header contains basic information about the format and pointers to the 
 | `p_thms`    | `p32<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table). |
 | `p_proof`   | `p32<proof_stream>`          | The pointer to the [proof stream](#proof-stream).   |
 | `reserved2` | `u32`                        | Reserved, should be set to `0`.                     |
-| `p_index`   | `p64<index>`                 | The pointer to the [index](#debugging-index).       |
+| `p_index`   | `p64?<index>`                | The pointer to the [index](#debugging-index).       |
 | `sorts`     | `[sort_data; num_sorts]`     | The [sort table](#sort-table).                      |
 
 ## Sort Table
@@ -454,26 +455,26 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 Each name entry consists of a pointer to the statement in the proof stream where it was introduced, and a UTF-8 C string with the name. (MM0 itself doesn't support non-ASCII names, but the names listed here are allowed to include arbitrary unicode.)
 
 `sizeof(name_entry) = 16; align(name_entry) = 8; name_entry =`
-| Field   | Type                | Description                                     |
-| ------- | ------------------- | ----------------------------------------------- |
-| `proof` | `p64<proof_stream>` | A pointer to this statement in the proof stream |
-| `name`  | `p64<cstr>`         | A pointer to the name string                    |
+| Field   | Type                 | Description                                     |
+| ------- | -------------------- | ----------------------------------------------- |
+| `proof` | `p64?<proof_stream>` | A pointer to this statement in the proof stream |
+| `name`  | `p64?<cstr>`         | A pointer to the name string                    |
 
 ## The `VarN` table: names for variables
 
 `align(var_names) = 8; var_names =`
-| Field       | Type                         | Description                                  |
-| ----------- | ---------------------------- | -------------------------------------------- |
-| `term_vars` | `[p64<str_list>; num_terms]` | The list of variables in a `term`/`def`      |
-| `thm_vars`  | `[p64<str_list>; num_thms]`  | The list of variables in a `axiom`/`theorem` |
+| Field       | Type                          | Description                                  |
+| ----------- | ----------------------------- | -------------------------------------------- |
+| `term_vars` | `[p64?<str_list>; num_terms]` | The list of variables in a `term`/`def`      |
+| `thm_vars`  | `[p64?<str_list>; num_thms]`  | The list of variables in a `axiom`/`theorem` |
 
 The `str_list` type is just a list of pointers to UTF-8 null-terminated strings:
 
 `sizeof(str_list)` varies; `align(str_list) = 8; str_list =`
-| Field      | Type                    | Description                       |
-| ---------- | ----------------------- | --------------------------------- |
-| `num_strs` | `u64`                   | The number of strings in the list |
-| `strs`     | `[p64<cstr>; num_strs]` | A list of string pointers         |
+| Field      | Type                     | Description                       |
+| ---------- | ------------------------ | --------------------------------- |
+| `num_strs` | `u64`                    | The number of strings in the list |
+| `strs`     | `[p64?<cstr>; num_strs]` | A list of string pointers         |
 
 The list `term_vars[t]` is the list of variable names in `term[t]` in the order of declaration, but the list continues past `num_args` to include the dummies, named by order of appearance of `Dummy` steps in the proof stream, which happens to coincide with the order of `UDummy` steps in the unify stream version. Similarly, the `thm_vars[T]` list gives the variable names in `thm[T]`, including the dummy variables.
 
@@ -482,6 +483,6 @@ The list `term_vars[t]` is the list of variable names in `term[t]` in the order 
 `align(hyp_names) = 8; hyp_names =`
 | Field       | Type                         | Description                                   |
 | ----------- | ---------------------------- | --------------------------------------------- |
-| `thm_hyps`  | `[p64<str_list>; num_thms]`  | The list of hypotheses in a `axiom`/`theorem` |
+| `thm_hyps`  | `[p64?<str_list>; num_thms]` | The list of hypotheses in a `axiom`/`theorem` |
 
 The `hyp_names` table is similar to `var_names`, and reuses the `str_list` type. The list gives the names of hypotheses in the order of `Hyp` commands in the statement.
