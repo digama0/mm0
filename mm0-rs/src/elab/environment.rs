@@ -548,7 +548,7 @@ impl Environment {
     AtomId::on_atoms(|name, a| {
       let s: ArcString = name.as_bytes().into();
       atoms.insert(s.clone(), a);
-      data.push(AtomData::new(s))
+      data.push(AtomData::new(s));
     });
     Environment {
       atoms, data,

@@ -510,7 +510,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         self.write_u8(0)?;
         Some(reorder)
       } else { None };
-      self.term_reord.push(reorder)
+      self.term_reord.push(reorder);
     }
     term_header.commit(self);
 
