@@ -803,15 +803,16 @@ impl<'a, X> MmbFile<'a, X> {
 
 /// A handle to an symbol name entry in the index.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct NameEntryRef<'a> {
   /// The full file
-  buf: &'a [u8],
+  pub buf: &'a [u8],
   /// The proof stream index
-  p_proof: U64<LE>,
+  pub p_proof: U64<LE>,
   /// The C string for the value (actually a suffix of the file
   /// starting at the appropriate location). Note that `strlen` has to be called
   /// to get the end of the string in [value()](Self::value()).
-  value: &'a [u8],
+  pub value: &'a [u8],
 }
 
 #[inline]

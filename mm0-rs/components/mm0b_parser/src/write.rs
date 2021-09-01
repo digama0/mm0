@@ -1,12 +1,12 @@
 #[allow(clippy::wildcard_imports)]
 use crate::cmd::*;
 use crate::{
-  Arg, HasSymbolNames, Header, MmbFile, ProofCmd, SortData, TableEntry, TermEntry, ThmEntry,
-  UnifyCmd,
+  Arg, HasSymbolNames, Header, MmbFile, NameEntryRef, ProofCmd, SortData, TableEntry, TermEntry,
+  ThmEntry, UnifyCmd,
 };
 use byteorder::{WriteBytesExt, LE};
 use mm0_util::{u32_as_usize, SortId, SortVec, TermId, TermVec, ThmId, ThmVec};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::io::{self, Cursor, Read, Write};
 use zerocopy::{AsBytes, U32};
 
@@ -148,21 +148,21 @@ pub struct Mm0Writer<W> {
   term_thm_buf: Vec<u8>,
   proof: TrackSize<W>,
   names_buf: Vec<u8>,
-  sort_names: SortVec<u32>,
-  term_names: TermVec<u32>,
-  thm_names: ThmVec<u32>,
+  sort_names: SortVec<(usize, usize)>,
+  term_names: TermVec<(usize, usize)>,
+  thm_names: ThmVec<(usize, usize)>,
 }
 
-fn push_name(buf: &mut Vec<u8>, name: Option<&str>) -> u32 {
+fn push_name(buf: &mut Vec<u8>, name: Option<&str>) -> usize {
   if let Some(name) = name {
-    let n = buf.len().try_into().expect("overflow");
+    let n = buf.len();
     let s = name.as_bytes();
     assert!(memchr::memchr(0, s).is_none());
     buf.extend_from_slice(s);
     buf.push(0);
     n
   } else {
-    u32::MAX
+    usize::MAX
   }
 }
 
@@ -192,27 +192,40 @@ impl<W: Reopen> Mm0Writer<W> {
 
   /// Initialize an MMB writer with the entire contents of another MMB file.
   /// Requires that the writer is newly initialized, i.e. has no sorts/terms/thms declared yet.
+  /// Performs only limited checks on the input file, i.e. a malformed input will cause this writer
+  /// to produce a malformed output or possibly panic.
   pub fn init<'a, X: HasSymbolNames<'a>>(&mut self, mmb: &MmbFile<'a, X>) -> io::Result<()> {
     assert!(self.sorts.is_empty() && self.terms.is_empty() && self.thms.is_empty());
     self.sorts.extend_from_slice(mmb.sorts);
     self.terms.extend_from_slice(mmb.terms);
     self.thms.extend_from_slice(mmb.thms);
+    let off = u64::from(mmb.header.p_proof.get());
+    let push_entry = move |buf: &mut Vec<u8>, entry: Option<NameEntryRef<'_>>| {
+      if let Some(entry) = entry {
+        let n = buf.len();
+        let zero = memchr::memchr(0, entry.value).expect("missing end");
+        buf.extend_from_slice(&entry.value[..=zero]);
+        ((entry.p_proof.get() - off).try_into().expect("overflow"), n)
+      } else {
+        (usize::MAX, usize::MAX)
+      }
+    };
     for (id, _) in self.sorts.enum_iter() {
-      self.sort_names.push(push_name(&mut self.names_buf, mmb.try_sort_name(id)));
+      self.sort_names.push(push_entry(&mut self.names_buf, mmb.sort_index(id)));
     }
     for (id, t) in self.terms.enum_iter_mut() {
       let start = u32_as_usize(t.p_args.get());
       let end = mmb.term(id).expect("impossible").unify().after_end().expect("parse error");
       t.p_args.set(self.term_thm_buf.len().try_into().expect("overflow"));
-      self.term_thm_buf.copy_from_slice(&mmb.buf[start..end]);
-      self.term_names.push(push_name(&mut self.names_buf, mmb.try_term_name(id)));
+      self.term_thm_buf.extend_from_slice(&mmb.buf[start..end]);
+      self.term_names.push(push_entry(&mut self.names_buf, mmb.term_index(id)));
     }
     for (id, t) in self.thms.enum_iter_mut() {
       let start = u32_as_usize(t.p_args.get());
       let end = mmb.thm(id).expect("impossible").unify().after_end().expect("parse error");
       t.p_args.set(self.term_thm_buf.len().try_into().expect("overflow"));
-      self.term_thm_buf.copy_from_slice(&mmb.buf[start..end]);
-      self.thm_names.push(push_name(&mut self.names_buf, mmb.try_thm_name(id)));
+      self.term_thm_buf.extend_from_slice(&mmb.buf[start..end]);
+      self.thm_names.push(push_entry(&mut self.names_buf, mmb.thm_index(id)));
     }
     let start = u32_as_usize(mmb.header.p_proof.get());
     let end = mmb.proof().after_end().expect("parse error");
@@ -226,7 +239,7 @@ impl<W: Reopen> Mm0Writer<W> {
       reserved: 0,
       p_args: U32::new(self.term_thm_buf.len().try_into().expect("overflow")),
     });
-    self.term_names.push(push_name(&mut self.names_buf, name));
+    self.term_names.push((self.proof.1, push_name(&mut self.names_buf, name)));
     self.term_thm_buf.extend_from_slice(args.as_bytes());
     self.term_thm_buf.extend_from_slice(ret.as_bytes());
     n
@@ -235,7 +248,7 @@ impl<W: Reopen> Mm0Writer<W> {
   /// Add a new sort with the given name and sort modifiers. Returns the ID of the new sort.
   pub fn add_sort(&mut self, name: Option<&str>, data: SortData) -> SortId {
     let n = self.sorts.push(data);
-    self.sort_names.push(push_name(&mut self.names_buf, name));
+    self.sort_names.push((self.proof.1, push_name(&mut self.names_buf, name)));
     n
   }
 
@@ -265,7 +278,7 @@ impl<W: Reopen> Mm0Writer<W> {
       reserved: [0; 2],
       p_args: U32::new(self.term_thm_buf.len().try_into().expect("overflow")),
     });
-    self.term_names.push(push_name(&mut self.names_buf, name));
+    self.term_names.push((self.proof.1, push_name(&mut self.names_buf, name)));
     self.term_thm_buf.extend_from_slice(args.as_bytes());
     ThmBuilder(StmtBuilder::new(self, cmd), n)
   }
@@ -357,22 +370,21 @@ impl<W: Reopen> Mm0Writer<W> {
     }
 
     w.write_all(&names_buf)?; // name string data
-    let offset = move |i: u32| match i {
-      u32::MAX => 0,
-      _ => p_names_buf + u64::from(i),
+    let p_proof = u64::from(p_proof);
+    let mut write = |vec| -> io::Result<()> {
+      let offset = |off, i| match i {
+        usize::MAX => 0,
+        _ => off + u64::try_from(i).unwrap(),
+      };
+      for (decl, name) in vec {
+        w.write_u64::<LE>(offset(p_proof, decl))?;
+        w.write_u64::<LE>(offset(p_names_buf, name))?;
+      }
+      Ok(())
     };
-    // sort name data
-    for i in sort_names.0 {
-      w.write_u64::<LE>(offset(i))?;
-    }
-    // term name data
-    for i in term_names.0 {
-      w.write_u64::<LE>(offset(i))?;
-    }
-    // thm name data
-    for i in thm_names.0 {
-      w.write_u64::<LE>(offset(i))?;
-    }
+    write(sort_names.0)?; // sort name data
+    write(term_names.0)?; // term name data
+    write(thm_names.0)?; // thm name data
     Ok(())
   }
 }
