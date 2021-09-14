@@ -1013,15 +1013,6 @@ impl<'a, X: HasVarNames<'a>> MmbFile<'a, X> {
   }
 }
 
-/// A handle to an symbol name entry in the index.
-#[derive(Debug, Clone, Copy)]
-pub struct HypsEntryRef<'a> {
-  /// The full file
-  buf: &'a [u8],
-  /// The variables
-  pub vars: &'a [U64<LE>],
-}
-
 impl<'a, X: HasHypNames<'a>> MmbFile<'a, X> {
   /// Get the hypothesis name list for a theorem.
   #[must_use]

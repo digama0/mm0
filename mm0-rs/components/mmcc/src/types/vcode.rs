@@ -271,7 +271,6 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn block_preds(&self, block: BlockId) -> &[BlockId] { &self.block_preds[block] }
   fn block_params(&self, block: BlockId) -> &[VReg] { &self.block_params[block] }
 
-  fn is_call(&self, insn: InstId) -> bool { self.insts[insn].is_call() }
   fn is_ret(&self, insn: InstId) -> bool { self.insts[insn].is_ret() }
   fn is_branch(&self, insn: InstId) -> bool { self.insts[insn].is_branch() }
 
