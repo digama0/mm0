@@ -60,7 +60,7 @@ impl<T: HasAlpha> HasAlpha for Box<[T]> {
 
 impl<T: HasAlpha> HasAlpha for global::Mm0Expr<T> {
   fn alpha(&self, a: &mut Alpha) -> Self {
-    Self { subst: self.subst.alpha(a), expr: self.expr.clone() }
+    Self { subst: self.subst.alpha(a), expr: self.expr }
   }
 }
 
@@ -874,7 +874,8 @@ pub enum Projection {
   /// A variable slice into an array. `(slice _ i l h)`, where `h: i + l <= n` and `_` has type
   /// `(array T n)`.
   Slice(VarId, VarId, VarId),
-  /// A dereference operation `(* _)` on a pointer.
+  /// A dereference operation `(* _)` on a pointer. (This must be the first projection in the list,
+  /// if present.)
   Deref,
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Projection);
@@ -886,20 +887,21 @@ pub struct Place {
   /// A local variable as the source of the place.
   pub local: VarId,
   /// A list of projections on the variable to extract the relevant subpart.
-  pub proj: Vec<Projection>,
+  /// The type of each element of the list is the type *before* projecting that element.
+  pub proj: Vec<(Ty, Projection)>,
 }
 impl Place {
   /// Construct a place directly from a local.
   #[must_use] pub fn local(local: VarId) -> Self { Self {local, proj: vec![]} }
   /// Push a projection onto a place.
-  #[must_use] pub fn proj(mut self, p: Projection) -> Self { self.proj.push(p); self }
+  #[must_use] pub fn proj(mut self, p: (Ty, Projection)) -> Self { self.proj.push(p); self }
 
   /// (Internal) iteration over the variables used by a place (in computationally relevant
   /// positions).
   pub fn foreach_use(&self, mut f: impl FnMut(VarId)) {
     f(self.local);
     for proj in &self.proj {
-      match *proj {
+      match proj.1 {
         Projection::Index(v, _) => f(v),
         Projection::Slice(x, l, _) => { f(x); f(l) }
         Projection::Proj(_, _) | Projection::Deref => {}
@@ -1242,19 +1244,27 @@ pub struct Rename {
 pub enum Statement {
   /// A let or tuple destructuring of values from an [`RValue`] of the specified type.
   Let(LetKind, Ty, RValue),
-  /// `Assign(lhs, rhs, vars)` is the statement `lhs <- rhs`.
+  /// `Assign(lhs, T, rhs, vars)` is the statement `lhs: T <- rhs`.
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
-  Assign(Place, Operand, Box<[Rename]>),
+  Assign(Place, Ty, Operand, Box<[Rename]>),
 }
 
 impl Statement {
+  /// True if this statement is computationally relevant.
+  #[must_use] pub fn relevant(&self) -> bool {
+    match self {
+      Statement::Let(lk, _, rv) => lk.relevant(),
+      Statement::Assign(p, _, _, vars) => vars.iter().any(|v| v.rel),
+    }
+  }
+
   /// The number of variables created by this statement.
   #[must_use] pub fn num_defs(&self) -> usize {
     match self {
       Statement::Let(LetKind::Let(..), _, _) => 1,
       Statement::Let(LetKind::Own(..), _, _) => 2,
-      Statement::Assign(_, _, vars) => vars.len(),
+      Statement::Assign(_, _, _, vars) => vars.len(),
     }
   }
 
@@ -1266,9 +1276,10 @@ impl Statement {
         f(x, xr, None, xt);
         f(y, yr, None, yt);
       }
-      Statement::Assign(_, _, vars) => vars.iter().for_each(|Rename {to, rel, ety: (e, ty), ..}| {
-        f(*to, *rel, e.as_ref(), ty)
-      }),
+      Statement::Assign(_, _, _, vars) =>
+        vars.iter().for_each(|Rename {to, rel, ety: (e, ty), ..}| {
+          f(*to, *rel, e.as_ref(), ty)
+        }),
     }
   }
 
@@ -1276,7 +1287,7 @@ impl Statement {
   /// positions).
   pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
     match self {
-      Statement::Assign(lhs, rhs, vars) => {
+      Statement::Assign(lhs, _, rhs, vars) => {
         let mut needed = false;
         for r in &**vars {
           if r.rel { needed = true; f(r.from) }

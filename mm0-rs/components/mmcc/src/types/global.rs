@@ -138,7 +138,7 @@ impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<T=Expr> {
   /// The mapping from indexes in the `expr` to internal names.
@@ -146,13 +146,6 @@ pub struct Mm0Expr<T=Expr> {
   pub subst: Box<[T]>,
   /// The root node of the expression.
   pub expr: LambdaId,
-}
-
-impl<T: std::hash::Hash> std::hash::Hash for Mm0Expr<T> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.subst.hash(state);
-    self.expr.hash(state);
-  }
 }
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {

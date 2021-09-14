@@ -1571,7 +1571,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
     } else if let ExprKind::Bool(b) = self.whnf_expr(sp, e).k {
       return self.common.e_bool(op.apply_bool(b))
-    } else {}
+    }
     intern!(self, ExprKind::Unop(op, e))
   }
 
@@ -1772,8 +1772,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       TyKind::If(e, t1, t2) => {
         let e2 = self.whnf_expr(sp, e);
         match e2.k {
-          ExprKind::Bool(false) => return self.whnf_ty(sp, wty.map(t1)),
-          ExprKind::Bool(true) => return self.whnf_ty(sp, wty.map(t2)),
+          ExprKind::Bool(true) => return self.whnf_ty(sp, wty.map(t1)),
+          ExprKind::Bool(false) => return self.whnf_ty(sp, wty.map(t2)),
           _ if e == e2 => return wty,
           _ => TyKind::If(e2, t1, t2),
         }
@@ -2743,13 +2743,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn check_array(&mut self, span: &'a FileSpan,
     a: &'a ast::Expr, ty: Ty<'a>, n: Expr<'a>
-  ) -> (hir::Expr<'a>, RExpr<'a>) {
+  ) -> (Ty<'a>, hir::Expr<'a>, RExpr<'a>) {
     let arrty = intern!(self, TyKind::Array(ty, n));
     let (mut e_a, a) = self.lower_expr(a, ExpectExpr::HasTy(arrty));
     while let TyKind::Ref(_, aty2) = e_a.ty().k {
       e_a = hir::Expr {span, k: (hir::ExprKind::Rval(Box::new(e_a)), (a.ok(), aty2))};
     }
-    (self.coerce_expr(e_a, a, arrty), a)
+    (arrty, self.coerce_expr(e_a, a, arrty), a)
   }
 
   fn check_call(&mut self,
@@ -2998,7 +2998,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Index(arr, idx, hyp) => {
         let ty = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let n = self.new_expr_mvar(span);
-        let (e_a, arr) = self.check_array(span, arr, ty, n);
+        let (arrty, e_a, arr) = self.check_array(span, arr, ty, n);
         let (e_i, idx) = self.check_expr(idx, self.common.nat());
         let hyp = match hyp {
           Some(h) => {
@@ -3009,7 +3009,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           }
           None => Err(eval_expr!(span, n, self.common.nat())),
         };
-        ret![Index(Box::new(([e_a, e_i], hyp))),
+        ret![Index(Box::new((arrty, [e_a, e_i], hyp))),
           arr.and_then(|a| Ok(intern!(self, ExprKind::Index(a, idx?)))),
           ty]
       }
@@ -3020,7 +3020,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           .and_then(|ty| if let TyKind::Array(ty, _) = ty.k {Some(ty)} else {None})
           .unwrap_or_else(|| self.new_ty_mvar(span));
         let n = self.new_expr_mvar(span);
-        let (e_a, arr) = self.check_array(span, arr, ty, n);
+        let (arrty, e_a, arr) = self.check_array(span, arr, ty, n);
         let (e_i, idx) = self.check_expr(idx, self.common.nat());
         let (e_l, len) = self.check_expr(len, self.common.nat());
         let pe_l = self.as_pure(e_l.span, len);
@@ -3034,7 +3034,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           }
           None => Err(eval_expr!(span, n, self.common.nat())),
         };
-        ret![Slice(Box::new(([e_a, e_i, e_l], hyp))),
+        ret![Slice(Box::new((arrty, [e_a, e_i, e_l], hyp))),
           arr.and_then(|a| Ok(intern!(self, ExprKind::Slice([a, idx?, pe_l])))),
           intern!(self, TyKind::Array(ty, pe_l))]
       }
@@ -3060,7 +3060,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             _ => error!(e2.span, ExpectedStruct(wty))
           }
         };
-        let ret = |lk, i, pe, ty| ret![Proj(lk, Box::new(e2), i), pe, ty];
+        let ret = |lk, i, pe, ty| ret![Proj(lk, Box::new((wty, e2)), i), pe, ty];
         #[allow(clippy::never_loop)] loop { // try block, not a loop
           match tys {
             ProjKind::List(tys) => if let FieldName::Number(i) = field.k {
@@ -3105,9 +3105,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Deref(e) => {
         let e2 = self.lower_expr(e, ExpectExpr::Any).0;
         let ty = e2.ty();
-        match self.whnf_ty(span, ty.into()).ty.k {
+        let wty = self.whnf_ty(span, ty.into()).ty;
+        match wty.k {
           TyKind::RefSn(e) => if let Some(ty) = self.place_type(span, e) {
-            ret![Deref(Box::new(e2)), Ok(self.place_to_expr(e)), ty]
+            ret![Deref(Box::new((wty, e2))), Ok(self.place_to_expr(e)), ty]
           } else {
             error!(e2.span, ExpectedPlace)
           }
@@ -3271,7 +3272,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let tgt = expect.to_ty().unwrap_or_else(|| self.common.nat());
         let pe = self.alloc.alloc_slice_fill_iter(p_subst.into_iter());
         let pe = intern!(self, ExprKind::Mm0(Mm0Expr {subst: pe, expr }));
-        ret![Mm0(types::Mm0Expr { subst, expr: expr.clone() }), Ok(pe), tgt]
+        ret![Mm0(types::Mm0Expr { subst, expr }), Ok(pe), tgt]
       }
 
       ast::ExprKind::Typed(e, ty) => {
@@ -3885,7 +3886,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           }
           None => Err(eval_expr!(span, n, self.common.nat())),
         };
-        ret![Index(Box::new((e_a, e_i, hyp))),
+        ret![Index(Box::new((arrty, e_a, e_i, hyp))),
           arr.and_then(|a| Ok(intern!(self, PlaceKind::Index(a, arrty, idx?)))),
           ty]
       }
@@ -3915,7 +3916,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           }
           None => Err(eval_expr!(span, n, self.common.nat())),
         };
-        ret![Slice(Box::new((e_a, [e_i, e_l], hyp))),
+        ret![Slice(Box::new((arrty, e_a, [e_i, e_l], hyp))),
           arr.and_then(|a| Ok(intern!(self, PlaceKind::Slice(a, arrty, [idx?, pe_l])))),
           intern!(self, TyKind::Array(ty, pe_l))]
       }
@@ -3923,9 +3924,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Deref(e) => {
         let e2 = self.lower_expr(e, ExpectExpr::Any).0;
         let ty = e2.ty();
-        match self.whnf_ty(span, ty.into()).ty.k {
+        let wty = self.whnf_ty(span, ty.into()).ty;
+        match wty.k {
           TyKind::RefSn(e) => if let Some(ty) = self.place_type(span, e) {
-            ret![Deref(Box::new(e2)), Ok(e), ty]
+            ret![Deref(Box::new((wty, e2))), Ok(e), ty]
           } else {
             error!(e2.span, ExpectedPlace)
           }
@@ -4104,7 +4106,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           _ => if let hir::Spanned {span, k: (hir::ExprKind::List(_, es), _)} = e {
             (span, hir::ExprKind::Return(es))
           } else {
-            (span, hir::ExprKind::UnpackReturn(Box::new(e)))
+            (span, hir::ExprKind::UnpackReturn(Box::new((sigma, e))))
           }
         };
         body.expr = Some(Box::new(hir::Spanned {span, k:
@@ -4136,6 +4138,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
               ty: lhs.k.ty().to_global(self),
               e: rhs.to_global(self),
               whnf: self.whnf_expr(rhs_sp, rhs).to_global(self),
+              imm64: None,
             };
         } else { todo!() }
         return None

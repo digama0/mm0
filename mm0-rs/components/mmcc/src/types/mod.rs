@@ -8,6 +8,7 @@ pub mod global;
 pub mod hir;
 pub mod mir;
 pub mod pir;
+pub mod vcode;
 
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
@@ -38,7 +39,7 @@ pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
 
 impl<I, T> IdxVec<I, T> {
   /// Construct a new empty [`IdxVec`].
-  pub const fn new() -> Self { Self(vec![], PhantomData) }
+  #[must_use] pub const fn new() -> Self { Self(vec![], PhantomData) }
 
   /// Construct a new [`IdxVec`] with the specified capacity.
   #[must_use] pub fn with_capacity(capacity: usize) -> Self { Vec::with_capacity(capacity).into() }
@@ -180,6 +181,18 @@ impl Size {
       Size::S64 => Some(8),
     }
   }
+
+  /// Convert a byte count into a size class, rounding up.
+  #[allow(clippy::match_overlapping_arm)]
+  #[must_use] pub fn from_u64(n: u64) -> Self {
+    match n {
+      0..=1 => Size::S8,
+      0..=2 => Size::S16,
+      0..=4 => Size::S32,
+      0..=8 => Size::S64,
+      _ => Size::Inf,
+    }
+  }
 }
 
 /// The set of integral types, `N_s` and `Z_s`, representing the signed and unsigned integers
@@ -211,6 +224,9 @@ impl IntTy {
   #[must_use] pub fn size(self) -> Size {
     match self { IntTy::Int(sz) | IntTy::UInt(sz) => sz }
   }
+
+  /// True if this is a signed integral type.
+  #[must_use] pub fn signed(self) -> bool { matches!(self, IntTy::Int(_)) }
 
   /// A string description of this type.
   #[must_use] pub fn to_str(self) -> &'static str {

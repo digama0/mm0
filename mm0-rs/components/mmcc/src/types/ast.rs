@@ -226,6 +226,7 @@ pub enum TypeKind {
 
 impl TypeKind {
   /// Construct a shared reference `&'lft ty`, which is sugar for `&sn (ref 'lft ty)`.
+  #[must_use]
   pub fn shr(span: FileSpan, lft: Option<Box<Spanned<Lifetime>>>, ty: Box<Type>) -> Self {
     Self::Own(Box::new(Spanned {span, k: Self::Ref(lft, ty)}))
   }
@@ -233,6 +234,7 @@ impl TypeKind {
   /// Construct an existential type `exists (x1:T) .. (xn:Tn), ty`, which is sugar for
   /// `struct (x1: T1) .. (xn: Tn) (_: ty)`, where the last argument is anonymous.
   /// `v` is a fresh variable associated to this anonymous argument.
+  #[must_use]
   pub fn ex(span: FileSpan, args: Vec<TuplePattern>, v: VarId, ty: Box<Type>) -> Self {
     let mut pats = Vec::with_capacity(args.len() + 1);
     let f = |pat| (ArgAttr::empty(), ArgKind::Lam(pat));
@@ -502,21 +504,21 @@ impl Expr {
   /// Construct an expression list constructor, with the special cases:
   /// * An empty list becomes a unit literal `()`
   /// * A singleton list `(e)` is treated as `e`
-  pub fn list(span: &FileSpan, args: Vec<Expr>) -> Expr {
+  #[must_use] pub fn list(span: &FileSpan, args: Vec<Expr>) -> Expr {
     match args.len() {
       0 => Spanned {span: span.clone(), k: ExprKind::Unit},
       1 => unwrap_unchecked!(args.into_iter().next()),
-      _ => Spanned {span: span.clone(), k: ExprKind::List(args.into())},
+      _ => Spanned {span: span.clone(), k: ExprKind::List(args)},
     }
   }
 
   /// Construct a `!e` boolean negation expression.
-  pub fn not(self, span: &FileSpan) -> Self {
+  #[must_use] pub fn not(self, span: &FileSpan) -> Self {
     Spanned {span: span.clone(), k: ExprKind::Unop(Unop::Not, Box::new(self))}
   }
 
   /// Construct a `~e` bitwise negation expression.
-  pub fn bit_not(self, span: &FileSpan) -> Self {
+  #[must_use] pub fn bit_not(self, span: &FileSpan) -> Self {
     Spanned {span: span.clone(), k: ExprKind::Unop(Unop::Not, Box::new(self))}
   }
 }

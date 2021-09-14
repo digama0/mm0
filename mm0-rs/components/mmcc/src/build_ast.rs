@@ -34,7 +34,7 @@ fn let_var(sp: &FileSpan, name: Symbol, v: VarId, rhs: ast::Expr) -> ast::Stmt {
 }
 
 /// The state of the AST building pass.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct BuildAst {
   /// The mapping of user-level names to internal variable IDs. The vector represents name
   /// shadowing, with the active variable being the last in the list.
@@ -63,18 +63,6 @@ pub struct BuildAst {
 }
 
 impl BuildAst {
-  /// Construct a new AST builder.
-  #[must_use] pub fn new() -> Self {
-    Self {
-      name_map: HashMap::new(),
-      label_map: HashMap::new(),
-      loops: vec![],
-      ctx: vec![],
-      var_names: IdxVec::default(),
-      tyvars: vec![]
-    }
-  }
-
   /// Get a fresh variable name. Every new binding expression calls this function to prevent scope
   /// confusion issues when variable names are reused in multiple scopes.
   pub fn fresh_var(&mut self, name: Symbol) -> VarId { self.var_names.push(name) }
@@ -114,30 +102,30 @@ impl BuildAst {
   /// Push a type variable. Uses of `name` as a type will resolve to this variable.
   /// Type variables are not scoped, since they are global to the item, and
   /// [`BuildAst`] is used for building a single item.
-  pub fn push_tyvar(&mut self, name: Spanned<Symbol>) { self.tyvars.push(name.k) }
+  pub fn push_tyvar(&mut self, name: &Spanned<Symbol>) { self.tyvars.push(name.k) }
 
   /// Get the total number of type variables that have been pushed.
-  pub fn num_tyvars(&self) -> u32 {
+  #[must_use] pub fn num_tyvars(&self) -> u32 {
     self.tyvars.len().try_into().expect("too many type arguments")
   }
 
   /// Get an (expression) variable by name.
-  pub fn get_var(&self, name: Symbol) -> Option<VarId> {
+  #[must_use] pub fn get_var(&self, name: Symbol) -> Option<VarId> {
     self.name_map.get(&name).and_then(|v| v.last().copied())
   }
 
   /// Get a type variable by name.
-  pub fn get_tyvar(&self, name: Symbol) -> Option<ast::TyVarId> {
+  #[must_use] pub fn get_tyvar(&self, name: Symbol) -> Option<ast::TyVarId> {
     Some(self.tyvars.iter().rposition(|&v| name == v)?.try_into().expect("too many vars"))
   }
 
   /// Get a label by name.
-  pub fn get_label(&self, a: Symbol) -> Option<LabelId> {
+  #[must_use] pub fn get_label(&self, a: Symbol) -> Option<LabelId> {
     Some(*self.label_map.get(&a)?.last()?)
   }
 
   /// Get the target of an anonymous loop label.
-  pub fn get_loop_label(&self) -> Option<LabelId> {
+  #[must_use] pub fn get_loop_label(&self) -> Option<LabelId> {
     Some(LabelId(self.loops.last()?.0, 0))
   }
 
@@ -217,7 +205,8 @@ impl WhileBuilder {
 
 /// A rename is a `{old -> old'}` or `{new' <- new}` clause appearing in a `with`
 /// associated to a let binding or assignment, as in `{{x <- 2} with {x -> x_old}}`.
-#[derive(Clone, Debug, Default, DeepSizeOf)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Renames {
   /// `{from -> to}` means that the variable `from` should be renamed to `to`
   /// (after evaluation of the main expression).
@@ -483,12 +472,12 @@ pub struct Pattern(Option<ast::Expr>);
 impl Pattern {
   /// Construct a hyped pattern from a regular pattern. Concretely, this replaces the `None`
   /// variant with `Some(true)`, because a hypothesis has to have an actual type.
-  pub fn hyped(self, span: &FileSpan) -> Self {
+  #[must_use] pub fn hyped(self, span: &FileSpan) -> Self {
     Self(Some(self.0.unwrap_or_else(|| sp!(span, ast::ExprKind::Bool(true)))))
   }
 
   /// Construct a with pattern, which just adjoins `cond` as an extra conjunct in the pattern.
-  pub fn with(self, sp: &FileSpan, cond: ast::Expr) -> Pattern {
+  #[must_use] pub fn with(self, sp: &FileSpan, cond: ast::Expr) -> Pattern {
     Pattern(Some(match self.0 {
       None => cond,
       Some(p) => binop(sp, Binop::And, p, cond)
@@ -496,21 +485,26 @@ impl Pattern {
   }
 }
 
+/// An error that indicates that a variable binding was not expected at this location.
+#[derive(Copy, Clone, Debug)]
+pub struct BadBinding;
+
 impl<T: BuildMatch> PatternBuilder<T> {
   /// Callable at any point; returns the scrutinee expression.
   fn scrut(&self) -> ast::Expr { sp!(&self.scrut.span, ast::ExprKind::Rc(self.scrut.clone())) }
 
   /// Callable from `Start`, transitions to `Done`. Match an ignore pattern.
+  #[allow(clippy::unused_self)]
   pub fn ignore(&mut self) -> Pattern { Pattern(None) }
 
   /// Callable from `Start`, transitions to `Done`.
   /// Constructs the pattern `v`, which binds a new variable named `v` to the
   /// value being matched. If variable bindings are not permitted in this context,
-  /// then `Err(())` is returned.
-  pub fn var(&mut self, v: Symbol, ba: &mut BuildAst) -> Result<Pattern, ()> {
+  /// then `Err(BadBinding)` is returned.
+  pub fn var(&mut self, v: Symbol, ba: &mut BuildAst) -> Result<Pattern, BadBinding> {
     if let Some(var) = self.scvar { ba.push(v, var); Ok(Pattern(None)) }
     else if T::ALLOW_HYPS { panic!("no scrutinee variable available") }
-    else { Err(()) }
+    else { Err(BadBinding) }
   }
 
   /// Callable from `Start`, transitions to `Done`.
@@ -523,11 +517,11 @@ impl<T: BuildMatch> PatternBuilder<T> {
   /// Callable from `Start`, transitions to `Start`.
   /// Starts a hypothesis pattern `h: pat` , which will make `h` refer to a proof that the pattern
   /// matched in the current arm, and a proof that the pattern did not match in later arms.
-  /// Returns `Err(())` if hypotheses are not allowed in this context.
+  /// Returns `Err(BadBinding)` if hypotheses are not allowed in this context.
   /// Transitions the pattern builder to accept `pat`. The resulting pattern for `pat`
   /// can be transformed to a hyped pattern using [`Pattern::hyped`].
-  pub fn hyped(&mut self, sp: &FileSpan, h: Symbol, ba: &mut BuildAst) -> Result<(), ()> {
-    if !T::ALLOW_HYPS || self.pos.is_none() && self.neg.is_none() { return Err(()) }
+  pub fn hyped(&mut self, sp: &FileSpan, h: Symbol, ba: &mut BuildAst) -> Result<(), BadBinding> {
+    if !T::ALLOW_HYPS || self.pos.is_none() && self.neg.is_none() { return Err(BadBinding) }
     self.uses_hyp = true;
     if let Some(f) = self.pos.take() {
       let (v, sp) = (ba.fresh_var(h), sp.clone());
@@ -642,7 +636,7 @@ impl<'a, T: BuildMatch> OrBuilder<'a, T> {
   }
 
   /// Finish parsing an or pattern, returning the completed pattern.
-  pub fn finish(self) -> Pattern {
+  #[must_use] pub fn finish(self) -> Pattern {
     let Self {args, sp, ..} = self;
     Pattern(args.map(|args| {
       let mut e = sp!(sp, ast::ExprKind::Bool(false));
@@ -729,7 +723,7 @@ macro_rules! mk_funcs {
     lassoc1($zero:expr, $op:expr, |$span:pat_param, $e:pat_param| $arg:expr); $($rest:tt)*
   ) => {
     $(#[$doc])*
-    pub fn $f(&self, span: &FileSpan, args: Vec<ast::Expr>) -> ast::Expr {
+    #[must_use] pub fn $f(&self, span: &FileSpan, args: Vec<ast::Expr>) -> ast::Expr {
       #[allow(unused)]
       Spanned {span: span.clone(), k:
         if let Some($e) = build_lassoc1(&span, args, {use Binop::*; $op}) {

@@ -96,7 +96,7 @@ impl<'a> Legalizer<'a> {
           }
         }
       }
-      Statement::Assign(p, _, vars) if vars.len() == 1 => self.try_legalize_place(p, pred),
+      Statement::Assign(p, _, _, vars) if vars.len() == 1 => self.try_legalize_place(p, pred),
       _ => None
     })()?;
     self.generated.insert((v, pred), res.clone());

@@ -133,7 +133,7 @@ impl Compiler {
         };
         let (var_names, lambdas) = p.finish();
         let mut errors = vec![];
-        compiler.add(item, var_names, ItemContext {
+        compiler.add(&item, var_names, ItemContext {
           elab,
           lambdas: &lambdas,
           errors: &mut errors

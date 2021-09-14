@@ -56,11 +56,11 @@ impl Interner {
 
   /// Get the symbol as a string. `Symbol::as_str()` should be used in
   /// preference to this function.
-  pub fn get(&self, symbol: Symbol) -> &'static str { self.strings[symbol] }
+  #[must_use] pub fn get(&self, symbol: Symbol) -> &'static str { self.strings[symbol] }
 }
 
 /// Intern a single string, returning a `Symbol` that represents that string.
-pub fn intern(s: &str) -> Symbol { Interner::with(|i| i.intern(s)) }
+#[must_use] pub fn intern(s: &str) -> Symbol { Interner::with(|i| i.intern(s)) }
 
 impl Symbol {
   /// The string `"_"`, which is pinned to symbol number 0. (This is used as a special name to
@@ -69,7 +69,7 @@ impl Symbol {
 
   /// Get the string corresponding to this symbol.
   /// You can also use the `Display` impl to print a `Symbol`.
-  pub fn as_str(self) -> &'static str { Interner::with(|i| i.get(self)) }
+  #[must_use] pub fn as_str(self) -> &'static str { Interner::with(|i| i.get(self)) }
 }
 
 impl Display for Symbol {
@@ -81,7 +81,7 @@ impl Display for Symbol {
 /// initialization for keyword lists and the like.
 pub fn init_dense_symbol_map<T: Copy>(kv: &[(Symbol, T)]) -> Box<[Option<T>]> {
   use crate::types::Idx;
-  let mut vec = vec![None; kv.iter().map(|p| p.0).max().unwrap().into_usize() + 1];
+  let mut vec = vec![None; kv.iter().map(|p| p.0).max().map_or(0, |n| n.into_usize() + 1)];
   for &(k, v) in kv { vec[k.into_usize()] = Some(v) }
   vec.into()
 }

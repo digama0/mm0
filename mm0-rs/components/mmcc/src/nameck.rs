@@ -13,21 +13,21 @@ pub enum DeclarationError {
 
 impl DeclarationError {
   /// The description of the error.
-  pub fn desc(&self) -> &'static str {
+  #[must_use] pub fn desc(&self) -> &'static str {
     match self {
       DeclarationError::AlreadyDeclared(_, _) => "an item by this name has already been declared",
       DeclarationError::Keyword(_) => "this name is reserved for a primitive operator",
     }
   }
   /// The main span of the error.
-  pub fn span(&self) -> &FileSpan {
+  #[must_use] pub fn span(&self) -> &FileSpan {
     match self {
       DeclarationError::AlreadyDeclared(sp, _) |
       DeclarationError::Keyword(sp) => sp,
     }
   }
   /// The auxiliary span of the error.
-  pub fn related(&self) -> Option<&FileSpan> {
+  #[must_use] pub fn related(&self) -> Option<&FileSpan> {
     match self {
       DeclarationError::AlreadyDeclared(_, sp) => Some(sp),
       DeclarationError::Keyword(_) => None,

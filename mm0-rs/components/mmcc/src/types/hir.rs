@@ -339,22 +339,24 @@ impl<'a> Place<'a> {
 /// A place expression.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[allow(clippy::type_complexity)]
 pub enum PlaceKind<'a> {
   /// A variable reference.
   Var(VarId),
-  /// An deref operation `*x: T` where `x: &T`.
-  Deref(Box<Expr<'a>>),
+  /// An deref operation `*x: T` where `x: &T`. The provided type is `&T`.
+  Deref(Box<(ty::Ty<'a>, Expr<'a>)>),
   /// An index operation `(index _ i h): T` where `_: (array T n)`,
-  /// `i: nat`, and `h: i < n`.
+  /// `i: nat`, and `h: i < n`. The provided type is `(array T n)`.
   /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
-  Index(Box<(Place<'a>, Expr<'a>, Result<Expr<'a>, Expr<'a>>)>),
+  Index(Box<(ty::Ty<'a>, Place<'a>, Expr<'a>, Result<Expr<'a>, Expr<'a>>)>),
   /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
-  /// `h` is a proof that `a + b <= n`.
+  /// `h` is a proof that `a + b <= n`. The provided type is `(array T n)`.
   /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
-  Slice(Box<(Place<'a>, [Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
+  Slice(Box<(ty::Ty<'a>, Place<'a>, [Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
-  Proj(ListKind, Box<Place<'a>>, u32),
+  /// The provided type is `(T0, ..., T(n-1))` or `{f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(ListKind, Box<(ty::Ty<'a>, Place<'a>)>, u32),
   /// An upstream error.
   Error
 }
@@ -370,7 +372,7 @@ pub enum Unop {
   BitNot(IntTy),
   /// Truncation: Computes `e as i[to]` from `e as i[from]` (or `e`).
   /// (Requires `!(from <= to)` and `to.size() != Inf`.)
-  As(IntTy, IntTy),
+  As(/* from */ IntTy, /* to */ IntTy),
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Unop);
 
@@ -477,18 +479,18 @@ pub enum ExprKind<'a> {
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
   /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
-  Index(Box<([Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
+  Index(Box<(ty::Ty<'a>, [Expr<'a>; 2], Result<Expr<'a>, Expr<'a>>)>),
   /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
   /// `h` is a proof that `a + b <= n`.
   /// If `h` is the `Err` variant, then it is an expr evaluating to `n`.
-  Slice(Box<([Expr<'a>; 3], Result<Expr<'a>, Expr<'a>>)>),
+  Slice(Box<(ty::Ty<'a>, [Expr<'a>; 3], Result<Expr<'a>, Expr<'a>>)>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
-  Proj(ListKind, Box<Expr<'a>>, u32),
+  Proj(ListKind, Box<(ty::Ty<'a>, Expr<'a>)>, u32),
   /// An lvalue-to-rvalue conversion `x: T` where `x: ref T`.
   Rval(Box<Expr<'a>>),
-  /// An deref operation `*x: T` where `x: &T`.
-  Deref(Box<Expr<'a>>),
+  /// An deref operation `*x: T` where `x: &sn y` and `y: T`. The provided type is `&sn y`.
+  Deref(Box<(ty::Ty<'a>, Expr<'a>)>),
   /// `(list e1 ... en)` returns a tuple of the arguments (of type
   /// `List`, `Struct`, `Array` or `And`). In the `And` case,
   /// all arguments must be copy or all cover the same heap location,
@@ -570,7 +572,7 @@ pub enum ExprKind<'a> {
   Return(Vec<Expr<'a>>),
   /// Same as `return`, but accepts a single argument of the sigma type and unpacks it
   /// into the returns.
-  UnpackReturn(Box<Expr<'a>>),
+  UnpackReturn(Box<(ty::Ty<'a>, Expr<'a>)>),
   /// An inference hole `_`, which will give a compile error if it cannot be inferred
   /// but queries the compiler to provide a type context. The `bool` is true if this variable
   /// was created by the user through an explicit `_`, while compiler-generated inference

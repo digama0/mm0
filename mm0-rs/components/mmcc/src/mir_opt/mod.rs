@@ -62,8 +62,7 @@ impl<T> BitSet<T> {
   /// Returns whether there are no bits set in this set
   #[inline] #[must_use] pub(crate) fn is_empty(&self) -> bool { self.0.is_empty() }
 
-  /// Adds a value to the set. Returns `true` if the value was not already
-  /// present in the set.
+  /// Returns `true` if this set contains the specified value.
   #[inline] #[must_use] pub(crate) fn contains(&self, value: T) -> bool where T: Idx {
     self.0.contains(value.into_usize())
   }

@@ -227,7 +227,7 @@ impl Cfg {
             };
             if needed { d.apply_rvalue(loc.block, rv) }
           }
-          Statement::Assign(_, rhs, vars) => {
+          Statement::Assign(_, _, rhs, vars) => {
             let mut needed = false;
             for v in &**vars {
               if v.rel && d.vars.contains(&v.to) {
@@ -308,7 +308,7 @@ impl Cfg {
         match stmt {
           Statement::Let(LetKind::Let(v, r, _), _, _) => update(*v, r),
           Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { update(*v, r) }
-          Statement::Assign(_, _, vs) => for v in &mut **vs { update(v.to, &mut v.rel) }
+          Statement::Assign(_, _, _, vs) => for v in &mut **vs { update(v.to, &mut v.rel) }
         }
       }
     }

@@ -8,7 +8,8 @@ use crate::{FileSpan, AtomId, Type as EType, elab::Result, Environment, ElabErro
 use crate::elab::lisp::Syntax;
 use mm0_util::{BoxError, TermId, u32_as_usize};
 use mmcc::{Idx, init_dense_symbol_map};
-use mmcc::build_ast::{BuildAst, BuildMatch, Incomplete, Pattern, PatternBuilder, RenameError, Renames, UnreachablePattern};
+use mmcc::build_ast::{BadBinding, BuildAst, BuildMatch, Incomplete, Pattern, PatternBuilder,
+  RenameError, Renames, UnreachablePattern};
 use mmcc::types::{Binop, IdxVec, LambdaId, ProofId, Unop, VarId};
 use mmcc::{Symbol, intern, types::{FieldName, Mm0Expr, Size, Spanned, global}};
 use mmcc::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy, Intrinsic};
@@ -286,7 +287,7 @@ impl<'a, C> Parser<'a, C> {
       fe: elab.format_env(), symbols,
       proofs: IdxVec::default(),
       lambdas: IdxVec::default(),
-      ba: BuildAst::new(),
+      ba: BuildAst::default(),
       compiler,
     }
   }
@@ -875,7 +876,7 @@ impl<'a, C> Parser<'a, C> {
       let mut u = u.peekable();
       while let Some((e, a)) = u.peek().and_then(|e| e.as_atom().map(|a| (e, a))) {
         let name = self.as_symbol(a);
-        self.ba.push_tyvar(spanned(&span, e, name));
+        self.ba.push_tyvar(&spanned(&span, e, name));
         u.next();
       }
       for e in &mut u {
@@ -981,7 +982,7 @@ impl<'a, C> Parser<'a, C> {
         let a = spanned(base, &e, self.as_symbol_or(base, &e, || "typedef: expected an atom")?);
         while let Some((e, a)) = u.peek().and_then(|e| e.as_atom().map(|a| (e, a))) {
           let name = self.as_symbol(a);
-          self.ba.push_tyvar(spanned(base, e, name));
+          self.ba.push_tyvar(&spanned(base, e, name));
           u.next();
         }
         for e in u { self.push_args(base, false, e, &mut args)? }
@@ -1074,7 +1075,7 @@ impl<'a, C> Parser<'a, C> {
         if matches!(self.compiler.names.get(&name), Some(Entity::Const(_))) {
           pb.const_(&span, Spanned {span: span.clone(), k: ExprKind::Const(name)})
         } else {
-          pb.var(name, &mut self.ba).map_err(|()|
+          pb.var(name, &mut self.ba).map_err(|BadBinding|
             ElabError::new_e(&span, "can't bind variables in this context"))?
         }
       }
@@ -1082,7 +1083,7 @@ impl<'a, C> Parser<'a, C> {
         Some((Keyword::Colon, mut u)) =>
           if let (Some(h), Some(p), true) = (u.next(), u.next(), u.is_empty()) {
             let h = self.as_symbol_or(base, &h, || "expecting hypothesis name")?;
-            pb.hyped(&span, h, &mut self.ba).map_err(|()|
+            pb.hyped(&span, h, &mut self.ba).map_err(|BadBinding|
               ElabError::new_e(&span, "can't bind variables in this context"))?;
             self.parse_pattern(&span, pb, &p)?.hyped(&span)
           } else {

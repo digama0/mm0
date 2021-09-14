@@ -183,7 +183,7 @@ impl<'a> Translate<'a> for ty::ExprTy<'a> {
 impl<'a> Translate<'a> for &'a ty::Mm0Expr<'a> {
   type Output = Mm0Expr;
   fn tr(self, tr: &mut Translator<'a>) -> Mm0Expr {
-    Mm0Expr { subst: self.subst.tr(tr), expr: self.expr.clone() }
+    Mm0Expr { subst: self.subst.tr(tr), expr: self.expr }
   }
 }
 
@@ -496,7 +496,7 @@ impl<'a> BuildMir<'a> {
         self.extend_ctx(v, vr, (None, ty.clone()));
         self.extend_ctx(h, hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
-      Statement::Assign(_, _, ref vars) => for v in &**vars {
+      Statement::Assign(_, _, _, ref vars) => for v in &**vars {
         self.extend_ctx(v.to, v.rel, v.ety.clone())
       }
     }
@@ -582,17 +582,18 @@ impl<'a> BuildMir<'a> {
         self.vars.get(&v2).cloned().unwrap_or_else(|| v2.into())
       }
       hir::PlaceKind::Index(args) => {
-        let (arr, idx, hyp_or_n) = *args;
-        self.place(arr)?.proj(self.index_projection(idx, hyp_or_n)?)
+        let (ty, arr, idx, hyp_or_n) = *args;
+        self.place(arr)?.proj((self.tr(ty), self.index_projection(idx, hyp_or_n)?))
       }
       hir::PlaceKind::Slice(args) => {
-        let (arr, [idx, len], hyp_or_n) = *args;
-        self.place(arr)?.proj(self.slice_projection(idx, len, hyp_or_n)?)
+        let (ty, arr, [idx, len], hyp_or_n) = *args;
+        self.place(arr)?.proj((self.tr(ty), self.slice_projection(idx, len, hyp_or_n)?))
       }
-      hir::PlaceKind::Proj(pk, e, i) =>
-        self.place(*e)?.proj(Projection::Proj(pk.into(), i)),
+      hir::PlaceKind::Proj(pk, e, i) => {
+        self.place(e.1)?.proj((self.tr(e.0), Projection::Proj(pk.into(), i)))
+      }
       hir::PlaceKind::Deref(e) =>
-        Place::local(self.as_temp(*e)?).proj(Projection::Deref),
+        Place::local(self.as_temp(e.1)?).proj((self.tr(e.0), Projection::Deref)),
       hir::PlaceKind::Error => unreachable!()
     })
   }
@@ -601,20 +602,20 @@ impl<'a> BuildMir<'a> {
     match e.k.0 {
       hir::PlaceKind::Var(_) => {}
       hir::PlaceKind::Index(args) => {
-        let (arr, idx, hyp_or_n) = *args;
+        let (_, arr, idx, hyp_or_n) = *args;
         self.ignore_place(arr)?;
         self.expr(idx, None)?;
         if let Ok(hyp) = hyp_or_n { self.expr(hyp, None)?; }
       }
       hir::PlaceKind::Slice(args) => {
-        let (arr, [idx, len], hyp_or_n) = *args;
+        let (_, arr, [idx, len], hyp_or_n) = *args;
         self.ignore_place(arr)?;
         self.expr(idx, None)?;
         self.expr(len, None)?;
         if let Ok(hyp) = hyp_or_n { self.expr(hyp, None)?; }
       }
-      hir::PlaceKind::Proj(_, e, _) => self.ignore_place(*e)?,
-      hir::PlaceKind::Deref(e) => self.expr(*e, None)?,
+      hir::PlaceKind::Proj(_, e, _) => self.ignore_place(e.1)?,
+      hir::PlaceKind::Deref(e) => self.expr(e.1, None)?,
       hir::PlaceKind::Error => unreachable!()
     }
     Ok(())
@@ -627,18 +628,18 @@ impl<'a> BuildMir<'a> {
         self.vars.get(&v).cloned().unwrap_or_else(|| v.into())
       }
       hir::ExprKind::Index(args) => {
-        let ([arr, idx], hyp_or_n) = *args;
-        self.expr_place(arr)?.proj(self.index_projection(idx, hyp_or_n)?)
+        let (ty, [arr, idx], hyp_or_n) = *args;
+        self.expr_place(arr)?.proj((self.tr(ty), self.index_projection(idx, hyp_or_n)?))
       }
       hir::ExprKind::Slice(args) => {
-        let ([arr, idx, len], hyp_or_n) = *args;
-        self.expr_place(arr)?.proj(self.slice_projection(idx, len, hyp_or_n)?)
+        let (ty, [arr, idx, len], hyp_or_n) = *args;
+        self.expr_place(arr)?.proj((self.tr(ty), self.slice_projection(idx, len, hyp_or_n)?))
       }
       hir::ExprKind::Proj(pk, e, i) =>
-        self.expr_place(*e)?.proj(Projection::Proj(pk.into(), i)),
+        self.expr_place(e.1)?.proj((self.tr(e.0), Projection::Proj(pk.into(), i))),
       hir::ExprKind::Ref(e) => self.place(*e)?,
       hir::ExprKind::Deref(e) =>
-        Place::local(self.as_temp(*e)?).proj(Projection::Deref),
+        Place::local(self.as_temp(e.1)?).proj((self.tr(e.0), Projection::Deref)),
       _ => Place::local(self.as_temp(e)?)
     })
   }
@@ -776,7 +777,7 @@ impl<'a> BuildMir<'a> {
         }).collect())
       }
       hir::ExprKind::Call(_) => self.operand(e)?.into(),
-      hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p.clone()).into(),
+      hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
       hir::ExprKind::While(while_) => self.rvalue_while(*while_, e.k.1)?,
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
@@ -848,12 +849,12 @@ impl<'a> BuildMir<'a> {
           hir::ExprKind::Uninit |
           hir::ExprKind::Sizeof(_) => {}
           hir::ExprKind::Unop(_, e) |
-          hir::ExprKind::Proj(_, e, _) |
           hir::ExprKind::Rval(e) |
-          hir::ExprKind::Deref(e) |
           hir::ExprKind::Ghost(e) |
           hir::ExprKind::Cast(e, _, _) |
           hir::ExprKind::Typeof(e) => return this.expr(*e, None),
+          hir::ExprKind::Deref(e) |
+          hir::ExprKind::Proj(_, e, _) => return this.expr(e.1, None),
           hir::ExprKind::Ref(e) |
           hir::ExprKind::Borrow(e) => return this.ignore_place(*e),
           hir::ExprKind::Binop(_, e1, e2) |
@@ -866,13 +867,13 @@ impl<'a> BuildMir<'a> {
             if let Some(h) = h { this.expr(*h, None)?; }
           }
           hir::ExprKind::Index(args) => {
-            let ([arr, idx], hyp_or_n) = *args;
+            let (_, [arr, idx], hyp_or_n) = *args;
             this.expr(arr, None)?;
             this.expr(idx, None)?;
             if let Ok(hyp) = hyp_or_n { this.expr(hyp, None)?; }
           }
           hir::ExprKind::Slice(args) => {
-            let ([arr, idx, len], hyp_or_n) = *args;
+            let (_, [arr, idx, len], hyp_or_n) = *args;
             this.expr(arr, None)?;
             this.expr(idx, None)?;
             this.expr(len, None)?;
@@ -884,8 +885,10 @@ impl<'a> BuildMir<'a> {
             this.expr(e, Some(PreVar::Fresh))?;
           }
           hir::ExprKind::Assign {lhs, rhs, map, gen} => {
+            let ty = lhs.ty();
             let lhs = this.place(*lhs)?;
             let rhs = this.operand(*rhs)?;
+            let ty = this.tr(ty);
             let varmap = map.iter()
               .map(|&(new, old, _)| (old, this.tr(new))).collect::<HashMap<_, _>>();
             this.tr.add_gen(this.tr.cur_gen, gen, varmap);
@@ -896,7 +899,7 @@ impl<'a> BuildMir<'a> {
               ety: this.tr_gen(ety, gen)
             }).collect::<Box<[_]>>();
             this.tr.cur_gen = gen;
-            this.push_stmt(Statement::Assign(lhs, rhs, vars))
+            this.push_stmt(Statement::Assign(lhs, ty, rhs, vars))
           }
           hir::ExprKind::Mm0Proof(_) |
           hir::ExprKind::While {..} => { this.rvalue(e)?; }
@@ -936,10 +939,11 @@ impl<'a> BuildMir<'a> {
           hir::ExprKind::Return(es) =>
             match this.expr_return(|_| es.into_iter(), Self::expr_place)? {}
           hir::ExprKind::UnpackReturn(e) => {
-            let pl = this.expr_place(*e)?;
+            let pl = this.expr_place(e.1)?;
+            let ty = this.tr(e.0);
             match this.expr_return(|n| 0..n.try_into().expect("overflow"), |_, i| Ok({
               let mut pl = pl.clone();
-              pl.proj.push(Projection::Proj(ListKind::Struct, i));
+              pl.proj.push((ty.clone(), Projection::Proj(ListKind::Struct, i)));
               pl
             }))? {}
           }
@@ -965,7 +969,7 @@ impl<'a> BuildMir<'a> {
         let v = self.tr(v);
         self.vars.insert(v, src.clone());
       }
-      TuplePatternKind::Tuple(pats, mk, _) => {
+      TuplePatternKind::Tuple(pats, mk, ty) => {
         let pk = match mk {
           TupleMatchKind::Unit | TupleMatchKind::True => return,
           TupleMatchKind::List | TupleMatchKind::Struct => ListKind::Struct,
@@ -986,7 +990,7 @@ impl<'a> BuildMir<'a> {
           }),
         };
         for (i, &pat) in pats.iter().enumerate() {
-          src.proj.push(Projection::Proj(pk, i.try_into().expect("overflow")));
+          src.proj.push((self.tr(ty), Projection::Proj(pk, i.try_into().expect("overflow"))));
           self.tup_pat(pat, src);
           src.proj.pop();
         }

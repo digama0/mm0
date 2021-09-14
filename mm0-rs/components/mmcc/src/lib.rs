@@ -25,7 +25,6 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
 #![warn(
-  clippy::else_if_without_else,
   clippy::float_arithmetic,
   clippy::get_unwrap,
   clippy::inline_asm_x86_att_syntax,
@@ -34,16 +33,17 @@
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
   clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
+  clippy::enum_glob_use,
   clippy::inline_always,
+  clippy::manual_map,
   clippy::map_err_ignore,
+  clippy::match_bool,
   clippy::missing_const_for_fn,
   clippy::missing_errors_doc,
   clippy::missing_panics_doc,
@@ -51,6 +51,7 @@
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
   clippy::redundant_pub_crate,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -58,7 +59,7 @@
 
 #![allow(unused)]
 
-macro_rules! mk_id {($($(#[$attr:meta])* $id:ident),*) => {$(
+macro_rules! mk_id {($($(#[$attr:meta])* $id:ident),* $(,)?) => {$(
   $(#[$attr])*
   #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct $id(pub u32);
@@ -94,6 +95,8 @@ mod nameck;
 mod build_mir;
 mod mir_opt;
 mod symbol;
+mod build_vcode;
+mod arch;
 
 use std::collections::HashMap;
 use {types::{entity::Entity, mir}, predef::PredefMap};
@@ -197,13 +200,13 @@ impl<C: Config> Compiler<C> {
   /// performing typehecking but not code generation.
   /// This should be called repeatedly to add all top level function items,
   /// finally calling [`finish`](Self::finish) to complete code generation.
-  pub fn add(&mut self, item: ast::Item, var_names: IdxVec<VarId, Symbol>,
+  pub fn add(&mut self, item: &ast::Item, var_names: IdxVec<VarId, Symbol>,
     mut ic: impl ItemContext<C>
   ) -> Result<(), C::Error> {
     let Compiler {names, mir, init, ..} = self;
     let hir_alloc = Bump::new();
     let mut ctx = infer::InferCtx::new(&hir_alloc, names, var_names);
-    let item = ctx.lower_item(&item);
+    let item = ctx.lower_item(item);
     if !ctx.errors.is_empty() {
       let errs = std::mem::take(&mut ctx.errors);
       let pr = ctx.print(&mut ic);

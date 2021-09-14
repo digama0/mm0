@@ -366,7 +366,9 @@ pub enum ConstTc {
     /// The value of the constant
     e: global::Expr,
     /// The constant after weak head normalization, precomputed for convenience
-    whnf: global::Expr
+    whnf: global::Expr,
+    /// The constant as a 64 bit immediate value, if possible
+    imm64: Option<u64>,
   }
 }
 

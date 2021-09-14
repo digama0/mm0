@@ -25,7 +25,7 @@
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
-#![warn(clippy::else_if_without_else, clippy::float_arithmetic,
+#![warn(clippy::float_arithmetic,
   clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
   clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add, clippy::unwrap_used)]

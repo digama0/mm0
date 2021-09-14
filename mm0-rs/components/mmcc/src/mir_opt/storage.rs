@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
 
 use crate::Symbol;
+use crate::types::IntTy;
 use super::{VecPatch, Replace, types::{IdxVec, entity, mir, global}};
 use entity::{Entity, ConstTc};
 #[allow(clippy::wildcard_imports)] use mir::*;
@@ -17,7 +18,7 @@ impl Replace<Statement> for StorageEdit {
   fn replace(self, stmt: &mut Statement) {
     match self {
       StorageEdit::ChangeAssignTarget(from, to) => {
-        if let Statement::Assign(lhs, _, vars) = stmt {
+        if let Statement::Assign(lhs, _, _, vars) = stmt {
           if lhs.local == from { lhs.local = to }
           for r in &mut **vars { if r.from == from { r.from = to } }
         }
@@ -42,18 +43,39 @@ mk_id! {
 impl AllocId {
   /// Allocations of zero size get the special allocation ID `ZERO`, which is considered disjoint
   /// from all other allocations, including itself.
-  const ZERO: Self = Self(0);
+  pub const ZERO: Self = Self(0);
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub struct Meta {
+  pub size: u64,
+  pub on_stack: bool,
+}
+
+impl Meta {
+  fn from_size(size: u64) -> Self {
+    Self { size, on_stack: false }
+  }
+  fn on_stack(mut self) -> Self {
+    self.on_stack = true;
+    self
+  }
+  fn merge(&mut self, m: Meta) {
+    if self.size == 0 { *self = m; return }
+    self.size = self.size.max(m.size);
+    self.on_stack |= m.on_stack;
+  }
 }
 
 #[derive(Default, Debug)]
-struct Allocation {
-  size: u64,
-  vars: Vec<VarId>,
+pub struct Allocation {
+  pub m: Meta,
+  pub vars: Vec<VarId>,
 }
 
 impl Allocation {
-  fn insert(&mut self, v: VarId, sz: u64) {
-    self.size = self.size.max(sz);
+  fn insert(&mut self, v: VarId, m: Meta) {
+    self.m.merge(m);
     self.vars.push(v);
   }
 }
@@ -65,23 +87,31 @@ pub struct Allocations {
   vars: HashMap<VarId, AllocId>,
 }
 
+impl std::ops::Deref for Allocations {
+  type Target = IdxVec<AllocId, Allocation>;
+  fn deref(&self) -> &Self::Target { &self.allocs }
+}
 impl Default for Allocations {
   fn default() -> Self {
     Self { allocs: vec![Allocation::default()].into(), vars: HashMap::new() }
   }
 }
 impl Allocations {
-  fn insert(&mut self, a: AllocId, v: VarId, sz: u64) {
-    if sz != 0 && a != AllocId::ZERO {
-      self.allocs[a].insert(v, sz);
+  pub fn get(&self, v: VarId) -> AllocId {
+    self.vars.get(&v).copied().unwrap_or(AllocId::ZERO)
+  }
+
+  fn insert(&mut self, a: AllocId, v: VarId, m: Meta) {
+    if m.size != 0 && a != AllocId::ZERO {
+      self.allocs[a].insert(v, m);
     }
     self.vars.insert(v, a);
   }
-  fn push(&mut self, v: VarId, sz: impl FnOnce() -> u64) -> AllocId {
+  fn push(&mut self, v: VarId, meta: impl FnOnce() -> Meta) -> AllocId {
     if let Some(&a) = self.vars.get(&v) { return a }
-    let sz = sz();
-    let a = if sz == 0 { AllocId::ZERO } else {
-      self.allocs.push(Allocation { size: sz, vars: vec![v] })
+    let m = meta();
+    let a = if m.size == 0 { AllocId::ZERO } else {
+      self.allocs.push(Allocation { m, vars: vec![v] })
     };
     self.vars.insert(v, a);
     a
@@ -90,9 +120,9 @@ impl Allocations {
     let a = self.vars.get_mut(&v).expect("variable not allocated");
     let old = *a;
     if old == AllocId::ZERO { return (AllocId::ZERO, AllocId::ZERO) }
-    let Allocation { size, ref mut vars } = self.allocs[old];
+    let Allocation { m, ref mut vars } = self.allocs[old];
     if let Some(i) = vars.iter().position(|x| *x == v) { vars.swap_remove(i); }
-    *a = self.allocs.push(Allocation { size, vars: vec![v] });
+    *a = self.allocs.push(Allocation { m, vars: vec![v] });
     (old, *a)
   }
 }
@@ -116,7 +146,13 @@ impl ExprKind {
 }
 
 impl TyKind {
-  fn sizeof(&self, ns: &HashMap<Symbol, Entity>) -> Option<u64> {
+  /// Gets the size of this type in bytes, if it is a compile-time constant.
+  #[must_use] pub fn sizeof(&self, ns: &HashMap<Symbol, Entity>) -> Option<u64> {
+    self.meta(ns).map(|m| m.size)
+  }
+
+  /// Gets the ABI information of this type, if it is a compile-time constant.
+  #[must_use] pub fn meta(&self, ns: &HashMap<Symbol, Entity>) -> Option<Meta> {
     match self {
       TyKind::Unit |
       TyKind::True |
@@ -130,24 +166,46 @@ impl TyKind {
       TyKind::HasTy(_, _) |
       TyKind::Input |
       TyKind::Output |
-      TyKind::Ghost(_) => Some(0),
-      TyKind::Bool => Some(1),
+      TyKind::Ghost(_) => Some(Meta::from_size(0)),
+      TyKind::Bool => Some(Meta::from_size(1)),
       TyKind::Own(_) |
-      TyKind::RefSn(_) => Some(8),
+      TyKind::RefSn(_) => Some(Meta::from_size(8)),
       TyKind::User(_, _, _) | // TODO
       TyKind::Var(_) => None, // TODO: monomorphize first
-      TyKind::Int(ity) => ity.size().bytes().map(Into::into),
-      TyKind::Array(ty, n) => ty.sizeof(ns)?.checked_mul(n.eval_u64(ns)?),
+      TyKind::Int(ity) => ity.size().bytes().map(|n| Meta::from_size(n.into())),
+      TyKind::Array(ty, n) => Some(
+        Meta::from_size(ty.sizeof(ns)?.checked_mul(n.eval_u64(ns)?)?).on_stack()),
       TyKind::Sn(_, ty) |
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) |
-      TyKind::All(_, _, ty) => ty.sizeof(ns),
-      TyKind::Struct(args) => args.iter().try_fold(0_u64, |x, arg| {
-        if arg.attr.contains(ArgAttr::GHOST) { Some(x) } else { x.checked_add(arg.ty.sizeof(ns)?) }
-      }),
+      TyKind::All(_, _, ty) => ty.meta(ns),
+      TyKind::Struct(args) => {
+        enum State { Start, One, Large }
+        let mut state = State::Start;
+        let mut size = 0_u64;
+        for arg in &**args {
+          if !arg.attr.contains(ArgAttr::GHOST) {
+            let m1 = arg.ty.meta(ns)?;
+            if m1.size > 0 {
+              size = size.checked_add(m1.size)?;
+              let large = m1.on_stack || !matches!(state, State::Start);
+              state = if large { State::One } else { State::Large };
+            }
+          }
+        }
+        Some(Meta { size, on_stack: matches!(state, State::Large) })
+      }
       TyKind::And(tys) |
-      TyKind::Or(tys) => tys.iter().try_fold(0_u64, |x, ty| Some(x.max(ty.sizeof(ns)?))),
-      TyKind::If(_, ty1, ty2) => Some(ty1.sizeof(ns)?.max(ty2.sizeof(ns)?))
+      TyKind::Or(tys) => {
+        let mut m = Meta::from_size(0);
+        for ty in &**tys { m.merge(ty.meta(ns)?) }
+        Some(m)
+      }
+      TyKind::If(_, ty1, ty2) => {
+        let mut m = ty1.meta(ns)?;
+        m.merge(ty2.meta(ns)?);
+        Some(m)
+      }
     }
   }
 }
@@ -179,7 +237,7 @@ impl Cfg {
   #[must_use] fn build_allocations(&mut self,
     names: &HashMap<Symbol, Entity>
   ) -> (Allocations, Interference) {
-    let sizeof = |ty: &Ty| ty.sizeof(names).expect("can't get size of type");
+    let meta = |ty: &Ty| ty.meta(names).expect("can't get size of type");
 
     let mut interference = Interference::default();
 
@@ -196,13 +254,13 @@ impl Cfg {
       for (v, r, (e, ty)) in bl.ctx_rev_iter(&self.ctxs) {
         if r {
           live.insert(v, (e.as_ref(), ty));
-          allocs.push(v, || sizeof(ty));
+          allocs.push(v, || meta(ty));
         }
       }
 
       for (i, s) in bl.stmts.iter().enumerate() {
         match s {
-          Statement::Assign(_, _, vars) => for r in vars.iter().filter(|r| r.rel) {
+          Statement::Assign(_, _, _, vars) => for r in vars.iter().filter(|r| r.rel) {
             if !r.rel { continue }
             if let Some(&(mut a)) = allocs.vars.get(&r.from) {
 
@@ -237,12 +295,12 @@ impl Cfg {
 
               let mut split = false;
               let mut copy = false;
-              for &x in &allocs.allocs[a].vars {
+              for &x in &allocs[a].vars {
                 if last_use.get(&x).map_or(false, |&j| j > i) {
                   if x == r.from { copy = true } else { split = true }
                 }
               }
-              let mut interfere = |(old, new), allocs: &mut Allocations| {
+              let mut interfere = |(old, new), allocs: &Allocations| {
                 interference.insert(old, new);
                 for u in live.keys() {
                   if last_use.get(u).map_or(false, |&j| j > i) {
@@ -259,11 +317,11 @@ impl Cfg {
                   LetKind::Let(v, true, e.cloned()), ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
-                a = interfere((old, allocs.push(v, || sizeof(ty))), &mut allocs);
+                a = interfere((old, allocs.push(v, || meta(ty))), &allocs);
               } else if split {
-                a = interfere(allocs.split(r.from), &mut allocs)
-              } else {}
-              allocs.insert(a, r.to, sizeof(&r.ety.1));
+                a = interfere(allocs.split(r.from), &allocs)
+              }
+              allocs.insert(a, r.to, meta(&r.ety.1));
             }
           }
           Statement::Let(lk, ty, rv) => {
@@ -277,14 +335,17 @@ impl Cfg {
             match rv {
               RValue::Use(o) => if let Ok(p) = o.place() { copy_place(p) }
               RValue::Pun(_, p) => copy_place(p),
+              RValue::Borrow(p) => if let Some(&a) = allocs.vars.get(&p.local) {
+                allocs.allocs[a].m.on_stack = true;
+              }
               _ => {}
             }
             if let Some(from) = copy {
               if let Some(&a) = allocs.vars.get(&from) {
-                allocs.insert(a, v, sizeof(ty));
+                allocs.insert(a, v, meta(ty));
               }
             } else {
-              let a = allocs.push(v, || sizeof(ty));
+              let a = allocs.push(v, || meta(ty));
               live.retain(|u, _| last_use.get(u).map_or(false, |&j| j > i) && {
                 interference.insert(a, allocs.vars[u]);
                 true

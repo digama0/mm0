@@ -469,10 +469,10 @@ pub enum TyKind<'a> {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   Or(&'a [Ty<'a>]),
-  /// `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-  /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-  /// the typehood predicate is `x :> (or A B C)` iff
-  /// `x :> A \/ x :> B \/ x :> C`.
+  /// `(if cond A B)` is a type that is `A` if `cond` is true and `B` if cond is false.
+  /// `sizeof (if cond A B) = max (sizeof A, sizeof B)`, and
+  /// the typehood predicate is `x :> (if cond A B)` iff
+  /// `if cond (x :> A) (x :> B)`.
   If(Expr<'a>, Ty<'a>, Ty<'a>),
   /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
