@@ -1,7 +1,8 @@
 //! x86-specific parts of the compiler.
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fmt::Debug};
 
+use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};
 
 use crate::types::{Size,
@@ -25,7 +26,7 @@ const R12: PReg = preg(12);
 const R13: PReg = preg(13);
 const R14: PReg = preg(14);
 const R15: PReg = preg(15);
-const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
+pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
 const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
 const SCRATCH: PReg = R11;
@@ -44,7 +45,7 @@ lazy_static! {
 }
 
 /// What kind of division or remainer instruction this is?
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum DivOrRemKind {
   SignedDiv,
   UnsignedDiv,
@@ -53,7 +54,7 @@ pub(crate) enum DivOrRemKind {
 }
 
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ShiftKind {
   Shl,
   /// Inserts zeros in the most significant bits.
@@ -64,7 +65,7 @@ pub(crate) enum ShiftKind {
   Ror,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Cmp {
   /// CMP instruction: compute `a - b` and set flags from result.
   Cmp,
@@ -74,7 +75,7 @@ pub(crate) enum Cmp {
 
 /// These indicate ways of extending (widening) a value, using the Intel
 /// naming: B(yte) = u8, W(ord) = u16, L(ong)word = u32, Q(uad)word = u64
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ExtMode {
   /// Byte -> Longword.
   BL,
@@ -121,7 +122,7 @@ impl ExtMode {
 
 /// Condition code tests supported by the x86 architecture.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub(crate) enum CC {
   ///  overflow
@@ -182,7 +183,7 @@ impl CC {
 }
 
 /// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum Binop {
   Add = 0,
   Or = 1,
@@ -194,7 +195,7 @@ pub(crate) enum Binop {
 }
 
 /// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum Unop {
   Inc = 0,
   Dec = 1,
@@ -204,13 +205,13 @@ pub(crate) enum Unop {
 
 /// A shift amount, which can be used as an addend in an addressing mode.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ShiftIndex {
-  index: VReg,
-  shift: u8, /* 0 .. 3 only */
+pub(crate) struct ShiftIndex<Reg = VReg> {
+  pub(crate) index: Reg,
+  pub(crate) shift: u8, /* 0 .. 3 only */
 }
 
 /// A base offset for an addressing mode.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) enum Imm<N = u32> {
   /// A real offset, relative to zero.
   Real(N),
@@ -221,6 +222,20 @@ pub(crate) enum Imm<N = u32> {
   Global(GlobalId, N),
   /// An offset into the given constant (in the .rodata section).
   Const(ConstId, N),
+}
+
+impl<N: Zero + Debug> Debug for Imm<N> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Real(n) => n.fmt(f),
+      Self::Spill(i, n) if n.is_zero() => i.fmt(f),
+      Self::Spill(i, n) => write!(f, "{:?} + {:?}", i, n),
+      Self::Global(i, n) if n.is_zero() => i.fmt(f),
+      Self::Global(i, n) => write!(f, "{:?} + {:?}", i, n),
+      Self::Const(i, n) if n.is_zero() => i.fmt(f),
+      Self::Const(i, n) => write!(f, "{:?} + {:?}", i, n),
+    }
+  }
 }
 
 impl<N> From<N> for Imm<N> {
@@ -268,30 +283,58 @@ impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Imm<N> {
   }
 }
 
+pub(crate) trait IsReg {
+  fn invalid() -> Self;
+  fn is_valid(&self) -> bool;
+}
+impl IsReg for VReg {
+  fn invalid() -> Self { VReg::invalid() }
+  fn is_valid(&self) -> bool { *self != VReg::invalid() }
+}
+impl IsReg for PReg {
+  fn invalid() -> Self { PReg::invalid() }
+  fn is_valid(&self) -> bool { *self != PReg::invalid() }
+}
+
 /// A memory address. This has the form `off+base+si`, where `off` is a base memory location
 /// (a 32 bit address, or an offset from a stack slot, named global or named constant),
 /// `base` is a register or 0, and `si` is a shifted register or 0.
 /// Note that `base` must be 0 if `off` is `Spill(..)` because spill slots are RSP-relative,
 /// so there is no space for a second register in the encoding.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct AMode {
-  off: Imm,
+#[derive(Clone, Copy)]
+pub(crate) struct AMode<Reg = VReg> {
+  pub(crate) off: Imm,
   /// `VReg::invalid` means no added register
-  base: VReg,
+  pub(crate) base: Reg,
   /// Optionally add a shifted register
-  si: Option<ShiftIndex>,
+  pub(crate) si: Option<ShiftIndex<Reg>>,
 }
 
-impl From<Imm> for AMode {
-  fn from(off: Imm) -> Self { Self { off, base: VReg::invalid(), si: None } }
+impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "[{:?}", self.off)?;
+    if self.base.is_valid() {
+      write!(f, " + {:?}", self.base)?
+    }
+    if let Some(si) = &self.si {
+      write!(f, " + {}*{:?}", 1 << si.shift, si.index)?
+    }
+    write!(f, "]")
+  }
 }
 
-impl AMode {
-  pub(crate) fn reg(r: VReg) -> Self { Self { off: Imm::ZERO, base: r, si: None } }
+impl<Reg: IsReg> From<Imm> for AMode<Reg> {
+  fn from(off: Imm) -> Self { Self { off, base: Reg::invalid(), si: None } }
+}
+
+impl<Reg: IsReg> AMode<Reg> {
+  pub(crate) fn reg(r: Reg) -> Self { Self { off: Imm::ZERO, base: r, si: None } }
   pub(crate) fn spill(i: SpillId) -> Self { Imm::Spill(i, 0).into() }
   pub(crate) fn global(i: GlobalId) -> Self { Imm::Global(i, 0).into() }
   pub(crate) fn const_(i: ConstId) -> Self { Imm::Const(i, 0).into() }
+}
 
+impl AMode {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     if self.base != VReg::invalid() { args.push(Operand::reg_use(self.base)) }
     if let Some(si) = &self.si { args.push(Operand::reg_use(si.index)) }
@@ -342,17 +385,26 @@ impl std::ops::Add<u32> for &AMode {
 /// An operand which is either an integer Register or a value in Memory.  This can denote an 8, 16,
 /// 32, 64, or 128 bit value.
 #[allow(variant_size_differences)]
-#[derive(Copy, Clone, Debug)]
-pub(crate) enum RegMem {
-  Reg(VReg),
-  Mem(AMode),
+#[derive(Copy, Clone)]
+pub(crate) enum RegMem<Reg = VReg> {
+  Reg(Reg),
+  Mem(AMode<Reg>),
 }
 
-impl From<VReg> for RegMem {
-  fn from(r: VReg) -> Self { RegMem::Reg(r) }
+impl<Reg: IsReg + Debug> Debug for RegMem<Reg> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RegMem::Reg(r) => r.fmt(f),
+      RegMem::Mem(a) => a.fmt(f),
+    }
+  }
 }
-impl From<AMode> for RegMem {
-  fn from(a: AMode) -> Self { RegMem::Mem(a) }
+
+impl<Reg> From<Reg> for RegMem<Reg> {
+  fn from(r: Reg) -> Self { RegMem::Reg(r) }
+}
+impl<Reg> From<AMode<Reg>> for RegMem<Reg> {
+  fn from(a: AMode<Reg>) -> Self { RegMem::Mem(a) }
 }
 
 impl RegMem {
@@ -373,7 +425,7 @@ impl RegMem {
   pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> AMode {
     match self {
       RegMem::Reg(r) => {
-        let a = AMode::spill(code.fresh_spill());
+        let a = AMode::spill(code.fresh_spill(sz.bytes().expect("large reg").into()));
         code.emit_copy(sz, a.into(), r);
         a
       },
@@ -396,6 +448,17 @@ pub(crate) enum RegMemImm<N = u32> {
   Mem(AMode),
   Imm(Imm<N>),
   Uninit,
+}
+
+impl<N: Zero + Debug> Debug for RegMemImm<N> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RegMemImm::Reg(r) => r.fmt(f),
+      RegMemImm::Mem(a) => a.fmt(f),
+      RegMemImm::Imm(i) => i.fmt(f),
+      RegMemImm::Uninit => "uninit".fmt(f),
+    }
+  }
 }
 
 impl<N> From<VReg> for RegMemImm<N> {
@@ -482,22 +545,17 @@ impl RegMemImm<u64> {
   }
 }
 
-/// A length zero instruction, which may have an effect on the logical state but emits no code.
-pub(crate) enum GhostInst {
-  /// A length 0 no-op instruction.
-  Nop,
+#[derive(Debug)]
+pub(crate) enum Inst {
+  // /// A length 0 no-op instruction.
+  // Nop,
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
-  Fallthrough { dst: BlockId }
-}
-
-pub(crate) enum Inst {
-  /// A ghost instruction, which generates no code.
-  Ghost(GhostInst),
+  Fallthrough { dst: BlockId },
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|mul|adc|sbb) (32|64) reg rmi`
   Binop {
-    sz: Size, // 4 or 8
     op: Binop,
+    sz: Size, // 4 or 8
     dst: VReg, // dst = src1
     src1: VReg,
     src2: RegMemImm,
@@ -555,6 +613,18 @@ pub(crate) enum Inst {
     sz: Size, // 4 or 8
     dst: VReg,
     src: VReg,
+  },
+  /// Move into a fixed reg: `preg <- mov (64|32) reg`.
+  MovRP {
+    sz: Size, // 4 or 8
+    dst: (VReg, PReg),
+    src: VReg,
+  },
+  /// Move from a fixed reg: `reg <- mov (64|32) preg`.
+  MovPR {
+    sz: Size, // 4 or 8
+    dst: VReg,
+    src: (VReg, PReg),
   },
   /// Zero-extended loads, except for 64 bits: `reg <- movz (bl|bq|wl|wq|lq) r/m`.
   /// Note that the lq variant doesn't really exist since the default zero-extend rule makes it
@@ -665,7 +735,7 @@ impl VInst for Inst {
   }
 
   fn is_ret(&self) -> bool {
-    matches!(self, Inst::Ret)
+    matches!(self, Inst::Ret {..})
   }
 
   fn is_branch(&self) -> bool {
@@ -675,9 +745,14 @@ impl VInst for Inst {
   fn branch_blockparam_arg_offset(&self) -> usize { 0 }
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
-    if let Inst::MovRR { dst, src, .. } = *self {
-      Some((Operand::reg_use(src), Operand::reg_def(dst)))
-    } else { None }
+    match *self {
+      Inst::MovRR { dst, src, .. } => Some((Operand::reg_use(src), Operand::reg_def(dst))),
+      Inst::MovRP { dst, src, .. } =>
+        Some((Operand::reg_use(src), Operand::reg_fixed_def(dst.0, dst.1))),
+      Inst::MovPR { dst, src, .. } =>
+        Some((Operand::reg_fixed_use(src.0, src.1), Operand::reg_def(dst))),
+      _ => None
+    }
   }
 
   fn collect_operands(&self, args: &mut Vec<Operand>) {
@@ -740,13 +815,13 @@ impl VInst for Inst {
         args.push(Operand::reg_reuse_def(dst, 0));
       }
       Inst::Push64 { ref src } => src.collect_operands(args),
-      Inst::CallKnown { ref operands, .. } => args.extend_from_slice(operands),
+      Inst::CallKnown { operands: ref params, .. } |
       Inst::JmpKnown { ref params, .. } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
       // moves are handled specially by regalloc, we don't need operands
-      Inst::MovRR { .. } |
+      Inst::MovRR { .. } | Inst::MovPR { .. } | Inst::MovRP { .. } |
       // Other instructions that have no operands
-      Inst::Ghost(GhostInst::Nop | GhostInst::Fallthrough { .. }) |
+      Inst::Fallthrough { .. } |
       Inst::Ret |
       Inst::JmpCond { .. } |
       Inst::TrapIf { .. } |
@@ -862,4 +937,176 @@ impl VCode<Inst> {
     }
     copy(self, sz, dst, src.into())
   }
+}
+
+/// A version of `ShiftIndex` post-register allocation.
+pub(crate) type PShiftIndex = ShiftIndex<PReg>;
+
+/// A version of `AMode` post-register allocation.
+pub(crate) type PAMode = AMode<PReg>;
+
+/// A version of `RegMem` post-register allocation.
+pub(crate) type PRegMem = RegMem<PReg>;
+
+/// A version of `RegMemImm` post-register allocation.
+#[derive(Copy, Clone)]
+pub(crate) enum PRegMemImm {
+  Reg(PReg),
+  Mem(PAMode),
+  Imm(Imm),
+}
+
+impl Debug for PRegMemImm {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      PRegMemImm::Reg(r) => r.fmt(f),
+      PRegMemImm::Mem(a) => a.fmt(f),
+      PRegMemImm::Imm(i) => i.fmt(f),
+    }
+  }
+}
+
+#[derive(Debug)]
+pub(crate) enum PInst {
+  // /// A length 0 no-op instruction.
+  // Nop,
+  /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|mul|adc|sbb) (32|64) reg rmi`
+  Binop {
+    op: Binop,
+    sz: Size, // 4 or 8
+    dst: PReg,
+    src: PRegMemImm,
+  },
+  /// Unary ALU operations: `reg <- (not|neg) (8|16|32|64) reg`
+  Unop {
+    op: Unop,
+    sz: Size, // 1, 2, 4 or 8
+    dst: PReg,
+  },
+  /// Unsigned integer quotient and remainder pseudo-operation:
+  // `RDX:RAX <- cdq RAX`
+  // `RAX,RDX <- divrem RDX:RAX r/m.`
+  DivRem {
+    sz: Size, // 2, 4 or 8
+    src: PRegMem,
+  },
+  /// Unsigned integer quotient and remainder pseudo-operation:
+  // `RDX:RAX <- cdq RAX`
+  // `RAX,RDX <- divrem RDX:RAX r/m`.
+  Mul {
+    sz: Size, // 2, 4 or 8
+    src: PRegMem,
+  },
+  // /// The high bits (RDX) of a (un)signed multiply: RDX:RAX := RAX * rhs.
+  // MulHi {
+  //   sz: Size, // 2, 4, or 8
+  //   signed: bool,
+  //   rhs: RegMem,
+  // },
+  // /// Do a sign-extend based on the sign of the value in rax into rdx: (cwd cdq cqo)
+  // /// or al into ah: (cbw)
+  // SignExtendData {
+  //   sz: Size, // 1, 2, 4 or 8
+  //   dst: PReg, // dst = RDX
+  //   src: PReg, // src = RAX
+  // },
+  /// Constant materialization: `reg <- (imm32|imm64)`.
+  /// Either: movl $imm32, %reg32 or movabsq $imm64, %reg32.
+  Imm {
+    sz: Size, // 4 or 8
+    dst: PReg,
+    src: Imm<u64>,
+  },
+  /// GPR to GPR move: `reg <- mov (64|32) reg`. This is always a pure move,
+  /// because we require that a 32 bit source register has zeroed high part.
+  MovRR {
+    sz: Size, // 4 or 8
+    dst: PReg,
+    src: PReg,
+  },
+  /// Zero-extended loads, except for 64 bits: `reg <- movz (bl|bq|wl|wq|lq) r/m`.
+  /// Note that the lq variant doesn't really exist since the default zero-extend rule makes it
+  /// unnecessary. For that case we emit the equivalent "movl AM, reg32".
+  MovzxRmR {
+    ext_mode: ExtMode,
+    dst: PReg,
+    src: PRegMem,
+  },
+  /// A plain 64-bit integer load, since `MovzxRmR` can't represent that.
+  Load64 {
+    dst: PReg,
+    src: PAMode,
+  },
+  /// Load effective address: `dst <- addr`
+  Lea {
+    dst: PReg,
+    addr: PAMode,
+  },
+  /// Sign-extended loads and moves: `reg <- movs (bl|bq|wl|wq|lq) [addr]`.
+  MovsxRmR {
+    ext_mode: ExtMode,
+    dst: PReg,
+    src: PRegMem,
+  },
+  /// Integer stores: `[addr] <- mov (b|w|l|q) reg`.
+  Store {
+    sz: Size, // 1, 2, 4 or 8.
+    dst: PAMode,
+    src: PReg,
+  },
+  /// Arithmetic shifts: `reg <- (shl|shr|sar) (b|w|l|q) reg, imm/CL`.
+  Shift {
+    sz: Size, // 1, 2, 4 or 8
+    kind: ShiftKind,
+    dst: PReg,
+    /// shift count: Some(0 .. #bits-in-type - 1), or None = CL
+    num_bits: Option<u8>,
+  },
+  /// Integer comparisons/tests: `flags <- (cmp|test) (b|w|l|q) reg rmi`.
+  Cmp {
+    sz: Size, // 1, 2, 4 or 8
+    op: Cmp,
+    src1: PReg,
+    src2: PRegMemImm,
+  },
+  /// Materializes the requested condition code in the destination reg.
+  /// `dst <- if cc { 1 } else { 0 }`
+  SetCC { cc: CC, dst: PReg },
+  /// Integer conditional move.
+  /// Overwrites the destination register.
+  Cmov {
+    sz: Size, // 2, 4, or 8
+    cc: CC,
+    dst: PReg,
+    src: PRegMem,
+  },
+  /// `pushq rmi`
+  Push64 { src: PRegMemImm },
+  /// `popq reg`
+  Pop64 { dst: PReg },
+  /// Direct call: `call f`.
+  CallKnown { f: ProcId },
+  // /// Indirect call: `callq r/m`.
+  // CallUnknown {
+  //   dest: PRegMem,
+  //   uses: Vec<PReg>,
+  //   defs: Vec<PReg>,
+  //   opcode: Opcode,
+  // },
+  /// Return.
+  Ret,
+  /// Jump to a known target: `jmp simm32`.
+  /// The params are block parameters; they are turned into movs after register allocation.
+  JmpKnown { dst: BlockId },
+  /// Conditional jump: `if cc { jmp dst }`.
+  JmpCond {
+    cc: CC,
+    dst: BlockId,
+  },
+  // /// Indirect jump: `jmpq r/m`.
+  // JmpUnknown { target: PRegMem },
+  /// Traps if the condition code is set.
+  TrapIf { cc: CC },
+  /// An instruction that will always trigger the illegal instruction exception.
+  Ud2,
 }
