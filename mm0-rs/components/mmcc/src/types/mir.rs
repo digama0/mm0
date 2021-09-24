@@ -520,8 +520,21 @@ impl Contexts {
   /// Returns an iterator over the variables and their values, in reverse order (from most
   /// recently added to least recent). This is more efficient than forward iteration, which must
   /// keep a stack.
-  pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxIter<'_> {
-    CtxIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
+  pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxRevIter<'_> {
+    CtxRevIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
+  }
+
+  /// Returns an iterator over the variables and their values.
+  /// Prefer `rev_iter` when possible, since this has to maintain a stack.
+  pub fn iter(&self, mut id: CtxId) -> CtxIter<'_> {
+    let mut iters = vec![];
+    loop {
+      let ctx = &self[id.0];
+      iters.push(&ctx.vars[..id.1 as usize]);
+      if id.0 == CtxBufId::ROOT {break}
+      id = ctx.parent;
+    }
+    iters.into_iter().rev().flatten()
   }
 
   /// Get the last variable pushed on a context, and its type. Panics if used on the root context.
@@ -558,13 +571,13 @@ impl Contexts {
 
 /// The iterator struct returned by [`Contexts::rev_iter`].
 #[must_use] #[derive(Clone, Debug)]
-pub struct CtxIter<'a> {
+pub struct CtxRevIter<'a> {
   ctxs: &'a Contexts,
   buf: CtxBufId,
   iter: std::slice::Iter<'a, (VarId, bool, ExprTy)>,
 }
 
-impl<'a> Iterator for CtxIter<'a> {
+impl<'a> Iterator for CtxRevIter<'a> {
   type Item = &'a (VarId, bool, ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
     loop {
@@ -577,11 +590,40 @@ impl<'a> Iterator for CtxIter<'a> {
   fn count(self) -> usize { self.len() }
 }
 
-impl ExactSizeIterator for CtxIter<'_> {
+impl ExactSizeIterator for CtxRevIter<'_> {
   fn len(&self) -> usize { u32_as_usize(self.ctxs[self.buf].size) + self.iter.len() }
 }
 
-/// The iterator struct returned by [`Contexts::ctx_rev_iter`].
+/// The iterator struct returned by [`Contexts::iter`].
+pub type CtxIter<'a> = std::iter::Flatten<std::iter::Rev<
+  std::vec::IntoIter<&'a [(VarId, bool, (Option<Rc<ExprKind>>, Rc<TyKind>))]>>>;
+
+/// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
+#[must_use] #[derive(Clone)]
+pub struct CtxRevIterWithRel<'a> {
+  a: CtxRevIter<'a>,
+  b: bit_vec::Iter<'a>,
+}
+
+impl std::fmt::Debug for CtxRevIterWithRel<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "CtxRevIterWithRel".fmt(f) }
+}
+
+impl<'a> Iterator for CtxRevIterWithRel<'a> {
+  type Item = (VarId, bool, &'a ExprTy);
+  fn next(&mut self) -> Option<Self::Item> {
+    let (v, _, ref ety) = *self.a.next()?;
+    Some((v, self.b.next_back()?, ety))
+  }
+  fn size_hint(&self) -> (usize, Option<usize>) { self.b.size_hint() }
+  fn count(self) -> usize { self.len() }
+}
+
+impl ExactSizeIterator for CtxRevIterWithRel<'_> {
+  fn len(&self) -> usize { self.b.len() }
+}
+
+/// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
 #[must_use] #[derive(Clone)]
 pub struct CtxIterWithRel<'a> {
   a: CtxIter<'a>,
@@ -596,7 +638,7 @@ impl<'a> Iterator for CtxIterWithRel<'a> {
   type Item = (VarId, bool, &'a ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
     let (v, _, ref ety) = *self.a.next()?;
-    Some((v, self.b.next_back()?, ety))
+    Some((v, self.b.next()?, ety))
   }
   fn size_hint(&self) -> (usize, Option<usize>) { self.b.size_hint() }
   fn count(self) -> usize { self.len() }
@@ -1404,10 +1446,19 @@ impl BasicBlock {
   /// Construct an iterator over the variables in the context, using the relevance values after
   /// ghost analysis, instead of the relevance values stored in the context itself.
   /// Only callable after ghost analysis is done.
-  pub fn ctx_rev_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxIterWithRel<'a> {
+  pub fn ctx_rev_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxRevIterWithRel<'a> {
     let rel = self.relevance.as_ref().expect("ghost analysis not done yet");
     let a = ctxs.rev_iter(self.ctx);
     debug_assert_eq!(rel.len(), a.len());
+    CtxRevIterWithRel { a, b: rel.iter() }
+  }
+
+  /// Construct an iterator over the variables in the context, using the relevance values after
+  /// ghost analysis, instead of the relevance values stored in the context itself.
+  /// Only callable after ghost analysis is done.
+  pub fn ctx_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxIterWithRel<'a> {
+    let rel = self.relevance.as_ref().expect("ghost analysis not done yet");
+    let a = ctxs.iter(self.ctx);
     CtxIterWithRel { a, b: rel.iter() }
   }
 

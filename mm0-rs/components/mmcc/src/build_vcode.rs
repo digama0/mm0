@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Mul;
+use std::rc::Rc;
 
 use num::BigInt;
-use regalloc2::Operand as ROperand;
+use regalloc2::{Operand as ROperand, PReg};
 
 use crate::types::entity::ConstTc;
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
-  GhostInst, Imm, Inst, RegMem, RegMemImm, ShiftKind, Unop as VUnop};
+  Imm, Inst, RegMem, RegMemImm, ShiftKind, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{IdxVec, IntTy, Size, Spanned};
@@ -18,13 +19,13 @@ use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
 #[allow(clippy::wildcard_imports)]
 use crate::types::mir::*;
 
-type VCode = vcode::VCode<Inst>;
+pub(crate) type VCode = vcode::VCode<Inst>;
 
 /// A very simple jump threading visitor. Start at an unvisited basic block, then follow forward
 /// edges to unvisited basic blocks as long as possible. Then start over somewhere else.
 /// This ordering is good for code placement since a jump or branch to the immediately following
 /// block can be elided.
-fn visit_blocks(cfg: &Cfg, mut f: impl FnMut(BlockId, &BasicBlock)) {
+fn visit_blocks<'a>(cfg: &'a Cfg, mut f: impl FnMut(BlockId, &'a BasicBlock)) {
   let mut visited: BitSet<BlockId> = BitSet::default();
   for (mut i, mut bl) in cfg.blocks() {
     if visited.insert(i) && !bl.is_dead() {
@@ -57,6 +58,52 @@ impl<'a> TyCtx<'a> {
   }
 }
 
+enum VRetAbi {
+  /// The value is not passed.
+  Ghost,
+  /// The value is passed in the given physical register.
+  Reg(PReg, Size),
+  /// The value is passed in a memory location.
+  Mem {
+    /// The offset in the `OUTGOING` slot to find the data.
+    off: u32,
+    /// The size of the data in bytes.
+    sz: u32
+  },
+  /// A pointer to a value of the given size is passed in a physical register.
+  /// Note: For return values with this ABI, this is an additional argument *to* the function:
+  /// the caller passes a pointer to the return slot.
+  Boxed {
+    /// The register carrying the pointer.
+    reg: (VReg, PReg),
+    /// The size of the pointed-to data in bytes.
+    sz: u32
+  },
+  /// A pointer to the value is passed in memory. This is like `Boxed`,
+  /// but for the case that we have run out of physical registers.
+  /// (The pointer is at `off..off+8`, and the actual value is at `[off]..[off]+sz`.)
+  /// Note: For return values with this ABI, this is an additional argument *to* the function:
+  /// the caller puts a pointer to the return slot at this location in the outgoing slot.
+  BoxedMem {
+    /// The offset in the `OUTGOING` slot to find the pointer. (It has a fixed size of 8.)
+    off: u32,
+    /// The size of the data starting at the pointer location.
+    sz: u32
+  },
+}
+
+impl From<&VRetAbi> for ArgAbi {
+  fn from(abi: &VRetAbi) -> Self {
+    match *abi {
+      VRetAbi::Ghost => ArgAbi::Ghost,
+      VRetAbi::Reg(reg, sz) => ArgAbi::Reg(reg, sz),
+      VRetAbi::Mem { off, sz } => ArgAbi::Mem { off, sz },
+      VRetAbi::Boxed { reg: (_, reg), sz } => ArgAbi::Boxed { reg, sz },
+      VRetAbi::BoxedMem { off, sz } => ArgAbi::BoxedMem { off, sz },
+    }
+  }
+}
+
 struct LowerCtx<'a> {
   cfg: &'a Cfg,
   allocs: &'a Allocations,
@@ -66,9 +113,11 @@ struct LowerCtx<'a> {
   code: VCode,
   var_map: HashMap<AllocId, (RegMem, Size)>,
   block_map: HashMap<BlockId, VBlockId>,
-  rets: &'a [VReg],
   ctx: TyCtx<'a>,
   unpatched: Vec<(VBlockId, InstId)>,
+  abi_args: Vec<ArgAbi>,
+  abi_rets: Rc<[VRetAbi]>,
+  can_return: bool,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -88,10 +137,12 @@ impl<'a> LowerCtx<'a> {
       funcs,
       code: VCode::default(),
       block_map: HashMap::new(),
-      rets: &[],
       var_map: HashMap::new(),
       ctx: TyCtx::new(cfg),
       unpatched: vec![],
+      abi_args: vec![],
+      abi_rets: Rc::new([]),
+      can_return: cfg.can_return(),
     }
   }
 
@@ -103,7 +154,8 @@ impl<'a> LowerCtx<'a> {
     let m = self.allocs[a].m;
     (self.var_map.entry(a).or_insert_with(|| {
       let rm = if m.on_stack {
-        RegMem::Mem(AMode::spill(code.fresh_spill()))
+        RegMem::Mem(AMode::spill(
+          code.fresh_spill(m.size.try_into().expect("allocation too large"))))
       } else {
         RegMem::Reg(code.fresh_vreg())
       };
@@ -446,7 +498,13 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_block_params(&mut self, params: &[VReg], args: &[(VarId, bool, Operand)]) {
+  fn build_jump(&mut self,
+    vbl: VBlockId,
+    block_args: &ChunkVec<BlockId, VReg>,
+    tgt: BlockId,
+    args: &[(VarId, bool, Operand)]
+  ) {
+    let params = &block_args[tgt];
     let mut params_it = params.iter().peekable();
     for &(v, r, ref o) in args {
       if !r { continue }
@@ -459,6 +517,43 @@ impl<'a> LowerCtx<'a> {
       }
     }
     assert!(params_it.peek().is_none());
+    self.unpatched.push((vbl, self.code.emit(Inst::JmpKnown {
+      dst: VBlockId(tgt.0),
+      params: params.iter().map(|&v| ROperand::reg_use(v)).collect()
+    })))
+  }
+
+  fn build_ret(&mut self, args: &[(VarId, bool, Operand)]) {
+    assert!(self.can_return);
+    assert_eq!(args.len(), self.abi_rets.len());
+    let incoming = AMode::spill(SpillId::INCOMING);
+    for (&(_, r, ref o), ret) in args.iter().zip(&*self.abi_rets.clone()) {
+      assert!(r || matches!(ret, VRetAbi::Ghost));
+      match *ret {
+        VRetAbi::Ghost => {}
+        VRetAbi::Reg(reg, sz) => {
+          let dst = self.code.fresh_vreg();
+          let src = self.get_operand(o);
+          self.code.emit_copy(sz, dst.into(), src);
+          self.emit(Inst::MovRP { sz, dst: (dst, reg), src: dst });
+        }
+        VRetAbi::Mem { off, sz } => {
+          let sz = sz.into();
+          self.build_move(sz, Size::from_u64(sz), (&incoming + off).into(), o)
+        }
+        VRetAbi::Boxed { reg: (dst, _), sz } => {
+          let sz = sz.into();
+          self.build_move(sz, Size::from_u64(sz), AMode::reg(dst).into(), o)
+        }
+        VRetAbi::BoxedMem { off, sz } => {
+          let ptr = self.code.fresh_vreg();
+          self.code.emit(Inst::load_mem(Size::S64, ptr, &incoming + off));
+          let sz = sz.into();
+          self.build_move(sz, Size::from_u64(sz), AMode::reg(ptr).into(), o)
+        }
+      }
+    }
+    self.code.emit(Inst::Ret);
   }
 
   fn build_call(&mut self,
@@ -518,7 +613,8 @@ impl<'a> LowerCtx<'a> {
           let (&(dst, sz), size) = self.get_alloc(a);
           let addr = match dst {
             RegMem::Reg(r) => {
-              let a = AMode::spill(self.code.fresh_spill());
+              let a = AMode::spill(self.code.fresh_spill(
+                size.try_into().expect("allocation too large")));
               boxes.push((sz, r, a));
               a
             }
@@ -555,9 +651,9 @@ impl<'a> LowerCtx<'a> {
         }
       }
       for (sz, dst, a) in boxes { self.code.emit_copy(sz, dst.into(), a); }
-      self.unpatched.push((vbl, self.code.emit(Inst::Ghost(GhostInst::Fallthrough {
+      self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
         dst: VBlockId(tgt.0),
-      }))));
+      })));
     } else {
       self.emit(Inst::CallKnown { f, operands: operands.into(), clobbers: None });
     }
@@ -567,22 +663,12 @@ impl<'a> LowerCtx<'a> {
     block_args: &ChunkVec<BlockId, VReg>, vbl: VBlockId, term: &Terminator
   ) {
     match *term {
-      Terminator::Jump(tgt, ref args) => {
-        let params = &block_args[tgt];
-        self.build_block_params(params, args);
-        self.unpatched.push((vbl, self.code.emit(Inst::JmpKnown {
-          dst: VBlockId(tgt.0),
-          params: params.iter().map(|&v| ROperand::reg_use(v)).collect()
-        })))
-      }
+      Terminator::Jump(tgt, ref args) => self.build_jump(vbl, block_args, tgt, args),
       Terminator::Jump1(tgt) =>
-        self.unpatched.push((vbl, self.code.emit(Inst::Ghost(GhostInst::Fallthrough {
+        self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
-        })))),
-      Terminator::Return(ref args) => {
-        self.build_block_params(self.rets, args);
-        self.code.emit(Inst::Ret);
-      }
+        }))),
+      Terminator::Return(ref args) => self.build_ret(args),
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
         let src = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
@@ -603,8 +689,7 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_block_args(&mut self, rets_out: &'a mut Vec<VReg>, rets: &[Arg]
-  ) -> ChunkVec<BlockId, VReg> {
+  fn build_block_args(&mut self) -> ChunkVec<BlockId, VReg> {
     let preds = self.cfg.predecessors();
 
     let allocs = self.allocs;
@@ -618,11 +703,10 @@ impl<'a> LowerCtx<'a> {
       }
     };
 
-    let block_args = cfg.blocks.enum_iter().map(|(i, bl)| {
+    let mut block_args: ChunkVec<BlockId, VReg> = cfg.blocks.enum_iter().map(|(i, bl)| {
       let mut out = vec![];
       if i == BlockId::ENTRY {
-        for &(v, b, _) in cfg.ctxs.rev_iter(bl.ctx) { if b { insert(&mut out, v) } }
-        out.reverse()
+        for (v, b, _) in bl.ctx_iter(&cfg.ctxs) { if b { insert(&mut out, v) } }
       } else if !bl.is_dead() {
         for &(e, j) in &preds[i] {
           if !matches!(e, Edge::Jump) { continue }
@@ -633,16 +717,79 @@ impl<'a> LowerCtx<'a> {
       out
     }).collect();
 
-    for &Arg { var, ref ty, .. } in rets { insert(rets_out, var) }
-    self.rets = rets_out;
     block_args
   }
 
-  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>) {
-    visit_blocks(self.cfg, |i, bl| {
+  fn build_prologue(&mut self, bl: &'a BasicBlock, rets: &[Arg]) {
+    let mut regs = crate::arch::ARG_REGS.iter();
+    let incoming = AMode::spill(SpillId::INCOMING);
+    let mut off = 0_u32;
+    let mut alloc = |sz| (off, off = off.checked_add(sz).expect("overflow")).0;
+
+    self.abi_rets = rets.iter().map(|ret| {
+      if ret.attr.contains(ArgAttr::GHOST) { return VRetAbi::Ghost }
+      let meta = ret.ty.meta(self.names).expect("return must have compile time known size");
+      let size = meta.size;
+      let sz = Size::from_u64(size);
+      let on_stack = meta.on_stack || sz == Size::Inf;
+      match (on_stack, regs.next()) {
+        (false, Some(&r)) => VRetAbi::Reg(r, sz),
+        (true, Some(&r)) => {
+          let ptr = self.code.fresh_vreg();
+          self.code.emit(Inst::MovPR { sz, dst: ptr, src: (ptr, r) });
+          VRetAbi::Boxed { reg: (ptr, r), sz: size.try_into().expect("overflow") }
+        }
+        (_, None) if size <= 8 => {
+          let size32 = size.try_into().expect("overflow");
+          VRetAbi::Mem { off: alloc(size32), sz: size32 }
+        },
+        (_, None) => VRetAbi::BoxedMem { off: alloc(8), sz: size.try_into().expect("overflow") }
+      }
+    }).collect();
+
+    self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, (_, ty))| {
+      if !b { return ArgAbi::Ghost }
+      let a = self.allocs.get(v);
+      if a == AllocId::ZERO { return ArgAbi::Ghost }
+      let (&(dst, sz), size) = self.get_alloc(a);
+      match (dst, regs.next()) {
+        (RegMem::Reg(dst), Some(&r)) => {
+          let src = self.code.fresh_vreg();
+          self.code.emit(Inst::MovPR { sz, dst, src: (src, r) });
+          ArgAbi::Reg(r, sz)
+        },
+        (RegMem::Mem(_), Some(&r)) => {
+          let src = self.code.fresh_vreg();
+          self.code.emit(Inst::MovPR { sz, dst: src, src: (src, r) });
+          let size32 = size.try_into().expect("overflow");
+          self.build_memcpy(size, sz, dst, AMode::reg(src));
+          ArgAbi::Boxed { reg: r, sz: size32 }
+        },
+        (_, None) if size <= 8 => {
+          let size32 = size.try_into().expect("overflow");
+          let off = alloc(size32);
+          self.build_memcpy(size, sz, dst, &incoming + off);
+          ArgAbi::Mem { off, sz: size32 }
+        },
+        (_, None) => {
+          let off = alloc(8);
+          let ptr = self.code.fresh_vreg();
+          self.code.emit_copy(Size::S64, ptr.into(), &incoming + off);
+          self.build_memcpy(size, sz, dst, AMode::reg(ptr));
+          ArgAbi::BoxedMem { off, sz: size.try_into().expect("overflow") }
+        },
+      }
+    }).collect();
+
+    self.code.grow_spill(SpillId::INCOMING, off);
+  }
+
+  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, rets: &[Arg]) {
+    visit_blocks(self.cfg, move |i, bl| {
       let vbl = self.code.new_block(block_args[i].iter().copied());
       self.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
+      if i == BlockId::ENTRY { self.build_prologue(bl, rets) }
       for (i, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {
@@ -677,11 +824,11 @@ impl<'a> LowerCtx<'a> {
   }
 
   fn finish(self) -> VCode {
-    let LowerCtx { mut code, block_map, unpatched, .. } = self;
+    let LowerCtx { mut code, block_map, unpatched, abi_args, abi_rets, can_return, .. } = self;
     let mut patch = |dst: &mut VBlockId| { *dst = block_map[&BlockId(dst.0)]; *dst };
     for (vbl, inst) in unpatched {
       match &mut code[inst] {
-        Inst::Ghost(GhostInst::Fallthrough { dst }) |
+        Inst::Fallthrough { dst } |
         Inst::JmpKnown { dst, .. } => {
           let dst = patch(dst);
           code.add_edge(vbl, dst)
@@ -694,6 +841,10 @@ impl<'a> LowerCtx<'a> {
         _ => unreachable!(),
       }
     }
+    code.abi.args = abi_args.into();
+    code.abi.rets = can_return.then(||
+      abi_rets.iter().map(ArgAbi::from).collect());
+    code.abi.args_space = code.spills[SpillId::INCOMING];
     code
   }
 }
@@ -707,8 +858,7 @@ pub(crate) fn build_vcode(
   rets: &[Arg],
 ) -> VCode {
   let mut lctx = LowerCtx::new(names, func_mono, funcs, cfg, allocs);
-  let temp = &mut vec![];
-  let block_args = lctx.build_block_args(temp, rets);
-  lctx.build_blocks(&block_args);
+  let block_args = lctx.build_block_args();
+  lctx.build_blocks(&block_args, rets);
   lctx.finish()
 }

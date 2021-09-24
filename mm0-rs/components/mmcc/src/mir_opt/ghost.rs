@@ -126,6 +126,38 @@ impl Cfg {
     }
   }
 
+  /// This function returns true if the entry block can reach a `Return(_)`, i.e. it can terminate
+  /// normally. This can be false either because the entry block is unreachable (because the
+  /// function inputs are contradictory), or because every path through the function ends in an
+  /// `assert(false)` or a call to a function that does not return.
+  #[must_use] pub fn can_return(&self) -> bool {
+    struct ReturnAnalysis;
+    impl Analysis for ReturnAnalysis {
+      type Dir = Backward;
+      type Doms = BitSet<BlockId>;
+
+      fn bottom(&mut self, cfg: &Cfg) -> Self::Doms { BitSet::bottom(cfg.blocks.len()) }
+
+      fn apply_trans_for_block(&mut self,
+          _: &Self::Doms, _: BlockId, bl: &BasicBlock, d: &mut bool) {
+        match *bl.terminator() {
+          Terminator::Return(_) => *d = true,
+          Terminator::Assert(_, _, false, _) |
+          Terminator::Call {reach: false, ..} => *d = false,
+          Terminator::Assert(..) |
+          Terminator::Call {..} |
+          Terminator::Unreachable(_) |
+          Terminator::Dead |
+          Terminator::Jump(..) |
+          Terminator::Jump1(..) |
+          Terminator::If(..) => {}
+        }
+      }
+    }
+    let doms = ReturnAnalysis.iterate_to_fixpoint(self);
+    ReturnAnalysis.get_applied(&self, &doms, BlockId::ENTRY)
+  }
+
   /// This function performs the "ghost analysis" pass. The result of the analysis is a
   /// determination of the computational relevance of each variable in the program based on
   /// whether its result is needed.
@@ -290,9 +322,7 @@ impl Cfg {
     let mut analysis = GhostAnalysis { reachable, returns };
     let result = analysis.iterate_to_fixpoint(self);
     GhostAnalysisResult((0..self.blocks.len()).map(BlockId::from_usize).map(|id| {
-      let mut state = result.cloned(id);
-      analysis.apply_trans_for_block(&result, id, &self[id], &mut state);
-      state.vars
+      analysis.get_applied(&self, &result, id).vars
     }).collect())
   }
 

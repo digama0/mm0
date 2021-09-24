@@ -1,6 +1,6 @@
 //! The low level IR, based on cranelift's `VCode`.
 
-use std::{convert::TryInto, iter::FromIterator};
+use std::{convert::TryInto, fmt::Debug, iter::FromIterator};
 
 use crate::{Idx, types::IdxVec};
 
@@ -71,7 +71,6 @@ pub trait Inst: Sized {
 
 /// Conceptually the same as `IdxVec<I, Vec<T>>`, but shares allocations between the vectors.
 /// Best used for append-only use, since only the last added element can be pushed to.
-#[derive(Debug)]
 pub struct ChunkVec<I, T> {
   data: Vec<T>,
   idxs: IdxVec<I, u32>,
@@ -81,24 +80,43 @@ impl<I, T> Default for ChunkVec<I, T> {
   fn default() -> Self { Self { data: vec![], idxs: Default::default() } }
 }
 
+impl<I: Idx, T: Debug> Debug for ChunkVec<I, T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_list()
+      .entries(self.idxs.enum_iter().map(|(i, _)| &self[i]))
+      .finish()
+  }
+}
+
 impl<I: Idx, T> ChunkVec<I, T> {
-  fn push_into(&mut self, f: impl FnOnce(&mut Vec<T>)) -> I {
+  /// Push a new `[T]` to the list of lists. The value to be inserted is represented in
+  /// continuation passing style; the function `f` is passed a vector and should extend the vector
+  /// with the list of values.
+  /// Behavior is unspecified if `f` clears or otherwise mishandles the vector.
+  pub fn push_into(&mut self, f: impl FnOnce(&mut Vec<T>)) -> I {
     let i = self.idxs.push(self.data.len().try_into().expect("overflow"));
     f(&mut self.data);
     i
   }
 
-  fn push(&mut self, it: impl IntoIterator<Item=T>) -> I {
+  /// Push a new `[T]` to the list of lists. The value to be inserted is represented as
+  /// an iterator.
+  pub fn push(&mut self, it: impl IntoIterator<Item=T>) -> I {
     self.push_into(|v| v.extend(it))
   }
 
+  /// The starting index for the given value in the `data` array.
   fn start(&self, i: I) -> usize { u32_as_usize(self.idxs[i]) }
+
+  /// The end index for the given value in the `data` array.
   fn end(&self, i: I) -> usize {
     match self.idxs.0.get(i.into_usize() + 1) {
       None => self.data.len(),
       Some(&b) => u32_as_usize(b)
     }
   }
+
+  /// The start and end index for the given value in the `data` array.
   fn extent(&self, i: I) -> std::ops::Range<usize> { self.start(i)..self.end(i) }
 }
 
@@ -153,7 +171,7 @@ pub(crate) enum ArgAbi {
 }
 
 /// The representation of a monomorphized function's calling convention.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub(crate) struct ProcAbi {
   /// The arguments of the procedure.
   pub(crate) args: Box<[ArgAbi]>,
@@ -161,7 +179,7 @@ pub(crate) struct ProcAbi {
   /// If None, then the function does not return.
   pub(crate) rets: Option<Box<[ArgAbi]>>,
   /// The total size of all the outgoing arguments in bytes
-  args_space: u32,
+  pub(crate) args_space: u32,
   /// The registers that are clobbered by the call.
   pub(crate) clobbers: Box<[PReg]>,
 }
@@ -170,20 +188,22 @@ pub(crate) struct ProcAbi {
 /// register allocation.
 #[derive(Debug)]
 pub struct VCode<I> {
-  insts: IdxVec<InstId, I>,
-  blocks: IdxVec<BlockId, (InstId, InstId)>,
-  block_preds: IdxVec<BlockId, Vec<BlockId>>,
-  block_succs: IdxVec<BlockId, Vec<BlockId>>,
-  block_params: ChunkVec<BlockId, VReg>,
-  operands: ChunkVec<InstId, Operand>,
-  num_vregs: usize,
-  num_spills: usize,
-  outgoing_spill_size: Option<u32>,
+  pub(crate) abi: ProcAbi,
+  pub(crate) insts: IdxVec<InstId, I>,
+  pub(crate) blocks: IdxVec<BlockId, (InstId, InstId)>,
+  pub(crate) block_preds: IdxVec<BlockId, Vec<BlockId>>,
+  pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
+  pub(crate) block_params: ChunkVec<BlockId, VReg>,
+  pub(crate) operands: ChunkVec<InstId, Operand>,
+  pub(crate) num_vregs: usize,
+  pub(crate) spills: IdxVec<SpillId, u32>,
+  pub(crate) has_call: bool,
 }
 
 impl<I> Default for VCode<I> {
   fn default() -> Self {
     Self {
+      abi: Default::default(),
       insts: Default::default(),
       blocks: Default::default(),
       block_preds: Default::default(),
@@ -191,8 +211,8 @@ impl<I> Default for VCode<I> {
       block_params: Default::default(),
       operands: Default::default(),
       num_vregs: 0,
-      num_spills: 2, // INCOMING, OUTGOING
-      outgoing_spill_size: None,
+      spills: vec![0, 0].into(), // INCOMING, OUTGOING
+      has_call: false,
     }
   }
 }
@@ -205,11 +225,14 @@ impl<I> VCode<I> {
     v
   }
 
-  /// Create a new unused `SpillId`.
-  pub fn fresh_spill(&mut self) -> SpillId {
-    let n = SpillId::from_usize(self.num_spills);
-    self.num_spills += 1;
-    n
+  /// Create a new unused `SpillId`. (It is allowable to use size 0 here and grow it later with
+  /// `grow_spill`.)
+  pub fn fresh_spill(&mut self, sz: u32) -> SpillId { self.spills.push(sz) }
+
+  /// Ensure that the given spill is at least the specified size.
+  pub fn grow_spill(&mut self, n: SpillId, sz: u32) {
+    let old = &mut self.spills[n];
+    *old = (*old).max(sz)
   }
 
   /// Finalize a block. Must be called after each call to `new_block`,
@@ -220,8 +243,8 @@ impl<I> VCode<I> {
 
   /// Make space in the outgoing argument stack region.
   pub fn mk_outgoing_spill(&mut self, sz: u32) {
-    let old = self.outgoing_spill_size.get_or_insert(0);
-    *old = (*old).max(sz);
+    self.has_call = true;
+    self.grow_spill(SpillId::OUTGOING, sz)
   }
 
   /// Add an edge in the CFG, from `from` to `to`.

@@ -496,6 +496,13 @@ trait Analysis {
       })
     }
   }
+
+  fn get_applied(&mut self, cfg: &Cfg,
+    entry_sets: &Self::Doms, id: BlockId) -> <Self::Doms as Domains>::Item {
+    let mut state = entry_sets.cloned(id);
+    self.apply_trans_for_block(entry_sets, id, &cfg[id], &mut state);
+    state
+  }
 }
 
 /// Perform MIR analysis and optimize the given procedure.
