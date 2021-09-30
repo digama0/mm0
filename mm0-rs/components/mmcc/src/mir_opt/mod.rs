@@ -36,7 +36,7 @@ impl std::fmt::Debug for OptBlockId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.get() {
       Some(bl) => bl.fmt(f),
-      None => "None".fmt(f),
+      None => write!(f, "None"),
     }
   }
 }
@@ -509,11 +509,18 @@ trait Analysis {
 #[allow(clippy::implicit_hasher)]
 pub(crate) fn optimize(proc: &mut Proc, _names: &HashMap<Symbol, Entity>) {
   let cfg = &mut proc.body;
+  // println!("opt 0:\n{:#?}", cfg);
   cfg.compute_predecessors();
+  // println!("compute_predecessors:\n{:#?}", cfg);
   let reachable = cfg.reachability_analysis();
+  // println!("reachable: {:#?}", reachable);
   cfg.apply_reachability_analysis(&reachable);
+  // println!("reachability_analysis:\n{:#?}", cfg);
   cfg.do_ghost_analysis(&reachable, &proc.rets);
+  // println!("ghost_analysis:\n{:#?}", cfg);
   cfg.legalize();
+  // println!("legalize:\n{:#?}", cfg);
   // Do ghost analysis again because legalize produces dead values
   cfg.do_ghost_analysis(&reachable, &proc.rets);
+  // println!("ghost_analysis 2:\n{:#?}", cfg);
 }

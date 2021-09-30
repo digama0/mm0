@@ -63,6 +63,12 @@ impl Cfg {
   /// where `pf` is a proof of false in the context of block `l2`.
   #[must_use] pub fn reachability_analysis(&self) -> BlockVec<Reachability> {
     struct ReachabilityAnalysis;
+    fn side_effecting(t: &Terminator) -> bool {
+      matches!(t,
+        Terminator::Return(_) |
+        Terminator::Assert(_, _, _, _) |
+        Terminator::Call {se: true, ..})
+    }
     impl Analysis for ReachabilityAnalysis {
       type Dir = Backward;
       type Doms = BlockVec<Reachability>;
@@ -70,17 +76,10 @@ impl Cfg {
       fn bottom(&mut self, cfg: &Cfg) -> Self::Doms { BlockVec::bottom(cfg.blocks.len()) }
 
       fn apply_trans_for_block(&mut self,
-          _: &Self::Doms, _: BlockId, bl: &BasicBlock, d: &mut Reachability) {
-        match *bl.terminator() {
-          Terminator::Return(_) |
-          Terminator::Assert(_, _, _, _) |
-          Terminator::Call {se: true, ..} => *d = Reachability::Reachable,
-          Terminator::Call {se: false, ..} |
-          Terminator::Unreachable(_) |
-          Terminator::Dead |
-          Terminator::Jump(..) |
-          Terminator::Jump1(..) |
-          Terminator::If(..) => {}
+        _: &Self::Doms, _: BlockId, bl: &BasicBlock, d: &mut Reachability
+      ) {
+        if side_effecting(bl.terminator()) {
+          *d = Reachability::Reachable
         }
       }
     }
@@ -91,6 +90,11 @@ impl Cfg {
       queue.insert(id);
     });
     ReachabilityAnalysis.iterate_to_fixpoint_from(self, &mut queue, &mut reachable);
+    for (i, d) in reachable.enum_iter_mut() {
+      if *d != Reachability::Dead && side_effecting(self[i].terminator()) {
+        *d = Reachability::Reachable
+      }
+    }
     reachable
   }
 
@@ -327,27 +331,31 @@ impl Cfg {
   }
 
   /// Modify the CFG in place to apply the result of ghost analysis.
-  pub fn apply_ghost_analysis(&mut self, res: &GhostAnalysisResult) {
+  pub fn apply_ghost_analysis(&mut self,
+    res: &GhostAnalysisResult, returns: &[Arg],
+  ) {
     self.ctxs.reset_ghost();
     for (id, res) in res.0.enum_iter() {
       let bl = &mut self.blocks[id];
       if bl.is_dead() { continue }
       bl.relevance = Some(self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v)));
-      let update = |v, r: &mut bool| if !*r && res.contains(&v) { *r = true };
+      let get = |v| res.contains(&v);
       for stmt in &mut bl.stmts {
         match stmt {
-          Statement::Let(LetKind::Let(v, r, _), _, _) => update(*v, r),
-          Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { update(*v, r) }
-          Statement::Assign(_, _, _, vs) => for v in &mut **vs { update(v.to, &mut v.rel) }
+          Statement::Let(LetKind::Let(v, r, _), _, _) => *r = get(*v),
+          Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { *r = get(*v) }
+          Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to) }
         }
       }
     }
     let mut cache = BlockVec::<Option<HashSet<VarId>>>::from_default(self.blocks.len());
     let Cfg {ctxs, blocks, ..} = self;
-    for (_, &mut BasicBlock {ctx, ref mut term, ..}) in blocks.enum_iter_mut() {
-      if let Some(Terminator::Jump(tgt, ref mut args)) = *term {
+    for i in 0..blocks.len() {
+      let blocks = &mut *blocks.0;
+      if let Some(Terminator::Jump(tgt, ref mut args)) = blocks[i].term {
+        let tgt_ctx = blocks[tgt.0 as usize].ctx;
         let s = cache[tgt].get_or_insert_with(|| {
-          ctxs.rev_iter(ctx).filter(|p| p.1).map(|p| p.0).collect()
+          ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
         });
         for (v, r, _) in args { *r = s.contains(v) }
       }
@@ -360,6 +368,6 @@ impl Cfg {
     returns: &[Arg],
   ) {
     let ghost = self.ghost_analysis(reachable, returns);
-    self.apply_ghost_analysis(&ghost);
+    self.apply_ghost_analysis(&ghost, returns);
   }
 }

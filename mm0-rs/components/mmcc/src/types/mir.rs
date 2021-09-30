@@ -597,6 +597,7 @@ impl Contexts {
   /// Given a context, extend it with a variable and type to produce a new context.
   pub fn extend(&mut self, mut ctx: CtxId, var: VarId, r: bool, ty: ExprTy) -> CtxId {
     self.unshare(&mut ctx).vars.push((var, r, ty));
+    ctx.1 += 1;
     ctx
   }
 
@@ -638,9 +639,9 @@ impl Contexts {
   /// applied to the context).
   pub fn set_ghost(&mut self, mut id: CtxId, mut vars: impl FnMut(VarId) -> bool) -> BitVec {
     let mut buf = &mut self[id.0];
-    let mut rel = BitVec::from_elem(u32_as_usize(buf.size), false);
+    let mut rel = BitVec::from_elem(u32_as_usize(buf.size + id.1), false);
     loop {
-      for (i, (v, r, _)) in (buf.size..buf.size + id.1).zip(&mut buf.vars[..id.1 as usize]) {
+      for (i, (v, r, _)) in (buf.size..buf.size + id.1).zip(&mut buf.vars[..u32_as_usize(id.1)]) {
         let new = vars(*v);
         *r = new;
         rel.set(u32_as_usize(i), new);
@@ -775,6 +776,7 @@ pub struct Cfg {
 
 impl std::fmt::Debug for Cfg {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    // writeln!(f, "ctxs: {:?}", self.ctxs)?;
     for (i, bl) in self.blocks() { bl.debug_fmt(Some(i), Some(&self.ctxs), f)? }
     Ok(())
   }
@@ -1732,9 +1734,14 @@ impl BasicBlock {
     if let Some(ctxs) = ctxs {
       write!(f, "(")?;
       let mut first = true;
-      for (v, r, (_, ty)) in self.ctx_iter(ctxs) {
+      let mut write = |v, r, ty| {
         if !std::mem::take(&mut first) { write!(f, ", ")? }
-        write!(f, "{}{:?}: {:?}", if r {""} else {"ghost "}, v, ty)?
+        write!(f, "{}{:?}: {:?}", if r {""} else {"ghost "}, v, ty)
+      };
+      if self.relevance.is_some() {
+        for (v, r, (_, ty)) in self.ctx_iter(ctxs) { write(v, r, ty)? }
+      } else {
+        for &(v, r, (_, ref ty)) in ctxs.iter(self.ctx) { write(v, r, ty)? }
       }
       write!(f, ")")?
     } else {
