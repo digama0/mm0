@@ -362,7 +362,7 @@ pub enum PlaceKind<'a> {
 }
 
 /// (Elaborated) unary operations.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Unop {
   /// Computes `-e as iN` from `e as iN`, or `-e` from `e` for `int`.
   Neg(IntTy),
@@ -376,8 +376,19 @@ pub enum Unop {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Unop);
 
+impl std::fmt::Debug for Unop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Unop::Neg(ity) => write!(f, "-[{}]", ity),
+      Unop::Not => write!(f, "not"),
+      Unop::BitNot(ity) => write!(f, "bnot[{}]", ity),
+      Unop::As(from, to) => write!(f, "as[{} -> {}]", from, to),
+    }
+  }
+}
+
 /// (Elaborated) binary operations.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Binop {
   /// Integer addition
   Add(IntTy),
@@ -413,6 +424,29 @@ pub enum Binop {
   Ne(IntTy),
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Binop);
+
+impl std::fmt::Debug for Binop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Binop::Add(ity) => write!(f, "+[{}]", ity),
+      Binop::Mul(ity) => write!(f, "*[{}]", ity),
+      Binop::Sub(ity) => write!(f, "-[{}]", ity),
+      Binop::Max(ity) => write!(f, "max[{}]", ity),
+      Binop::Min(ity) => write!(f, "min[{}]", ity),
+      Binop::And => write!(f, "and"),
+      Binop::Or => write!(f, "or"),
+      Binop::BitAnd(ity) => write!(f, "band[{}]", ity),
+      Binop::BitOr(ity) => write!(f, "bor[{}]", ity),
+      Binop::BitXor(ity) => write!(f, "bxor[{}]", ity),
+      Binop::Shl(ity) => write!(f, "shl[{}]", ity),
+      Binop::Shr(ity) => write!(f, "shr[{}]", ity),
+      Binop::Lt(ity) => write!(f, "<[{}]", ity),
+      Binop::Le(ity) => write!(f, "<=[{}]", ity),
+      Binop::Eq(ity) => write!(f, "=[{}]", ity),
+      Binop::Ne(ity) => write!(f, "!=[{}]", ity),
+    }
+  }
+}
 
 impl super::Binop {
   /// Convert [`types::Binop`](super::Binop) into [`hir::Binop`](Binop), which requires an

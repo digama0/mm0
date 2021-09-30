@@ -711,7 +711,7 @@ pub(crate) enum Inst {
   //   opcode: Opcode,
   // },
   /// Return.
-  Ret,
+  Ret { params: Box<[Operand]> },
   /// Jump to a known target: `jmp simm32`.
   /// The params are block parameters; they are turned into movs after register allocation.
   JmpKnown { dst: BlockId, params: Box<[Operand]> },
@@ -816,13 +816,13 @@ impl VInst for Inst {
       }
       Inst::Push64 { ref src } => src.collect_operands(args),
       Inst::CallKnown { operands: ref params, .. } |
-      Inst::JmpKnown { ref params, .. } => args.extend_from_slice(params),
+      Inst::JmpKnown { ref params, .. } |
+      Inst::Ret { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
       // moves are handled specially by regalloc, we don't need operands
       Inst::MovRR { .. } | Inst::MovPR { .. } | Inst::MovRP { .. } |
       // Other instructions that have no operands
       Inst::Fallthrough { .. } |
-      Inst::Ret |
       Inst::JmpCond { .. } |
       Inst::TrapIf { .. } |
       Inst::Ud2 => {}

@@ -528,6 +528,7 @@ impl<'a> LowerCtx<'a> {
     assert!(self.can_return);
     assert_eq!(args.len(), self.abi_rets.len());
     let incoming = AMode::spill(SpillId::INCOMING);
+    let mut params = vec![];
     for (&(_, r, ref o), ret) in args.iter().zip(&*self.abi_rets.clone()) {
       assert!(r || matches!(ret, VRetAbi::Ghost));
       match *ret {
@@ -536,7 +537,7 @@ impl<'a> LowerCtx<'a> {
           let dst = self.code.fresh_vreg();
           let src = self.get_operand(o);
           self.code.emit_copy(sz, dst.into(), src);
-          self.emit(Inst::MovRP { sz, dst: (dst, reg), src: dst });
+          params.push(ROperand::reg_fixed_use(dst, reg));
         }
         VRetAbi::Mem { off, sz } => {
           let sz = sz.into();
@@ -554,7 +555,7 @@ impl<'a> LowerCtx<'a> {
         }
       }
     }
-    self.code.emit(Inst::Ret);
+    self.code.emit(Inst::Ret { params: params.into() });
   }
 
   fn build_call(&mut self,
