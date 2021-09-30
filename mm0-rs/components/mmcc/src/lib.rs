@@ -115,6 +115,7 @@ mod mir_opt;
 mod symbol;
 mod build_vcode;
 mod arch;
+mod regalloc;
 
 use std::collections::HashMap;
 use {types::{entity::Entity, mir}, predef::PredefMap};

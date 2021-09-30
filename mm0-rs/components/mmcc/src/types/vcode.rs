@@ -5,7 +5,6 @@ use std::{convert::TryInto, fmt::Debug, iter::FromIterator};
 use crate::{Idx, types::IdxVec};
 
 use mm0_util::u32_as_usize;
-use regalloc2::RegallocOptions;
 pub(crate) use regalloc2::{
   PReg, VReg, RegClass, InstRange, Operand, Block as BlockId, Inst as InstId};
 
@@ -306,11 +305,4 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn inst_clobbers(&self, insn: InstId) -> &[PReg] { self.insts[insn].clobbers() }
   fn num_vregs(&self) -> usize { self.num_vregs }
   fn spillslot_size(&self, _: regalloc2::RegClass) -> usize { 1 }
-}
-
-impl<I: Inst> VCode<I> {
-  fn regalloc(&self) -> regalloc2::Output {
-    let opts = RegallocOptions { verbose_log: false };
-    regalloc2::run(self, &crate::arch::MACHINE_ENV, &opts).expect("fatal regalloc error")
-  }
 }
