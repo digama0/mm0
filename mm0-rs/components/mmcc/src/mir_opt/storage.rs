@@ -37,7 +37,7 @@ mk_id! {
   /// for the semantics of pointers to a changing memory location). We may need to insert an
   /// additional copy before the assignment, however, if the user accesses old values of a
   /// reassigned variable.
-  AllocId
+  AllocId(Debug("a"))
 }
 
 impl AllocId {

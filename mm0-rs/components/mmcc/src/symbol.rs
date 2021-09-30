@@ -12,7 +12,7 @@ mk_id! {
   /// Symbols are interned forever: the interner leaks any string it is given. As a result,
   /// symbols can be used across compiler invocations in a single execution, although they do not
   /// have a stable name across executions.
-  Symbol
+  Symbol(!Debug)
 }
 
 /// The global symbol interner. You don't normally need to interact directly with this struct,
@@ -74,6 +74,9 @@ impl Symbol {
 
 impl Display for Symbol {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.as_str().fmt(f) }
+}
+impl std::fmt::Debug for Symbol {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self) }
 }
 
 /// Initialize a map from symbols to values of type `T`. Note that this will create an array the

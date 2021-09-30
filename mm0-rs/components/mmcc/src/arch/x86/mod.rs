@@ -1097,11 +1097,17 @@ pub(crate) enum PInst {
   Ret,
   /// Jump to a known target: `jmp simm32`.
   /// The params are block parameters; they are turned into movs after register allocation.
-  JmpKnown { dst: BlockId },
+  JmpKnown {
+    dst: BlockId,
+    /// True if we know that the branch can be encoded by a `RIP + i8` relative jump
+    short: bool,
+  },
   /// Conditional jump: `if cc { jmp dst }`.
   JmpCond {
     cc: CC,
     dst: BlockId,
+    /// True if we know that the branch can be encoded by a `RIP + i8` relative jump
+    short: bool,
   },
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: PRegMem },

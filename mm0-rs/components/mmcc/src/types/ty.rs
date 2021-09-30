@@ -156,9 +156,9 @@ impl<T: AddFlags> WithMeta<T> {
 }
 
 mk_id! {
-  /** A type metavariable. */ TyMVarId,
-  /** An expression metavariable. */ ExprMVarId,
-  /** A lifetime metavariable. */ LftMVarId
+  /** A type metavariable. */ TyMVarId(Debug("?t")),
+  /** An expression metavariable. */ ExprMVarId(Debug("?e")),
+  /** A lifetime metavariable. */ LftMVarId(Debug("?l"))
 }
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.

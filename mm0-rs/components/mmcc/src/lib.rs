@@ -59,27 +59,45 @@
 
 #![allow(unused)]
 
-macro_rules! mk_id {($($(#[$attr:meta])* $id:ident),* $(,)?) => {$(
-  $(#[$attr])*
-  #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct $id(pub u32);
-  #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
-  impl $id {
-    /// Generate a fresh variable from a `&mut ID` counter.
-    #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
-      let n = *self;
-      self.0 += 1;
-      n
+macro_rules! mk_id {
+  (@ImplDebug $id:ident) => {
+    impl std::fmt::Debug for $id {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({})", stringify!($id), self.0)
+      }
     }
-  }
-  impl From<$id> for usize {
-    fn from(id: $id) -> usize { crate::u32_as_usize(id.0) }
-  }
-  impl crate::Idx for $id {
-    fn into_usize(self) -> usize { self.into() }
-    fn from_usize(n: usize) -> Self { $id(std::convert::TryFrom::try_from(n).expect("overflow")) }
-  }
-)*}}
+  };
+  (@ImplDebug $id:ident !Debug) => {};
+  (@ImplDebug $id:ident Debug($l:expr)) => {
+    impl std::fmt::Debug for $id {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", $l, self.0)
+      }
+    }
+  };
+  ($($(#[$attr:meta])* $id:ident $(($($lit:tt)*))?),* $(,)?) => {$(
+    $(#[$attr])*
+    #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct $id(pub u32);
+    #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
+    impl $id {
+      /// Generate a fresh variable from a `&mut ID` counter.
+      #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
+        let n = *self;
+        self.0 += 1;
+        n
+      }
+    }
+    mk_id!(@ImplDebug $id $($($lit)*)?);
+    impl From<$id> for usize {
+      fn from(id: $id) -> usize { crate::u32_as_usize(id.0) }
+    }
+    impl crate::Idx for $id {
+      fn into_usize(self) -> usize { self.into() }
+      fn from_usize(n: usize) -> Self { $id(std::convert::TryFrom::try_from(n).expect("overflow")) }
+    }
+  )*}
+}
 
 #[macro_use] extern crate mm0_util;
 #[macro_use] extern crate bitflags;

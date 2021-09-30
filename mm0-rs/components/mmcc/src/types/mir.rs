@@ -8,7 +8,7 @@ use num::BigInt;
 use smallvec::SmallVec;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{u32_as_usize, Symbol};
-use super::{IntTy, ProofId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
+use super::{IntTy, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
 
@@ -66,7 +66,7 @@ impl<T: HasAlpha> HasAlpha for global::Mm0Expr<T> {
 
 mk_id! {
   /// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
-  VarId
+  VarId(Debug("v"))
 }
 
 impl std::fmt::Display for VarId {
@@ -153,7 +153,6 @@ pub type Mm0Expr = global::Mm0Expr<Expr>;
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
@@ -240,6 +239,54 @@ pub enum TyKind {
   Output,
   /// A moved-away type.
   Moved(Ty),
+}
+
+impl std::fmt::Debug for TyKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match self {
+      TyKind::Var(v) => write!(f, "v{}", v),
+      TyKind::Unit => "()".fmt(f),
+      TyKind::True => "true".fmt(f),
+      TyKind::False => "false".fmt(f),
+      TyKind::Bool => "bool".fmt(f),
+      TyKind::Int(ity) => ity.fmt(f),
+      TyKind::Array(ty, n) => write!(f, "(array {:?} {:?})", ty, n),
+      TyKind::Own(ty) => match &**ty {
+        TyKind::Ref(lft, ty) => write!(f, "(& {:?} {:?})", lft, ty),
+        _ => write!(f, "(own {:?})", ty)
+      },
+      TyKind::Ref(lft, ty) => write!(f, "(ref {:?} {:?})", lft, ty),
+      TyKind::RefSn(x) => write!(f, "(&sn {:?})", x),
+      TyKind::Sn(e, ty) => write!(f, "(sn {{{:?}: {:?}}})", e, ty),
+      TyKind::Struct(args) => {
+        "(struct".fmt(f)?;
+        for arg in &**args { write!(f, " {{{:?}}}", arg)? }
+        ")".fmt(f)
+      }
+      TyKind::All(a, p, q) => write!(f, "A. {:?}: {:?}, {:?}", a, p, q),
+      TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
+      TyKind::Wand(p, q) => write!(f, "({:?} -* {:?})", p, q),
+      TyKind::Not(pr) => write!(f, "~{:?}", pr),
+      TyKind::And(tys) => write!(f, "({:?})", tys.iter().format(" /\\ ")),
+      TyKind::Or(tys) => write!(f, "({:?})", tys.iter().format(" \\/ ")),
+      TyKind::If(cond, then, els) => write!(f, "(if {:?} {:?} {:?})", cond, then, els),
+      TyKind::Ghost(ty) => write!(f, "(ghost {:?})", ty),
+      TyKind::Uninit(ty) => write!(f, "(? {:?})", ty),
+      TyKind::Pure(e) => e.fmt(f),
+      TyKind::User(name, tys, es) => {
+        write!(f, "({}", name)?;
+        for ty in &**tys { " ".fmt(f)?; ty.fmt(f)? }
+        for e in &**es { " ".fmt(f)?; e.fmt(f)? }
+        ")".fmt(f)
+      }
+      TyKind::Heap(x, v, t) => write!(f, "{:?} => {:?}: {:?}", x, v, t),
+      TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
+      TyKind::Input => "Input".fmt(f),
+      TyKind::Output => "Output".fmt(f),
+      TyKind::Moved(ty) => write!(f, "|{:?}|", ty),
+    }
+  }
 }
 
 impl TyKind {
@@ -369,7 +416,6 @@ pub type Expr = Rc<ExprKind>;
 pub type ExprTy = (Option<Expr>, Ty);
 
 /// A pure expression.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.
@@ -431,6 +477,43 @@ pub enum ExprKind {
   },
 }
 
+impl std::fmt::Debug for ExprKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match self {
+      ExprKind::Unit => "()".fmt(f),
+      ExprKind::Var(v) => write!(f, "v{}", v),
+      ExprKind::Const(c) => c.fmt(f),
+      ExprKind::Bool(b) => b.fmt(f),
+      ExprKind::Int(n) => n.fmt(f),
+      ExprKind::Unop(super::Unop::As(ity), e) => write!(f, "{{{:?} as {:?}}}", e, ity),
+      ExprKind::Unop(op, e) => write!(f, "({:?} {:?})", op, e),
+      ExprKind::Binop(op, e1, e2) => write!(f, "{{{:?} {:?} {:?}}}", e1, op, e2),
+      ExprKind::List(es) |
+      ExprKind::Array(es) => write!(f, "(list {:?})", es.iter().format(" ")),
+      ExprKind::Index(a, i) => write!(f, "(index {:?} {:?})", a, i),
+      ExprKind::Slice(a, i, n) => write!(f, "(slice {:?} {:?} {:?})", a, i, n),
+      ExprKind::Proj(a, i) => write!(f, "({:?} . {:?})", a, i),
+      ExprKind::UpdateIndex(a, i, val) => write!(f,
+        "(update-index {:?} {:?} {:?})", a, i, val),
+      ExprKind::UpdateSlice(a, i, l, val) => write!(f,
+        "(update-slice {:?} {:?} {:?} {:?})", a, i, l, val),
+      ExprKind::UpdateProj(a, n, val) => write!(f,
+        "(update-proj {:?} {:?} {:?})", a, n, val),
+      ExprKind::Ref(e) => write!(f, "(& {:?})", e),
+      ExprKind::Sizeof(ty) => write!(f, "(sizeof {:?})", ty),
+      ExprKind::Mm0(ref e) => e.fmt(f),
+      ExprKind::Call {f: x, tys, args} => {
+        write!(f, "({:?}", x)?;
+        for ty in &**tys { write!(f, " {:?}", ty)? }
+        for arg in &**args { write!(f, " {:?}", arg)? }
+        ")".fmt(f)
+      }
+      ExprKind::If {cond, then, els} => write!(f, "(if {:?} {:?} {:?})", cond, then, els),
+    }
+  }
+}
+
 impl HasAlpha for ExprKind {
   #[allow(clippy::many_single_char_names)]
   fn alpha(&self, a: &mut Alpha) -> Self {
@@ -464,7 +547,7 @@ impl HasAlpha for ExprKind {
 
 mk_id! {
   /// A basic block ID, which is used to look up blocks in the [`Cfg`].
-  BlockId
+  BlockId(Debug("bb"))
 }
 
 impl BlockId {
@@ -675,7 +758,7 @@ pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 /// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
 /// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
 /// logical context at the beginning of each basic block.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Cfg {
   /// The set of logical contexts for the basic blocks.
@@ -688,6 +771,13 @@ pub struct Cfg {
   predecessors: Option<Predecessors>,
   /// The dominator tree, calculated lazily.
   dominator_tree: Option<DominatorTree>,
+}
+
+impl std::fmt::Debug for Cfg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    for (i, bl) in self.blocks() { bl.debug_fmt(Some(i), Some(&self.ctxs), f)? }
+    Ok(())
+  }
 }
 
 impl Cfg {
@@ -769,7 +859,7 @@ impl IndexMut<BlockId> for Cfg {
 
 mk_id! {
   /// A "context buffer ID", which points to one of the context buffers in the [`Contexts`] struct.
-  CtxBufId
+  CtxBufId(Debug("cb"))
 }
 impl CtxBufId {
   /// The root context buffer is the first one; this is its own parent.
@@ -780,13 +870,19 @@ impl CtxBufId {
 /// [`Contexts`]), plus an index into that buffer. The logical context denoted includes all
 /// contexts in the parent chain up to the root, plus the selected context buffer up to the
 /// specified index (which may be any number `<= buf.len()`).
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct CtxId(CtxBufId, u32);
 
 impl CtxId {
   /// The empty context.
   pub const ROOT: Self = Self(CtxBufId::ROOT, 0);
+}
+
+impl std::fmt::Debug for CtxId {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:?}+{}", self.0, self.1)
+  }
 }
 
 /// A context buffer.
@@ -905,7 +1001,7 @@ impl<'a> Iterator for Successors<'a> {
 
 /// A place is a sequence of projections on a local. A projection is an array index or slice,
 /// dereference, or a tuple projection.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub enum Projection {
   /// A constant projection into a tuple, array, or and. These projections are generated by tuple
   /// patterns.
@@ -922,8 +1018,19 @@ pub enum Projection {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Projection);
 
+impl std::fmt::Debug for Projection {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Proj(_, i) => write!(f, ".{}", i),
+      Self::Index(i, _) => write!(f, "[{}]", i),
+      Self::Slice(i, l, _) => write!(f, "[{}..+{}]", i, l),
+      Self::Deref => write!(f, ".*"),
+    }
+  }
+}
+
 /// A place is a location in memory that can be read and written to.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Place {
   /// A local variable as the source of the place.
@@ -932,6 +1039,15 @@ pub struct Place {
   /// The type of each element of the list is the type *before* projecting that element.
   pub proj: Vec<(Ty, Projection)>,
 }
+
+impl std::fmt::Debug for Place {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:?}", self.local)?;
+    for (_, p) in &self.proj { write!(f, "{:?}", p)? }
+    Ok(())
+  }
+}
+
 impl Place {
   /// Construct a place directly from a local.
   #[must_use] pub fn local(local: VarId) -> Self { Self {local, proj: vec![]} }
@@ -957,7 +1073,7 @@ impl From<VarId> for Place {
 }
 
 /// A constant value.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Constant {
   /// The type and value of the constant.
@@ -1067,9 +1183,26 @@ pub enum ConstKind {
   As(Box<(Constant, IntTy)>),
 }
 
+impl std::fmt::Debug for Constant {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match &self.k {
+      ConstKind::Unit => write!(f, "()"),
+      ConstKind::ITrue => write!(f, "<>"),
+      ConstKind::Bool |
+      ConstKind::Int => self.ety.0.as_ref().expect("illformed").fmt(f),
+      ConstKind::Uninit => write!(f, "uninit"),
+      ConstKind::Const(s) => write!(f, "({}: {:?})", s, self.ety.1),
+      ConstKind::Sizeof => write!(f, "sizeof {:?}", self.ety.1),
+      ConstKind::Mm0Proof(p) => p.fmt(f),
+      ConstKind::Contra(_, _) => write!(f, "(contra: {:?})", self.ety.1),
+      ConstKind::As(c) => write!(f, "({:?} as {:?})", c.0, c.1),
+    }
+  }
+}
+
 /// An rvalue is an expression that can be used as the right hand side of an assignment;
 /// most side-effect-free expressions fall in this category.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Operand {
   /// Copies the value at the given place. Requires that the type of the place is a copy type.
@@ -1080,6 +1213,17 @@ pub enum Operand {
   Ref(Place),
   /// Synthesize a constant value.
   Const(Box<Constant>),
+}
+
+impl std::fmt::Debug for Operand {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Copy(p) => p.fmt(f),
+      Self::Move(p) => write!(f, "move {:?}", p),
+      Self::Ref(p) => write!(f, "ref {:?}", p),
+      Self::Const(c) => c.fmt(f),
+    }
+  }
 }
 
 impl Operand {
@@ -1179,7 +1323,7 @@ impl Binop {
 
 /// An rvalue is an expression that can be used as the right hand side of an assignment;
 /// most side-effect-free expressions fall in this category.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum RValue {
   /// Directly use a place value or constant.
@@ -1203,9 +1347,30 @@ pub enum RValue {
   /// Get a pointer to the target place.
   Borrow(Place),
   /// A pure expression lifted from MM0, based on supplied values for the substitution.
-  Mm0(Box<[Operand]>),
+  Mm0(LambdaId, Box<[Operand]>),
   /// Take the type of a variable.
   Typeof(Operand),
+}
+
+impl std::fmt::Debug for RValue {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Use(o) => o.fmt(f),
+      Self::Unop(Unop::As(_, ity), o) => write!(f, "{:?} as {:?}", o, ity),
+      Self::Unop(op, o) => write!(f, "{:?} {:?}", op, o),
+      Self::Binop(op, o1, o2) => write!(f, "{:?} {:?} {:?}", o1, op, o2),
+      Self::Eq(e, false, o1, o2) => write!(f, "{:?} == {:?}", o1, o2),
+      Self::Eq(e, true, o1, o2) => write!(f, "{:?} != {:?}", o1, o2),
+      Self::Pun(_, p) => write!(f, "pun {:?}", p),
+      Self::Cast(_, o, ty) => write!(f, "cast ({:?}: {:?})", o, ty),
+      Self::List(os) |
+      Self::Array(os) => write!(f, "{:?}", os),
+      Self::Ghost(o) => write!(f, "ghost {:?}", o),
+      Self::Borrow(p) => write!(f, "&{:?}", p),
+      Self::Mm0(l, os) => write!(f, "pure {:?}{:?}", l, os),
+      Self::Typeof(e) => write!(f, "typeof {:?}", e),
+    }
+  }
 }
 
 impl RValue {
@@ -1223,7 +1388,7 @@ impl RValue {
       RValue::List(args) |
       RValue::Array(args) => for o in &**args { o.foreach_use(&mut *f) }
       RValue::Ghost(_) |
-      RValue::Mm0(_) |
+      RValue::Mm0(..) |
       RValue::Typeof(_) => {}
     }
   }
@@ -1243,7 +1408,7 @@ impl From<VarId> for RValue {
 }
 
 /// The different kinds of let statement.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum LetKind {
   /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
@@ -1252,6 +1417,17 @@ pub enum LetKind {
   /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
   /// value `x` and a pointer `p: &sn x`.
   Own([(VarId, bool, Ty); 2]),
+}
+
+impl std::fmt::Debug for LetKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match *self {
+      Self::Let(v, r, _) => write!(f, "{}{:?}", if r {""} else {"ghost "}, v),
+      Self::Own([(v1, r1, _), (v2, r2, _)]) =>
+        write!(f, "({}{:?}, {}{:?})",
+          if r1 {""} else {"ghost "}, v1, if r2 {""} else {"ghost "}, v2),
+    }
+  }
 }
 
 impl LetKind {
@@ -1265,7 +1441,7 @@ impl LetKind {
 }
 
 /// An individual rename `(from, to: T)` in [`Statement::Assign`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Rename {
   /// The variable before the rename.
@@ -1278,10 +1454,16 @@ pub struct Rename {
   pub ety: ExprTy,
 }
 
+impl std::fmt::Debug for Rename {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:?} -> {}{:?}", self.from, if self.rel {""} else {"ghost "}, self.to)
+  }
+}
+
 /// A statement is an operation in a basic block that does not end the block. Generally this means
 /// that it has simple control flow behavior, in that it always steps to the following statement
 /// after performing some action that cannot fail.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Statement {
   /// A let or tuple destructuring of values from an [`RValue`] of the specified type.
@@ -1290,6 +1472,17 @@ pub enum Statement {
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
   Assign(Place, Ty, Operand, Box<[Rename]>),
+}
+
+impl std::fmt::Debug for Statement {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match self {
+      Self::Let(lk, ty, rv) => write!(f, "let {:?}: {:?} := {:?}", lk, ty, rv),
+      Self::Assign(lhs, ty, rhs, renames) =>
+        write!(f, "{:?}: {:?} <- {:?}, with {:?}", lhs, ty, rhs, renames),
+    }
+  }
 }
 
 impl Statement {
@@ -1343,7 +1536,7 @@ impl Statement {
 
 /// A terminator is the final statement in a basic block. Anything with nontrivial control flow
 /// is a terminator, and it determines where to jump afterward.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Terminator {
   /// A `goto label(x -> arg,*);` statement - unconditionally jump to the basic block `label`.
@@ -1399,6 +1592,40 @@ pub enum Terminator {
   Dead,
 }
 
+impl std::fmt::Debug for Terminator {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    struct DebugArg<'a>(&'a (VarId, bool, Operand));
+    impl std::fmt::Debug for DebugArg<'_> {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (v, b, ref o) = *self.0;
+        write!(f, "{}{:?} := {:?}", if b {""} else {"ghost "}, v, o)
+      }
+    }
+    use itertools::Itertools;
+    match self {
+      Self::Jump(bl, args) => write!(f,
+        "jump {:?}({:?})", bl, args.iter().map(DebugArg).format(", ")),
+      Self::Jump1(bl) => write!(f, "jump {:?}", bl),
+      Self::Return(args) => write!(f, "return {:?}", args.iter().map(DebugArg).format(", ")),
+      Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
+      Self::If(cond, [(v1, bl1), (v2, bl2)]) => write!(f,
+        "if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
+      Self::Assert(cond, v, true, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
+      Self::Assert(cond, _, false, _) => write!(f, "assert {:?} -> !", cond),
+      Self::Call { f: func, tys, args, reach, tgt, rets, .. } => {
+        write!(f, "call {:?}{:?}{:?} -> ", func, tys, args)?;
+        if *reach {
+          for v in &**rets { write!(f, "{:?}.", v)? }
+          write!(f, " {:?}", tgt)
+        } else {
+          write!(f, "!")
+        }
+      }
+      Self::Dead => write!(f, "dead")
+    }
+  }
+}
+
 impl Terminator {
   /// (Internal) iteration over the variables used by a terminator (in computationally relevant
   /// positions).
@@ -1420,7 +1647,7 @@ impl Terminator {
 /// A basic block, which consists of an initial context (containing the logical parameters to the
 /// block), followed by a list of statements, and ending with a terminator. The terminator is
 /// optional only during MIR construction, and represents an "unfinished" block.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct BasicBlock {
   /// The initial context on entry to the block.
@@ -1436,6 +1663,12 @@ pub struct BasicBlock {
   /// The final statement, which may jump to another basic block or perform another control flow
   /// function.
   pub term: Option<Terminator>,
+}
+
+impl std::fmt::Debug for BasicBlock {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.debug_fmt(None, None, f)
+  }
 }
 
 impl BasicBlock {
@@ -1489,6 +1722,31 @@ impl BasicBlock {
   /// Returns true if this is a dead block, meaning that the block ID is not usable for jumping to.
   #[must_use] #[inline]
   pub fn is_dead(&self) -> bool { matches!(self.term, Some(Terminator::Dead)) }
+
+  fn debug_fmt(&self,
+    name: Option<BlockId>, ctxs: Option<&Contexts>,
+    f: &mut std::fmt::Formatter<'_>
+  ) -> std::fmt::Result {
+    if !self.reachable { write!(f, "ghost ")? }
+    if let Some(n) = name { write!(f, "{:?}", n)? } else { write!(f, "bb?")? }
+    if let Some(ctxs) = ctxs {
+      write!(f, "(")?;
+      let mut first = true;
+      for (v, r, (_, ty)) in self.ctx_iter(ctxs) {
+        if !std::mem::take(&mut first) { write!(f, ", ")? }
+        write!(f, "{}{:?}: {:?}", if r {""} else {"ghost "}, v, ty)?
+      }
+      write!(f, ")")?
+    } else {
+      write!(f, "({:?})", self.ctx)?
+    }
+    writeln!(f, ":")?;
+    for s in &self.stmts { writeln!(f, "    {:?};", s)? }
+    match &self.term {
+      None => writeln!(f, "    ..."),
+      Some(t) => writeln!(f, "    {:?};", t),
+    }
+  }
 }
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.

@@ -403,7 +403,7 @@ impl<T> SliceUninit<T> {
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Span {
   /// The byte index of the beginning of the span (inclusive).
   pub start: usize,
@@ -507,6 +507,7 @@ fn make_relative(buf: &std::path::Path) -> String {
 }
 
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Default)]
 struct FileRefInner {
   path: PathBuf,
   rel: String,
@@ -521,7 +522,7 @@ struct FileRefInner {
 /// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
 /// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FileRef(Arc<FileRefInner>);
 
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
@@ -603,7 +604,7 @@ impl fmt::Debug for FileRef {
 
 /// A span paired with a [`FileRef`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct FileSpan {
   /// The file in which this span occured.
   pub file: FileRef,

@@ -12,7 +12,6 @@ pub mod vcode;
 
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
-use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use num::{BigInt, Signed};
@@ -33,9 +32,13 @@ impl Idx for usize {
 }
 
 /// A vector indexed by a custom indexing type `I`, usually a newtyped integer.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
+
+impl<I, T: std::fmt::Debug> std::fmt::Debug for IdxVec<I, T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.0.fmt(f) }
+}
 
 impl<I, T> IdxVec<I, T> {
   /// Construct a new empty [`IdxVec`].
@@ -102,14 +105,14 @@ impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
 mk_id! {
   /// A variable ID. These are local to a given declaration (function, constant, global),
   /// but are not de Bruijn variables - they are unique identifiers within the declaration.
-  VarId,
+  VarId(Debug("v")),
 
   /// An ID for an opaque "lambda", an expression modulo an ordered list of free variables.
   /// This is used to embed arbitrary term constructors in the expression language.
-  LambdaId,
+  LambdaId(Debug("l")),
 
   /// An ID for an opaque proof object, used in `Entail` nodes in the AST.
-  ProofId
+  ProofId(Debug("p"))
 }
 
 impl std::fmt::Display for VarId {
@@ -133,6 +136,11 @@ impl<T> Spanned<T> {
   /// Transform a `Spanned<T>` into `Spanned<U>` given `f: T -> U`.
   pub fn map_into<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
     Spanned { span: self.span, k: f(self.k) }
+  }
+
+  /// Construct a `Spanned<T>` with a dummy span.
+  pub fn dummy(k: T) -> Spanned<T> {
+    Spanned { span: FileSpan::default(), k }
   }
 }
 
@@ -198,7 +206,7 @@ impl Size {
 /// The set of integral types, `N_s` and `Z_s`, representing the signed and unsigned integers
 /// of various bit widths, plus the computationally unrepresentable types of
 /// unbounded natural numbers and unbounded integers.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum IntTy {
   /// The type of signed integers of given bit width, or all integers.
   Int(Size),
@@ -210,6 +218,11 @@ pub enum IntTy {
 impl std::fmt::Display for IntTy {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
+  }
+}
+impl std::fmt::Debug for IntTy {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.to_str())
   }
 }
 
@@ -565,7 +578,7 @@ pub enum FieldName {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(FieldName);
 
-impl Display for FieldName {
+impl std::fmt::Display for FieldName {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       FieldName::Number(n) => n.fmt(f),

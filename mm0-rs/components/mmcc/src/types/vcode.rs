@@ -21,13 +21,13 @@ impl Idx for InstId {
 }
 mk_id! {
   /// An ID for a constant to be placed in the constant pool.
-  ConstId,
+  ConstId(Debug("c")),
   /// An ID for a global static variable to be placed in the global area.
-  GlobalId,
+  GlobalId(Debug("g")),
   /// An ID for a (monomorphized) function that can be called.
-  ProcId,
+  ProcId(Debug("f")),
   /// An ID for a spill slot (a piece of the stack frame)
-  SpillId,
+  SpillId(Debug("sp")),
 }
 
 impl SpillId {
@@ -178,7 +178,7 @@ pub(crate) struct ProcAbi {
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
   /// If None, then the function does not return.
   pub(crate) rets: Option<Box<[ArgAbi]>>,
-  /// The total size of all the outgoing arguments in bytes
+  /// The total size of the stack-allocated incoming arguments in bytes
   pub(crate) args_space: u32,
   /// The registers that are clobbered by the call.
   pub(crate) clobbers: Box<[PReg]>,

@@ -729,7 +729,7 @@ impl<'a> BuildMir<'a> {
       }
       hir::ExprKind::Ghost(e) => RValue::Ghost(self.copy_or_move(*e)?),
       hir::ExprKind::Borrow(e) => RValue::Borrow(self.place(*e)?),
-      hir::ExprKind::Mm0(types::Mm0Expr {subst, ..}) => RValue::Mm0(
+      hir::ExprKind::Mm0(types::Mm0Expr {expr, subst}) => RValue::Mm0(expr,
         subst.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
           .collect::<Block<Box<[_]>>>()?),
       hir::ExprKind::Cast(e, ty, hir::CastKind::Int) =>

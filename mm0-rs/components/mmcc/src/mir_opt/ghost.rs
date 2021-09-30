@@ -201,7 +201,7 @@ impl Cfg {
             for o in &**os { self.apply_operand(o) }
           }
           RValue::Ghost(_) |
-          RValue::Mm0(_) |
+          RValue::Mm0(..) |
           RValue::Typeof(_) => {}
         }
       }

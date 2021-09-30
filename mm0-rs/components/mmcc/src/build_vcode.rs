@@ -58,6 +58,7 @@ impl<'a> TyCtx<'a> {
   }
 }
 
+#[derive(Debug)]
 enum VRetAbi {
   /// The value is not passed.
   Ghost,
@@ -486,7 +487,7 @@ impl<'a> LowerCtx<'a> {
         }
       }
       RValue::Ghost(_) |
-      RValue::Mm0(_) |
+      RValue::Mm0(..) |
       RValue::Typeof(_) => {}
       RValue::Borrow(p) => {
         let temp = match self.get_place(p) {
