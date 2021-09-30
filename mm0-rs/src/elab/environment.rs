@@ -199,7 +199,7 @@ impl From<&ExprNode> for ProofNode {
       ExprNode::Ref(n) => ProofNode::Ref(n),
       ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
       ExprNode::App(term, ref es) => ProofNode::Term {
-        term, args: es.iter().map(|e| e.into()).collect()
+        term, args: es.iter().map(Into::into).collect()
       }
     }
   }

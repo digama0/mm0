@@ -1187,7 +1187,7 @@ make_builtins! { self, sp1, sp2, args,
     } else {LispVal::proc(Proc::MergeMap(None))}
   },
   SetTimeout: Exact(1) => {
-    match try1!(args[0].as_int(|n| n.to_u64()).ok_or("expected a number")) {
+    match try1!(args[0].as_int(BigInt::to_u64).ok_or("expected a number")) {
       None | Some(0) => {self.timeout = None; self.cur_timeout = None},
       Some(n) => {
         let d = Duration::from_millis(n);
@@ -1199,7 +1199,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   SetStackLimit: Exact(1) => {
     self.stack_limit =
-      try1!(args[0].as_int(|n| n.to_usize()).ok_or("expected a number"))
+      try1!(args[0].as_int(BigInt::to_usize).ok_or("expected a number"))
         .unwrap_or(usize::MAX);
     LispVal::undef()
   },
