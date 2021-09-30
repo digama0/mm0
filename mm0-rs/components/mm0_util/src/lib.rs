@@ -512,7 +512,7 @@ struct FileRefInner {
   path: PathBuf,
   rel: String,
   #[cfg(feature = "server")]
-  url: lsp_types::Url,
+  url: Option<lsp_types::Url>,
 }
 
 /// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
@@ -535,7 +535,7 @@ impl From<PathBuf> for FileRef {
     FileRef(Arc::new(FileRefInner {
       rel: make_relative(&path),
       #[cfg(feature = "server")]
-      url: lsp_types::Url::from_file_path(&path).expect("bad file path"),
+      url: lsp_types::Url::from_file_path(&path).ok(),
       path,
     }))
   }
@@ -550,7 +550,7 @@ impl From<lsp_types::Url> for FileRef {
   fn from(url: lsp_types::Url) -> FileRef {
     let path = url.to_file_path().expect("bad URL");
     let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner { path, rel, url }))
+    FileRef(Arc::new(FileRefInner { path, rel, url: Some(url) }))
   }
 }
 
@@ -566,7 +566,7 @@ impl FileRef {
   /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use]
-  pub fn url(&self) -> &lsp_types::Url { &self.0.url }
+  pub fn url(&self) -> &lsp_types::Url { self.0.url.as_ref().expect("bad file location") }
 
   /// Get a pointer to this allocation, for use in hashing.
   #[must_use]
