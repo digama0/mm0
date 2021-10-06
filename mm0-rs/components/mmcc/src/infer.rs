@@ -6,7 +6,7 @@ use std::{cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
 use std::result::Result as StdResult;
 use std::convert::{TryFrom, TryInto};
 use bumpalo::Bump;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use hir::{Context, ContextNext};
 use itertools::Itertools;
 use num::Signed;
@@ -4081,13 +4081,24 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let variant = self.lower_variant(variant);
         let args = self.finish_args(args2);
         let t_args = self.args_to_ty_args(&args);
-        let_unchecked!(Some(Entity::Proc(tc)) = self.names.get_mut(&name.k), tc).k =
-          ProcTc::Typed(ProcTy {
+        let item = Entity::Proc(Spanned {
+          span: span.clone(),
+          k: ProcTc::Typed(ProcTy {
             kind, tyargs,
             args: t_args.to_global(self),
             rets: t_rets.to_global(self),
             variant: variant.to_global(self),
-          });
+          })
+        });
+        match self.names.entry(name.k) {
+          Entry::Occupied(mut e) => {
+            assert!(
+              matches!(e.get(), Entity::Proc(Spanned {k: ProcTc::ForwardDeclared, ..})),
+              "procedure {} declared twice", name.k);
+            e.insert(item);
+          }
+          Entry::Vacant(e) => { e.insert(item); }
+        }
         self.dc.context = ctx;
         let sigma = match *t_args {
           [] => self.common.t_unit,
@@ -4120,8 +4131,19 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (rhs, _) = self.check_expr(rhs, lhs.ty());
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
         if let TuplePatternKind::Name(name, _, _) = lhs.k {
-          let_unchecked!(Some(Entity::Global(tc)) = self.names.get_mut(&name), tc).k =
-            GlobalTc::Checked(lhs.k.ty().to_global(self))
+          let item = Entity::Global(Spanned {
+            span: span.clone(),
+            k: GlobalTc::Checked(lhs.k.ty().to_global(self))
+          });
+          match self.names.entry(name) {
+            Entry::Occupied(mut e) => {
+              assert!(
+                matches!(e.get(), Entity::Global(Spanned {k: GlobalTc::ForwardDeclared, ..})),
+                "global {} declared twice", name);
+              e.insert(item);
+            }
+            Entry::Vacant(e) => { e.insert(item); }
+          }
         } else { todo!() }
         hir::ItemKind::Global {lhs, rhs}
       }
@@ -4133,13 +4155,24 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let rhs = self.check_pure_expr(rhs, lhs.ty());
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
         if let TuplePatternKind::Name(name, _, _) = lhs.k {
-          let_unchecked!(Some(Entity::Const(tc)) = self.names.get_mut(&name), tc).k =
-            ConstTc::Checked {
+          let item = Entity::Const(Spanned {
+            span: span.clone(),
+            k: ConstTc::Checked {
               ty: lhs.k.ty().to_global(self),
               e: rhs.to_global(self),
               whnf: self.whnf_expr(rhs_sp, rhs).to_global(self),
               imm64: None,
-            };
+            }
+          });
+          match self.names.entry(name) {
+            Entry::Occupied(mut e) => {
+              assert!(
+                matches!(e.get(), Entity::Const(Spanned {k: ConstTc::ForwardDeclared, ..})),
+                "const {} declared twice", name);
+              e.insert(item);
+            }
+            Entry::Vacant(e) => { e.insert(item); }
+          }
         } else { todo!() }
         return None
       }
@@ -4152,8 +4185,19 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           |this, (attr, arg)| intern!(this, (attr, (&arg).into())));
         let args = (&*args).to_global(self);
         let val = val.to_global(self);
-        let_unchecked!(Some(Entity::Type(tc)) = self.names.get_mut(&name.k), tc).k =
-          TypeTc::Typed(TypeTy {tyargs, args, val});
+        let item = Entity::Type(Spanned {
+          span: span.clone(),
+          k: TypeTc::Typed(TypeTy {tyargs, args, val})
+        });
+        match self.names.entry(name.k) {
+          Entry::Occupied(mut e) => {
+            assert!(
+              matches!(e.get(), Entity::Type(Spanned {k: TypeTc::ForwardDeclared, ..})),
+              "type {} declared twice", name.k);
+            e.insert(item);
+          }
+          Entry::Vacant(e) => { e.insert(item); }
+        }
         return None
       }
     };

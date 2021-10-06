@@ -308,8 +308,8 @@ impl<'a, C> Parser<'a, C> {
   /// Try to parse the head keyword of an expression `(KEYWORD args..)`,
   /// and return the pair `(KEYWORD, args)` on success.
   fn head_keyword(&mut self, e: &LispVal) -> Option<(Keyword, Uncons)> {
-    let u = Uncons::from(e.clone());
-    Some((self.as_keyword(e)?, u))
+    let mut u = Uncons::from(e.clone());
+    Some((self.as_keyword(&u.next()?)?, u))
   }
 
   fn with_ctx<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
