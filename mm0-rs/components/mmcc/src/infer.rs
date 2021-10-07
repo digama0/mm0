@@ -2156,19 +2156,19 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn relate_ty(&mut self, span: &'a FileSpan,
     pe: Option<Expr<'a>>, from: Ty<'a>, to: Ty<'a>, rel: Relation
-  ) -> Option<Vec<Coercion>> {
-    if from == to { return None }
+  ) -> Result<(), Vec<Coercion>> {
+    if from == to { return Ok(()) }
     match self.relate_whnf_ty(from.into(), to.into(), rel) {
-      Ok(coes) if coes.is_empty() => None,
-      Ok(coes) => Some(coes),
+      Ok(coes) if coes.is_empty() => Ok(()),
+      Ok(coes) => Err(coes),
       Err(()) => {
         if let Some(pe) = pe {
           // ignore the original type and just try to check the value at the target
           // TODO: record that we are doing this?
-          if self.try_check_pure_expr(span, pe, to) {return None}
+          if self.try_check_pure_expr(span, pe, to) {return Ok(())}
         }
         self.errors.push(hir::Spanned {span, k: TypeError::Relate(from, to, rel)});
-        Some(vec![Coercion::Error])
+        Err(vec![Coercion::Error])
       }
     }
   }
@@ -2190,7 +2190,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let ty = self.lower_ty(ty, ExpectTy::supertype(expect_t));
         let pat = self.lower_tuple_pattern(&pat.span, &pat.k, expect_e, Some(ty));
         if let Some(tgt) = expect_t {
-          assert!(self.relate_ty(pat.0.span, expect_e, tgt, ty, Relation::Subtype).is_none());
+          if self.relate_ty(pat.0.span, expect_e, tgt, ty, Relation::Subtype).is_err() {
+            return (UnelabTupPat {span, k: UnelabTupPatKind::Error(Box::new(pat.0), tgt)}, None)
+          }
         }
         pat
       }
@@ -2432,9 +2434,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   fn finish_tuple_pattern_inner(&mut self,
     pat: &UnelabTupPat<'a>, tgt: Option<Ty<'a>>,
   ) -> (TuplePattern<'a>, Expr<'a>) {
-    if let Some(tgt) = tgt {
-      assert!(self.relate_ty(pat.span, None, pat.ty(), tgt, Relation::Equal).is_none())
-    }
+    let err = tgt.map_or(false, |tgt|
+      self.relate_ty(pat.span, None, pat.ty(), tgt, Relation::Equal).is_err());
     let (k, e) = match &pat.k {
       &UnelabTupPatKind::Name(_, n, c) => {
         self.dc.context = c.into();
@@ -2644,7 +2645,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn coerce_pure_expr(&mut self, sp: &'a FileSpan, mut e: Expr<'a>, from: Ty<'a>, to: Ty<'a>) -> Expr<'a> {
-    if let Some(coe) = self.relate_ty(sp, Some(e), from, to, Relation::Coerce) {
+    if let Err(coe) = self.relate_ty(sp, Some(e), from, to, Relation::Coerce) {
       for c in coe { e = self.apply_coe(c, e) }
     }
     e
@@ -3718,7 +3719,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let cases = Box::new([self.eval_expr(span, then)?, self.eval_expr(span, els)?]);
         let ty1 = cases[0].ty();
         let ty2 = cases[1].ty();
-        if self.relate_ty(span, None, ty1, ty2, Relation::Equal).is_some() { return None }
+        if self.relate_ty(span, None, ty1, ty2, Relation::Equal).is_err() { return None }
         (hir::ExprKind::If {hyp: None, cond, cases, gen: self.dc.generation, muts: vec![]}, ty1)
       }
       ExprKind::Index(_, _) |
@@ -3745,7 +3746,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn coerce_expr(&mut self, mut e: hir::Expr<'a>, pe: RExpr<'a>, to: Ty<'a>) -> hir::Expr<'a> {
-    if let Some(coe) = self.relate_ty(e.span, pe.ok(), e.ty(), to, Relation::Coerce) {
+    if let Err(coe) = self.relate_ty(e.span, pe.ok(), e.ty(), to, Relation::Coerce) {
       for c in coe { e = self.apply_coe_expr(c, e) }
     }
     e
@@ -4041,7 +4042,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn check_block(&mut self, span: &'a FileSpan, bl: &'a ast::Block, tgt: Ty<'a>) -> (hir::Block<'a>, RExpr<'a>) {
     let (mut bl, (pe, ty)) = self.lower_block(span, bl, ExpectExpr::HasTy(tgt));
-    if let Some(coe) = self.relate_ty(span, pe.ok(), ty, tgt, Relation::Coerce) {
+    if let Err(coe) = self.relate_ty(span, pe.ok(), ty, tgt, Relation::Coerce) {
       let mut e = bl.expr.take().map_or_else(|| hir::Spanned {span, k:
         (hir::ExprKind::Unit, (Some(self.common.e_unit), self.common.t_unit))}, |e| *e);
       for c in coe { e = self.apply_coe_expr(c, e) }

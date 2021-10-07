@@ -411,14 +411,14 @@ impl<'a, C> Parser<'a, C> {
         self.push_args_core(base, attr, e, push)?
       }
       Some((Keyword::Colon, _)) => {
-        let Spanned {span, k: pat} = self.push_tuple_pattern(base, false, e, None)?;
+        let Spanned {span, k: pat} = self.push_tuple_pattern(base, false, e)?;
         push(span, attr.0, ArgKind::Lam(pat))?
       }
       Some((Keyword::ColonEq, mut u)) => {
         let span = try_get_fspan(base, &e);
         if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
           let rhs = Box::new(self.parse_expr(&span, rhs)?);
-          let lhs = self.push_tuple_pattern(&span, attr.1, lhs, None)?;
+          let lhs = self.push_tuple_pattern(&span, attr.1, lhs)?;
           push(span, attr.0, ArgKind::Let(lhs, rhs))?
         } else { return Err(ElabError::new_e(&span, "':=' argument syntax error")) }
       }
@@ -449,8 +449,10 @@ impl<'a, C> Parser<'a, C> {
     base: &FileSpan, ghost: bool, u: Uncons
   ) -> Result<Box<[(VarId, TuplePattern)]>> {
     u.map(|e| {
-      let v = self.ba.fresh_var(Symbol::UNDER);
-      Ok((v, self.push_tuple_pattern(base, ghost, e, Some(v))?))
+      let pat = self.push_tuple_pattern(base, ghost, e)?;
+      let v = pat.k.as_single_name()
+        .map_or_else(|| self.ba.fresh_var(Symbol::UNDER), |(_, _, v)| v);
+      Ok((v, pat))
     }).collect::<Result<_>>()
   }
 
@@ -477,27 +479,26 @@ impl<'a, C> Parser<'a, C> {
   }
 
   /// Parse a tuple pattern.
-  fn push_tuple_pattern(&mut self,
-    base: &FileSpan, ghost: bool, e: LispVal, v: Option<VarId>
+  fn push_tuple_pattern(&mut self, base: &FileSpan, ghost: bool, e: LispVal
   ) -> Result<TuplePattern> {
     let span = try_get_fspan(base, &e);
     let k = if let Some(a) = e.as_atom() {
       let name = self.as_symbol(a);
-      let v = v.unwrap_or_else(|| self.ba.fresh_var(name));
+      let v = self.ba.push_fresh(name);
       TuplePatternKind::Name(ghost || name == Symbol::UNDER, name, v)
     } else if e.is_list() {
       match self.head_keyword(&e) {
         Some((Keyword::Colon, mut u)) => {
           if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
             let ty = self.parse_ty(&span, &ty)?;
-            let pat = self.push_tuple_pattern(&span, ghost, e, v)?;
+            let pat = self.push_tuple_pattern(&span, ghost, e)?;
             TuplePatternKind::Typed(Box::new(pat), Box::new(ty))
           } else {
             return Err(ElabError::new_e(try_get_span(base, &e), "':' syntax error"))
           }
         }
         Some((Keyword::Ghost, mut u)) if u.len() == 1 =>
-          return self.push_tuple_pattern(&span, true, u.next().expect("nonempty"), v),
+          return self.push_tuple_pattern(&span, true, u.next().expect("nonempty")),
         Some((Keyword::Ghost, u)) => {
           TuplePatternKind::Tuple(self.push_tuple_pattern_args(&span, true, u)?)
         }
@@ -537,7 +538,7 @@ impl<'a, C> Parser<'a, C> {
         Ok(())
       })?;
       let rhs = self.parse_expr(&span, rhs)?;
-      let lhs = self.push_tuple_pattern(&span, false, lhs, None)?;
+      let lhs = self.push_tuple_pattern(&span, false, lhs)?;
       let k = if is_const { ItemKind::Const(lhs, rhs) } else { ItemKind::Global(lhs, rhs) };
       Ok(Spanned {span, k})
     } else {
@@ -820,7 +821,7 @@ impl<'a, C> Parser<'a, C> {
             clear_jumps!();
             let rhs = this.parse_expr(span, rhs)?;
             this.ba.apply_rename(&old).map_err(|e| (span, e))?;
-            let lhs = this.push_tuple_pattern(span, false, lhs, None)?;
+            let lhs = this.push_tuple_pattern(span, false, lhs)?;
             this.ba.apply_rename(&new).map_err(|e| (span, e))?;
             stmts.push(Spanned {span: e_span, k: ast::StmtKind::Let {lhs, rhs}})
           }
@@ -854,8 +855,6 @@ impl<'a, C> Parser<'a, C> {
       None => return Err(ElabError::new_e(try_get_span(&span, &LispVal::from(u)), "func/proc: syntax error")),
       Some(e) => e,
     };
-    // self.tyvars.extend(tyargs.iter().map(|p| p.k));
-    // let tyargs = tyargs.len().try_into().expect("too many type arguments");
     let mut outmap: Vec<OutVal> = vec![];
     let mut args = vec![];
     let mut rets = vec![];
@@ -1147,7 +1146,7 @@ impl<'a, C> Parser<'a, C> {
     })
   }
 
-  /// Parse a type (shallowly).
+  /// Parse a type.
   fn parse_ty(&mut self, base: &FileSpan, e: &LispVal) -> Result<Type> {
     let span = try_get_fspan(base, e);
     let mut u = Uncons::New(e.clone());
@@ -1203,14 +1202,14 @@ impl<'a, C> Parser<'a, C> {
           (PrimType::All, args1) if !args1.is_empty() => self.with_ctx(|this| -> Result<_> {
             let last = args.pop().expect("nonempty");
             let args = args.into_iter().map(|e| {
-              this.push_tuple_pattern(base, false, e, None)
+              this.push_tuple_pattern(base, false, e)
             }).collect::<Result<_>>()?;
             Ok(TypeKind::All(args, Box::new(this.parse_ty(&span, &last)?)))
           })?,
           (PrimType::Ex, args1) if !args1.is_empty() => self.with_ctx(|this| -> Result<_> {
             let last = args.pop().expect("nonempty");
             let args = args.into_iter().map(|e| {
-              this.push_tuple_pattern(base, false, e, None)
+              this.push_tuple_pattern(base, false, e)
             }).collect::<Result<_>>()?;
             let v = this.ba.fresh_var(Symbol::UNDER);
             Ok(TypeKind::ex(span.clone(), args, v, Box::new(this.parse_ty(&span, &last)?)))
@@ -1252,7 +1251,7 @@ impl<'a, C> Parser<'a, C> {
     Ok(Spanned {span, k})
   }
 
-  /// Parse an expression that looks like a function call (shallowly).
+  /// Parse an expression that looks like a function call.
   fn parse_call(&mut self,
     span: FileSpan,
     fsp: FileSpan, f: Symbol,
