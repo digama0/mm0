@@ -56,8 +56,8 @@ do {
       {_ : (array i64 3)})
 
     (intrinsic (sys_fstat {fd : u32}
-      {(ghost (mut buf)) : (? Stat)} {p : (&sn buf)} :
-      {(out buf) : Stat}
+      (mut {(ghost buf) : (? Stat)}) {p : (&sn buf)} :
+      (out {buf : Stat})
       u32))
     (intrinsic (sys_open
       {fname : (& CStr)}
@@ -136,7 +136,8 @@ do {
         {0 => (return w 1 0)}
         {1 => (return w 2 {(index cmd 1) as u32})}
         {2 => (return w 3 {{(pun @ slice cmd 1 2) : u16} as u32})}
-        {3 => (return w 5 {(pun @ slice cmd 1 4) : u32})}))
+        {3 => (return w 5 {(pun @ slice cmd 1 4) : u32})}
+        {_ => (unreachable _)}))
 
     (proc (parse_until
       (global {C : CState})
@@ -228,15 +229,14 @@ do {
         (pure $ output = 0 /\ Valid input $))
       {(output2 oz) := output}
       {output <- output2}
-      (begin
-        {n := (sys_open (index args 1) O_RDONLY)}
-        (assert {0 <= {n as i64}}))
+      {fd := (sys_open (index args 1) O_RDONLY)}
+      (assert {0 <= {fd as i64}})
       {{buf : (? Stat)} := uninit}
       (begin
-        {n := (sys_fstat fd (mut buf) _)}
+        {n := (sys_fstat fd buf _)}
         (assert {0 <= {n as i64}}))
       {len := (buf . st_size)}
-      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE))}
+      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE {fd as i64} 0))}
       {{((ghost buf) file) : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of
