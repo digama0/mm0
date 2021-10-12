@@ -827,7 +827,7 @@ impl Elaborator {
       DeclKind::Axiom | DeclKind::Thm => {
         if d.val.is_none() {
           for bi in &d.bis {
-            if let LocalKind::Dummy = bi.kind {
+            if bi.kind == LocalKind::Dummy {
               self.report(ElabError::warn(bi.local.unwrap_or(bi.span), "useless dummy variable"))
             }
           }

@@ -675,10 +675,10 @@ impl<'a, C> Parser<'a, C> {
           let mut els;
           loop {
             els = u.next();
-            if let Some(Keyword::Else) = els.as_ref().and_then(|e| self.as_keyword(e)) {
+            if els.as_ref().and_then(|e| self.as_keyword(e)) == Some(Keyword::Else) {
               els = u.next()
             }
-            if let Some(Keyword::If) = els.as_ref().and_then(|e| self.as_keyword(e)) {
+            if els.as_ref().and_then(|e| self.as_keyword(e)) == Some(Keyword::If) {
               push(self, mem::replace(&mut cond_tru,
                 (u.next().ok_or_else(err)?, u.next().ok_or_else(err)?)))?;
             } else {break}
@@ -879,7 +879,7 @@ impl<'a, C> Parser<'a, C> {
         u.next();
       }
       for e in &mut u {
-        if let Some(AtomId::COLON) = e.as_atom() { break }
+        if e.as_atom() == Some(AtomId::COLON) { break }
         self.push_args_core(&span, Default::default(), e, &mut |span, attr, pat| {
           if attr.out.is_some() {
             return Err(ElabError::new_e(&span, "'out' not permitted on function arguments"))

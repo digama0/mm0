@@ -672,6 +672,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
 
     type ImportMap<D> = HashMap<Span, (FileRef, D)>;
     struct FrozenElaborator(Elaborator);
+    #[allow(clippy::non_send_fields_in_send_ty)]
     unsafe impl Send for FrozenElaborator {}
 
     enum UnfinishedStmt<T> {

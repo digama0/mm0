@@ -229,10 +229,10 @@ impl<'a> Importer<'a> {
           let x = self.ident_err()?;
           let mut next = self.ident_str();
           let mut mods = Modifiers::empty();
-          if let Some(b"pure") = next {next = self.ident_str(); mods |= Modifiers::PURE;}
-          if let Some(b"strict") = next {next = self.ident_str(); mods |= Modifiers::STRICT;}
-          if let Some(b"provable") = next {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
-          if let Some(b"free") = next {mods |= Modifiers::FREE;}
+          if next == Some(b"pure") {next = self.ident_str(); mods |= Modifiers::PURE;}
+          if next == Some(b"strict") {next = self.ident_str(); mods |= Modifiers::STRICT;}
+          if next == Some(b"provable") {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
+          if next == Some(b"free") {mods |= Modifiers::FREE;}
           let end = self.close_err()?;
           let a = self.env.get_atom(self.span(x));
           self.env.add_sort(a, self.fspan(x), (start..end).into(), mods, None)
@@ -447,7 +447,7 @@ impl<'a> Importer<'a> {
           if let Some(i) = old {proofs.insert(h, i);} else {proofs.remove(&h);}
           return Ok(p2)
         }
-        t => if let ProofKind::Proof = ty {
+        t => if ty == ProofKind::Proof {
           let t = self.env.thm(t).ok_or_else(|| self.err("expecting theorem".into()))?;
           self.open_err()?;
           let td = &self.env.thms[t];
@@ -477,7 +477,7 @@ impl<'a> Importer<'a> {
       }
     } else {
       let a = self.ident_atom_err()?;
-      if let ProofKind::Proof = ty {
+      if ty == ProofKind::Proof {
         return Ok(de.reuse(*proofs.get(&a).ok_or_else(|| self.err("unknown subproof".into()))?))
       }
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {

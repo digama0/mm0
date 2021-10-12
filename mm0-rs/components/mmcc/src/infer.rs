@@ -475,8 +475,7 @@ impl<'a> Subst<'a> {
         Some(&WithMeta {k: ExprKind::Ref(pl), ..}) => pl,
         _ => e
       },
-      PlaceKind::Index(a, ty, i) =>
-        subst!(|a, ty, i| PlaceKind::Index(a, ty, i), a, ty, i),
+      PlaceKind::Index(a, ty, i) => subst!(PlaceKind::Index, a, ty, i),
       PlaceKind::Slice(a, ty, [i, l]) =>
         subst!(|a, ty, (i, l)| PlaceKind::Slice(a, ty, [i, l]), a, ty, i, l),
       PlaceKind::Proj(e, ty, i) => subst!(|e, ty, ()| PlaceKind::Proj(e, ty, i), e, ty),
@@ -661,7 +660,7 @@ impl<'a> Subst<'a> {
       TyKind::Input |
       TyKind::Output |
       TyKind::Error => ty,
-      TyKind::Array(t, e) => subst!(|t, e| TyKind::Array(t, e); t; e),
+      TyKind::Array(t, e) => subst!(TyKind::Array; t; e),
       TyKind::Own(t) => subst!(|t, _| TyKind::Own(t); t;),
       TyKind::Ref(lft, t) => {
         let lft2 =
@@ -2009,7 +2008,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       if matches!(rel, Relation::Subtype | Relation::Coerce) && ity_a <= ity_b =>
         return Ok(vec![]),
       (TyKind::Array(ty_a, e_a), TyKind::Array(ty_b, e_b)) => {
-        if let Relation::Subtype = rel { rel = Relation::SubtypeEqSize }
+        if rel == Relation::Subtype { rel = Relation::SubtypeEqSize }
         let coes = self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
         self.equate_expr(e_a, e_b)?;
         if !coes.is_empty() {
@@ -2786,7 +2785,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         (ReturnKind::Struct(n), intern!(self, TyKind::Struct(rets)))
       }
     };
-    if let TyKind::False = ret.k { rk = ReturnKind::Unreachable }
+    if ret.k == TyKind::False { rk = ReturnKind::Unreachable }
     let (side_effect, pe) = match kind {
       ProcKind::Func => (false, pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
         args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))),
@@ -3293,7 +3292,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           then {
             if ity <= ity2 {
               ret![Cast(Box::new(e), ty, hir::CastKind::Int), pe, tgt]
-            } else if let IntTy::NAT = ity2 {
+            } else if ity2 == IntTy::NAT {
               fail!()
             } else {
               let pe = pe.map(|e| intern!(self, ExprKind::Unop(Unop::As(ity2), e)));
@@ -3504,14 +3503,12 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
           let ctx2 = self.new_context_next(v2, Some(unit!()), ty);
           self.dc.context = ctx2.into();
-          e2 = self.check_expr(els, tgt);
-          dc2 = mem::replace(&mut self.dc, base);
         } else {
           e1 = self.check_expr(then, tgt);
           dc1 = mem::replace(&mut self.dc, base.clone());
-          e2 = self.check_expr(els, tgt);
-          dc2 = mem::replace(&mut self.dc, base);
         }
+        e2 = self.check_expr(els, tgt);
+        dc2 = mem::replace(&mut self.dc, base);
         let muts = self.merge(span, &mut [dc1, dc2]);
         let ((then, p_then), (els, p_els)) = (e1, e2);
         let cases = Box::new([then, els]);

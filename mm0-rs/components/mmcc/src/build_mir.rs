@@ -711,11 +711,11 @@ impl<'a> BuildMir<'a> {
       }
       hir::ExprKind::Sn(x, h) => {
         let vx = self.as_temp(*x)?;
-        let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(|h| h.into());
+        let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(Into::into);
         RValue::Pun(PunKind::Sn(vh), vx.into())
       }
       hir::ExprKind::List(lk, es) => {
-        let vs = es.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
+        let vs = es.into_iter().map(|e| self.as_temp(e).map(Into::into))
           .collect::<Block<Box<[_]>>>()?;
         match lk {
           hir::ListKind::List | hir::ListKind::Struct => RValue::List(vs),
@@ -730,7 +730,7 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Ghost(e) => RValue::Ghost(self.copy_or_move(*e)?),
       hir::ExprKind::Borrow(e) => RValue::Borrow(self.place(*e)?),
       hir::ExprKind::Mm0(types::Mm0Expr {expr, subst}) => RValue::Mm0(expr,
-        subst.into_iter().map(|e| self.as_temp(e).map(|v| v.into()))
+        subst.into_iter().map(|e| self.as_temp(e).map(Into::into))
           .collect::<Block<Box<[_]>>>()?),
       hir::ExprKind::Cast(e, ty, hir::CastKind::Int) =>
         RValue::Cast(CastKind::Int, self.operand(*e)?, self.tr(ty)),
@@ -1246,7 +1246,7 @@ impl<'a> BuildMir<'a> {
     // If `cond` evaluates to `false`, then we generate the code
     // _ := cond; dest: !cond := itrue
     // since we know that `!cond` is defeq to true
-    if let Some(false) = trivial {
+    if trivial == Some(false) {
       // ~>
       self.expr(*cond, None)?;
       return Ok(if has_break {Constant::unit()} else {Constant::itrue()}.into())
@@ -1303,7 +1303,7 @@ impl<'a> BuildMir<'a> {
     // `after` itself is reachable (which we signal by `exit_point` having a value).
     (|| -> Block<()> {
       let pe: Option<ty::Expr<'_>> = cond.k.1 .0;
-      if let Some(true) = trivial {
+      if trivial == Some(true) {
         // If `cond` evaluates to `true`, then this is an infinite loop and `after` is not
         // reachable, unless it is accessed indirectly via `break`.
         // We generate the following code:

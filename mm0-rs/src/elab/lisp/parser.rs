@@ -754,7 +754,7 @@ impl<'a> LispParser<'a> {
     if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
         if let [SExpr {span, k: SExprKind::Atom(a)}, ref x] = **v {
-          if let b"=>" = self.ast.span_atom(span, a) {
+          if self.ast.span_atom(span, a) == b"=>" {
             cont = self.parse_ident(x)?;
             es = &es[1..];
           }
@@ -824,7 +824,7 @@ impl<'a> LispParser<'a> {
         let mut cs = vec![];
         for e in es {
           if let SExprKind::Atom(a) = es[0].k {
-            if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(e.span), a) {
+            if Syntax::parse(self.ast.span(e.span), a) == Ok(Syntax::Unquote) {
               return Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))
             }
           }
@@ -849,7 +849,7 @@ impl<'a> LispParser<'a> {
         Ok(loop {
           if let Some(arg) = it.next() {
             if let SExprKind::Atom(a) = arg.k {
-              if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(arg.span), a) {
+              if Syntax::parse(self.ast.span(arg.span), a) == Ok(Syntax::Unquote) {
                 let r = it.next().ok_or_else(||
                   ElabError::new_e(arg.span, "expected at least one argument"))?;
                 break Ir::dotted_list(e.span, cs, self.expr(false, r)?)

@@ -845,7 +845,7 @@ make_builtins! { self, sp1, sp2, args,
     if file == self.file {
       let s = try1!(self.as_string(&args[2]));
       let s = String::from_utf8_lossy(&s).into();
-      let msg = if let Some(true) = args[1].as_bool() {
+      let msg = if args[1].as_bool() == Some(true) {
         self.make_stack_err(Some((span, true)), level, "(report-at)".into(), s)
       } else {
         ElabError { pos: span, level, kind: ElabErrorKind::Boxed(s, None) }

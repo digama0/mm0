@@ -341,7 +341,7 @@ impl FrozenEnv {
                     .chain(td.hyps.iter().filter_map(|&(a, _)| a))
                     .chain(dummies.iter().map(|(&a, _)| a)) {
                     let mut s = self.data()[a].name().as_str().chars();
-                    if let Some('H') = s.next() {
+                    if s.next() == Some('H') {
                       if let Ok(n) = s.as_str().parse::<u32>() {idx = n+1}
                     }
                   }

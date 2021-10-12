@@ -554,7 +554,7 @@ impl<T: BuildMatch> PatternBuilder<T> {
   /// guide the process.
   pub fn or<'a>(&mut self, sp: &'a FileSpan) -> OrBuilder<'a, T> {
     self.pos = None;
-    OrBuilder { sp, neg: self.neg.take().map(|x| x.into()), args: Some(vec![]), _mark: PhantomData }
+    OrBuilder { sp, neg: self.neg.take().map(Into::into), args: Some(vec![]), _mark: PhantomData }
   }
 
   /// Callable from `Done`. When a pattern is complete, this function should be called to
