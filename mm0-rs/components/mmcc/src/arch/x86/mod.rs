@@ -5,16 +5,19 @@ use std::{convert::TryFrom, fmt::Debug};
 use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};
 
-use crate::types::{Size,
+use crate::types::{IdxVec, Size,
   vcode::{BlockId, ConstId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
 
 const fn preg(i: usize) -> PReg { PReg::new(i, regalloc2::RegClass::Int) }
+
+/// If true, then a REX byte is needed to encode this register
+#[inline] fn large_preg(r: PReg) -> bool { r.hw_enc() & 8 != 0 }
 
 const RAX: PReg = preg(0);
 const RCX: PReg = preg(1);
 const RDX: PReg = preg(2);
 const RBX: PReg = preg(3);
-const RSP: PReg = preg(4);
+pub(crate) const RSP: PReg = preg(4);
 const RBP: PReg = preg(5);
 const RSI: PReg = preg(6);
 const RDI: PReg = preg(7);
@@ -27,8 +30,8 @@ const R13: PReg = preg(13);
 const R14: PReg = preg(14);
 const R15: PReg = preg(15);
 pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
-const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
-const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
+pub(crate) const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
+pub(crate) const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
 const SCRATCH: PReg = R11;
 
 lazy_static! {
@@ -42,6 +45,13 @@ lazy_static! {
         .chain([SCRATCH]).collect(),
     }
   };
+}
+
+#[derive(Copy, Clone, Default)]
+pub(crate) struct PRegSet(u16);
+impl PRegSet {
+  #[inline] pub(crate) fn insert(&mut self, r: PReg) { self.0 |= 1 << r.hw_enc() }
+  #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.hw_enc()) != 0 }
 }
 
 /// What kind of division or remainer instruction this is?
@@ -61,8 +71,8 @@ pub(crate) enum ShiftKind {
   ShrL,
   /// Replicates the sign bit in the most significant bits.
   ShrA,
-  Rol,
-  Ror,
+  // Rol,
+  // Ror,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -77,15 +87,15 @@ pub(crate) enum Cmp {
 /// naming: B(yte) = u8, W(ord) = u16, L(ong)word = u32, Q(uad)word = u64
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ExtMode {
-  /// Byte -> Longword.
+  /// Byte (u8) -> Longword (u32).
   BL,
-  /// Byte -> Quadword.
+  /// Byte (u8) -> Quadword (u64).
   BQ,
-  /// Word -> Longword.
+  /// Word (u16) -> Longword (u32).
   WL,
-  /// Word -> Quadword.
+  /// Word (u16) -> Quadword (u64).
   WQ,
-  /// Longword -> Quadword.
+  /// Longword (u32) -> Quadword (u64).
   LQ,
 }
 
@@ -103,7 +113,7 @@ impl ExtMode {
   }
 
   /// Return the source register size in bytes.
-  pub(crate) fn src(&self) -> Size {
+  pub(crate) fn src(self) -> Size {
     match self {
       ExtMode::BL | ExtMode::BQ => Size::S8,
       ExtMode::WL | ExtMode::WQ => Size::S16,
@@ -112,7 +122,7 @@ impl ExtMode {
   }
 
   /// Return the destination register size in bytes.
-  pub(crate) fn dst(&self) -> Size {
+  pub(crate) fn dst(self) -> Size {
     match self {
       ExtMode::BL | ExtMode::WL => Size::S32,
       ExtMode::BQ | ExtMode::WQ | ExtMode::LQ => Size::S64,
@@ -212,7 +222,7 @@ pub(crate) struct ShiftIndex<Reg = VReg> {
 
 /// A base offset for an addressing mode.
 #[derive(Clone, Copy)]
-pub(crate) enum Imm<N = u32> {
+pub(crate) enum Offset<N = u32> {
   /// A real offset, relative to zero.
   Real(N),
   /// An offset relative to the given spill slot. `base` must be 0 in this case
@@ -224,7 +234,7 @@ pub(crate) enum Imm<N = u32> {
   Const(ConstId, N),
 }
 
-impl<N: Zero + Debug> Debug for Imm<N> {
+impl<N: Zero + Debug> Debug for Offset<N> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Real(n) => n.fmt(f),
@@ -238,47 +248,51 @@ impl<N: Zero + Debug> Debug for Imm<N> {
   }
 }
 
-impl<N> From<N> for Imm<N> {
+impl<N> From<N> for Offset<N> {
   fn from(n: N) -> Self { Self::Real(n) }
 }
+impl From<i32> for Offset {
+  #[allow(clippy::cast_sign_loss)]
+  fn from(n: i32) -> Self { Self::Real(n as u32) }
+}
 
-impl Imm {
+impl Offset {
   pub(crate) const ZERO: Self = Self::Real(0);
 }
-impl Imm<u64> {
+impl Offset<u64> {
   pub(crate) const ZERO64: Self = Self::Real(0);
 }
 
-impl From<Imm> for Imm<u64> {
-  fn from(imm: Imm) -> Self {
+impl From<Offset> for Offset<u64> {
+  fn from(imm: Offset) -> Self {
     match imm {
-      Imm::Real(i) => Imm::Real(i.into()),
-      Imm::Spill(s, i) => Imm::Spill(s, i.into()),
-      Imm::Global(g, i) => Imm::Global(g, i.into()),
-      Imm::Const(c, i) => Imm::Const(c, i.into()),
+      Offset::Real(i) => Offset::Real(i.into()),
+      Offset::Spill(s, i) => Offset::Spill(s, i.into()),
+      Offset::Global(g, i) => Offset::Global(g, i.into()),
+      Offset::Const(c, i) => Offset::Const(c, i.into()),
     }
   }
 }
-impl TryFrom<Imm<u64>> for Imm {
+impl TryFrom<Offset<u64>> for Offset {
   type Error = std::num::TryFromIntError;
-  fn try_from(imm: Imm<u64>) -> Result<Self, Self::Error> {
+  fn try_from(imm: Offset<u64>) -> Result<Self, Self::Error> {
     Ok(match imm {
-      Imm::Real(i) => Imm::Real(u32::try_from(i)?),
-      Imm::Spill(s, i) => Imm::Spill(s, u32::try_from(i)?),
-      Imm::Global(g, i) => Imm::Global(g, u32::try_from(i)?),
-      Imm::Const(c, i) => Imm::Const(c, u32::try_from(i)?),
+      Offset::Real(i) => Offset::Real(u32::try_from(i)?),
+      Offset::Spill(s, i) => Offset::Spill(s, u32::try_from(i)?),
+      Offset::Global(g, i) => Offset::Global(g, u32::try_from(i)?),
+      Offset::Const(c, i) => Offset::Const(c, u32::try_from(i)?),
     })
   }
 }
 
-impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Imm<N> {
-  type Output = Imm<N>;
-  fn add(self, n: N) -> Imm<N> {
+impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Offset<N> {
+  type Output = Offset<N>;
+  fn add(self, n: N) -> Offset<N> {
     match self {
-      Imm::Real(i) => Imm::Real(i + n),
-      Imm::Spill(s, i) => Imm::Spill(s, i + n),
-      Imm::Global(g, i) => Imm::Global(g, i + n),
-      Imm::Const(c, i) => Imm::Const(c, i + n),
+      Offset::Real(i) => Offset::Real(i + n),
+      Offset::Spill(s, i) => Offset::Spill(s, i + n),
+      Offset::Global(g, i) => Offset::Global(g, i + n),
+      Offset::Const(c, i) => Offset::Const(c, i + n),
     }
   }
 }
@@ -303,7 +317,7 @@ impl IsReg for PReg {
 /// so there is no space for a second register in the encoding.
 #[derive(Clone, Copy)]
 pub(crate) struct AMode<Reg = VReg> {
-  pub(crate) off: Imm,
+  pub(crate) off: Offset,
   /// `VReg::invalid` means no added register
   pub(crate) base: Reg,
   /// Optionally add a shifted register
@@ -323,15 +337,15 @@ impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
   }
 }
 
-impl<Reg: IsReg> From<Imm> for AMode<Reg> {
-  fn from(off: Imm) -> Self { Self { off, base: Reg::invalid(), si: None } }
+impl<Reg: IsReg> From<Offset> for AMode<Reg> {
+  fn from(off: Offset) -> Self { Self { off, base: Reg::invalid(), si: None } }
 }
 
 impl<Reg: IsReg> AMode<Reg> {
-  pub(crate) fn reg(r: Reg) -> Self { Self { off: Imm::ZERO, base: r, si: None } }
-  pub(crate) fn spill(i: SpillId) -> Self { Imm::Spill(i, 0).into() }
-  pub(crate) fn global(i: GlobalId) -> Self { Imm::Global(i, 0).into() }
-  pub(crate) fn const_(i: ConstId) -> Self { Imm::Const(i, 0).into() }
+  pub(crate) fn reg(r: Reg) -> Self { Self { off: Offset::ZERO, base: r, si: None } }
+  pub(crate) fn spill(i: SpillId) -> Self { Offset::Spill(i, 0).into() }
+  pub(crate) fn global(i: GlobalId) -> Self { Offset::Global(i, 0).into() }
+  pub(crate) fn const_(i: ConstId) -> Self { Offset::Const(i, 0).into() }
 }
 
 impl AMode {
@@ -349,7 +363,7 @@ impl AMode {
   pub(crate) fn add_scaled(&self, code: &mut VCode<Inst>, sc: u64, reg: VReg) -> AMode {
     match (
       &self.si,
-      self.base != VReg::invalid() || matches!(self.off, Imm::Spill(..)),
+      self.base != VReg::invalid() || matches!(self.off, Offset::Spill(..)),
       sc
     ) {
       (_, false, 1) => AMode { off: self.off, base: reg, si: self.si },
@@ -446,7 +460,7 @@ impl RegMem {
 pub(crate) enum RegMemImm<N = u32> {
   Reg(VReg),
   Mem(AMode),
-  Imm(Imm<N>),
+  Imm(N),
   Uninit,
 }
 
@@ -467,9 +481,6 @@ impl<N> From<VReg> for RegMemImm<N> {
 impl<N> From<AMode> for RegMemImm<N> {
   fn from(a: AMode) -> Self { RegMemImm::Mem(a) }
 }
-impl<N> From<Imm<N>> for RegMemImm<N> {
-  fn from(i: Imm<N>) -> Self { RegMemImm::Imm(i) }
-}
 impl<N> From<RegMem> for RegMemImm<N> {
   fn from(rm: RegMem) -> Self {
     match rm {
@@ -483,16 +494,16 @@ impl From<RegMemImm> for RegMemImm<u64> {
     match rmi {
       RegMemImm::Reg(r) => RegMemImm::Reg(r),
       RegMemImm::Mem(a) => RegMemImm::Mem(a),
-      RegMemImm::Imm(i) => RegMemImm::Mem(i.into()),
+      RegMemImm::Imm(i) => RegMemImm::Imm(i.into()),
       RegMemImm::Uninit => RegMemImm::Uninit,
     }
   }
 }
 impl From<u32> for RegMemImm {
-  fn from(n: u32) -> Self { Imm::Real(n).into() }
+  fn from(i: u32) -> Self { RegMemImm::Imm(i) }
 }
 impl From<u64> for RegMemImm<u64> {
-  fn from(n: u64) -> Self { Imm::Real(n).into() }
+  fn from(i: u64) -> Self { RegMemImm::Imm(i) }
 }
 
 impl<N> RegMemImm<N> {
@@ -506,7 +517,7 @@ impl<N> RegMemImm<N> {
   }
 
   pub(crate) fn into_rm(self, code: &mut VCode<Inst>, sz: Size) -> RegMem
-  where Imm<N>: Into<Imm<u64>> {
+  where N: Into<u64> {
     match self {
       RegMemImm::Reg(r) => RegMem::Reg(r),
       RegMemImm::Mem(a) => RegMem::Mem(a),
@@ -516,7 +527,7 @@ impl<N> RegMemImm<N> {
   }
 
   pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> VReg
-  where Imm<N>: Into<Imm<u64>> {
+  where N: Into<u64> {
     match self {
       RegMemImm::Reg(r) => r,
       RegMemImm::Mem(a) => a.emit_load(code, sz),
@@ -526,7 +537,7 @@ impl<N> RegMemImm<N> {
   }
 
   pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> AMode
-  where Imm<N>: Into<Imm<u64>> {
+  where N: Into<u64> {
     self.into_rm(code, sz).into_mem(code, sz)
   }
 }
@@ -536,7 +547,7 @@ impl RegMemImm<u64> {
     match self {
       RegMemImm::Reg(r) => RegMemImm::Reg(r),
       RegMemImm::Mem(a) => RegMemImm::Mem(a),
-      RegMemImm::Imm(i) => match Imm::try_from(i) {
+      RegMemImm::Imm(i) => match u32::try_from(i) {
         Ok(i) => RegMemImm::Imm(i),
         _ => RegMemImm::Reg(code.emit_imm(Size::S64, i))
       }
@@ -552,7 +563,7 @@ pub(crate) enum Inst {
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
   Fallthrough { dst: BlockId },
-  /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|mul|adc|sbb) (32|64) reg rmi`
+  /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
     sz: Size, // 4 or 8
@@ -605,7 +616,7 @@ pub(crate) enum Inst {
   Imm {
     sz: Size, // 4 or 8
     dst: VReg,
-    src: Imm<u64>,
+    src: u64,
   },
   /// GPR to GPR move: `reg <- mov (64|32) reg`. This is always a pure move,
   /// because we require that a 32 bit source register has zeroed high part.
@@ -685,7 +696,7 @@ pub(crate) enum Inst {
   SetCC { cc: CC, dst: VReg },
   /// Integer conditional move.
   /// Overwrites the destination register.
-  Cmov {
+  CMov {
     sz: Size, // 2, 4, or 8
     cc: CC,
     dst: VReg, // dst = src1
@@ -710,8 +721,8 @@ pub(crate) enum Inst {
   //   defs: Vec<VReg>,
   //   opcode: Opcode,
   // },
-  /// Return.
-  Ret { params: Box<[Operand]> },
+  /// Function epilogue placeholder.
+  Epilogue { params: Box<[Operand]> },
   /// Jump to a known target: `jmp simm32`.
   /// The params are block parameters; they are turned into movs after register allocation.
   JmpKnown { dst: BlockId, params: Box<[Operand]> },
@@ -735,7 +746,7 @@ impl VInst for Inst {
   }
 
   fn is_ret(&self) -> bool {
-    matches!(self, Inst::Ret {..})
+    matches!(self, Inst::Epilogue {..})
   }
 
   fn is_branch(&self) -> bool {
@@ -809,7 +820,7 @@ impl VInst for Inst {
         args.push(Operand::reg_use(src1));
         src2.collect_operands(args);
       }
-      Inst::Cmov { dst, src1, ref src2, .. } => {
+      Inst::CMov { dst, src1, ref src2, .. } => {
         args.push(Operand::reg_use(src1));
         src2.collect_operands(args);
         args.push(Operand::reg_reuse_def(dst, 0));
@@ -817,7 +828,7 @@ impl VInst for Inst {
       Inst::Push64 { ref src } => src.collect_operands(args),
       Inst::CallKnown { operands: ref params, .. } |
       Inst::JmpKnown { ref params, .. } |
-      Inst::Ret { ref params } => args.extend_from_slice(params),
+      Inst::Epilogue { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
       // moves are handled specially by regalloc, we don't need operands
       Inst::MovRR { .. } | Inst::MovPR { .. } | Inst::MovRP { .. } |
@@ -858,7 +869,7 @@ impl Flags<'_> {
 
   pub(crate) fn select(self, sz: Size, tru: impl Into<RegMem>, fal: VReg) -> VReg {
     let dst = self.0.fresh_vreg();
-    self.0.emit(Inst::Cmov { sz, cc: self.1, dst, src1: fal, src2: tru.into() });
+    self.0.emit(Inst::CMov { sz, cc: self.1, dst, src1: fal, src2: tru.into() });
     dst
   }
 
@@ -891,7 +902,7 @@ impl VCode<Inst> {
     dst
   }
 
-  pub(crate) fn emit_imm(&mut self, sz: Size, src: impl Into<Imm<u64>>) -> VReg {
+  pub(crate) fn emit_imm(&mut self, sz: Size, src: impl Into<u64>) -> VReg {
     let dst = self.fresh_vreg();
     self.emit(Inst::Imm { sz, dst, src: src.into() });
     dst
@@ -943,17 +954,25 @@ impl VCode<Inst> {
 pub(crate) type PShiftIndex = ShiftIndex<PReg>;
 
 /// A version of `AMode` post-register allocation.
+/// [`Offset::Spill`] is not permitted in a physical address.
 pub(crate) type PAMode = AMode<PReg>;
 
 /// A version of `RegMem` post-register allocation.
 pub(crate) type PRegMem = RegMem<PReg>;
 
+impl PAMode {
+  pub(crate) fn base(&self) -> PReg {
+    if let Offset::Spill(..) = self.off { RSP } else { self.base }
+  }
+}
+
 /// A version of `RegMemImm` post-register allocation.
 #[derive(Copy, Clone)]
+#[allow(variant_size_differences)]
 pub(crate) enum PRegMemImm {
   Reg(PReg),
   Mem(PAMode),
-  Imm(Imm),
+  Imm(u32),
 }
 
 impl Debug for PRegMemImm {
@@ -970,7 +989,7 @@ impl Debug for PRegMemImm {
 pub(crate) enum PInst {
   // /// A length 0 no-op instruction.
   // Nop,
-  /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|mul|adc|sbb) (32|64) reg rmi`
+  /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
     sz: Size, // 4 or 8
@@ -1015,7 +1034,7 @@ pub(crate) enum PInst {
   Imm {
     sz: Size, // 4 or 8
     dst: PReg,
-    src: Imm<u64>,
+    src: u64,
   },
   /// GPR to GPR move: `reg <- mov (64|32) reg`. This is always a pure move,
   /// because we require that a 32 bit source register has zeroed high part.
@@ -1074,7 +1093,7 @@ pub(crate) enum PInst {
   SetCC { cc: CC, dst: PReg },
   /// Integer conditional move.
   /// Overwrites the destination register.
-  Cmov {
+  CMov {
     sz: Size, // 2, 4, or 8
     cc: CC,
     dst: PReg,
@@ -1115,4 +1134,366 @@ pub(crate) enum PInst {
   TrapIf { cc: CC },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DispLayout {
+  S0,
+  S8,
+  S32,
+}
+
+impl DispLayout {
+  pub(crate) fn len(self) -> u8 {
+    match self {
+      Self::S0 => 0,
+      Self::S8 => 1,
+      Self::S32 => 4,
+    }
+  }
+}
+
+#[derive(Clone, Copy)]
+#[allow(clippy::upper_case_acronyms)]
+pub(crate) enum ModRMLayout {
+  Reg,
+  #[allow(unused)] RIP,
+  Sib0,
+  SibReg(DispLayout),
+  Disp(DispLayout),
+}
+
+impl ModRMLayout {
+  pub(crate) fn len(self) -> u8 {
+    match self {
+      Self::Reg => 1, // ModRM
+      Self::RIP => 5, // ModRM + imm32
+      Self::Sib0 => 6, // ModRM + SIB + imm32
+      Self::SibReg(disp) => 2 + disp.len(), // ModRM + SIB + disp0/8/32
+      Self::Disp(disp) => 1 + disp.len(), // ModRM + disp0/8/32
+    }
+  }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum OpcodeLayout {
+  /// `decodeBinopRAX` layout: `00ooo01v + imm32`
+  BinopRAX,
+  /// `decodeBinopImm` layout: `1000000v + modrm + imm32`
+  BinopImm(ModRMLayout),
+  /// `decodeBinopImm8` layout: `0x83 + modrm + imm8`
+  BinopImm8(ModRMLayout),
+  /// `decodeBinopReg` layout: `00ooo0dv + modrm`
+  BinopReg(ModRMLayout),
+  /// `decodeBinopHi` layout: `1100000v + modrm + imm8`
+  BinopHi(ModRMLayout),
+  /// `decodeBinopHiReg` layout: `110100xv + modrm`
+  BinopHiReg(ModRMLayout),
+  /// `decodeMovSX` layout: `0x63 + modrm`
+  MovSX(ModRMLayout),
+  /// `decodeMovReg` layout: `100010dv + modrm`
+  MovReg(ModRMLayout),
+  /// `decodeMov64` layout, but for 32 bit: `1011vrrr + imm32`
+  Mov32,
+  /// `decodeMov64` layout: `1011vrrr + imm64`
+  Mov64,
+  /// `decodeMovImm` layout: `1100011v + modrm + imm32`
+  MovImm(ModRMLayout),
+  /// `decodePushImm` layout with 8 bit immediate: `0x6A + imm8`
+  PushImm8,
+  /// `decodePushImm` layout with 32 bit immediate: `0x68 + imm32`
+  PushImm32,
+  /// `decodePushReg` layout: `01010rrr`
+  PushReg,
+  /// `decodePopReg` layout: `01011rrr`
+  PopReg,
+  /// `decodeJump` layout with 8 bit immediate: `0xEB + imm8`
+  Jump8,
+  /// `decodeJump` layout with 32 bit immediate: `0xE9 + imm32`
+  Jump32,
+  /// `decodeJCC8` layout: `0111cccc + imm8`
+  Jcc8,
+  /// `decodeCall` layout: `0xE8 + imm32`
+  Call,
+  /// `decodeRet` layout: `0xC3`
+  Ret,
+  /// `decodeLea` layout: `0x8D + modrm`
+  Lea(ModRMLayout),
+  /// `decodeTest` layout: `1000010v + modrm`
+  Test(ModRMLayout),
+  /// `decodeTestRAX` layout with 8 bit immediate: `1010100v + imm8`
+  TestRAX8,
+  /// `decodeTestRAX` layout with 32 bit immediate: `1010100v + imm32`
+  TestRAX32,
+  /// `decodeHi` layout: `1111x11v + modrm`
+  Hi(ModRMLayout),
+  /// `decodeHi` layout for `Test` with 8 bit immediate: `1111x11v + modrm + imm8`
+  HiTest8(ModRMLayout),
+  /// `decodeHi` layout for `Test` with 32 bit immediate: `1111x11v + modrm + imm32`
+  HiTest32(ModRMLayout),
+  /// `decodeTwoSetCC` layout: `0x0F + 1001cccc + modrm`
+  TwoSetCC(ModRMLayout),
+  /// `decodeTwoCMov` layout: `0x0F + 0100cccc + modrm`
+  TwoCMov(ModRMLayout),
+  /// `decodeTwoMovX` layout: `0x0F + 1011s11v + modrm`
+  TwoMovX(ModRMLayout),
+  /// `decodeTwoJCC` layout: `0x0F + 1000cccc + imm32`
+  TwoJcc,
+  /// `trapIf` pseudo-instruction: `jcc !cond l; ud2; l:`
+  TrapIf,
+  /// `ud2` instruction: `0x0F 0x0B`
+  Ud2,
+}
+
+impl OpcodeLayout {
+  fn len(self) -> u8 {
+    match self {
+      Self::Ret | Self::PushReg | Self::PopReg => 1, // opcode
+      Self::PushImm8 | Self::Jump8 | Self::Jcc8 | Self::TestRAX8 | // opcode + imm8
+      Self::Ud2 => 2, // 0F + opcode
+      Self::TrapIf => 4, // jcc8 + ud2
+      Self::BinopRAX | Self::Mov32 | Self::PushImm32 |
+      Self::Jump32 | Self::Call | Self::TestRAX32 => 5, // opcode + imm32
+      Self::TwoJcc => 6, // 0F + opcode + imm32
+      Self::Mov64 => 9, // opcode + imm64
+      Self::BinopReg(modrm) | Self::BinopHiReg(modrm) |
+      Self::MovSX(modrm) | Self::MovReg(modrm) |
+      Self::Lea(modrm) | Self::Test(modrm) |
+      Self::Hi(modrm) => 1 + modrm.len(), // opcode + modrm
+      Self::BinopImm8(modrm) | Self::BinopHi(modrm) |
+      Self::HiTest8(modrm) | // opcode + modrm + imm8
+      Self::TwoSetCC(modrm) | Self::TwoCMov(modrm) |
+      Self::TwoMovX(modrm) => 2 + modrm.len(), // 0F + opcode + modrm
+      Self::BinopImm(modrm) |
+      Self::MovImm(modrm) |
+      Self::HiTest32(modrm) => 5 + modrm.len(), // opcode + modrm + imm32
+    }
+  }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct InstLayout {
+  rex: bool,
+  opc: OpcodeLayout,
+}
+
+impl InstLayout {
+  pub(crate) fn len(self) -> u8 { self.rex as u8 + self.opc.len() }
+}
+
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+fn layout_u32(n: u32) -> DispLayout {
+  match n {
+    0 => DispLayout::S0,
+    _ if n as i8 as u32 == n => DispLayout::S8,
+    _ => DispLayout::S32,
+  }
+}
+
+fn layout_offset(off: &Offset) -> DispLayout {
+  match *off {
+    Offset::Real(n) => layout_u32(n),
+    Offset::Spill(sp, off) => unreachable!(),
+    _ => DispLayout::S32,
+  }
+}
+
+fn layout_opc_reg(rex: &mut bool, rm: PReg) -> ModRMLayout {
+  *rex |= large_preg(rm);
+  ModRMLayout::Reg
+}
+
+fn layout_opc_mem(rex: &mut bool, a: &PAMode) -> ModRMLayout {
+  if a.base.is_valid() { *rex |= large_preg(a.base) }
+  if let Some(si) = a.si { *rex |= large_preg(si.index) }
+  match a {
+    _ if !a.base().is_valid() => ModRMLayout::Sib0,
+    PAMode {off, si: None, ..} if a.base().hw_enc() & 7 != 4 =>
+      ModRMLayout::Disp(layout_offset(off)),
+    PAMode {off, base, ..} => match (*base, layout_offset(off)) {
+      (RBP, DispLayout::S0) => ModRMLayout::SibReg(DispLayout::S8),
+      (_, layout) => ModRMLayout::SibReg(layout)
+    }
+  }
+}
+
+fn layout_opc_rm(rex: &mut bool, rm: &PRegMem) -> ModRMLayout {
+  match rm {
+    PRegMem::Reg(r) => layout_opc_reg(rex, *r),
+    PRegMem::Mem(a) => layout_opc_mem(rex, a),
+  }
+}
+
+fn layout_opc_rmi(rex: &mut bool, rm: &PRegMemImm) -> ModRMLayout {
+  match rm {
+    PRegMemImm::Reg(r) => layout_opc_reg(rex, *r),
+    PRegMemImm::Mem(a) => layout_opc_mem(rex, a),
+    PRegMemImm::Imm(_) => unreachable!(),
+  }
+}
+
+fn layout_reg(rex: &mut bool, r: PReg, rm: PReg) -> ModRMLayout {
+  *rex |= large_preg(r);
+  layout_opc_reg(rex, rm)
+}
+
+fn layout_mem(rex: &mut bool, r: PReg, a: &PAMode) -> ModRMLayout {
+  *rex |= large_preg(r);
+  layout_opc_mem(rex, a)
+}
+
+fn layout_rm(rex: &mut bool, r: PReg, rm: &PRegMem) -> ModRMLayout {
+  *rex |= large_preg(r);
+  layout_opc_rm(rex, rm)
+}
+
+fn layout_rmi(rex: &mut bool, r: PReg, rm: &PRegMemImm) -> ModRMLayout {
+  *rex |= large_preg(r);
+  layout_opc_rmi(rex, rm)
+}
+
+
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+fn layout_binop_lo(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
+  let mut rex = sz == Size::S64;
+  let mut opc = match *src {
+    PRegMemImm::Imm(i) if i as i8 as u32 == i =>
+      OpcodeLayout::BinopImm8(layout_opc_reg(&mut rex, dst)),
+    PRegMemImm::Imm(i) => OpcodeLayout::BinopImm(layout_opc_reg(&mut rex, dst)),
+    _ => OpcodeLayout::BinopReg(layout_rmi(&mut rex, dst, src))
+  };
+  if dst == RAX && matches!(src, PRegMemImm::Imm(..)) &&
+    OpcodeLayout::BinopRAX.len() <= opc.len()
+  {
+    opc = OpcodeLayout::BinopRAX
+  }
+  InstLayout { rex, opc }
+}
+
+fn layout_test(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
+  let mut rex = sz == Size::S64;
+  let opc = match *src {
+    PRegMemImm::Imm(i) => match (dst, sz) {
+      (RAX, Size::S8) => OpcodeLayout::TestRAX8,
+      (RAX, _) => OpcodeLayout::TestRAX32,
+      (_, Size::S8) => OpcodeLayout::HiTest8(layout_opc_reg(&mut rex, dst)),
+      (_, _) => OpcodeLayout::HiTest32(layout_opc_reg(&mut rex, dst)),
+    }
+    _ => OpcodeLayout::Test(layout_rmi(&mut rex, dst, src))
+  };
+  InstLayout { rex, opc }
+}
+
+impl PInst {
+  pub(crate) fn len(&self) -> u8 { self.layout_inst().len() }
+
+  #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+  pub(crate) fn layout_inst(&self) -> InstLayout {
+    match *self {
+      PInst::Binop { sz, dst, ref src, .. } => layout_binop_lo(sz, dst, src),
+      PInst::Unop { sz, dst, .. } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::Hi(layout_opc_reg(&mut rex, dst)), rex }
+      }
+      PInst::DivRem { sz, ref src } | PInst::Mul { sz, ref src } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::Hi(layout_opc_rm(&mut rex, src)), rex }
+      }
+      PInst::Imm { sz, dst, src } => {
+        let opc = match src {
+          0 => OpcodeLayout::BinopReg(ModRMLayout::Reg), // xor dst, dst
+          _ if src as i32 as u64 == src => OpcodeLayout::Mov32,
+          _ => OpcodeLayout::Mov64,
+        };
+        InstLayout { rex: sz == Size::S64 || large_preg(dst), opc }
+      }
+      PInst::MovRR { sz, dst, src } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::MovReg(layout_reg(&mut rex, dst, src)), rex }
+      }
+      PInst::MovzxRmR { ext_mode: ExtMode::LQ, dst, ref src } => {
+        let mut rex = false;
+        InstLayout { opc: OpcodeLayout::MovReg(layout_rm(&mut rex, dst, src)), rex }
+      }
+      PInst::MovsxRmR { ext_mode: ExtMode::LQ, dst, ref src } =>
+        InstLayout { opc: OpcodeLayout::MovSX(layout_rm(&mut true, dst, src)), rex: true },
+      PInst::MovzxRmR { ext_mode, dst, ref src } |
+      PInst::MovsxRmR { ext_mode, dst, ref src } => {
+        let mut rex = ext_mode.dst() == Size::S64;
+        InstLayout { opc: OpcodeLayout::TwoMovX(layout_rm(&mut rex, dst, src)), rex }
+      }
+      PInst::Load64 { dst, ref src } =>
+        InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut true, dst, src)), rex: true },
+      PInst::Lea { dst, ref addr } =>
+        InstLayout { opc: OpcodeLayout::Lea(layout_mem(&mut true, dst, addr)), rex: true },
+      PInst::Store { sz, ref dst, src } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut rex, src, dst)), rex }
+      }
+      PInst::Shift { sz, dst, num_bits: None, .. } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::BinopHiReg(layout_opc_reg(&mut rex, dst)), rex }
+      }
+      PInst::Shift { sz, dst, num_bits: Some(_), .. } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::BinopHi(layout_opc_reg(&mut rex, dst)), rex }
+      }
+      PInst::Cmp { sz, op: Cmp::Cmp, src1, ref src2 } => layout_binop_lo(sz, src1, src2),
+      PInst::Cmp { sz, op: Cmp::Test, src1, ref src2 } => layout_test(sz, src1, src2),
+      PInst::SetCC { dst, .. } => {
+        let mut rex = false;
+        InstLayout { opc: OpcodeLayout::TwoSetCC(layout_opc_reg(&mut rex, dst)), rex }
+      }
+      PInst::CMov { sz, cc, dst, ref src } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::TwoCMov(layout_rm(&mut rex, dst, src)), rex }
+      }
+      PInst::Push64 { ref src } => {
+        let mut rex = false;
+        let opc = match *src {
+          PRegMemImm::Imm(i) if i as i8 as u32 == i => OpcodeLayout::PushImm8,
+          PRegMemImm::Imm(i) => OpcodeLayout::PushImm32,
+          PRegMemImm::Reg(r) => { rex |= large_preg(r); OpcodeLayout::PushReg }
+          PRegMemImm::Mem(ref a) => OpcodeLayout::Hi(layout_opc_mem(&mut rex, a))
+        };
+        InstLayout { rex, opc }
+      }
+      PInst::Pop64 { dst } => InstLayout { opc: OpcodeLayout::PopReg, rex: large_preg(dst) },
+      PInst::CallKnown { .. } => InstLayout { opc: OpcodeLayout::Call, rex: false },
+      PInst::Ret => InstLayout { opc: OpcodeLayout::Ret, rex: false },
+      PInst::JmpKnown { short: true, .. } => InstLayout { opc: OpcodeLayout::Jump8, rex: false },
+      PInst::JmpKnown { short: false, .. } => InstLayout { opc: OpcodeLayout::Jump32, rex: false },
+      PInst::JmpCond { short: true, .. } => InstLayout { opc: OpcodeLayout::Jcc8, rex: false },
+      PInst::JmpCond { short: false, .. } => InstLayout { opc: OpcodeLayout::TwoJcc, rex: false },
+      PInst::TrapIf { .. } => InstLayout { opc: OpcodeLayout::TrapIf, rex: false },
+      PInst::Ud2 => InstLayout { opc: OpcodeLayout::Ud2, rex: false },
+    }
+  }
+
+  pub(crate) fn is_jump(&self) -> Option<BlockId> {
+    if let PInst::JmpKnown { dst, .. } | PInst::JmpCond { dst, .. } = *self {
+      Some(dst)
+    } else {
+      None
+    }
+  }
+  pub(crate) fn shorten(&mut self) {
+    if let PInst::JmpKnown { short, .. } | PInst::JmpCond { short, .. } = self {
+      *short = true
+    }
+  }
+
+  pub(crate) fn len_bound(&self) -> (u8, u8) {
+    match *self {
+      PInst::JmpKnown { dst, short: false } => (
+        PInst::JmpKnown { dst, short: true }.len(),
+        PInst::JmpKnown { dst, short: false }.len()
+      ),
+      PInst::JmpCond { cc, dst, short: false } => (
+        PInst::JmpCond { cc, dst, short: true }.len(),
+        PInst::JmpCond { cc, dst, short: false }.len()
+      ),
+      _ => { let len = self.len(); (len, len) }
+    }
+  }
 }

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 
 use mm0_util::u32_as_usize;
-use regalloc2::{Allocation, Edit, PReg, ProgPoint, SpillSlot, VReg};
+use regalloc2::{Allocation, Edit, Function, PReg, ProgPoint, SpillSlot, VReg};
 
-use crate::arch::{AMode, Imm, Inst, PAMode, PInst, PRegMem, PRegMemImm, PShiftIndex, RegMem, RegMemImm};
+use crate::arch::{AMode, Inst, CALLEE_SAVED,
+  Offset, PAMode, PInst, PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, RegMem, RegMemImm};
 use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
-use crate::types::mir::*;
+use crate::types::mir::{Arg, Cfg};
 use crate::{Entity, Idx, Symbol};
-use crate::build_vcode::build_vcode;
-use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId};
+use crate::build_vcode::{VCode, build_vcode};
+use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId, BlockId};
 
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn regalloc(&self) -> regalloc2::Output {
@@ -22,21 +24,27 @@ pub(crate) struct ApplyRegalloc {
   num_allocs: usize,
   alloc_iter: std::vec::IntoIter<Allocation>,
   offset_iter: std::vec::IntoIter<u32>,
-  regspills: usize,
+  regspill_off: u32,
+  spill_map: IdxVec<SpillId, u32>,
 }
 
 impl ApplyRegalloc {
-  fn new(allocs: Vec<Allocation>, offsets: Vec<u32>, regspills: usize) -> Self {
+  fn new(allocs: Vec<Allocation>, offsets: Vec<u32>,
+    regspill_off: u32,
+    spill_map: IdxVec<SpillId, u32>,
+  ) -> Self {
     Self {
       num_allocs: allocs.len(),
       alloc_iter: allocs.into_iter(),
       offset_iter: offsets.into_iter(),
-      regspills,
+      regspill_off,
+      spill_map,
     }
   }
 
-  fn spill(&self, n: SpillSlot) -> SpillId {
-    SpillId::from_usize(self.regspills + n.index())
+  fn spill(&self, n: SpillSlot) -> PAMode {
+    let off = (self.regspill_off + u32::try_from(n.index()).expect("impossible") * 8).into();
+    PAMode { base: RSP, si: None, off }
   }
 
   fn next_inst(&mut self, i: InstId) {
@@ -52,11 +60,13 @@ impl ApplyRegalloc {
     self.next().as_reg().expect("expected a register")
   }
   fn mem(&mut self, a: &AMode) -> PAMode {
-    PAMode {
-      off: a.off,
-      base: if a.base == VReg::invalid() { PReg::invalid() } else { self.reg() },
-      si: a.si.map(|si| PShiftIndex { index: self.reg(), shift: si.shift }),
-    }
+    let (off, base) = match (a.off, a.base == VReg::invalid()) {
+      (Offset::Spill(sp, n), true) => ((self.spill_map[sp] + n).into(), RSP),
+      (off, false) => (off, self.reg()),
+      (off, true) => (off, PReg::invalid()),
+    };
+    let si = a.si.map(|si| PShiftIndex { index: self.reg(), shift: si.shift });
+    PAMode { off, base, si }
   }
 
   fn rm(&mut self, rm: &RegMem) -> PRegMem {
@@ -76,72 +86,171 @@ impl ApplyRegalloc {
   }
 
   fn rmi0(&mut self, rmi: &RegMemImm) -> PRegMemImm {
-    self.rmi(rmi).unwrap_or(PRegMemImm::Imm(Imm::ZERO))
+    self.rmi(rmi).unwrap_or(PRegMemImm::Imm(0))
   }
 }
 
-fn apply_edits(
-  insts: &mut Vec<PInst>,
-  edits: &mut std::iter::Peekable<impl Iterator<Item=(ProgPoint, Edit)>>,
-  ar: &mut ApplyRegalloc,
-  pt: ProgPoint
-) {
-  while edits.peek().map_or(false, |p| p.0 == pt) {
-    if let Some((_, Edit::Move { from, to, to_vreg })) = edits.next() {
-      match (from.as_reg(), to.as_reg()) {
-        (Some(src), Some(dst)) => insts.push(PInst::MovRR { sz: Size::S64, dst, src }),
-        (Some(src), _) => {
-          let dst = AMode::spill(ar.spill(to.as_stack().expect("bad regalloc")));
-          insts.push(PInst::Store { sz: Size::S64, dst, src })
-        }
-        (_, Some(dst)) => {
-          let src = AMode::spill(ar.spill(from.as_stack().expect("bad regalloc")));
-          insts.push(PInst::Load64 { dst, src })
-        }
-        _ => panic!("bad regalloc")
-      }
-    }
-  }
+mk_id! {
+  /// A [`PInst`] ID, which indexes into [`PCode::insts`].
+  PInstId(Debug("pi"))
 }
 
 #[derive(Debug)]
 pub(crate) struct PCode {
   abi: ProcAbi,
-  insts: Vec<PInst>,
-  blocks: IdxVec<BlockId, (InstId, InstId)>,
-  spill_offs: IdxVec<SpillId, u32>,
+  insts: IdxVec<PInstId, PInst>,
+  blocks: IdxVec<BlockId, (PInstId, PInstId)>,
+  block_addr: IdxVec<BlockId, u32>,
+  len: u32,
 }
 
-impl PCode {
-  fn push(&mut self, i: PInst) { self.insts.push(i) }
+#[derive(Debug)]
+struct PCodeBuilder {
+  code: PCode,
+  fwd_jumps: Vec<(u32, PInstId)>,
+}
+
+impl std::ops::Deref for PCodeBuilder {
+  type Target = PCode;
+  fn deref(&self) -> &Self::Target { &self.code }
+}
+impl std::ops::DerefMut for PCodeBuilder {
+  fn deref_mut(&mut self) -> &mut Self::Target { &mut self.code }
+}
+
+impl PCodeBuilder {
+  fn push(&mut self, mut inst: PInst) {
+    self.len += u32::from(inst.len());
+    if let Some(dst) = inst.is_jump() {
+      let addr = self.block_addr.get(dst);
+      if let Some(&ub) = self.block_addr.get(dst) {
+        if i8::try_from(self.len - ub).is_ok() { inst.shorten() }
+        self.insts.push(inst);
+      } else {
+        self.fwd_jumps.push((self.len, self.code.insts.push(inst)));
+      }
+    } else {
+      self.insts.push(inst);
+    }
+  }
+
+  fn push_prologue(&mut self, stack_size: u32, saved_regs: impl Iterator<Item=PReg>) {
+    self.push(PInst::Binop {
+      op: crate::arch::Binop::Sub,
+      sz: Size::S64,
+      dst: RSP,
+      src: PRegMemImm::Imm(stack_size)
+    });
+    for reg in saved_regs {
+      self.push(PInst::Push64 { src: PRegMemImm::Reg(reg) });
+    }
+  }
+
+  fn push_epilogue(&mut self, stack_size: u32, saved_regs: impl DoubleEndedIterator<Item=PReg>) {
+    for dst in saved_regs.rev() {
+      self.push(PInst::Pop64 { dst });
+    }
+    self.push(PInst::Binop {
+      op: crate::arch::Binop::Add,
+      sz: Size::S64,
+      dst: RSP,
+      src: PRegMemImm::Imm(stack_size)
+    });
+    self.push(PInst::Ret)
+  }
+
+  fn apply_edits(&mut self,
+    edits: &mut std::iter::Peekable<impl Iterator<Item=(ProgPoint, Edit)>>,
+    ar: &mut ApplyRegalloc,
+    pt: ProgPoint
+  ) {
+    while edits.peek().map_or(false, |p| p.0 == pt) {
+      if let Some((_, Edit::Move { from, to, to_vreg })) = edits.next() {
+        match (from.as_reg(), to.as_reg()) {
+          (Some(src), Some(dst)) => self.push(PInst::MovRR { sz: Size::S64, dst, src }),
+          (Some(src), _) => {
+            let dst = ar.spill(to.as_stack().expect("bad regalloc"));
+            self.push(PInst::Store { sz: Size::S64, dst, src });
+          }
+          (_, Some(dst)) => {
+            let src = ar.spill(from.as_stack().expect("bad regalloc"));
+            self.push(PInst::Load64 { dst, src });
+          }
+          _ => panic!("bad regalloc")
+        }
+      }
+    }
+  }
+
+  fn finish(self) -> PCode {
+    let Self {mut code, fwd_jumps, ..} = self;
+    for (pos, i) in fwd_jumps {
+      let inst = &mut code.insts[i];
+      let dst = inst.is_jump().expect("list contains jumps");
+      let pos = i32::try_from(pos).expect("overflow");
+      let ub = i32::try_from(code.block_addr[dst]).expect("overflow");
+      if i8::try_from(pos - ub).is_ok() { inst.shorten() }
+    }
+    code.block_addr.0.clear();
+    code.len = 0;
+    let mut iter = code.blocks.0.iter();
+    let mut cur = iter.next().expect("nonempty").0;
+    for (id, inst) in code.insts.enum_iter() {
+      if id == cur {
+        code.block_addr.push(code.len);
+        if let Some(n) = iter.next() { cur = n.0 }
+      }
+      code.len += u32::from(inst.len());
+    }
+    code
+  }
 }
 
 struct BlockBuilder<'a> {
   blocks: &'a [(InstId, InstId)],
-  start: InstId,
+  start: PInstId,
   cur: usize,
   next: InstId,
 }
 
 impl<'a> BlockBuilder<'a> {
   fn next(&mut self) {
-    self.next = self.blocks.get(self.cur).map(|p| p.1).unwrap_or_else(InstId::invalid);
+    self.next = self.blocks.get(self.cur).map_or_else(InstId::invalid, |p| p.1);
   }
 
   fn new(blocks: &'a [(InstId, InstId)]) -> Self {
-    let mut this = Self { blocks, start: InstId(0), cur: 0, next: InstId(0) };
+    let mut this = Self { blocks, start: PInstId(0), cur: 0, next: InstId(0) };
     this.next();
     this
   }
 
-  fn push(&mut self, code: &mut PCode) {
-    let end = InstId::from_usize(code.insts.len());
+  fn finish_block(&mut self, code: &mut PCode) {
+    let end = PInstId::from_usize(code.insts.len());
     self.cur += 1;
     self.next();
     code.blocks.push((std::mem::replace(&mut self.start, end), end));
   }
 }
 
+fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
+  let mut result = PRegSet::default();
+  for (_, edit) in &out.edits {
+    if let Edit::Move { to, .. } = *edit {
+      if let Some(r) = to.as_reg() { result.insert(r) }
+    }
+  }
+  for (i, _) in vcode.insts.enum_iter() {
+    for &r in vcode.inst_clobbers(i) { result.insert(r) }
+    for (op, alloc) in vcode.inst_operands(i).iter().zip(out.inst_allocs(i)) {
+      if op.kind() != regalloc2::OperandKind::Use {
+        if let Some(r) = alloc.as_reg() { result.insert(r) }
+      }
+    }
+  }
+  result
+}
+
+#[allow(clippy::similar_names)]
 pub(crate) fn regalloc_vcode(
   names: &HashMap<Symbol, Entity>,
   func_mono: &HashMap<Symbol, ProcId>,
@@ -155,30 +264,42 @@ pub(crate) fn regalloc_vcode(
   // println!("{:#?}", vcode);
   let out = vcode.regalloc();
   // println!("{:#?}", out);
+  let clobbers = get_clobbers(&vcode, &out);
+  let saved_regs = CALLEE_SAVED.iter().copied().filter(move |&r| clobbers.get(r));
   let mut edits = out.edits.into_iter().peekable();
-  let mut ar = ApplyRegalloc::new(out.allocs, out.inst_alloc_offsets, vcode.spills.len());
   for _ in 0..out.num_spillslots { vcode.fresh_spill(8); }
-  let spill_offs = if let [incoming, outgoing, ref spills @ ..] = *vcode.spills.0 {
+  let stack_size_no_ret;
+  let mut ar = if let [incoming, outgoing, ref spills @ ..] = *vcode.spills.0 {
     vcode.abi.args_space = incoming;
-    let mut offs = vec![0, 0];
-    let mut rsp_off = 8;
-    for n in spills {
+    let mut spill_map = vec![0; vcode.spills.len()];
+    let mut rsp_off = outgoing + u32::try_from(out.num_spillslots * 8).expect("overflow");
+    for (&n, len) in spills.iter().zip(&mut spill_map[2..]).rev() {
+      *len = rsp_off;
       rsp_off += n;
-      offs.push(rsp_off);
     }
-    offs.into()
+    stack_size_no_ret = rsp_off + u32::try_from(saved_regs.clone().count() * 8).expect("overflow");
+    spill_map[0] = stack_size_no_ret + 8;
+    ApplyRegalloc::new(out.allocs, out.inst_alloc_offsets, outgoing, spill_map.into())
   } else { unreachable!() };
-  let mut code = PCode {
-    abi: vcode.abi,
-    insts: vec![],
-    blocks: IdxVec::from(vec![]),
-    spill_offs
+  let mut code = PCodeBuilder {
+    code: PCode {
+      abi: vcode.abi,
+      insts: IdxVec::new(),
+      blocks: IdxVec::from(vec![]),
+      block_addr: IdxVec::from(vec![0]),
+      len: 0,
+    },
+    fwd_jumps: vec![],
   };
   let mut bb = BlockBuilder::new(&vcode.blocks.0);
+  code.push_prologue(stack_size_no_ret, saved_regs.clone());
   for (i, inst) in vcode.insts.enum_iter() {
     ar.next_inst(i);
-    if bb.next == i { bb.push(&mut code) };
-    apply_edits(&mut code.insts, &mut edits, &mut ar, ProgPoint::before(i));
+    if bb.next == i {
+      bb.finish_block(&mut code);
+      code.code.block_addr.push(code.len);
+    };
+    code.apply_edits(&mut edits, &mut ar, ProgPoint::before(i));
     match *inst {
       Inst::Fallthrough { dst } =>
         assert!(vcode.blocks[dst].0 == i.next()),
@@ -222,9 +343,9 @@ pub(crate) fn regalloc_vcode(
         code.push(PInst::Cmp { sz, op, src1: ar.reg(), src2: ar.rmi0(src2) })
       }
       Inst::SetCC { cc, .. } => code.push(PInst::SetCC { cc, dst: ar.reg() }),
-      Inst::Cmov { sz, cc, dst, src1, ref src2 } => {
+      Inst::CMov { sz, cc, dst, src1, ref src2 } => {
         let (_, src, dst) = (ar.reg(), ar.rm(src2), ar.reg());
-        code.push(PInst::Cmov { sz, cc, dst, src });
+        code.push(PInst::CMov { sz, cc, dst, src });
       }
       Inst::Push64 { ref src } => code.push(PInst::Push64 { src: ar.rmi0(src) }),
       Inst::Pop64 { .. } => code.push(PInst::Pop64 { dst: ar.reg() }),
@@ -232,9 +353,9 @@ pub(crate) fn regalloc_vcode(
         for _ in &**operands { ar.reg(); }
         code.push(PInst::CallKnown { f })
       }
-      Inst::Ret { ref params } => {
+      Inst::Epilogue { ref params } => {
         for _ in &**params { ar.reg(); }
-        code.push(PInst::Ret)
+        code.push_epilogue(stack_size_no_ret, saved_regs.clone())
       }
       Inst::JmpKnown { dst, ref params } => {
         for _ in &**params { ar.reg(); }
@@ -254,16 +375,17 @@ pub(crate) fn regalloc_vcode(
       Inst::TrapIf { cc } => code.push(PInst::TrapIf { cc }),
       Inst::Ud2 => code.push(PInst::Ud2),
     }
-    apply_edits(&mut code.insts, &mut edits, &mut ar, ProgPoint::after(i));
+    code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
   }
-  bb.push(&mut code);
-  code
+  bb.finish_block(&mut code);
+  code.finish()
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::wildcard_imports)]
 mod test {
   use std::rc::Rc;
-  use crate::types::{IntTy, Spanned, hir::ProcKind};
+  use crate::types::{IntTy, Spanned, hir::ProcKind, mir::*};
   use super::*;
 
   #[test] fn two_plus_two() {
@@ -308,7 +430,7 @@ mod test {
       x = new;
     }
     let y = fresh_var.fresh();
-    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None, u8ty.clone()));
+    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None, u8ty));
     let bl2 = cfg.new_block(bl2ctx);
     cfg[bl1].terminate(Terminator::Jump(bl2, vec![
       (y, true, Operand::Copy(Place::local(x)))
@@ -323,7 +445,7 @@ mod test {
     let allocs = cfg.storage(&names);
     println!("after storage:\n{:#?}", cfg);
     println!("allocs = {:#?}", allocs);
-    let res = regalloc_vcode(&names, &func_mono, &funcs, &cfg, &allocs, &proc.rets);
+    let res = regalloc_vcode(&names, &func_mono, &funcs, cfg, &allocs, &proc.rets);
     println!("{:#?}", res);
   }
 }

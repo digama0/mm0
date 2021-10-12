@@ -13,7 +13,7 @@ pub mod vcode;
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::marker::PhantomData;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range, RangeBounds};
 use num::{BigInt, Signed};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{FileSpan, Symbol};
@@ -60,6 +60,16 @@ impl<I, T> IdxVec<I, T> {
   /// The number of elements in the [`IdxVec`].
   #[must_use] pub fn len(&self) -> usize { self.0.len() }
 
+  /// Get a value by index into the vector.
+  pub fn get(&self, index: I) -> Option<&T> where I: Idx {
+    self.0.get(I::into_usize(index))
+  }
+
+  /// Get a value by index into the vector.
+  pub fn get_mut(&mut self, index: I) -> Option<&mut T> where I: Idx {
+    self.0.get_mut(I::into_usize(index))
+  }
+
   /// Insert a new value at the end of the vector.
   pub fn push(&mut self, val: T) -> I where I: Idx {
     let id = I::from_usize(self.0.len());
@@ -100,6 +110,13 @@ impl<I: Idx, T> Index<I> for IdxVec<I, T> {
 
 impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
   fn index_mut(&mut self, index: I) -> &mut Self::Output { &mut self.0[I::into_usize(index)] }
+}
+
+impl<I: Idx, T> Index<Range<I>> for IdxVec<I, T> {
+  type Output = [T];
+  fn index(&self, r: Range<I>) -> &Self::Output {
+    &self.0[I::into_usize(r.start)..I::into_usize(r.end)]
+  }
 }
 
 mk_id! {

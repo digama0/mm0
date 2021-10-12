@@ -159,7 +159,7 @@ impl Cfg {
       }
     }
     let doms = ReturnAnalysis.iterate_to_fixpoint(self);
-    ReturnAnalysis.get_applied(&self, &doms, BlockId::ENTRY)
+    ReturnAnalysis.get_applied(self, &doms, BlockId::ENTRY)
   }
 
   /// This function performs the "ghost analysis" pass. The result of the analysis is a
@@ -326,7 +326,7 @@ impl Cfg {
     let mut analysis = GhostAnalysis { reachable, returns };
     let result = analysis.iterate_to_fixpoint(self);
     GhostAnalysisResult((0..self.blocks.len()).map(BlockId::from_usize).map(|id| {
-      analysis.get_applied(&self, &result, id).vars
+      analysis.get_applied(self, &result, id).vars
     }).collect())
   }
 

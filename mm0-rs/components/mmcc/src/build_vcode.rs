@@ -9,7 +9,7 @@ use regalloc2::{Operand as ROperand, PReg};
 use crate::types::entity::ConstTc;
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
-  Imm, Inst, RegMem, RegMemImm, ShiftKind, Unop as VUnop};
+  Inst, RegMem, RegMemImm, ShiftKind, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{IdxVec, IntTy, Size, Spanned};
@@ -271,7 +271,7 @@ impl<'a> LowerCtx<'a> {
   fn get_operand(&mut self, o: &Operand) -> RegMemImm<u64> {
     match o.place() {
       Ok(p) => self.get_place(p).into(),
-      Err(c) => Imm::Real(self.get_const_64(c)).into(),
+      Err(c) => self.get_const_64(c).into(),
     }
   }
 
@@ -293,7 +293,7 @@ impl<'a> LowerCtx<'a> {
     let bits = sz.bits().expect("unbounded");
     let src1 = self.get_operand_reg(o1, sz);
     let temp = match self.get_operand(o2) {
-      RegMemImm::Imm(Imm::Real(n)) => {
+      RegMemImm::Imm(n) => {
         if n >= bits.into() { self.code.emit_copy(sz, dst, 0_u64); return }
         #[allow(clippy::cast_possible_truncation)]
         self.code.emit_shift(sz, kind, src1, Ok(n as u8))
@@ -301,7 +301,7 @@ impl<'a> LowerCtx<'a> {
       src2 => {
         let src2 = src2.into_reg(&mut self.code, sz);
         let temp = self.code.emit_shift(sz, kind, src1, Err(src2));
-        let zero = self.code.emit_imm(sz, 0);
+        let zero = self.code.emit_imm(sz, 0_u32);
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, CC::NB, src1, u32::from(bits));
         cond.select(sz, zero, temp)
       }
@@ -328,7 +328,7 @@ impl<'a> LowerCtx<'a> {
   fn build_as(&mut self, dst: RegMem, from: IntTy, to: IntTy, o: &Operand) {
     let sz = from.size().min(to.size()); assert_ne!(sz, Size::Inf);
     let src = self.get_operand(o).into_rm(&mut self.code, sz);
-    match ExtMode::new(sz, Size::S64) {
+    match ExtMode::new(sz, to.size()) {
       None => self.code.emit_copy(sz, dst, src),
       Some(ext_mode) => {
         let temp = self.code.fresh_vreg();
@@ -555,7 +555,7 @@ impl<'a> LowerCtx<'a> {
         }
       }
     }
-    self.code.emit(Inst::Ret { params: params.into() });
+    self.code.emit(Inst::Epilogue { params: params.into() });
   }
 
   fn build_call(&mut self,
@@ -723,10 +723,14 @@ impl<'a> LowerCtx<'a> {
   }
 
   fn build_prologue(&mut self, bl: &'a BasicBlock, rets: &[Arg]) {
-    let mut regs = crate::arch::ARG_REGS.iter();
+    let mut arg_regs = crate::arch::ARG_REGS.iter();
     let incoming = AMode::spill(SpillId::INCOMING);
     let mut off = 0_u32;
-    let mut alloc = |sz| (off, off = off.checked_add(sz).expect("overflow")).0;
+    let mut alloc = |sz| {
+      let old = off;
+      off = off.checked_add(sz).expect("overflow");
+      old
+    };
 
     self.abi_rets = rets.iter().map(|ret| {
       if ret.attr.contains(ArgAttr::GHOST) { return VRetAbi::Ghost }
@@ -734,7 +738,7 @@ impl<'a> LowerCtx<'a> {
       let size = meta.size;
       let sz = Size::from_u64(size);
       let on_stack = meta.on_stack || sz == Size::Inf;
-      match (on_stack, regs.next()) {
+      match (on_stack, arg_regs.next()) {
         (false, Some(&r)) => VRetAbi::Reg(r, sz),
         (true, Some(&r)) => {
           let ptr = self.code.fresh_vreg();
@@ -754,7 +758,7 @@ impl<'a> LowerCtx<'a> {
       let a = self.allocs.get(v);
       if a == AllocId::ZERO { return ArgAbi::Ghost }
       let (&(dst, sz), size) = self.get_alloc(a);
-      match (dst, regs.next()) {
+      match (dst, arg_regs.next()) {
         (RegMem::Reg(dst), Some(&r)) => {
           let src = self.code.fresh_vreg();
           self.code.emit(Inst::MovPR { sz, dst, src: (src, r) });
