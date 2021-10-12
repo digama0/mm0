@@ -476,8 +476,7 @@ $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readOpcodeModRM rex opc r l1 /\ opc != 6 /\
     readImmN 8 imm l2 /\
-    ast = xastBinop (rex_reg 1 opc)
-      (opSizeW rex v) (Rm_i r imm)) $;
+    ast = xastBinop (rex_reg 1 opc) (opSizeW rex v) (Rm_i r imm)) $;
 theorem decodeBinopHiT (rex ast b l: nat):
   $ decodeBinopHi rex ast b l -> ast e. XAST $;
 
@@ -499,7 +498,7 @@ theorem decodeBinopT (rex ast b l: nat):
 
 def decodeMovSX (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x6 x3 /\
-    readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) wSz64) $;
+    readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) (opSizeW rex 1)) $;
 theorem decodeMovSX_T (rex ast b l: nat):
   $ decodeMovSX rex ast b l -> ast e. XAST $;
 
