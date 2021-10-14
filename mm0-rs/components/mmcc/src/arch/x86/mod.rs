@@ -32,7 +32,17 @@ const R15: PReg = preg(15);
 pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 pub(crate) const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
 pub(crate) const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
-const SCRATCH: PReg = R11;
+pub(crate) const SCRATCH: PReg = R11;
+
+pub(crate) fn callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
+  CALLEE_SAVED.iter().copied()
+}
+pub(crate) fn caller_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
+  CALLER_SAVED.iter().copied()
+}
+pub(crate) fn non_callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
+  caller_saved().chain([SCRATCH])
+}
 
 lazy_static! {
   pub(crate) static ref MACHINE_ENV: MachineEnv = {
@@ -40,9 +50,7 @@ lazy_static! {
       preferred_regs_by_class: [CALLER_SAVED.into(), vec![]],
       non_preferred_regs_by_class: [CALLEE_SAVED.into(), vec![]],
       scratch_by_class: [SCRATCH, PReg::invalid()],
-      regs: CALLER_SAVED.iter().copied()
-        .chain(CALLEE_SAVED.iter().copied())
-        .chain([SCRATCH]).collect(),
+      regs: caller_saved().chain(callee_saved()).chain([SCRATCH]).collect(),
     }
   };
 }

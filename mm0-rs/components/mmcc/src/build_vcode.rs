@@ -1,3 +1,12 @@
+//! The translation pass from [`MIR`](crate::types::mir) to [`VCode`](crate::types::vcode).
+//!
+//! While MIR is an abstract intermediate language with generic operations,
+//! the [`VCode`] type is much closer to the hardware ISA, and most operations
+//! in [`crate::arch::Inst`] have one to one correspondence to instructions of
+//! the ISA, except that they use virtual registers instead of physical
+//! registers. So the main role of this pass is to translate MIR operations
+//! into sequences of x86 instructions.
+
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Mul;

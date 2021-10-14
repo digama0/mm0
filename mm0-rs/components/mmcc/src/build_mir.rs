@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use types::IntTy;
-use crate::Symbol;
+use crate::{Idx, Symbol};
 use super::types;
 use types::{Spanned, VarId as HVarId, hir, ty, mir};
 use hir::GenId;

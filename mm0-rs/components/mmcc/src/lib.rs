@@ -80,14 +80,6 @@ macro_rules! mk_id {
     #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct $id(pub u32);
     #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
-    impl $id {
-      /// Generate a fresh variable from a `&mut ID` counter.
-      #[must_use] #[inline] pub fn fresh(&mut self) -> Self {
-        let n = *self;
-        self.0 += 1;
-        n
-      }
-    }
     mk_id!(@ImplDebug $id $($($lit)*)?);
     impl From<$id> for usize {
       fn from(id: $id) -> usize { crate::u32_as_usize(id.0) }
@@ -95,6 +87,11 @@ macro_rules! mk_id {
     impl crate::Idx for $id {
       fn into_usize(self) -> usize { self.into() }
       fn from_usize(n: usize) -> Self { $id(std::convert::TryFrom::try_from(n).expect("overflow")) }
+      fn fresh(&mut self) -> Self {
+        let n = *self;
+        self.0 += 1;
+        n
+      }
     }
   )*}
 }
@@ -116,6 +113,7 @@ mod symbol;
 mod build_vcode;
 mod arch;
 mod regalloc;
+mod linker;
 
 use std::collections::HashMap;
 use {types::{entity::Entity, mir}, predef::PredefMap};
@@ -194,6 +192,8 @@ pub struct Compiler<C> {
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.
   predef: PredefMap<Symbol>,
+  /// If the main function has been provided, this is a pointer to it.
+  main: Option<Symbol>,
 }
 
 impl<C: Default> Default for Compiler<C> {
@@ -201,14 +201,14 @@ impl<C: Default> Default for Compiler<C> {
 }
 
 impl<C> Compiler<C> {
-  /// Create a new [`Compiler`] object. This mutates the elaborator because
-  /// it needs to allocate atoms for MMC keywords.
+  /// Create a new [`Compiler`] object.
   pub fn new(config: C) -> Compiler<C> {
     symbol::Interner::with(|i| Compiler {
       names: Self::make_names(i),
       mir: Default::default(),
       init: Default::default(),
       predef: PredefMap::new(|_, s| i.intern(s)),
+      main: None,
       config,
     })
   }
@@ -222,9 +222,16 @@ impl<C: Config> Compiler<C> {
   pub fn add(&mut self, item: &ast::Item, var_names: IdxVec<VarId, Symbol>,
     mut ic: impl ItemContext<C>
   ) -> Result<(), C::Error> {
-    let Compiler {names, mir, init, ..} = self;
+    let Compiler {names, mir, init, main, ..} = self;
     let hir_alloc = Bump::new();
     let mut ctx = infer::InferCtx::new(&hir_alloc, names, var_names);
+    if let ast::ItemKind::Proc {kind: ast::ProcKind::Main, ref name, ..} = item.k {
+      if main.is_some() {
+        ctx.errors.push(hir::Spanned {span: &name.span, k: TypeError::DoubleMain});
+      } else {
+        *main = Some(name.k)
+      }
+    }
     let item = ctx.lower_item(item);
     if !ctx.errors.is_empty() {
       let errs = std::mem::take(&mut ctx.errors);
@@ -239,9 +246,16 @@ impl<C: Config> Compiler<C> {
     Ok(())
   }
 
-  /// Once we are done adding functions, this function performs final linking to produce an executable.
+  /// Once we are done adding functions, this function performs final linking to produce an
+  /// executable.
+  /// The compiler is reset to the initial state after this operation, except for the user state
+  /// [`Compiler::config`], so it can be used to compile another program but the library functions
+  /// must first be loaded in again.
   #[allow(clippy::unused_self)]
   pub fn finish(&mut self) -> Result<(), C::Error> {
+    let mir = std::mem::take(&mut self.mir);
+    let init = std::mem::take(&mut self.init);
+    let main = self.main.take();
     Ok(())
   }
 }

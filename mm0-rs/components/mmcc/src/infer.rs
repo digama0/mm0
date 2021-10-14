@@ -71,6 +71,8 @@ pub enum TypeError<'a> {
   UnexpectedVariant,
   /// The `main` function cannot be called directly
   ReentrantMain,
+  /// More than one `main` function defined
+  DoubleMain,
 }
 
 impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TypeError<'a> {
@@ -121,6 +123,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TypeError<'a> {
         to a function or label that does not declare a variant"),
       TypeError::ReentrantMain => write!(f, "The `main` function cannot be called directly; \
         it is implicitly called by the operating system"),
+      TypeError::DoubleMain => write!(f, "The `main` function has been defined more than once"),
     }
   }
 }

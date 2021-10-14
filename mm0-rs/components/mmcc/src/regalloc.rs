@@ -1,11 +1,20 @@
+//! The interface to the [`regalloc2`] register allocator, generating [`PCode`] from [`VCode`].
+//!
+//! The actual register allocator work is offloaded to the [`regalloc2`] crate,
+//! but once we receive the result of register allocation we have to apply the
+//! results to construct a [`PCode`], physical register code. This pass also
+//! handles concrete code size measurement, so jumps can be replaced by literal
+//! relative integers at this point. Globals and constants are not yet located,
+//! so they remain symbolic at this stage.
+
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 use mm0_util::u32_as_usize;
 use regalloc2::{Allocation, Edit, Function, PReg, ProgPoint, SpillSlot, VReg};
 
-use crate::arch::{AMode, Inst, CALLEE_SAVED,
-  Offset, PAMode, PInst, PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, RegMem, RegMemImm};
+use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offset, PAMode, PInst,
+  PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, RegMem, RegMemImm};
 use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
 use crate::types::mir::{Arg, Cfg};
@@ -16,7 +25,7 @@ use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId, BlockId};
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn regalloc(&self) -> regalloc2::Output {
     let opts = regalloc2::RegallocOptions { verbose_log: true };
-    regalloc2::run(self, &crate::arch::MACHINE_ENV, &opts).expect("fatal regalloc error")
+    regalloc2::run(self, &MACHINE_ENV, &opts).expect("fatal regalloc error")
   }
 }
 
@@ -265,12 +274,12 @@ pub(crate) fn regalloc_vcode(
   let out = vcode.regalloc();
   // println!("{:#?}", out);
   let clobbers = get_clobbers(&vcode, &out);
-  let saved_regs = CALLEE_SAVED.iter().copied().filter(move |&r| clobbers.get(r));
+  let saved_regs = callee_saved().filter(move |&r| clobbers.get(r));
+  vcode.abi.clobbers = non_callee_saved().filter(|&r| clobbers.get(r)).collect();
   let mut edits = out.edits.into_iter().peekable();
   for _ in 0..out.num_spillslots { vcode.fresh_spill(8); }
   let stack_size_no_ret;
   let mut ar = if let [incoming, outgoing, ref spills @ ..] = *vcode.spills.0 {
-    vcode.abi.args_space = incoming;
     let mut spill_map = vec![0; vcode.spills.len()];
     let mut rsp_off = outgoing + u32::try_from(out.num_spillslots * 8).expect("overflow");
     for (&n, len) in spills.iter().zip(&mut spill_map[2..]).rev() {

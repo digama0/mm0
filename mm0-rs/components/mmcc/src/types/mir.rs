@@ -135,7 +135,7 @@ impl ArgAttr {
 }
 
 /// An argument in a struct (dependent tuple).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Arg {
   /// Extra properties of the binding
@@ -153,6 +153,7 @@ pub type Mm0Expr = global::Mm0Expr<Expr>;
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
+#[derive(Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
@@ -294,6 +295,49 @@ impl TyKind {
   #[must_use] pub fn as_int_ty(&self) -> Option<IntTy> {
     if let TyKind::Int(ity) = *self { Some(ity) } else { None }
   }
+
+  /// Does this type have a [`TyKind::Var`]?
+  #[must_use] pub fn has_tyvar(&self) -> bool {
+    match self {
+      TyKind::Unit |
+      TyKind::True |
+      TyKind::False |
+      TyKind::Bool |
+      TyKind::Int(_) |
+      TyKind::Input |
+      TyKind::Output => false,
+      TyKind::Var(_) => true,
+      TyKind::Own(ty) |
+      TyKind::Ref(_, ty) |
+      TyKind::Not(ty) |
+      TyKind::Ghost(ty) |
+      TyKind::Uninit(ty) |
+      TyKind::Moved(ty) => ty.has_tyvar(),
+      TyKind::Array(ty, n) => ty.has_tyvar() || n.has_tyvar(),
+      TyKind::RefSn(p) => p.has_tyvar(),
+      TyKind::Sn(e, ty) |
+      TyKind::HasTy(e, ty) => e.has_tyvar() || ty.has_tyvar(),
+      TyKind::Struct(tys) => tys.iter().any(|arg| arg.ty.has_tyvar()),
+      TyKind::All(_, ty1, ty2) |
+      TyKind::Imp(ty1, ty2) |
+      TyKind::Wand(ty1, ty2) => ty1.has_tyvar() || ty2.has_tyvar(),
+      TyKind::And(tys) |
+      TyKind::Or(tys) => tys.iter().any(|ty| ty.has_tyvar()),
+      TyKind::If(e, ty1, ty2) => e.has_tyvar() || ty1.has_tyvar() || ty2.has_tyvar(),
+      TyKind::Pure(e) => e.has_tyvar(),
+      TyKind::User(_, tys, es) =>
+        tys.iter().any(|ty| ty.has_tyvar()) || es.iter().any(|e| e.has_tyvar()),
+      TyKind::Heap(e1, e2, ty) => e1.has_tyvar() || e2.has_tyvar() || ty.has_tyvar(),
+    }
+  }
+
+  /// Substitute into the type arguments of a type.
+  #[must_use] pub fn subst(self: &Ty, tyargs: &[Ty]) -> Ty {
+    if !tyargs.is_empty() {
+      unimplemented!("type substitution")
+    }
+    self.clone()
+  }
 }
 
 impl HasAlpha for TyKind {
@@ -381,6 +425,7 @@ pub type EPlaceTy = (Option<EPlace>, Ty);
 /// A place expression.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Hash, PartialEq, Eq)]
 pub enum EPlaceKind {
   /// A variable reference.
   Var(VarId),
@@ -395,6 +440,18 @@ pub enum EPlaceKind {
   Proj(EPlace, Ty, u32),
 }
 
+impl EPlaceKind {
+  /// Does this place expression have a [`TyKind::Var`]?
+  #[must_use] pub fn has_tyvar(&self) -> bool {
+    match self {
+      EPlaceKind::Var(_) => false,
+      EPlaceKind::Index(p, ty, e) => p.has_tyvar() || ty.has_tyvar() || e.has_tyvar(),
+      EPlaceKind::Slice(p, ty, [e1, e2]) =>
+        p.has_tyvar() || ty.has_tyvar() || e1.has_tyvar() || e2.has_tyvar(),
+      EPlaceKind::Proj(p, ty, _) => p.has_tyvar() || ty.has_tyvar(),
+    }
+  }
+}
 impl HasAlpha for EPlaceKind {
   fn alpha(&self, a: &mut Alpha) -> Self {
     macro_rules! a {($e:expr) => {$e.alpha(a)}}
@@ -416,6 +473,7 @@ pub type Expr = Rc<ExprKind>;
 pub type ExprTy = (Option<Expr>, Ty);
 
 /// A pure expression.
+#[derive(Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.
@@ -475,6 +533,36 @@ pub enum ExprKind {
     /// The else case.
     els: Expr
   },
+}
+
+impl ExprKind {
+  /// Does this expression have a [`TyKind::Var`]?
+  #[must_use] pub fn has_tyvar(&self) -> bool {
+    match self {
+      ExprKind::Unit |
+      ExprKind::Var(_) |
+      ExprKind::Const(_) |
+      ExprKind::Bool(_) |
+      ExprKind::Int(_) => false,
+      ExprKind::Unop(_, e) |
+      ExprKind::Proj(e, _) => e.has_tyvar(),
+      ExprKind::Binop(_, e1, e2) |
+      ExprKind::Index(e1, e2) |
+      ExprKind::UpdateProj(e1, _, e2) => e1.has_tyvar() || e2.has_tyvar(),
+      ExprKind::If { cond: e1, then: e2, els: e3 } |
+      ExprKind::Slice(e1, e2, e3) |
+      ExprKind::UpdateIndex(e1, e2, e3) => e1.has_tyvar() || e2.has_tyvar() || e3.has_tyvar(),
+      ExprKind::UpdateSlice(e1, e2, e3, e4) =>
+        e1.has_tyvar() || e2.has_tyvar() || e3.has_tyvar() || e4.has_tyvar(),
+      ExprKind::List(es) |
+      ExprKind::Array(es) |
+      ExprKind::Mm0(Mm0Expr { subst: es, ..}) => es.iter().any(|e| e.has_tyvar()),
+      ExprKind::Sizeof(ty) => ty.has_tyvar(),
+      ExprKind::Ref(p) => todo!(),
+      ExprKind::Call { f, tys, args } =>
+        tys.iter().all(|e| e.has_tyvar()) || args.iter().any(|e| e.has_tyvar()),
+    }
+  }
 }
 
 impl std::fmt::Debug for ExprKind {
@@ -1055,19 +1143,6 @@ impl Place {
   #[must_use] pub fn local(local: VarId) -> Self { Self {local, proj: vec![]} }
   /// Push a projection onto a place.
   #[must_use] pub fn proj(mut self, p: (Ty, Projection)) -> Self { self.proj.push(p); self }
-
-  /// (Internal) iteration over the variables used by a place (in computationally relevant
-  /// positions).
-  pub fn foreach_use(&self, mut f: impl FnMut(VarId)) {
-    f(self.local);
-    for proj in &self.proj {
-      match proj.1 {
-        Projection::Index(v, _) => f(v),
-        Projection::Slice(x, l, _) => { f(x); f(l) }
-        Projection::Proj(_, _) | Projection::Deref => {}
-      }
-    }
-  }
 }
 
 impl From<VarId> for Place {
@@ -1236,12 +1311,6 @@ impl Operand {
       Self::Const(c) => Err(c)
     }
   }
-
-  /// (Internal) iteration over the variables used by an operand (in computationally relevant
-  /// positions).
-  pub fn foreach_use(&self, f: impl FnMut(VarId)) {
-    if let Ok(p) = self.place() { p.foreach_use(f) }
-  }
 }
 
 impl From<Constant> for Operand {
@@ -1375,27 +1444,6 @@ impl std::fmt::Debug for RValue {
   }
 }
 
-impl RValue {
-  /// (Internal) iteration over the variables used by an rvalue (in computationally relevant
-  /// positions).
-  pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
-    match self {
-      RValue::Use(o) |
-      RValue::Unop(_, o) |
-      RValue::Cast(_, o, _) => o.foreach_use(f),
-      RValue::Binop(_, o1, o2) |
-      RValue::Eq(_, _, o1, o2) => { o1.foreach_use(&mut *f); o2.foreach_use(f) }
-      RValue::Pun(_, p) |
-      RValue::Borrow(p) => p.foreach_use(f),
-      RValue::List(args) |
-      RValue::Array(args) => for o in &**args { o.foreach_use(&mut *f) }
-      RValue::Ghost(_) |
-      RValue::Mm0(..) |
-      RValue::Typeof(_) => {}
-    }
-  }
-}
-
 impl From<Operand> for RValue {
   #[inline] fn from(op: Operand) -> RValue { op.rv() }
 }
@@ -1523,16 +1571,7 @@ impl Statement {
   /// (Internal) iteration over the variables used by a statement (in computationally relevant
   /// positions).
   pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
-    match self {
-      Statement::Assign(lhs, _, rhs, vars) => {
-        let mut needed = false;
-        for r in &**vars {
-          if r.rel { needed = true; f(r.from) }
-        }
-        if needed { lhs.foreach_use(&mut *f); rhs.foreach_use(f) }
-      }
-      Statement::Let(lk, _, rv) => if lk.relevant() { rv.foreach_use(f) }
-    }
+    UseVisitor(f).visit_stmt(self)
   }
 }
 
@@ -1631,19 +1670,95 @@ impl std::fmt::Debug for Terminator {
 impl Terminator {
   /// (Internal) iteration over the variables used by a terminator (in computationally relevant
   /// positions).
-  pub fn foreach_use(&self, f: &mut impl FnMut(VarId)) {
-    match self {
+  pub fn foreach_use(&self, mut f: impl FnMut(VarId)) {
+    UseVisitor(f).visit_terminator(self)
+  }
+}
+
+pub(crate) trait Visitor {
+  fn visit_var(&mut self, v: VarId) {}
+
+  fn visit_place(&mut self, p: &Place) {
+    self.visit_var(p.local);
+    for proj in &p.proj {
+      match proj.1 {
+        Projection::Index(v, _) => self.visit_var(v),
+        Projection::Slice(x, l, _) => { self.visit_var(x); self.visit_var(l) }
+        Projection::Proj(_, _) | Projection::Deref => {}
+      }
+    }
+  }
+
+  fn visit_constant(&mut self, c: &Constant) {}
+
+  fn visit_operand(&mut self, o: &Operand) {
+    match o.place() {
+      Ok(p) => self.visit_place(p),
+      Err(c) => self.visit_constant(c),
+    }
+  }
+
+  fn visit_rvalue(&mut self, rv: &RValue) {
+    match rv {
+      RValue::Use(o) |
+      RValue::Unop(_, o) |
+      RValue::Cast(_, o, _) => self.visit_operand(o),
+      RValue::Binop(_, o1, o2) |
+      RValue::Eq(_, _, o1, o2) => { self.visit_operand(o1); self.visit_operand(o2) }
+      RValue::Pun(_, p) |
+      RValue::Borrow(p) => self.visit_place(p),
+      RValue::List(args) |
+      RValue::Array(args) => for o in &**args { self.visit_operand(o) }
+      RValue::Ghost(_) |
+      RValue::Mm0(..) |
+      RValue::Typeof(_) => {}
+    }
+  }
+
+  fn visit_stmt(&mut self, s: &Statement) {
+    match s {
+      Statement::Assign(lhs, _, rhs, vars) => {
+        let mut needed = false;
+        for r in &**vars {
+          if r.rel { needed = true; self.visit_var(r.from) }
+        }
+        if needed { self.visit_place(lhs); self.visit_operand(rhs) }
+      }
+      Statement::Let(lk, _, rv) => if lk.relevant() { self.visit_rvalue(rv) }
+    }
+  }
+
+  fn visit_terminator(&mut self, term: &Terminator) {
+    match term {
       Terminator::Jump(_, args) |
-      Terminator::Return(args) => for (_, r, o) in args { if *r { o.foreach_use(&mut *f) } }
-      Terminator::Call { args, .. } => for (r, o) in &**args { if *r { o.foreach_use(&mut *f) } }
+      Terminator::Return(args) => for (_, r, o) in args { if *r { self.visit_operand(o) } }
+      Terminator::Call { args, .. } => for (r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Unreachable(o) |
       Terminator::If(o, _) |
-      Terminator::Assert(o, _, true, _) => o.foreach_use(f),
+      Terminator::Assert(o, _, true, _) => self.visit_operand(o),
       Terminator::Assert(_, _, false, _) |
       Terminator::Jump1(_) |
       Terminator::Dead => {}
     }
   }
+
+  fn visit_basic_block(&mut self, bl: &BasicBlock) {
+    if !bl.is_dead() {
+      for s in &bl.stmts {
+        self.visit_stmt(s)
+      }
+      if let Some(t) = &bl.term {
+        self.visit_terminator(t)
+      }
+    }
+  }
+}
+
+/// A visitor that calls the function `F` on every computationally relevant use of a variable.
+struct UseVisitor<F>(F);
+
+impl<F: FnMut(VarId)> Visitor for UseVisitor<F> {
+  fn visit_var(&mut self, v: VarId) { (self.0)(v) }
 }
 
 /// A basic block, which consists of an initial context (containing the logical parameters to the
