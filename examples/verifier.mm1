@@ -40,12 +40,12 @@ do {
 
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
   (mmc-add '(
-    (struct CStr
+    (intrinsic struct CStr
       {(ghost len) : nat}
       {buf : (array u8 {len + 1})}
       {eq0 : (pure $ A. i (nth buf i = suc 0 <-> i = len) $)})
 
-    (struct Stat
+    (intrinsic struct Stat
       {st_dev : u64} {st_ino : u64} {st_nlink : u64}
       {st_mode : u32} {st_uid : u32} {st_gid : u32} {_ : i32}
       {st_rdev : u64} {st_size : i64}
@@ -55,15 +55,15 @@ do {
       {st_ctime : i64} {st_ctime_nsec : i64}
       {_ : (array i64 3)})
 
-    (intrinsic (sys_fstat {fd : u32}
+    (intrinsic proc (sys_fstat {fd : u32}
       (mut {(ghost buf) : (? Stat)}) {p : (&sn buf)} :
       (out {buf : Stat})
       u32))
-    (intrinsic (sys_open
+    (intrinsic proc (sys_open
       {fname : (& CStr)}
       {flags : {(sn O_RDONLY) or (sn {O_WRONLY + O_CREAT + O_TRUNC})}} :
       u32))
-    (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
+    (intrinsic proc (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
       {(ghost anon) : bool}
       {flags : (sn {(if anon MAP_PRIVATE {MAP_PRIVATE + MAP_ANONYMOUS}) : u64})}
       {fd : (if anon (sn {(- 1) : i64}) i64)}

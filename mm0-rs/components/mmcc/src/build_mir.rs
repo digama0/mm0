@@ -1452,7 +1452,6 @@ impl<'a> BuildMir<'a> {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
           if attr.contains(ty::ArgAttr::NONDEP) { ArgAttr::NONDEP } else { ArgAttr::empty() }
         }
-        if let hir::ProcKind::Intrinsic(_) = kind { return None }
         let mut args2 = Vec::with_capacity(args.len());
         assert_eq!(self.push_args(args, |attr, var, ty| {
           args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})

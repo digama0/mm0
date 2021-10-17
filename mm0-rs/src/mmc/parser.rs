@@ -12,7 +12,8 @@ use mmcc::build_ast::{BadBinding, BuildAst, BuildMatch, Incomplete, Pattern, Pat
   RenameError, Renames, UnreachablePattern};
 use mmcc::types::{Binop, IdxVec, LambdaId, ProofId, Unop, VarId};
 use mmcc::{Symbol, intern, types::{FieldName, Mm0Expr, Size, Spanned, global}};
-use mmcc::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy, Intrinsic};
+use mmcc::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy,
+  IntrinsicProc, IntrinsicConst, IntrinsicGlobal, IntrinsicType};
 #[allow(clippy::wildcard_imports)] use mmcc::types::ast::{self, *};
 
 macro_rules! make_keywords {
@@ -214,6 +215,7 @@ enum ItemGroup {
   Item(Item),
   Global(Uncons),
   Const(Uncons),
+  Intrinsic(Uncons),
 }
 
 #[derive(Debug, DeepSizeOf)]
@@ -221,17 +223,22 @@ enum ItemIterInner {
   New,
   Global(Uncons),
   Const(Uncons),
+  Intrinsic(Box<ItemIter>),
 }
 
 /// An iterator over items. This is not a proper iterator in the sense of implementing `Iterator`,
 /// but it can be used with the [`Parser::parse_next_item`] method to extract a stream of items.
 #[derive(Debug, DeepSizeOf)]
-pub(crate) struct ItemIter(ItemIterInner, Uncons);
+pub(crate) struct ItemIter {
+  group: ItemIterInner,
+  u: Uncons,
+  intrinsic: bool
+}
 
 impl ItemIter {
   /// Construct a new iterator from an `I: Iterator<Item=LispVal>`.
   #[must_use] pub(crate) fn new(e: LispVal) -> Self {
-    Self(ItemIterInner::New, Uncons::New(e))
+    Self { group: ItemIterInner::New, u: Uncons::New(e), intrinsic: false }
   }
 }
 
@@ -256,6 +263,10 @@ pub(crate) struct Parser<'a, C> {
 /// Uses the span of the [`LispVal`] to construct a [`Spanned`]`<T>`.
 #[must_use] fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
   Spanned {span: try_get_fspan(fsp, e), k}
+}
+
+fn get_intrinsic<T>(sp: &FileSpan, name: Symbol, f: impl FnOnce(Symbol) -> Option<T>) -> Result<T> {
+  f(name).ok_or_else(|| ElabError::new_e(sp, "unknown intrinsic"))
 }
 
 enum DeclAssign {
@@ -526,7 +537,9 @@ impl<'a, C> Parser<'a, C> {
     Err(ElabError::new_e(span, "decl: syntax error"))
   }
 
-  fn push_decl(&mut self, base: &FileSpan, e: &LispVal, is_const: bool) -> Result<Item> {
+  fn push_decl(&mut self,
+    base: &FileSpan, e: &LispVal, is_const: bool, intrinsic: bool,
+  ) -> Result<Item> {
     let span = try_get_fspan(base, e);
     if let DeclAssign::Let(lhs, rhs) = self.parse_decl_asgn(&span, e)? {
       self.on_names(&span, &lhs, &mut |this, span, name| {
@@ -539,7 +552,20 @@ impl<'a, C> Parser<'a, C> {
       })?;
       let rhs = self.parse_expr(&span, rhs)?;
       let lhs = self.push_tuple_pattern(&span, false, lhs)?;
-      let k = if is_const { ItemKind::Const(lhs, rhs) } else { ItemKind::Global(lhs, rhs) };
+      macro_rules! get_intrinsic {($f:ident) => {
+        if intrinsic {
+          if let Some((_, name, _)) = lhs.k.as_single_name() {
+            Some(get_intrinsic(&lhs.span, name, $f::from_symbol)?)
+          } else {
+            return Err(ElabError::new_e(&lhs.span, "pattern matching is not allowed in intrinsics"))
+          }
+        } else { None }
+      }}
+      let k = if is_const {
+        ItemKind::Const(get_intrinsic!(IntrinsicConst), lhs, rhs)
+      } else {
+        ItemKind::Global(get_intrinsic!(IntrinsicGlobal), lhs, rhs)
+      };
       Ok(Spanned {span, k})
     } else {
       Err(ElabError::new_e(&span, "decl: assignment not allowed here"))
@@ -844,7 +870,12 @@ impl<'a, C> Parser<'a, C> {
     })
   }
 
-  fn parse_proc(&mut self, span: FileSpan, kind: &dyn Fn(Symbol) -> Result<ProcKind>, mut u: Uncons) -> Result<Item> {
+  fn parse_proc(&mut self,
+    span: FileSpan,
+    kind: &dyn Fn(Symbol) -> Result<ProcKind>,
+    mut u: Uncons,
+    intrinsic: bool,
+  ) -> Result<Item> {
     struct OutVal {
       ghost: bool,
       index: u32,
@@ -870,6 +901,9 @@ impl<'a, C> Parser<'a, C> {
       _ => return Err(ElabError::new_e(&span, "func/proc: syntax error"))
     };
     let kind = kind(name.k)?;
+    let intrinsic = if intrinsic {
+      Some(get_intrinsic(&name.span, name.k, IntrinsicProc::from_symbol)?)
+    } else { None };
     self.compiler.forward_declare_proc(&name.span, name.k)?;
     if let Some(u) = header {
       let mut u = u.peekable();
@@ -961,13 +995,13 @@ impl<'a, C> Parser<'a, C> {
     let tyargs = self.ba.num_tyvars();
     let args = args.into();
     let variant = if let Some(e) = u.head() {
-      if let ProcKind::Intrinsic(_) = kind {
+      if intrinsic.is_some() {
         return Err(ElabError::new_e(&span, "intrinsic: unexpected body"))
       }
       self.parse_variant(&span, &e)?
     } else {None};
     let body = self.parse_block(&span, u)?;
-    Ok(Spanned {span, k: ItemKind::Proc {kind, name, tyargs, args, rets, variant, body}})
+    Ok(Spanned {span, k: ItemKind::Proc {intrinsic, kind, name, tyargs, args, rets, variant, body}})
   }
 
   #[allow(clippy::type_complexity)]
@@ -993,29 +1027,30 @@ impl<'a, C> Parser<'a, C> {
   }
 
   /// Parses the input lisp literal `e` into a list of top level items and appends them to `ast`.
-  fn push_item_group(&mut self, base: &FileSpan, e: &LispVal) -> Result<ItemGroup> {
+  fn push_item_group(&mut self,
+    base: &FileSpan, e: &LispVal, intrinsic: bool,
+  ) -> Result<ItemGroup> {
     let span = try_get_fspan(base, e);
     Ok(match self.head_keyword(e) {
       Some((Keyword::Proc, u)) => {
         let f = |a| Ok(if a == Keyword::Main.as_symbol() {ProcKind::Main} else {ProcKind::Proc});
-        ItemGroup::Item(self.parse_proc(span, &f, u)?)
+        ItemGroup::Item(self.parse_proc(span, &f, u, intrinsic)?)
       }
       Some((Keyword::Func, u)) => {
         let f = |_| Ok(ProcKind::Func);
-        ItemGroup::Item(self.parse_proc(span, &f, u)?)
+        ItemGroup::Item(self.parse_proc(span, &f, u, intrinsic)?)
       }
-      Some((Keyword::Intrinsic, u)) => {
-        let f = |a| Ok(ProcKind::Intrinsic(Intrinsic::from_symbol(a)
-          .ok_or_else(|| ElabError::new_e(&span, "unknown intrinsic"))?));
-        ItemGroup::Item(self.parse_proc(span.clone(), &f, u)?)
-      }
+      Some((Keyword::Intrinsic, u)) => ItemGroup::Intrinsic(u),
       Some((Keyword::Global, u)) => ItemGroup::Global(u),
       Some((Keyword::Const, u)) => ItemGroup::Const(u),
       Some((Keyword::Typedef, mut u)) =>
         if let (Some(e1), Some(val), true) = (u.next(), u.next(), u.is_empty()) {
           let (name, tyargs, args) = self.parse_name_and_tyargs(base, &e1)?;
+          let intrinsic = if intrinsic {
+            Some(get_intrinsic(&name.span, name.k, IntrinsicType::from_symbol)?)
+          } else { None };
           let val = self.parse_ty(&span, &val)?;
-          ItemGroup::Item(spanned(base, e, ItemKind::Typedef {name, tyargs, args, val}))
+          ItemGroup::Item(spanned(base, e, ItemKind::Typedef {intrinsic, name, tyargs, args, val}))
         } else {
           return Err(ElabError::new_e(try_get_span(base, e), "typedef: syntax error"))
         },
@@ -1023,10 +1058,13 @@ impl<'a, C> Parser<'a, C> {
         let e1 = u.next().ok_or_else(||
           ElabError::new_e(try_get_span(base, e), "struct: expecting name"))?;
         let (name, tyargs, args) = self.parse_name_and_tyargs(base, &e1)?;
+        let intrinsic = if intrinsic {
+          Some(get_intrinsic(&name.span, name.k, IntrinsicType::from_symbol)?)
+        } else { None };
         let mut fields = vec![];
         for e in u { self.push_args(base, false, e, &mut fields)? }
         let val = Spanned {span, k: TypeKind::Struct(fields.into())};
-        ItemGroup::Item(spanned(base, e, ItemKind::Typedef {name, tyargs, args, val}))
+        ItemGroup::Item(spanned(base, e, ItemKind::Typedef {intrinsic, name, tyargs, args, val}))
       }
       _ => return Err(ElabError::new_e(try_get_span(base, e),
         format!("MMC: unknown top level item: {}", self.fe.to(e))))
@@ -1035,26 +1073,33 @@ impl<'a, C> Parser<'a, C> {
 
   /// Extract the next item from the provided item iterator.
   pub(crate) fn parse_next_item(&mut self,
-    base: &FileSpan, ItemIter(group, u): &mut ItemIter
+    base: &FileSpan, ItemIter {group, u, intrinsic}: &mut ItemIter
   ) -> Result<Option<Item>> {
     self.with_ctx(|this| Ok(loop {
       match group {
         ItemIterInner::New => if let Some(e) = u.next() {
-          match this.push_item_group(base, &e)? {
+          match this.push_item_group(base, &e, *intrinsic)? {
             ItemGroup::Item(it) => break Some(it),
             ItemGroup::Global(u2) => *group = ItemIterInner::Global(u2),
             ItemGroup::Const(u2) => *group = ItemIterInner::Const(u2),
+            ItemGroup::Intrinsic(u) => *group = ItemIterInner::Intrinsic(
+              Box::new(ItemIter {group: ItemIterInner::New, u, intrinsic: true})),
           }
         } else {
           break None
         },
         ItemIterInner::Global(u2) => if let Some(e) = u2.next() {
-          break Some(this.push_decl(base, &e, false)?)
+          break Some(this.push_decl(base, &e, false, *intrinsic)?)
         } else {
           *group = ItemIterInner::New
         },
         ItemIterInner::Const(u2) => if let Some(e) = u2.next() {
-          break Some(this.push_decl(base, &e, true)?)
+          break Some(this.push_decl(base, &e, true, *intrinsic)?)
+        } else {
+          *group = ItemIterInner::New
+        }
+        ItemIterInner::Intrinsic(iter) => if let Some(item) = this.parse_next_item(base, iter)? {
+          break Some(item)
         } else {
           *group = ItemIterInner::New
         }

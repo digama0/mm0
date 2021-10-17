@@ -1693,7 +1693,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           Some(&ProcTy {kind, tyargs, ref args, ref rets, ..}) => {
             assert_eq!(tys.len(), u32_as_usize(tyargs));
             match kind {
-              ProcKind::Intrinsic(_) | ProcKind::Proc | ProcKind::Main => unreachable!(),
+              ProcKind::Proc | ProcKind::Main => unreachable!(),
               ProcKind::Func => {
                 let (args, rets) = (args.clone(), rets.clone());
                 let args = args.from_global(self, tys);
@@ -2792,7 +2792,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let (side_effect, pe) = match kind {
       ProcKind::Func => (false, pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
         args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))),
-      ProcKind::Proc | ProcKind::Intrinsic(_) => (true, Err(span)),
+      ProcKind::Proc => (true, Err(span)),
       ProcKind::Main => {
         self.errors.push(hir::Spanned {span, k: TypeError::ReentrantMain});
         return None
@@ -4054,7 +4054,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   /// Construct the HIR for a top level item, performing type inference.
   pub fn lower_item(&mut self, Spanned {span, k: item}: &'a ast::Item) -> Option<hir::Item<'a>> {
     let item = match item {
-      &ast::ItemKind::Proc {kind, ref name, tyargs, ref args, ref rets, ref variant, ref body} => {
+      &ast::ItemKind::Proc {
+        intrinsic, kind, ref name, tyargs, ref args, ref rets, ref variant, ref body
+      } => {
         let name = hir::Spanned {span: &name.span, k: name.k};
         let args2 = args.iter()
           .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
@@ -4100,6 +4102,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           }
           Entry::Vacant(e) => { e.insert(item); }
         }
+        if intrinsic.is_some() { return None }
         self.dc.context = ctx;
         let sigma = match *t_args {
           [] => self.common.t_unit,
@@ -4125,7 +4128,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           (k, (Some(self.common.e_unit), self.common.t_false))}));
         hir::ItemKind::Proc {kind, name, tyargs, args, gen, rets, variant, body}
       }
-      ast::ItemKind::Global(lhs, rhs) => {
+      ast::ItemKind::Global(intrinsic, lhs, rhs) => {
         let ctx = self.dc.context;
         let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
@@ -4148,7 +4151,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         } else { todo!() }
         hir::ItemKind::Global {lhs, rhs}
       }
-      ast::ItemKind::Const(lhs, rhs) => {
+      ast::ItemKind::Const(intrinsic, lhs, rhs) => {
         let ctx = self.dc.context;
         let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
@@ -4177,7 +4180,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         } else { todo!() }
         return None
       }
-      &ast::ItemKind::Typedef {ref name, tyargs, ref args, ref val} => {
+      &ast::ItemKind::Typedef {intrinsic, ref name, tyargs, ref args, ref val} => {
         let name = hir::Spanned {span: &name.span, k: name.k};
         let args2 = args.iter()
           .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();

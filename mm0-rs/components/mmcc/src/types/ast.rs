@@ -36,7 +36,7 @@
 use num::BigInt;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{FileSpan, Symbol};
-use super::{Binop, FieldName, ProofId, Mm0Expr, Size, Spanned, Unop, VarId, entity::Intrinsic};
+use super::{Binop, FieldName, ProofId, Mm0Expr, Size, Spanned, Unop, VarId};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
@@ -544,10 +544,6 @@ pub enum ProcKind {
   Proc,
   /// The main procedure. (Body provided.)
   Main,
-  /// An intrinsic declaration, which is only here to put the function declaration in user code.
-  /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
-  /// called until they are declared using an `intrinsic` declaration.
-  Intrinsic(Intrinsic),
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ProcKind);
 
@@ -593,6 +589,10 @@ pub type Item = Spanned<ItemKind>;
 pub enum ItemKind {
   /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
   Proc {
+    /// An intrinsic declaration, which is only here to put the function declaration in user code.
+    /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
+    /// called until they are declared using an `intrinsic` declaration.
+    intrinsic: Option<super::entity::IntrinsicProc>,
     /// The type of declaration: `func`, `proc`, or `intrinsic`.
     kind: ProcKind,
     /// The name of the procedure.
@@ -610,6 +610,10 @@ pub enum ItemKind {
   },
   /// A global variable declaration.
   Global(
+    /// An intrinsic global declaration.
+    /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
+    /// used until they are declared using an `intrinsic` declaration.
+    Option<super::entity::IntrinsicGlobal>,
     /// The variable(s) being declared
     TuplePattern,
     /// The value of the declaration
@@ -617,6 +621,10 @@ pub enum ItemKind {
   ),
   /// A constant declaration.
   Const(
+    /// An intrinsic constant declaration.
+    /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
+    /// used until they are declared using an `intrinsic` declaration.
+    Option<super::entity::IntrinsicConst>,
     /// The constant(s) being declared
     TuplePattern,
     /// The value of the declaration
@@ -624,6 +632,10 @@ pub enum ItemKind {
   ),
   /// A type definition.
   Typedef {
+    /// An intrinsic typedef.
+    /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
+    /// used until they are declared using an `intrinsic` declaration.
+    intrinsic: Option<super::entity::IntrinsicType>,
     /// The name of the newly declared type
     name: Spanned<Symbol>,
     /// The number of type arguments

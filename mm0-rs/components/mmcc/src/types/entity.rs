@@ -8,7 +8,9 @@ use crate::{Compiler, FileSpan, Symbol, intern, symbol::{Interner, init_dense_sy
 use super::Spanned;
 
 macro_rules! make_prims {
-  {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
+  {$($(#[$attr0:meta])* enum $name:ident {
+    $($(#[$attr:meta])* $x:ident $($mark:literal)?: $e:expr,)*
+  })* } => {
     $(
       $(#[$attr0])*
       #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -41,7 +43,7 @@ macro_rules! make_prims {
         /// Get the symbol for this primitive.
         #[must_use] pub fn as_symbol(self) -> Symbol {
           lazy_static! {
-            static ref INTERNED: [Symbol; [$($name::$x),*].len()] = [$(intern($e)),*];
+            static ref INTERNED: [Symbol; <[()]>::len(&[$(() $($mark)?),*])] = [$(intern($e)),*];
           }
           INTERNED[self as usize]
         }
@@ -259,7 +261,7 @@ make_prims! {
 
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular
   /// function calls.
-  enum Intrinsic {
+  enum IntrinsicProc {
     /// Intrinsic for the [`fstat`](https://man7.org/linux/man-pages/man2/fstat.2.html) system call.
     FStat: "sys_fstat",
     /// Intrinsic for the [`open`](https://man7.org/linux/man-pages/man2/open.2.html) system call.
@@ -267,6 +269,15 @@ make_prims! {
     /// Intrinsic for the [`mmap`](https://man7.org/linux/man-pages/man2/mmap.2.html) system call.
     MMap: "sys_mmap",
   }
+
+  /// Intrinsic global variables.
+  enum IntrinsicGlobal {}
+
+  /// Intrinsic constants.
+  enum IntrinsicConst {}
+
+  /// Intrinsic typedefs.
+  enum IntrinsicType {}
 }
 
 /// The typechecking status of a typedef.
