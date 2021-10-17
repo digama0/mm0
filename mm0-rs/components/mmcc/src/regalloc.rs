@@ -15,6 +15,7 @@ use regalloc2::{Allocation, Edit, Function, PReg, ProgPoint, SpillSlot, VReg};
 
 use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offset, PAMode, PInst,
   PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, RegMem, RegMemImm};
+use crate::linker::ConstData;
 use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
 use crate::types::mir::{Arg, Cfg};
@@ -264,12 +265,13 @@ pub(crate) fn regalloc_vcode(
   names: &HashMap<Symbol, Entity>,
   func_mono: &HashMap<Symbol, ProcId>,
   funcs: &IdxVec<ProcId, ProcAbi>,
+  consts: &ConstData,
   cfg: &Cfg,
   allocs: &Allocations,
   rets: &[Arg],
 ) -> PCode {
   // simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default());
-  let mut vcode = build_vcode(names, func_mono, funcs, cfg, allocs, rets);
+  let mut vcode = build_vcode(names, func_mono, funcs, consts, cfg, allocs, rets);
   // println!("{:#?}", vcode);
   let out = vcode.regalloc();
   // println!("{:#?}", out);
@@ -401,6 +403,7 @@ mod test {
     let names = HashMap::new();
     let func_mono = HashMap::new();
     let funcs = IdxVec::new();
+    let consts = ConstData::default();
     let mut fresh_var = VarId::default();
     let u8 = IntTy::UInt(Size::S8);
     let u8ty = Rc::new(TyKind::Int(u8));
@@ -454,7 +457,7 @@ mod test {
     let allocs = cfg.storage(&names);
     println!("after storage:\n{:#?}", cfg);
     println!("allocs = {:#?}", allocs);
-    let res = regalloc_vcode(&names, &func_mono, &funcs, cfg, &allocs, &proc.rets);
+    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, &allocs, &proc.rets);
     println!("{:#?}", res);
   }
 }

@@ -97,6 +97,13 @@ pub enum TuplePatternKind {
   Error(TuplePattern, Ty),
 }
 
+impl TuplePatternKind {
+  /// Get the type of this tuple pattern.
+  #[must_use] pub fn ty(&self) -> &Ty {
+    match self { Self::Name(_, _, ty) | Self::Tuple(_, _, ty) | Self::Error(_, ty) => ty }
+  }
+}
+
 impl<'a> ToGlobal<'a> for ty::TuplePatternKind<'a> {
   type Output = Rc<TuplePatternKind>;
   fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
@@ -124,6 +131,13 @@ pub enum ArgKind {
   /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
   /// invocations, they act as let binders in the remainder of the arguments.)
   Let(TuplePattern, Expr),
+}
+
+impl ArgKind {
+  /// Get the type of this tuple pattern.
+  #[must_use] pub fn ty(&self) -> &Ty {
+    match self { Self::Lam(arg) | Self::Let(arg, _) => arg.ty() }
+  }
 }
 
 impl<'a> ToGlobal<'a> for ty::ArgS<'a> {

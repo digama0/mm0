@@ -4153,7 +4153,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       ast::ItemKind::Const(intrinsic, lhs, rhs) => {
         let ctx = self.dc.context;
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
+        let lhs_sp = &lhs.span;
+        let lhs = self.lower_tuple_pattern(lhs_sp, &lhs.k, None, None).0;
         self.dc.context = ctx;
         let rhs_sp = &rhs.span;
         let rhs = self.check_pure_expr(rhs, lhs.ty());
@@ -4162,10 +4163,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           let item = Entity::Const(Spanned {
             span: span.clone(),
             k: ConstTc::Checked {
-              ty: lhs.k.ty().to_global(self),
+              ty: self.whnf_ty(lhs_sp, lhs.k.ty().into()).to_ty(self).to_global(self),
               e: rhs.to_global(self),
               whnf: self.whnf_expr(rhs_sp, rhs).to_global(self),
-              imm64: None,
             }
           });
           match self.names.entry(name) {

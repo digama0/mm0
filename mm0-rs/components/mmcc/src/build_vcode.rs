@@ -15,6 +15,7 @@ use std::rc::Rc;
 use num::BigInt;
 use regalloc2::{Operand as ROperand, PReg};
 
+use crate::linker::ConstData;
 use crate::types::entity::ConstTc;
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
@@ -23,7 +24,7 @@ use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{IdxVec, IntTy, Size, Spanned};
 use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
-  ChunkVec, InstId, ProcId, ProcAbi, RegClass, SpillId, VReg};
+  ChunkVec, ConstRef, InstId, ProcAbi, ProcId, RegClass, SpillId, VReg};
 
 #[allow(clippy::wildcard_imports)]
 use crate::types::mir::*;
@@ -120,6 +121,7 @@ struct LowerCtx<'a> {
   names: &'a HashMap<Symbol, Entity>,
   func_mono: &'a HashMap<Symbol, ProcId>,
   funcs: &'a IdxVec<ProcId, ProcAbi>,
+  consts: &'a ConstData,
   code: VCode,
   var_map: HashMap<AllocId, (RegMem, Size)>,
   block_map: HashMap<BlockId, VBlockId>,
@@ -136,6 +138,7 @@ impl<'a> LowerCtx<'a> {
     names: &'a HashMap<Symbol, Entity>,
     func_mono: &'a HashMap<Symbol, ProcId>,
     funcs: &'a IdxVec<ProcId, ProcAbi>,
+    consts: &'a ConstData,
     cfg: &'a Cfg,
     allocs: &'a Allocations,
   ) -> Self {
@@ -145,6 +148,7 @@ impl<'a> LowerCtx<'a> {
       names,
       func_mono,
       funcs,
+      consts,
       code: VCode::default(),
       block_map: HashMap::new(),
       var_map: HashMap::new(),
@@ -233,46 +237,51 @@ impl<'a> LowerCtx<'a> {
     rm
   }
 
-  fn get_const_64(&mut self, c: &Constant) -> u64 {
+  fn get_const(&mut self, c: &Constant) -> (u32, ConstRef) {
     match c.k {
       ConstKind::Bool => {
         let_unchecked!(e as Some(e) = &c.ety.0);
-        let_unchecked!(ExprKind::Bool(b) = **e, b.into())
+        let_unchecked!(ExprKind::Bool(b) = **e, (1, ConstRef::Value(b.into())))
       }
       ConstKind::Int => {
         let_unchecked!(e as Some(e) = &c.ety.0);
         let_unchecked!(n as ExprKind::Int(n) = &**e);
-        if let Ok(n) = u64::try_from(n) { n }
-        else { (n & BigInt::from(u64::MAX)).try_into().expect("impossible") }
+        let_unchecked!(ity as TyKind::Int(ity) = *c.ety.1);
+        let n = ity.zero_extend_as_u64(n).expect("impossible");
+        (ity.size().bytes().expect("constant too large to compile").into(), ConstRef::Value(n))
       }
-      ConstKind::Uninit => 0,
-      ConstKind::Const(c) => if_chain! {
-        if let Some(Entity::Const(tc)) = self.names.get(&c);
-        if let ConstTc::Checked { imm64: Some(imm), .. } = tc.k;
-        then { imm }
-        else { panic!("cannot resolve constant to an integer value") }
-      },
+      ConstKind::Uninit => {
+        let sz = c.ety.1.sizeof(self.names).expect("size must be known at compile time");
+        (sz.try_into().expect("overflow"), ConstRef::Value(0))
+      }
+      ConstKind::Const(c) => self.consts[c],
       ConstKind::Sizeof => {
-        let_unchecked!(e as Some(e) = &c.ety.0);
-        let_unchecked!(ty as ExprKind::Sizeof(ref ty) = **e);
-        ty.sizeof(self.names).expect("size must be known at compile time")
+        let (sz, ty) = c.ty_as_sizeof();
+        let sizeof = ty.sizeof(self.names).expect("size must be known at compile time");
+        (sz.bytes().expect("can't evaluate unbounded sizeof").into(), ConstRef::Value(sizeof))
       }
       ConstKind::Unit |
       ConstKind::ITrue |
       ConstKind::Mm0Proof(_) |
       ConstKind::Contra(_, _) => unreachable!("unexpected ZST"),
+      #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
       ConstKind::As(ref c) => {
-        let n = self.get_const_64(&c.0);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless)]
-        match c.1 {
-          IntTy::Int(Size::S8) => n as i8 as u64,
-          IntTy::Int(Size::S16) => n as i16 as u64,
-          IntTy::Int(Size::S32) => n as i32 as u64,
-          IntTy::UInt(Size::S8) => n as u8 as u64,
-          IntTy::UInt(Size::S16) => n as u16 as u64,
-          IntTy::UInt(Size::S32) => n as u32 as u64,
-          _ => n,
-        }
+        let val = self.get_const(&c.0);
+        let src = c.0.ety.1.as_int_ty().expect("not casting from int type");
+        let n = self.consts.value(val);
+        let n = match src {
+          IntTy::Int(Size::S8) => i64::from(n as i8) as u64,
+          IntTy::Int(Size::S16) => i64::from(n as i16) as u64,
+          IntTy::Int(Size::S32) => i64::from(n as i32) as u64,
+          _ => n
+        };
+        let n = match c.1.size() {
+          Size::S8 => (n as u8).into(),
+          Size::S16 => (n as u16).into(),
+          Size::S32 => (n as u32).into(),
+          _ => n
+        };
+        (c.1.size().bytes().expect("impossible").into(), ConstRef::Value(n))
       }
     }
   }
@@ -280,7 +289,10 @@ impl<'a> LowerCtx<'a> {
   fn get_operand(&mut self, o: &Operand) -> RegMemImm<u64> {
     match o.place() {
       Ok(p) => self.get_place(p).into(),
-      Err(c) => self.get_const_64(c).into(),
+      Err(c) => match self.get_const(c).1 {
+        ConstRef::Value(val) => val.into(),
+        ConstRef::Ptr(addr) => AMode::const_(addr).into()
+      }
     }
   }
 
@@ -868,11 +880,12 @@ pub(crate) fn build_vcode(
   names: &HashMap<Symbol, Entity>,
   func_mono: &HashMap<Symbol, ProcId>,
   funcs: &IdxVec<ProcId, ProcAbi>,
+  consts: &ConstData,
   cfg: &Cfg,
   allocs: &Allocations,
   rets: &[Arg],
 ) -> VCode {
-  let mut lctx = LowerCtx::new(names, func_mono, funcs, cfg, allocs);
+  let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs);
   let block_args = lctx.build_block_args();
   lctx.build_blocks(&block_args, rets);
   lctx.finish()

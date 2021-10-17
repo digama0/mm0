@@ -6,7 +6,7 @@ use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};
 
 use crate::types::{IdxVec, Size,
-  vcode::{BlockId, ConstId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
+  vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
 
 const fn preg(i: usize) -> PReg { PReg::new(i, regalloc2::RegClass::Int) }
 
@@ -238,8 +238,8 @@ pub(crate) enum Offset<N = u32> {
   Spill(SpillId, N),
   /// An offset into the given global (in the .data / .bss section).
   Global(GlobalId, N),
-  /// An offset into the given constant (in the .rodata section).
-  Const(ConstId, N),
+  /// An offset into the constant pool (the .rodata section).
+  Const(N),
 }
 
 impl<N: Zero + Debug> Debug for Offset<N> {
@@ -250,8 +250,7 @@ impl<N: Zero + Debug> Debug for Offset<N> {
       Self::Spill(i, n) => write!(f, "{:?} + {:?}", i, n),
       Self::Global(i, n) if n.is_zero() => i.fmt(f),
       Self::Global(i, n) => write!(f, "{:?} + {:?}", i, n),
-      Self::Const(i, n) if n.is_zero() => i.fmt(f),
-      Self::Const(i, n) => write!(f, "{:?} + {:?}", i, n),
+      Self::Const(n) => write!(f, "const[{:?}]", n),
     }
   }
 }
@@ -277,7 +276,7 @@ impl From<Offset> for Offset<u64> {
       Offset::Real(i) => Offset::Real(i.into()),
       Offset::Spill(s, i) => Offset::Spill(s, i.into()),
       Offset::Global(g, i) => Offset::Global(g, i.into()),
-      Offset::Const(c, i) => Offset::Const(c, i.into()),
+      Offset::Const(i) => Offset::Const(i.into()),
     }
   }
 }
@@ -288,7 +287,7 @@ impl TryFrom<Offset<u64>> for Offset {
       Offset::Real(i) => Offset::Real(u32::try_from(i)?),
       Offset::Spill(s, i) => Offset::Spill(s, u32::try_from(i)?),
       Offset::Global(g, i) => Offset::Global(g, u32::try_from(i)?),
-      Offset::Const(c, i) => Offset::Const(c, u32::try_from(i)?),
+      Offset::Const(i) => Offset::Const(u32::try_from(i)?),
     })
   }
 }
@@ -300,7 +299,7 @@ impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Offset<N> {
       Offset::Real(i) => Offset::Real(i + n),
       Offset::Spill(s, i) => Offset::Spill(s, i + n),
       Offset::Global(g, i) => Offset::Global(g, i + n),
-      Offset::Const(c, i) => Offset::Const(c, i + n),
+      Offset::Const(i) => Offset::Const(i + n),
     }
   }
 }
@@ -353,7 +352,7 @@ impl<Reg: IsReg> AMode<Reg> {
   pub(crate) fn reg(r: Reg) -> Self { Self { off: Offset::ZERO, base: r, si: None } }
   pub(crate) fn spill(i: SpillId) -> Self { Offset::Spill(i, 0).into() }
   pub(crate) fn global(i: GlobalId) -> Self { Offset::Global(i, 0).into() }
-  pub(crate) fn const_(i: ConstId) -> Self { Offset::Const(i, 0).into() }
+  pub(crate) fn const_(i: u32) -> Self { Offset::Const(i).into() }
 }
 
 impl AMode {

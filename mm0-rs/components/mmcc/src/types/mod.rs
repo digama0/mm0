@@ -295,6 +295,21 @@ impl IntTy {
       IntTy::UInt(Size::S64) => u64::try_from(n).is_ok(),
     }
   }
+
+  /// Convert a value of this type to a `u64` by zero extension.
+  #[allow(clippy::cast_sign_loss)]
+  #[must_use] pub fn zero_extend_as_u64(self, n: &BigInt) -> Option<u64> {
+    match self {
+      IntTy::Int(Size::S8) => Some((i8::try_from(n).ok()? as u8).into()),
+      IntTy::Int(Size::S16) => Some((i16::try_from(n).ok()? as u16).into()),
+      IntTy::Int(Size::S32) => Some((i32::try_from(n).ok()? as u32).into()),
+      IntTy::Int(Size::S64 | Size::Inf) => Some(i64::try_from(n).ok()? as u64),
+      IntTy::UInt(Size::S8) => Some(u8::try_from(n).ok()?.into()),
+      IntTy::UInt(Size::S16) => Some(u16::try_from(n).ok()?.into()),
+      IntTy::UInt(Size::S32) => Some(u32::try_from(n).ok()?.into()),
+      IntTy::UInt(Size::S64 | Size::Inf) => u64::try_from(n).ok(),
+    }
+  }
 }
 
 impl PartialOrd for IntTy {

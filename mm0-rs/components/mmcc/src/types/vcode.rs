@@ -19,8 +19,6 @@ impl Idx for InstId {
   fn from_usize(n: usize) -> Self { Self::new(n) }
 }
 mk_id! {
-  /// An ID for a constant to be placed in the constant pool.
-  ConstId(Debug("c")),
   /// An ID for a global static variable to be placed in the global area.
   GlobalId(Debug("g")),
   /// An ID for a (monomorphized) function that can be called.
@@ -34,6 +32,15 @@ impl SpillId {
   pub const INCOMING: SpillId = SpillId(0);
   /// The spill slot corresponding to the outgoing arguments, to functions called by this one.
   pub const OUTGOING: SpillId = SpillId(1);
+}
+
+/// The ABI of a constant.
+#[derive(Copy, Clone, Debug)]
+pub enum ConstRef {
+  /// The value is stored inline. Values of less than 8 bytes are zero-padded to 8 bytes here.
+  Value(u64),
+  /// The value is stored at this relative offset into the read-only section.
+  Ptr(u32),
 }
 
 /// A type for instruction data in a `VCode<I>`.

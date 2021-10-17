@@ -4,7 +4,7 @@ use std::{rc::Rc, fmt::Debug, mem};
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
-use types::IntTy;
+use types::{IntTy, Size};
 use crate::{Idx, Symbol};
 use super::types;
 use types::{Spanned, VarId as HVarId, hir, ty, mir};
@@ -752,7 +752,7 @@ impl<'a> BuildMir<'a> {
         RValue::Cast(CastKind::Mem(self.operand(*h)?), e, ty)
       }
       hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
-      hir::ExprKind::Sizeof(ty) => Constant::sizeof(self.tr(ty)).into(),
+      hir::ExprKind::Sizeof(ty) => Constant::sizeof(Size::Inf, self.tr(ty)).into(),
       hir::ExprKind::Typeof(e) => RValue::Typeof(self.operand(*e)?),
       hir::ExprKind::Assert(e) => if let Some(pe) = e.k.1 .0 {
         let e = self.operand(*e)?;

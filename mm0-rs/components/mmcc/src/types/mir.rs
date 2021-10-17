@@ -8,7 +8,7 @@ use num::BigInt;
 use smallvec::SmallVec;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{u32_as_usize, Symbol};
-use super::{IntTy, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
+use super::{IntTy, Size, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
 
@@ -1191,19 +1191,19 @@ impl Constant {
   }
 
   /// Returns the size of the specified type as a constant expression.
-  #[must_use] pub fn sizeof(ty: Ty) -> Self {
+  #[must_use] pub fn sizeof(sz: Size, ty: Ty) -> Self {
     Self {
-      ety: (Some(Rc::new(ExprKind::Sizeof(ty))), Rc::new(TyKind::Int(IntTy::NAT))),
+      ety: (Some(Rc::new(ExprKind::Sizeof(ty))), Rc::new(TyKind::Int(IntTy::UInt(sz)))),
       k: ConstKind::Sizeof
     }
   }
 
-  /// Get the type in a sizeof constant.
-  #[must_use] pub fn ty_as_sizeof(&self) -> &Ty {
+  /// Get the type and size of a sizeof constant.
+  #[must_use] pub fn ty_as_sizeof(&self) -> (Size, &Ty) {
     if_chain! {
-      if let Some(e) = &self.ety.0;
+      if let (Some(e), &TyKind::Int(IntTy::UInt(sz))) = (&self.ety.0, &*self.ety.1);
       if let ExprKind::Sizeof(ty) = &**e;
-      then { ty }
+      then { (sz, ty) }
       else { panic!("not a sizeof constant") }
     }
   }
@@ -1220,10 +1220,18 @@ impl Constant {
 
   /// Construct a constant `c as iN`, reducing integer constants and delaying anything else.
   #[must_use] pub fn as_(&self, ity: IntTy) -> Self {
-    if let (ConstKind::Int, Some(ExprKind::Int(n))) = (&self.k, self.ety.0.as_deref()) {
-      if let Some(n) = super::Unop::As(ity).apply_int(n) {
-        return Self::int(ity, n.into_owned())
-      }
+    match self.k {
+      ConstKind::Int => if_chain! {
+        if let Some(ExprKind::Int(n)) = self.ety.0.as_deref();
+        if let Some(n) = super::Unop::As(ity).apply_int(n);
+        then { return Self::int(ity, n.into_owned()) }
+      },
+      ConstKind::Sizeof => if_chain! {
+        let (sz, ty) = self.ty_as_sizeof();
+        if let IntTy::UInt(sz2) = ity;
+        then { return Self::sizeof(sz.min(sz2), ty.clone()) }
+      },
+      _ => {}
     }
     Self {
       ety: (self.ety.0.clone(), Ty::new(TyKind::Int(ity))),
