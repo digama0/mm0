@@ -145,7 +145,8 @@ impl Cfg {
       fn apply_trans_for_block(&mut self,
           _: &Self::Doms, _: BlockId, bl: &BasicBlock, d: &mut bool) {
         match *bl.terminator() {
-          Terminator::Return(_) => *d = true,
+          Terminator::Return(_) |
+          Terminator::Exit(_) => *d = true,
           Terminator::Assert(_, _, false, _) |
           Terminator::Call {reach: false, ..} => *d = false,
           Terminator::Assert(..) |
@@ -291,7 +292,8 @@ impl Cfg {
               }
             }
           }
-          Terminator::Jump1(_) => {}
+          Terminator::Jump1(_) |
+          Terminator::Exit(_) => {}
           Terminator::Return(args) => {
             d.active = OptBlockId::new(id);
             for ((_, vr, o), ret) in args.iter().zip(self.returns) {

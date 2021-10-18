@@ -30,6 +30,7 @@ const R13: PReg = preg(13);
 const R14: PReg = preg(14);
 const R15: PReg = preg(15);
 pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
+pub(crate) const SYSCALL_ARG_REGS: (PReg, [PReg; 6]) = (RAX, [RDI, RSI, RDX, R10, R8, R9]);
 pub(crate) const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
 pub(crate) const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
 pub(crate) const SCRATCH: PReg = R11;
@@ -563,6 +564,32 @@ impl RegMemImm<u64> {
   }
 }
 
+/// The available set of kernel calls that can be made through the `syscall` instruction.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub(crate) enum SysCall {
+  /// `fd <- open(filename, flags, 0)`. `flags` must be one of:
+  /// * `O_RDONLY = 0`
+  /// * `O_WRONLY + O_CREAT + O_TRUNC = 1 + 1<<6 + 1<<9 = 577`
+  Open = 2,
+  /// `nread <- read(fd, buf, count)`.
+  Read = 0,
+  /// `nwrite <- write(fd, buf, count)`.
+  Write = 1,
+  /// `err <- fstat(fd, statbuf)`.
+  FStat = 5,
+  /// `p <- mmap(0, len, prot, flags, fd, off)`.
+  /// * If `fd == u32::MAX` then `flags = MAP_PRIVATE + MAP_ANONYMOUS = 2 + 32 = 34`
+  /// * If `fd != u32::MAX` then `flags = MAP_PRIVATE = 2`
+  MMap = 9,
+  /// `! <- exit(exit_code)`.
+  Exit = 0x3c,
+}
+
+impl SysCall {
+  #[inline] pub(crate) fn returns(self) -> bool { self != Self::Exit }
+}
+
 #[derive(Debug)]
 pub(crate) enum Inst {
   // /// A length 0 no-op instruction.
@@ -728,6 +755,11 @@ pub(crate) enum Inst {
   //   defs: Vec<VReg>,
   //   opcode: Opcode,
   // },
+  /// Call to the operating system: `syscall`.
+  SysCall {
+    f: SysCall,
+    operands: Box<[Operand]>,
+  },
   /// Function epilogue placeholder.
   Epilogue { params: Box<[Operand]> },
   /// Jump to a known target: `jmp simm32`.
@@ -749,11 +781,11 @@ pub(crate) enum Inst {
 
 impl VInst for Inst {
   fn is_call(&self) -> bool {
-    matches!(self, Inst::CallKnown {..})
+    matches!(self, Inst::CallKnown {..} | Inst::SysCall {..})
   }
 
   fn is_ret(&self) -> bool {
-    matches!(self, Inst::Epilogue {..})
+    matches!(self, Inst::Epilogue {..} | Inst::SysCall { f: SysCall::Exit, .. })
   }
 
   fn is_branch(&self) -> bool {
@@ -834,6 +866,7 @@ impl VInst for Inst {
       }
       Inst::Push64 { ref src } => src.collect_operands(args),
       Inst::CallKnown { operands: ref params, .. } |
+      Inst::SysCall { operands: ref params, .. } |
       Inst::JmpKnown { ref params, .. } |
       Inst::Epilogue { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
@@ -848,7 +881,11 @@ impl VInst for Inst {
   }
 
   fn clobbers(&self) -> &[PReg] {
-    if let Inst::CallKnown { clobbers: Some(cl), .. } = self { cl } else { &[] }
+    match self {
+      Inst::CallKnown { clobbers: Some(cl), .. } => cl,
+      Inst::SysCall { f, .. } if f.returns() => &[RCX, R11],
+      _ => &[],
+    }
   }
 }
 
@@ -1119,6 +1156,8 @@ pub(crate) enum PInst {
   //   defs: Vec<PReg>,
   //   opcode: Opcode,
   // },
+  /// Call to the operating system: `syscall`.
+  SysCall,
   /// Return.
   Ret,
   /// Jump to a known target: `jmp simm32`.
@@ -1239,13 +1278,15 @@ pub(crate) enum OpcodeLayout {
   /// `decodeHi` layout for `Test` with 32 bit immediate: `1111x11v + modrm + imm32`
   HiTest32(ModRMLayout),
   /// `decodeTwoSetCC` layout: `0x0F + 1001cccc + modrm`
-  TwoSetCC(ModRMLayout),
+  SetCC(ModRMLayout),
   /// `decodeTwoCMov` layout: `0x0F + 0100cccc + modrm`
-  TwoCMov(ModRMLayout),
+  CMov(ModRMLayout),
   /// `decodeTwoMovX` layout: `0x0F + 1011s11v + modrm`
-  TwoMovX(ModRMLayout),
+  MovX(ModRMLayout),
   /// `decodeTwoJCC` layout: `0x0F + 1000cccc + imm32`
-  TwoJcc,
+  Jcc,
+  /// `decodeTwoSysCall` layout: `0x0F 0x05`
+  SysCall,
   /// `trapIf` pseudo-instruction: `jcc !cond l; ud2; l:`
   TrapIf,
   /// `ud2` instruction: `0x0F 0x0B`
@@ -1257,11 +1298,11 @@ impl OpcodeLayout {
     match self {
       Self::Ret | Self::PushReg | Self::PopReg => 1, // opcode
       Self::PushImm8 | Self::Jump8 | Self::Jcc8 | Self::TestRAX8 | // opcode + imm8
-      Self::Ud2 => 2, // 0F + opcode
+      Self::Ud2 | Self::SysCall => 2, // 0F + opcode
       Self::TrapIf => 4, // jcc8 + ud2
       Self::BinopRAX | Self::Mov32 | Self::PushImm32 |
       Self::Jump32 | Self::Call | Self::TestRAX32 => 5, // opcode + imm32
-      Self::TwoJcc => 6, // 0F + opcode + imm32
+      Self::Jcc => 6, // 0F + opcode + imm32
       Self::Mov64 => 9, // opcode + imm64
       Self::BinopReg(modrm) | Self::BinopHiReg(modrm) |
       Self::MovSX(modrm) | Self::MovReg(modrm) |
@@ -1269,8 +1310,8 @@ impl OpcodeLayout {
       Self::Hi(modrm) => 1 + modrm.len(), // opcode + modrm
       Self::BinopImm8(modrm) | Self::BinopHi(modrm) |
       Self::HiTest8(modrm) | // opcode + modrm + imm8
-      Self::TwoSetCC(modrm) | Self::TwoCMov(modrm) |
-      Self::TwoMovX(modrm) => 2 + modrm.len(), // 0F + opcode + modrm
+      Self::SetCC(modrm) | Self::CMov(modrm) |
+      Self::MovX(modrm) => 2 + modrm.len(), // 0F + opcode + modrm
       Self::BinopImm(modrm) |
       Self::MovImm(modrm) |
       Self::HiTest32(modrm) => 5 + modrm.len(), // opcode + modrm + imm32
@@ -1427,7 +1468,7 @@ impl PInst {
       PInst::MovzxRmR { ext_mode, dst, ref src } |
       PInst::MovsxRmR { ext_mode, dst, ref src } => {
         let mut rex = ext_mode.dst() == Size::S64;
-        InstLayout { opc: OpcodeLayout::TwoMovX(layout_rm(&mut rex, dst, src)), rex }
+        InstLayout { opc: OpcodeLayout::MovX(layout_rm(&mut rex, dst, src)), rex }
       }
       PInst::Load64 { dst, ref src } =>
         InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut true, dst, src)), rex: true },
@@ -1449,11 +1490,11 @@ impl PInst {
       PInst::Cmp { sz, op: Cmp::Test, src1, ref src2 } => layout_test(sz, src1, src2),
       PInst::SetCC { dst, .. } => {
         let mut rex = false;
-        InstLayout { opc: OpcodeLayout::TwoSetCC(layout_opc_reg(&mut rex, dst)), rex }
+        InstLayout { opc: OpcodeLayout::SetCC(layout_opc_reg(&mut rex, dst)), rex }
       }
       PInst::CMov { sz, cc, dst, ref src } => {
         let mut rex = sz == Size::S64;
-        InstLayout { opc: OpcodeLayout::TwoCMov(layout_rm(&mut rex, dst, src)), rex }
+        InstLayout { opc: OpcodeLayout::CMov(layout_rm(&mut rex, dst, src)), rex }
       }
       PInst::Push64 { ref src } => {
         let mut rex = false;
@@ -1467,11 +1508,12 @@ impl PInst {
       }
       PInst::Pop64 { dst } => InstLayout { opc: OpcodeLayout::PopReg, rex: large_preg(dst) },
       PInst::CallKnown { .. } => InstLayout { opc: OpcodeLayout::Call, rex: false },
+      PInst::SysCall => InstLayout { opc: OpcodeLayout::SysCall, rex: false },
       PInst::Ret => InstLayout { opc: OpcodeLayout::Ret, rex: false },
       PInst::JmpKnown { short: true, .. } => InstLayout { opc: OpcodeLayout::Jump8, rex: false },
       PInst::JmpKnown { short: false, .. } => InstLayout { opc: OpcodeLayout::Jump32, rex: false },
       PInst::JmpCond { short: true, .. } => InstLayout { opc: OpcodeLayout::Jcc8, rex: false },
-      PInst::JmpCond { short: false, .. } => InstLayout { opc: OpcodeLayout::TwoJcc, rex: false },
+      PInst::JmpCond { short: false, .. } => InstLayout { opc: OpcodeLayout::Jcc, rex: false },
       PInst::TrapIf { .. } => InstLayout { opc: OpcodeLayout::TrapIf, rex: false },
       PInst::Ud2 => InstLayout { opc: OpcodeLayout::Ud2, rex: false },
     }

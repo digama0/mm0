@@ -406,14 +406,16 @@ struct LabelGroupData {
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct Initializer {
   cfg: Cfg,
-  cur_block: Block<BlockId>,
+  /// A list of allocated globals and the variables they were assigned to.
+  globals: Vec<(Symbol, VarId, Ty)>,
+  cur: Block<(BlockId, CtxId, GenId)>,
 }
 
 impl Default for Initializer {
   fn default() -> Self {
     let mut cfg = Cfg::default();
-    let cur_block = Ok(cfg.new_block(CtxId::ROOT));
-    Self {cfg, cur_block}
+    let cur = Ok((cfg.new_block(CtxId::ROOT), CtxId::ROOT, GenId::ROOT));
+    Self {cfg, cur, globals: vec![]}
   }
 }
 
@@ -432,6 +434,8 @@ pub(crate) struct BuildMir<'a> {
   returns: Option<Rc<[(VarId, bool)]>>,
   /// Some variables are replaced by places when referenced; this keeps track of them.
   vars: HashMap<VarId, Place>,
+  /// A list of allocated globals and the variables they were assigned to.
+  globals: Vec<(Symbol, VarId, Ty)>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
   /// inserted.
   cur_block: BlockId,
@@ -463,6 +467,7 @@ impl Default for BuildMir<'_> {
       returns: None,
       tr,
       vars: Default::default(),
+      globals: vec![],
       cur_block: BlockId::ENTRY,
       cur_ctx: CtxId::ROOT,
     }
@@ -963,11 +968,20 @@ impl<'a> BuildMir<'a> {
     })
   }
 
-  fn tup_pat(&mut self, pat: TuplePattern<'a>, src: &mut Place) {
+  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, src: &mut Place) {
     match pat.k {
-      TuplePatternKind::Name(_, v, _) => {
+      TuplePatternKind::Name(name, v, ty) => {
         let v = self.tr(v);
-        self.vars.insert(v, src.clone());
+        let src = if global {
+          let tgt = self.tr(ty);
+          let lk = LetKind::Let(v, !ty.ghostly(), None);
+          self.push_stmt(Statement::Let(lk, tgt.clone(), src.clone().into()));
+          self.globals.push((name, v, tgt));
+          v.into()
+        } else {
+          src.clone()
+        };
+        self.vars.insert(v, src);
       }
       TuplePatternKind::Tuple(pats, mk, ty) => {
         let pk = match mk {
@@ -984,14 +998,14 @@ impl<'a> BuildMir<'a> {
             let lk = LetKind::Own([
               (v, !vty.ghostly(), self.tr(vty)), (h, true, self.tr(hpat.k.ty()))]);
             self.push_stmt(Statement::Let(lk, tgt, src.clone().into()));
-            self.tup_pat(vpat, &mut v.into());
-            self.tup_pat(hpat, &mut h.into());
+            self.tup_pat(global, vpat, &mut v.into());
+            self.tup_pat(global, hpat, &mut h.into());
             return
           }),
         };
         for (i, &pat) in pats.iter().enumerate() {
           src.proj.push((self.tr(ty), Projection::Proj(pk, i.try_into().expect("overflow"))));
-          self.tup_pat(pat, src);
+          self.tup_pat(global, pat, src);
           src.proj.pop();
         }
       }
@@ -1030,14 +1044,14 @@ impl<'a> BuildMir<'a> {
           hir::ArgKind::Lam(pat) => {
             let v = unwrap_unchecked!(it.next()).0;
             self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
-            self.tup_pat(pat, &mut v.into());
+            self.tup_pat(false, pat, &mut v.into());
             pats.push(pat);
           }
           hir::ArgKind::Let(pat, pe, e) => {
             if let Some(e) = e {
               let v = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
               self.expr(*e, Some(PreVar::Ok(v)))?;
-              self.tup_pat(pat, &mut v.into());
+              self.tup_pat(false, pat, &mut v.into());
             }
             let pe = self.tr(pe);
             self.tr.tr_tup_pat(pat, pe);
@@ -1069,7 +1083,7 @@ impl<'a> BuildMir<'a> {
     self.cur_block().terminate(Terminator::Jump(tgt, args))
   }
 
-  fn let_stmt(&mut self, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
+  fn let_stmt(&mut self, global: bool, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
     if_chain! {
       if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
       if let ty::TuplePatternKind::Tuple(pats, _, _) = lhs.k;
@@ -1082,13 +1096,13 @@ impl<'a> BuildMir<'a> {
         self.expr_call(call, rhs.k.1 .1, &dest)?;
         for (&pat, v) in pats.iter().zip(dest) {
           let v = self.tr(v);
-          self.tup_pat(pat, &mut v.into());
+          self.tup_pat(global, pat, &mut v.into());
         }
       } else {
         let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
         self.expr(rhs, Some(v))?;
         let v = self.tr(v);
-        self.tup_pat(lhs, &mut v.into());
+        self.tup_pat(global, lhs, &mut v.into());
       }
     }
     Ok(())
@@ -1096,7 +1110,7 @@ impl<'a> BuildMir<'a> {
 
   fn stmt(&mut self, stmt: hir::Stmt<'a>, brk: Option<&(JoinBlock, BlockDest)>) -> Block<()> {
     match stmt.k {
-      hir::StmtKind::Let { lhs, rhs } => self.let_stmt(lhs, rhs),
+      hir::StmtKind::Let { lhs, rhs } => self.let_stmt(false, lhs, rhs),
       hir::StmtKind::Expr(e) => self.expr(hir::Spanned {span: stmt.span, k: e}, None),
       hir::StmtKind::Label(v, labs) => {
         let base_ctx = self.cur_ctx;
@@ -1480,16 +1494,62 @@ impl<'a> BuildMir<'a> {
       }
       hir::ItemKind::Global { lhs, rhs } => {
         mem::swap(&mut init.cfg, &mut self.cfg);
+        mem::swap(&mut init.globals, &mut self.globals);
         self.tr.next_var = self.cfg.max_var;
-        init.cur_block = (|| -> Block<BlockId> {
-          self.cur_block = init.cur_block?;
-          self.let_stmt(lhs, rhs)?;
-          Ok(self.cur_block)
+        init.cur = (|| {
+          self.set(init.cur?);
+          self.let_stmt(true, lhs, rhs)?;
+          Ok(self.cur())
         })();
         self.cfg.max_var = self.tr.next_var;
-        mem::swap(&mut init.cfg, &mut self.cfg);
+        init.cfg = self.cfg;
+        init.globals = self.globals;
         None
       }
     }
+  }
+}
+
+impl Initializer {
+  /// Append the call to `main` at the end of the `start` routine.
+  pub(crate) fn finish(&mut self,
+    mir: &HashMap<Symbol, Proc>, main: Option<Symbol>
+  ) -> (Cfg, Vec<(Symbol, VarId, Ty)>) {
+    let mut build = BuildMir::default();
+    mem::swap(&mut self.cfg, &mut build.cfg);
+    mem::swap(&mut self.globals, &mut build.globals);
+    build.tr.next_var = build.cfg.max_var;
+    let _ = (|| -> Block<()> {
+      build.set(self.cur?);
+      let o = if let Some(main) = main {
+        let body = &mir[&main];
+        let (rets, o): (Box<[_]>, _) = match *body.rets {
+          [ref ret] => {
+            let v = build.fresh_var();
+            build.extend_ctx(v, false, (None, ret.ty.clone()));
+            (Box::new([v]), v.into())
+          }
+          [] => (Box::new([]), Constant::unit().into()),
+          _ => panic!("main should have at most one return")
+        };
+        let tgt = build.new_block();
+        build.cur_block().terminate(Terminator::Call {
+          f: main,
+          tys: Box::new([]),
+          se: true,
+          args: Box::new([]), // TODO
+          reach: true,
+          tgt,
+          rets,
+        });
+        build.cur_block = tgt;
+        o
+      } else {
+        Constant::unit().into()
+      };
+      build.cur_block().terminate(Terminator::Exit(o));
+      Ok(())
+    })();
+    (build.cfg, build.globals)
   }
 }

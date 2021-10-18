@@ -1074,6 +1074,7 @@ impl<'a> Iterator for Successors<'a> {
           Some((Edge::Call, tgt))
         }
         Terminator::Return(_) |
+        Terminator::Exit(_) |
         Terminator::Unreachable(_) |
         Terminator::Dead => {
           self.0 = SuccessorsState::Zero;
@@ -1636,6 +1637,9 @@ pub enum Terminator {
     /// target block.
     rets: Box<[VarId]>
   },
+  /// Successfully exit the program.
+  /// The operand should be a proof of the postcondition of the program.
+  Exit(Operand),
   /// This block is not reachable from the entry block. Similar to `unreachable`, but
   /// provides no proof of false, and it is a type error to jump to a dead block.
   Dead,
@@ -1662,7 +1666,7 @@ impl std::fmt::Debug for Terminator {
       Self::Assert(cond, v, true, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
       Self::Assert(cond, _, false, _) => write!(f, "assert {:?} -> !", cond),
       Self::Call { f: func, tys, args, reach, tgt, rets, .. } => {
-        write!(f, "call {:?}{:?}{:?} -> ", func, tys, args)?;
+        write!(f, "call {}{:?}{:?} -> ", func, tys, args)?;
         if *reach {
           for v in &**rets { write!(f, "{:?}.", v)? }
           write!(f, " {:?}", tgt)
@@ -1670,6 +1674,7 @@ impl std::fmt::Debug for Terminator {
           write!(f, "!")
         }
       }
+      Self::Exit(o) => write!(f, "exit {:?}", o),
       Self::Dead => write!(f, "dead")
     }
   }
@@ -1742,6 +1747,7 @@ pub(crate) trait Visitor {
       Terminator::Return(args) => for (_, r, o) in args { if *r { self.visit_operand(o) } }
       Terminator::Call { args, .. } => for (r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Unreachable(o) |
+      Terminator::Exit(o) |
       Terminator::If(o, _) |
       Terminator::Assert(o, _, true, _) => self.visit_operand(o),
       Terminator::Assert(_, _, false, _) |

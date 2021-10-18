@@ -15,11 +15,12 @@ use std::rc::Rc;
 use num::BigInt;
 use regalloc2::{Operand as ROperand, PReg};
 
+use crate::build_mir::{Diverged, Initializer};
 use crate::linker::ConstData;
 use crate::types::entity::ConstTc;
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
-  Inst, RegMem, RegMemImm, ShiftKind, Unop as VUnop};
+  Inst, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{IdxVec, IntTy, Size, Spanned};
@@ -113,6 +114,20 @@ impl From<&VRetAbi> for ArgAbi {
       VRetAbi::BoxedMem { off, sz } => ArgAbi::BoxedMem { off, sz },
     }
   }
+}
+
+/// The ABI expected by the caller.
+#[derive(Clone, Copy)]
+pub(crate) enum VCodeCtx<'a> {
+  /// This is a regular procedure; the `&[Arg]` is the function returns.
+  Proc(&'a [Arg]),
+  /// This is the `start` function, which is called by the operating system and has a
+  /// special stack layout.
+  Start
+}
+
+impl<'a> From<&'a [Arg]> for VCodeCtx<'a> {
+    fn from(v: &'a [Arg]) -> Self { Self::Proc(v) }
 }
 
 struct LowerCtx<'a> {
@@ -682,6 +697,22 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
+  fn build_syscall(&mut self, f: SysCall, args: &[RegMemImm]) {
+    let (rax, ref argregs) = SYSCALL_ARG_REGS;
+    debug_assert!(args.len() <= argregs.len());
+    let fname = self.code.fresh_vreg();
+    let dst = self.code.fresh_vreg();
+    self.code.emit_copy(Size::S32, fname.into(), u64::from(f as u8));
+    let mut params = vec![ROperand::reg_fixed_use(fname, rax)];
+    for (arg, &reg) in args.iter().zip(argregs) {
+      let dst = self.code.fresh_vreg();
+      self.code.emit_copy(Size::S64, dst.into(), *arg);
+      params.push(ROperand::reg_fixed_use(dst, reg));
+    }
+    if f.returns() { params.push(ROperand::reg_fixed_def(dst, rax)) }
+    self.code.emit(Inst::SysCall { f, operands: params.into() });
+  }
+
   fn build_terminator(&mut self,
     block_args: &ChunkVec<BlockId, VReg>, vbl: VBlockId, term: &Terminator
   ) {
@@ -692,6 +723,7 @@ impl<'a> LowerCtx<'a> {
           dst: VBlockId(tgt.0)
         }))),
       Terminator::Return(ref args) => self.build_ret(args),
+      Terminator::Exit(_) => self.build_syscall(SysCall::Exit, &[0.into()]),
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
         let src = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
@@ -743,7 +775,7 @@ impl<'a> LowerCtx<'a> {
     block_args
   }
 
-  fn build_prologue(&mut self, bl: &'a BasicBlock, rets: &[Arg]) {
+  fn build_prologue(&mut self, bl: &'a BasicBlock, ctx: VCodeCtx<'_>) {
     let mut arg_regs = crate::arch::ARG_REGS.iter();
     let incoming = AMode::spill(SpillId::INCOMING);
     let mut off = 0_u32;
@@ -753,26 +785,28 @@ impl<'a> LowerCtx<'a> {
       old
     };
 
-    self.abi_rets = rets.iter().map(|ret| {
-      if ret.attr.contains(ArgAttr::GHOST) { return VRetAbi::Ghost }
-      let meta = ret.ty.meta(self.names).expect("return must have compile time known size");
-      let size = meta.size;
-      let sz = Size::from_u64(size);
-      let on_stack = meta.on_stack || sz == Size::Inf;
-      match (on_stack, arg_regs.next()) {
-        (false, Some(&r)) => VRetAbi::Reg(r, sz),
-        (true, Some(&r)) => {
-          let ptr = self.code.fresh_vreg();
-          self.code.emit(Inst::MovPR { sz, dst: ptr, src: (ptr, r) });
-          VRetAbi::Boxed { reg: (ptr, r), sz: size.try_into().expect("overflow") }
+    if let VCodeCtx::Proc(rets) = ctx {
+      self.abi_rets = rets.iter().map(|ret| {
+        if ret.attr.contains(ArgAttr::GHOST) { return VRetAbi::Ghost }
+        let meta = ret.ty.meta(self.names).expect("return must have compile time known size");
+        let size = meta.size;
+        let sz = Size::from_u64(size);
+        let on_stack = meta.on_stack || sz == Size::Inf;
+        match (on_stack, arg_regs.next()) {
+          (false, Some(&r)) => VRetAbi::Reg(r, sz),
+          (true, Some(&r)) => {
+            let ptr = self.code.fresh_vreg();
+            self.code.emit(Inst::MovPR { sz, dst: ptr, src: (ptr, r) });
+            VRetAbi::Boxed { reg: (ptr, r), sz: size.try_into().expect("overflow") }
+          }
+          (_, None) if size <= 8 => {
+            let size32 = size.try_into().expect("overflow");
+            VRetAbi::Mem { off: alloc(size32), sz: size32 }
+          },
+          (_, None) => VRetAbi::BoxedMem { off: alloc(8), sz: size.try_into().expect("overflow") }
         }
-        (_, None) if size <= 8 => {
-          let size32 = size.try_into().expect("overflow");
-          VRetAbi::Mem { off: alloc(size32), sz: size32 }
-        },
-        (_, None) => VRetAbi::BoxedMem { off: alloc(8), sz: size.try_into().expect("overflow") }
-      }
-    }).collect();
+      }).collect();
+    }
 
     self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, (_, ty))| {
       if !b { return ArgAbi::Ghost }
@@ -811,12 +845,12 @@ impl<'a> LowerCtx<'a> {
     self.code.grow_spill(SpillId::INCOMING, off);
   }
 
-  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, rets: &[Arg]) {
+  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
     visit_blocks(self.cfg, move |i, bl| {
       let vbl = self.code.new_block(block_args[i].iter().copied());
       self.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
-      if i == BlockId::ENTRY { self.build_prologue(bl, rets) }
+      if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
       for (i, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {
@@ -883,10 +917,10 @@ pub(crate) fn build_vcode(
   consts: &ConstData,
   cfg: &Cfg,
   allocs: &Allocations,
-  rets: &[Arg],
+  ctx: VCodeCtx<'_>,
 ) -> VCode {
   let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs);
   let block_args = lctx.build_block_args();
-  lctx.build_blocks(&block_args, rets);
+  lctx.build_blocks(&block_args, ctx);
   lctx.finish()
 }

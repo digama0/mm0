@@ -20,7 +20,7 @@ use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
 use crate::types::mir::{Arg, Cfg};
 use crate::{Entity, Idx, Symbol};
-use crate::build_vcode::{VCode, build_vcode};
+use crate::build_vcode::{VCode, VCodeCtx, build_vcode};
 use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId, BlockId};
 
 impl<I: vcode::Inst> vcode::VCode<I> {
@@ -268,10 +268,10 @@ pub(crate) fn regalloc_vcode(
   consts: &ConstData,
   cfg: &Cfg,
   allocs: &Allocations,
-  rets: &[Arg],
+  ctx: VCodeCtx<'_>,
 ) -> PCode {
   // simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default());
-  let mut vcode = build_vcode(names, func_mono, funcs, consts, cfg, allocs, rets);
+  let mut vcode = build_vcode(names, func_mono, funcs, consts, cfg, allocs, ctx);
   // println!("{:#?}", vcode);
   let out = vcode.regalloc();
   // println!("{:#?}", out);
@@ -363,6 +363,10 @@ pub(crate) fn regalloc_vcode(
       Inst::CallKnown { f, ref operands, ref clobbers } => {
         for _ in &**operands { ar.reg(); }
         code.push(PInst::CallKnown { f })
+      }
+      Inst::SysCall { ref operands, .. } => {
+        for _ in &**operands { ar.reg(); }
+        code.push(PInst::SysCall)
       }
       Inst::Epilogue { ref params } => {
         for _ in &**params { ar.reg(); }
@@ -457,7 +461,8 @@ mod test {
     let allocs = cfg.storage(&names);
     println!("after storage:\n{:#?}", cfg);
     println!("allocs = {:#?}", allocs);
-    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, &allocs, &proc.rets);
+    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, &allocs,
+      (&*proc.rets).into());
     println!("{:#?}", res);
   }
 }
