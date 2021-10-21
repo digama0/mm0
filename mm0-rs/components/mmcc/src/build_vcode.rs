@@ -23,9 +23,9 @@ use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
   Inst, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
-use crate::types::{IdxVec, IntTy, Size, Spanned};
+use crate::types::{Idx, IdxVec, IntTy, Size, Spanned};
 use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
-  ChunkVec, ConstRef, InstId, ProcAbi, ProcId, RegClass, SpillId, VReg};
+  ChunkVec, ConstRef, InstId, GlobalId, ProcAbi, ProcId, RegClass, SpillId, VReg};
 
 #[allow(clippy::wildcard_imports)]
 use crate::types::mir::*;
@@ -123,7 +123,7 @@ pub(crate) enum VCodeCtx<'a> {
   Proc(&'a [Arg]),
   /// This is the `start` function, which is called by the operating system and has a
   /// special stack layout.
-  Start
+  Start(&'a [(Symbol, VarId, Ty)]),
 }
 
 impl<'a> From<&'a [Arg]> for VCodeCtx<'a> {
@@ -142,6 +142,7 @@ struct LowerCtx<'a> {
   block_map: HashMap<BlockId, VBlockId>,
   ctx: TyCtx<'a>,
   unpatched: Vec<(VBlockId, InstId)>,
+  globals: HashMap<AllocId, GlobalId>,
   abi_args: Vec<ArgAbi>,
   abi_rets: Rc<[VRetAbi]>,
   can_return: bool,
@@ -156,6 +157,7 @@ impl<'a> LowerCtx<'a> {
     consts: &'a ConstData,
     cfg: &'a Cfg,
     allocs: &'a Allocations,
+    ctx: VCodeCtx<'_>,
   ) -> Self {
     LowerCtx {
       cfg,
@@ -172,6 +174,20 @@ impl<'a> LowerCtx<'a> {
       abi_args: vec![],
       abi_rets: Rc::new([]),
       can_return: cfg.can_return(),
+      globals: match ctx {
+        VCodeCtx::Proc(_) => HashMap::new(),
+        VCodeCtx::Start(ls) => {
+          let mut map = HashMap::new();
+          for (id, &(s, v, _)) in ls.iter().enumerate() {
+            let a = allocs.get(v);
+            if a != AllocId::ZERO {
+              assert!(map.insert(a, GlobalId::from_usize(id)).is_none(),
+                "global allocation collision");
+            }
+          }
+          map
+        }
+      }
     }
   }
 
@@ -181,8 +197,11 @@ impl<'a> LowerCtx<'a> {
     assert_ne!(a, AllocId::ZERO);
     let code = &mut self.code;
     let m = self.allocs[a].m;
+    let globals = &self.globals;
     (self.var_map.entry(a).or_insert_with(|| {
-      let rm = if m.on_stack {
+      let rm = if let Some(&id) = globals.get(&a) {
+        RegMem::Mem(AMode::global(id))
+      } else if m.on_stack {
         RegMem::Mem(AMode::spill(
           code.fresh_spill(m.size.try_into().expect("allocation too large"))))
       } else {
@@ -919,7 +938,7 @@ pub(crate) fn build_vcode(
   allocs: &Allocations,
   ctx: VCodeCtx<'_>,
 ) -> VCode {
-  let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs);
+  let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs, ctx);
   let block_args = lctx.build_block_args();
   lctx.build_blocks(&block_args, ctx);
   lctx.finish()

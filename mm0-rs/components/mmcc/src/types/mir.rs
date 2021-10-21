@@ -7,7 +7,7 @@ use bit_vec::BitVec;
 use num::BigInt;
 use smallvec::SmallVec;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
-use crate::{u32_as_usize, Symbol};
+use crate::{Symbol, mir_opt::storage::Allocations, u32_as_usize};
 use super::{IntTy, Size, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
@@ -1901,4 +1901,6 @@ pub struct Proc {
   pub rets: Vec<Arg>,
   /// The body of the procedure.
   pub body: Cfg,
+  /// The result of the allocation pass, created once optimization is done.
+  pub allocs: Option<Rc<Allocations>>,
 }

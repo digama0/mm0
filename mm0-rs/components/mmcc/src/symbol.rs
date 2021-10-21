@@ -82,9 +82,9 @@ impl std::fmt::Debug for Symbol {
 /// Initialize a map from symbols to values of type `T`. Note that this will create an array the
 /// same size as all symbols that have ever been interned, so it is best to use this only during
 /// initialization for keyword lists and the like.
-pub fn init_dense_symbol_map<T: Copy>(kv: &[(Symbol, T)]) -> Box<[Option<T>]> {
+pub fn init_dense_symbol_map<T: Clone>(kv: &[(Symbol, T)]) -> Box<[Option<T>]> {
   use crate::types::Idx;
   let mut vec = vec![None; kv.iter().map(|p| p.0).max().map_or(0, |n| n.into_usize() + 1)];
-  for &(k, v) in kv { vec[k.into_usize()] = Some(v) }
+  for (k, v) in kv { vec[k.into_usize()] = Some(v.clone()) }
   vec.into()
 }

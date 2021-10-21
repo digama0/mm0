@@ -51,6 +51,7 @@ pub struct Meta {
   pub size: u64,
   pub on_stack: bool,
 }
+#[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Meta);
 
 impl Meta {
   fn from_size(size: u64) -> Self {
@@ -68,6 +69,7 @@ impl Meta {
 }
 
 #[derive(Default, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Allocation {
   pub m: Meta,
   pub vars: Vec<VarId>,
@@ -82,6 +84,7 @@ impl Allocation {
 
 /// The result of storage analysis.
 #[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Allocations {
   allocs: IdxVec<AllocId, Allocation>,
   vars: HashMap<VarId, AllocId>,

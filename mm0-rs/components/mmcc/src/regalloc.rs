@@ -107,16 +107,15 @@ mk_id! {
 
 #[derive(Debug)]
 pub(crate) struct PCode {
-  abi: ProcAbi,
-  insts: IdxVec<PInstId, PInst>,
-  blocks: IdxVec<BlockId, (PInstId, PInstId)>,
-  block_addr: IdxVec<BlockId, u32>,
-  len: u32,
+  pub(crate) insts: IdxVec<PInstId, PInst>,
+  pub(crate) blocks: IdxVec<BlockId, (PInstId, PInstId)>,
+  pub(crate) block_addr: IdxVec<BlockId, u32>,
+  pub(crate) len: u32,
 }
 
 #[derive(Debug)]
 struct PCodeBuilder {
-  code: PCode,
+  code: Box<PCode>,
   fwd_jumps: Vec<(u32, PInstId)>,
 }
 
@@ -192,7 +191,7 @@ impl PCodeBuilder {
     }
   }
 
-  fn finish(self) -> PCode {
+  fn finish(self) -> Box<PCode> {
     let Self {mut code, fwd_jumps, ..} = self;
     for (pos, i) in fwd_jumps {
       let inst = &mut code.insts[i];
@@ -269,7 +268,7 @@ pub(crate) fn regalloc_vcode(
   cfg: &Cfg,
   allocs: &Allocations,
   ctx: VCodeCtx<'_>,
-) -> PCode {
+) -> (ProcAbi, Box<PCode>) {
   // simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default());
   let mut vcode = build_vcode(names, func_mono, funcs, consts, cfg, allocs, ctx);
   // println!("{:#?}", vcode);
@@ -293,13 +292,12 @@ pub(crate) fn regalloc_vcode(
     ApplyRegalloc::new(out.allocs, out.inst_alloc_offsets, outgoing, spill_map.into())
   } else { unreachable!() };
   let mut code = PCodeBuilder {
-    code: PCode {
-      abi: vcode.abi,
+    code: Box::new(PCode {
       insts: IdxVec::new(),
       blocks: IdxVec::from(vec![]),
       block_addr: IdxVec::from(vec![0]),
       len: 0,
-    },
+    }),
     fwd_jumps: vec![],
   };
   let mut bb = BlockBuilder::new(&vcode.blocks.0);
@@ -393,7 +391,7 @@ pub(crate) fn regalloc_vcode(
     code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
   }
   bb.finish_block(&mut code);
-  code.finish()
+  (vcode.abi, code.finish())
 }
 
 #[cfg(test)]
@@ -422,6 +420,7 @@ mod test {
         ty: u8ty.clone(),
       }],
       body: Cfg::default(),
+      allocs: None,
     };
     let cfg = &mut proc.body;
     let bl1 = cfg.new_block(CtxId::ROOT);
@@ -455,13 +454,12 @@ mod test {
       (proc.rets[0].var, true, Operand::Copy(Place::local(y)))
     ]));
     println!("before opt:\n{:#?}", proc);
-    crate::mir_opt::optimize(&mut proc, &names);
+    proc.optimize(&names);
     println!("after opt:\n{:#?}", proc);
     let cfg = &mut proc.body;
-    let allocs = cfg.storage(&names);
-    println!("after storage:\n{:#?}", cfg);
+    let allocs = proc.allocs.as_deref().unwrap();
     println!("allocs = {:#?}", allocs);
-    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, &allocs,
+    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, allocs,
       (&*proc.rets).into());
     println!("{:#?}", res);
   }

@@ -3,7 +3,7 @@
 
 //! Compiler tactic for the metamath C language.
 //!
-//! See [`mmc.md`] for information on the MMC format.
+//! See [`mmc.md`] for information on the MMC language.
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 
@@ -240,7 +240,7 @@ impl<C: Config> Compiler<C> {
     }
     if let Some(item) = item {
       if let Some(n) = build_mir::BuildMir::default().build_item(mir, init, item) {
-        mir_opt::optimize(mir.get_mut(&n).expect("missing"), names);
+        mir.get_mut(&n).expect("missing").optimize(names);
       }
     }
     Ok(())
@@ -251,11 +251,13 @@ impl<C: Config> Compiler<C> {
   /// The compiler is reset to the initial state after this operation, except for the user state
   /// [`Compiler::config`], so it can be used to compile another program but the library functions
   /// must first be loaded in again.
-  #[allow(clippy::unused_self)]
   pub fn finish(&mut self) -> Result<(), C::Error> {
+    let names = std::mem::replace(&mut self.names, symbol::Interner::with(Self::make_names));
     let mir = std::mem::take(&mut self.mir);
-    let init = std::mem::take(&mut self.init);
-    let main = self.main.take();
+    let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
+    init.optimize(&[]);
+    let allocs = init.storage(&names);
+    let _code = linker::LinkedCode::link(&names, &mir, &init, &allocs, &globals);
     Ok(())
   }
 }

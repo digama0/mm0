@@ -4,9 +4,13 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
 
+use crate::build_vcode::VCodeCtx;
+use crate::mir_opt::storage::{Allocations, AllocId};
+use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{self, TyKind, ExprKind};
 use crate::types::entity::{ConstTc, Entity, ProcTc};
-use crate::types::mir::{ConstKind, Constant, Place, Proc, RValue, Terminator, Ty, Visitor};
+use crate::types::mir::{
+  Cfg, ConstKind, Constant, Place, Proc, RValue, Terminator, Ty, VarId, Visitor};
 use crate::types::vcode::{GlobalId, ProcId, ConstRef};
 use crate::types::{IdxVec, Size, Spanned};
 use crate::{Idx, Symbol};
@@ -57,7 +61,7 @@ struct Collector<'a> {
   mir: &'a HashMap<Symbol, Proc>,
   implications: HashMap<Symbol, Option<HashSet<GenericCall>>>,
   funcs: (HashMap<Symbol, ProcId>, IdxVec<ProcId, Symbol>),
-  globals: (HashMap<Symbol, GlobalId>, IdxVec<GlobalId, u32>),
+  postorder: Vec<ProcId>,
   consts: ConstData,
 }
 
@@ -68,8 +72,8 @@ impl<'a> Collector<'a> {
       mir,
       implications: Default::default(),
       funcs: Default::default(),
-      globals: Default::default(),
       consts: Default::default(),
+      postorder: Default::default(),
     }
   }
 
@@ -78,6 +82,31 @@ impl<'a> Collector<'a> {
       let args: Box<[_]> = tys.iter().map(|ty| ty.subst(args)).collect();
       self.collect_func(g, &args);
     }
+  }
+
+  fn collect_cfg(&mut self, body: &Cfg, args: &[Ty]) -> HashSet<GenericCall> {
+    if !args.is_empty() {
+      unimplemented!("functions with type args")
+    }
+    let mut calls = HashSet::new();
+    for (_, bl) in body.blocks() {
+      struct ConstVisitor<'a, 'b>(&'b mut Collector<'a>);
+      impl Visitor for ConstVisitor<'_, '_> {
+        fn visit_place(&mut self, _: &Place) {}
+        fn visit_constant(&mut self, c: &Constant) {
+          if let ConstKind::Const(s) = c.k { self.0.collect_const(s); }
+        }
+      }
+      ConstVisitor(self).visit_basic_block(bl);
+      if let Terminator::Call { f, tys, .. } = bl.terminator() {
+        if tys.iter().any(|ty| ty.has_tyvar()) {
+          calls.insert((*f, tys.clone()));
+        } else {
+          self.collect_func(*f, tys);
+        }
+      }
+    }
+    calls
   }
 
   fn collect_func(&mut self, f: Symbol, args: &[Ty]) -> ProcId {
@@ -92,28 +121,14 @@ impl<'a> Collector<'a> {
       self.collect_generics(f, args, &calls);
       self.implications.insert(f, Some(calls));
     } else if let Some(proc) = self.mir.get(&f) {
-      let mut calls = HashSet::new();
-      for (_, bl) in proc.body.blocks() {
-        struct ConstVisitor<'a, 'b>(&'b mut Collector<'a>);
-        impl Visitor for ConstVisitor<'_, '_> {
-          fn visit_place(&mut self, _: &Place) {}
-          fn visit_constant(&mut self, c: &Constant) {
-            if let ConstKind::Const(s) = c.k { self.0.collect_const(s); }
-          }
-        }
-        ConstVisitor(self).visit_basic_block(bl);
-        if let Terminator::Call { f, tys, .. } = bl.terminator() {
-          if tys.iter().any(|ty| ty.has_tyvar()) {
-            calls.insert((*f, tys.clone()));
-          } else {
-            self.collect_func(*f, tys);
-          }
-        }
+      let calls = self.collect_cfg(&proc.body, args);
+      if !calls.is_empty() {
+        self.implications.insert(f, None);
+        self.collect_generics(f, args, &calls);
       }
-      self.implications.insert(f, None);
-      self.collect_generics(f, args, &calls);
       self.implications.insert(f, Some(calls));
     }
+    self.postorder.push(id);
     id
   }
 
@@ -184,5 +199,71 @@ impl<'a> Collector<'a> {
     }.expect("cannot resolve constant to an integer value");
     self.consts.map.insert(c, value);
     value
+  }
+}
+
+pub(crate) struct LinkedCode {
+  rodata: Vec<u8>,
+  globals: IdxVec<GlobalId, (u32, u32)>,
+  global_size: u32,
+  init: Box<PCode>,
+  func_names: IdxVec<ProcId, Symbol>,
+  funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
+  text_size: u32,
+}
+
+impl LinkedCode {
+  pub(crate) fn link(
+    names: &HashMap<Symbol, Entity>,
+    mir: &HashMap<Symbol, Proc>,
+    init: &Cfg,
+    allocs: &Allocations,
+    globals: &[(Symbol, VarId, Ty)]
+  ) -> Self {
+    const FUNCTION_ALIGNMENT: u32 = 16;
+
+    let mut coll = Collector::new(names, mir);
+    coll.collect_cfg(init, &[]);
+    let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
+    let mut func_code = IdxVec::from_default(coll.funcs.1.len());
+    for &f in &coll.postorder {
+      if let Some(proc) = mir.get(&coll.funcs.1[f]) {
+        let (abi, code) = regalloc_vcode(
+          names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
+          proc.allocs.as_deref().expect("optimized already"),
+          VCodeCtx::Proc(&proc.rets));
+        func_abi[f] = abi;
+        func_code[f] = Some(code);
+      }
+    }
+
+    let mut global_size = 0;
+    let globals_out = globals.iter().map(|&(g, v, ref ty)| {
+      let off = global_size;
+      let size = allocs[allocs.get(v)].m.size.try_into().expect("overflow");
+      global_size += size;
+      (off, size)
+    }).collect();
+    let init = regalloc_vcode(
+      names, &coll.funcs.0, &func_abi, &coll.consts, init, allocs, VCodeCtx::Start(globals)).1;
+
+    let mut text_size = init.len;
+    let funcs = func_code.0.into_iter().map(|code| {
+      text_size = (text_size + FUNCTION_ALIGNMENT - 1) & !(FUNCTION_ALIGNMENT - 1);
+      let pos = text_size;
+      let code = code.expect("impossible");
+      text_size += code.len;
+      (pos, code)
+    }).collect();
+
+    Self {
+      rodata: coll.consts.rodata,
+      globals: globals_out,
+      global_size,
+      init,
+      func_names: coll.funcs.1,
+      funcs,
+      text_size,
+    }
   }
 }

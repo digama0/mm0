@@ -1,6 +1,6 @@
 //! MIR optimizations.
 
-use std::{collections::{HashMap, VecDeque}, hash::Hash, marker::PhantomData};
+use std::{collections::{HashMap, VecDeque}, hash::Hash, marker::PhantomData, rc::Rc};
 use smallvec::SmallVec;
 use crate::Symbol;
 use super::types;
@@ -505,22 +505,32 @@ trait Analysis {
   }
 }
 
-/// Perform MIR analysis and optimize the given procedure.
-#[allow(clippy::implicit_hasher)]
-pub(crate) fn optimize(proc: &mut Proc, _names: &HashMap<Symbol, Entity>) {
-  let cfg = &mut proc.body;
-  // println!("opt 0:\n{:#?}", cfg);
-  cfg.compute_predecessors();
-  // println!("compute_predecessors:\n{:#?}", cfg);
-  let reachable = cfg.reachability_analysis();
-  // println!("reachable: {:#?}", reachable);
-  cfg.apply_reachability_analysis(&reachable);
-  // println!("reachability_analysis:\n{:#?}", cfg);
-  cfg.do_ghost_analysis(&reachable, &proc.rets);
-  // println!("ghost_analysis:\n{:#?}", cfg);
-  cfg.legalize();
-  // println!("legalize:\n{:#?}", cfg);
-  // Do ghost analysis again because legalize produces dead values
-  cfg.do_ghost_analysis(&reachable, &proc.rets);
-  // println!("ghost_analysis 2:\n{:#?}", cfg);
+impl Proc {
+  /// Perform MIR analysis and optimize the given procedure.
+  pub(crate) fn optimize(&mut self, names: &HashMap<Symbol, Entity>) {
+    self.body.optimize(&self.rets);
+    if self.allocs.is_none() {
+      self.allocs = Some(Rc::new(self.body.storage(names)))
+    }
+  }
+}
+
+impl Cfg {
+  /// Perform MIR analysis and optimize the given CFG.
+  pub(crate) fn optimize(&mut self, rets: &[Arg]) {
+    // println!("opt 0:\n{:#?}", self);
+    self.compute_predecessors();
+    // println!("compute_predecessors:\n{:#?}", self);
+    let reachable = self.reachability_analysis();
+    // println!("reachable: {:#?}", reachable);
+    self.apply_reachability_analysis(&reachable);
+    // println!("reachability_analysis:\n{:#?}", self);
+    self.do_ghost_analysis(&reachable, rets);
+    // println!("ghost_analysis:\n{:#?}", self);
+    self.legalize();
+    // println!("legalize:\n{:#?}", self);
+    // Do ghost analysis again because legalize produces dead values
+    self.do_ghost_analysis(&reachable, rets);
+    // println!("ghost_analysis 2:\n{:#?}", self);
+  }
 }

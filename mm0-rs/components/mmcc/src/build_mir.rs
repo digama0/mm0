@@ -1489,6 +1489,7 @@ impl<'a> BuildMir<'a> {
           args: args2,
           rets: rets2,
           body: self.cfg,
+          allocs: None,
         });
         Some(name.k)
       }
