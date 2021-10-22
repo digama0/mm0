@@ -66,6 +66,7 @@ impl Cfg {
     fn side_effecting(t: &Terminator) -> bool {
       matches!(t,
         Terminator::Return(_) |
+        Terminator::Exit(_) |
         Terminator::Assert(_, _, _, _) |
         Terminator::Call {se: true, ..})
     }

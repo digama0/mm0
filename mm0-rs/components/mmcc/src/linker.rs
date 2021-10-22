@@ -3,8 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
+use std::ops::Index;
 
 use crate::build_vcode::VCodeCtx;
+use crate::codegen::FUNCTION_ALIGN;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{self, TyKind, ExprKind};
@@ -202,14 +204,17 @@ impl<'a> Collector<'a> {
   }
 }
 
-pub(crate) struct LinkedCode {
-  rodata: Vec<u8>,
-  globals: IdxVec<GlobalId, (u32, u32)>,
-  global_size: u32,
-  init: Box<PCode>,
-  func_names: IdxVec<ProcId, Symbol>,
-  funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
-  text_size: u32,
+//// A completed code object. This includes the list of instructions,
+/// and can be serialized to a list of bytes using the [`LinkedCode::write_elf`] method.
+#[derive(Debug)]
+pub struct LinkedCode {
+  pub(crate) rodata: Vec<u8>,
+  pub(crate) globals: IdxVec<GlobalId, (u32, u32)>,
+  pub(crate) global_size: u32,
+  pub(crate) init: Box<PCode>,
+  pub(crate) func_names: IdxVec<ProcId, Symbol>,
+  pub(crate) funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
+  pub(crate) text_size: u32,
 }
 
 impl LinkedCode {
@@ -220,8 +225,6 @@ impl LinkedCode {
     allocs: &Allocations,
     globals: &[(Symbol, VarId, Ty)]
   ) -> Self {
-    const FUNCTION_ALIGNMENT: u32 = 16;
-
     let mut coll = Collector::new(names, mir);
     coll.collect_cfg(init, &[]);
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
@@ -249,7 +252,7 @@ impl LinkedCode {
 
     let mut text_size = init.len;
     let funcs = func_code.0.into_iter().map(|code| {
-      text_size = (text_size + FUNCTION_ALIGNMENT - 1) & !(FUNCTION_ALIGNMENT - 1);
+      text_size = (text_size + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
       let pos = text_size;
       let code = code.expect("impossible");
       text_size += code.len;

@@ -247,10 +247,10 @@ impl std::fmt::Debug for TyKind {
     use itertools::Itertools;
     match self {
       TyKind::Var(v) => write!(f, "v{}", v),
-      TyKind::Unit => "()".fmt(f),
-      TyKind::True => "true".fmt(f),
-      TyKind::False => "false".fmt(f),
-      TyKind::Bool => "bool".fmt(f),
+      TyKind::Unit => write!(f, "()"),
+      TyKind::True => write!(f, "true"),
+      TyKind::False => write!(f, "false"),
+      TyKind::Bool => write!(f, "bool"),
       TyKind::Int(ity) => ity.fmt(f),
       TyKind::Array(ty, n) => write!(f, "(array {:?} {:?})", ty, n),
       TyKind::Own(ty) => match &**ty {
@@ -261,9 +261,9 @@ impl std::fmt::Debug for TyKind {
       TyKind::RefSn(x) => write!(f, "(&sn {:?})", x),
       TyKind::Sn(e, ty) => write!(f, "(sn {{{:?}: {:?}}})", e, ty),
       TyKind::Struct(args) => {
-        "(struct".fmt(f)?;
+        write!(f, "(struct")?;
         for arg in &**args { write!(f, " {{{:?}}}", arg)? }
-        ")".fmt(f)
+        write!(f, ")")
       }
       TyKind::All(a, p, q) => write!(f, "A. {:?}: {:?}, {:?}", a, p, q),
       TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
@@ -277,14 +277,14 @@ impl std::fmt::Debug for TyKind {
       TyKind::Pure(e) => e.fmt(f),
       TyKind::User(name, tys, es) => {
         write!(f, "({}", name)?;
-        for ty in &**tys { " ".fmt(f)?; ty.fmt(f)? }
-        for e in &**es { " ".fmt(f)?; e.fmt(f)? }
-        ")".fmt(f)
+        for ty in &**tys { write!(f, " ")?; ty.fmt(f)? }
+        for e in &**es { write!(f, " ")?; e.fmt(f)? }
+        write!(f, ")")
       }
       TyKind::Heap(x, v, t) => write!(f, "{:?} => {:?}: {:?}", x, v, t),
       TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
-      TyKind::Input => "Input".fmt(f),
-      TyKind::Output => "Output".fmt(f),
+      TyKind::Input => write!(f, "Input"),
+      TyKind::Output => write!(f, "Output"),
       TyKind::Moved(ty) => write!(f, "|{:?}|", ty),
     }
   }
@@ -569,8 +569,8 @@ impl std::fmt::Debug for ExprKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match self {
-      ExprKind::Unit => "()".fmt(f),
-      ExprKind::Var(v) => write!(f, "v{}", v),
+      ExprKind::Unit => write!(f, "()"),
+      ExprKind::Var(v) => v.fmt(f),
       ExprKind::Const(c) => c.fmt(f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),

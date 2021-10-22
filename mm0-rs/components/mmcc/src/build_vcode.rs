@@ -547,7 +547,7 @@ impl<'a> LowerCtx<'a> {
       RValue::Borrow(p) => {
         let temp = match self.get_place(p) {
           RegMem::Reg(_) => panic!("register should be address-taken"),
-          RegMem::Mem(a) => self.code.emit_lea(a),
+          RegMem::Mem(a) => self.code.emit_lea(Size::S64, a),
         };
         self.code.emit_copy(sz, dst, temp);
       }
@@ -642,14 +642,14 @@ impl<'a> LowerCtx<'a> {
           let sz64 = sz.into();
           let sz = Size::from_u64(sz64);
           let src = self.get_operand(o).into_mem(&mut self.code, sz);
-          let temp = self.code.emit_lea(src);
+          let temp = self.code.emit_lea(Size::S64, src);
           operands.push(ROperand::reg_fixed_use(temp, reg));
         }
         ArgAbi::BoxedMem { off, sz } => {
           let sz64 = sz.into();
           let sz = Size::from_u64(sz64);
           let src = self.get_operand(o).into_mem(&mut self.code, sz);
-          let temp = self.code.emit_lea(src);
+          let temp = self.code.emit_lea(Size::S64, src);
           self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp);
         }
       }
@@ -677,7 +677,7 @@ impl<'a> LowerCtx<'a> {
             }
             RegMem::Mem(a) => a,
           };
-          let temp = self.code.emit_lea(addr);
+          let temp = self.code.emit_lea(Size::S64, addr);
           match *arg {
             ArgAbi::Boxed { reg, .. } =>
               operands.push(ROperand::reg_fixed_use(temp, reg)),
@@ -750,7 +750,7 @@ impl<'a> LowerCtx<'a> {
       }
       Terminator::Assert(ref o, _, true, _) => {
         let src = self.get_operand_reg(o, Size::S8);
-        self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32).trap_if();
+        self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32).assert();
       }
       Terminator::Assert(_, _, false, _) => { self.code.emit(Inst::Ud2); }
       Terminator::Call { f, se, ref tys, ref args, reach, tgt, ref rets } => {

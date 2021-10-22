@@ -2368,14 +2368,14 @@ pub theorem decodeMov64T (rex ast b l: nat):
   anld @ rsyl anlr @ exp readFullImmT opSizeW_T));
 
 @_ def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
-$ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
+$ E. v E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 12) : 0) b /\
-    readOpcodeModRM rex opc r l1 /\
+    readOpcodeModRM rex 0 r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastMov (opSizeW rex v) (Rm_i r imm)) $;
 pub theorem decodeMovImmT (rex ast b l: nat):
   $ decodeMovImm rex ast b l -> ast e. XAST $ =
-(named '(eex @ eex @ eex @ eex @ eex @ eex @
+(named '(eex @ eex @ eex @ eex @ eex @
   mpbird (eleq1d anr) @ sylibr xastMovT @ syl (ian opSizeW_T) @
   sylibr Rm_iT @ iand (rsyl anllr @ syl anlr readOpcodeModRM_T) @
   anld @ rsyl anlr @ exp readImmT opSizeW_T));
@@ -2527,7 +2527,7 @@ pub theorem decodeLeaT (rex ast b l: nat):
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
-    ast = xastBinop binopTst (opSizeW rex 1) (Rm_r r reg)) $;
+    ast = xastBinop binopTst (opSizeW rex v) (Rm_r r reg)) $;
 pub theorem decodeTestT (rex ast b l: nat):
   $ decodeTest rex ast b l -> ast e. XAST $ =
 (named '(eex @ eex @ eex @ mpbird (eleq1d anr) @
@@ -2750,11 +2750,11 @@ theorem decodeMov64I
 theorem decodeMovImmI
   (h1: $ splitBits ((1 <> v) : (3 <> 3) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ readOpcodeModRM rex opc r l1 $)
+  (h3: $ readOpcodeModRM rex 0 r l1 $)
   (h4: $ readImm sz imm l2 $):
   $ decodeAux rex (xastMov sz (Rm_i r imm)) (ch xc a) (l1 '+ l2) $ =
 (focus
-  '(decodeMovI @ orr @ iexie ,(iterate 5 (fn (x) '(iexde ,x))
+  '(decodeMovI @ orr @ iexie ,(iterate 4 (fn (x) '(iexde ,x))
     '(mpbiri (iani (iani (iani (iani s2nsadd _) h3) _) _) ,eqtac)))
   '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie decc)
   '(mpbir (readImmeq1 h2) h4)

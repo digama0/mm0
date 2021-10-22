@@ -532,7 +532,7 @@ do (begin
       (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N))
       (ian (R 1 eq0) @ r el)
       (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N))
-      (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
+      (E 5 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
       (E 2 @ q (L 2 B) @ qe (R 1 N))
       (e @ qe (R 1 N))
       (E 2 @ qe (R 1 M))

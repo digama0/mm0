@@ -144,12 +144,14 @@ impl PCodeBuilder {
   }
 
   fn push_prologue(&mut self, stack_size: u32, saved_regs: impl Iterator<Item=PReg>) {
-    self.push(PInst::Binop {
-      op: crate::arch::Binop::Sub,
-      sz: Size::S64,
-      dst: RSP,
-      src: PRegMemImm::Imm(stack_size)
-    });
+    if stack_size != 0 {
+      self.push(PInst::Binop {
+        op: crate::arch::Binop::Sub,
+        sz: Size::S64,
+        dst: RSP,
+        src: PRegMemImm::Imm(stack_size)
+      });
+    }
     for reg in saved_regs {
       self.push(PInst::Push64 { src: PRegMemImm::Reg(reg) });
     }
@@ -159,12 +161,14 @@ impl PCodeBuilder {
     for dst in saved_regs.rev() {
       self.push(PInst::Pop64 { dst });
     }
-    self.push(PInst::Binop {
-      op: crate::arch::Binop::Add,
-      sz: Size::S64,
-      dst: RSP,
-      src: PRegMemImm::Imm(stack_size)
-    });
+    if stack_size != 0 {
+      self.push(PInst::Binop {
+        op: crate::arch::Binop::Add,
+        sz: Size::S64,
+        dst: RSP,
+        src: PRegMemImm::Imm(stack_size)
+      });
+    }
     self.push(PInst::Ret)
   }
 
@@ -334,8 +338,8 @@ pub(crate) fn regalloc_vcode(
         code.push(PInst::MovzxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
       Inst::Load64 { ref src, .. } =>
         code.push(PInst::Load64 { src: ar.mem(src), dst: ar.reg() }),
-      Inst::Lea { ref addr, .. } =>
-        code.push(PInst::Lea { addr: ar.mem(addr), dst: ar.reg() }),
+      Inst::Lea { sz, ref addr, .. } =>
+        code.push(PInst::Lea { sz, addr: ar.mem(addr), dst: ar.reg() }),
       Inst::MovsxRmR { ext_mode, ref src, .. } =>
         code.push(PInst::MovsxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
       Inst::Store { sz, ref dst, .. } =>
@@ -385,82 +389,11 @@ pub(crate) fn regalloc_vcode(
           code.push(PInst::JmpCond { cc, dst: taken, short: false });
           code.push(PInst::JmpKnown { dst: not_taken, short: false });
         },
-      Inst::TrapIf { cc } => code.push(PInst::TrapIf { cc }),
+      Inst::Assert { cc } => code.push(PInst::Assert { cc }),
       Inst::Ud2 => code.push(PInst::Ud2),
     }
     code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
   }
   bb.finish_block(&mut code);
   (vcode.abi, code.finish())
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::wildcard_imports)]
-mod test {
-  use std::rc::Rc;
-  use crate::types::{IntTy, Spanned, hir::ProcKind, mir::*};
-  use super::*;
-
-  #[test] fn two_plus_two() {
-    let names = HashMap::new();
-    let func_mono = HashMap::new();
-    let funcs = IdxVec::new();
-    let consts = ConstData::default();
-    let mut fresh_var = VarId::default();
-    let u8 = IntTy::UInt(Size::S8);
-    let u8ty = Rc::new(TyKind::Int(u8));
-    let mut proc = Proc {
-      kind: ProcKind::Proc,
-      name: Spanned::dummy(crate::intern("foo")),
-      tyargs: 0,
-      args: vec![],
-      rets: vec![Arg {
-        attr: ArgAttr::NONDEP,
-        var: fresh_var.fresh(),
-        ty: u8ty.clone(),
-      }],
-      body: Cfg::default(),
-      allocs: None,
-    };
-    let cfg = &mut proc.body;
-    let bl1 = cfg.new_block(CtxId::ROOT);
-    let xs: Vec<_> = (0..2).map(|_| {
-      let x = fresh_var.fresh();
-      cfg[bl1].stmts.push(Statement::Let(
-        LetKind::Let(x, true, None),
-        Rc::new(TyKind::Int(u8)),
-        RValue::Use(Operand::Const(Box::new(Constant::int(u8, 2.into()))))));
-      x
-    }).collect();
-    let mut it = xs.iter().rev().copied();
-    let mut x = it.next().unwrap();
-    for y in it {
-      let new = fresh_var.fresh();
-      cfg[bl1].stmts.push(Statement::Let(
-        LetKind::Let(new, true, None),
-        Rc::new(TyKind::Int(u8)),
-        RValue::Binop(Binop::Add(u8),
-          Operand::Copy(Place::local(x)),
-          Operand::Copy(Place::local(y)))));
-      x = new;
-    }
-    let y = fresh_var.fresh();
-    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None, u8ty));
-    let bl2 = cfg.new_block(bl2ctx);
-    cfg[bl1].terminate(Terminator::Jump(bl2, vec![
-      (y, true, Operand::Copy(Place::local(x)))
-    ]));
-    cfg[bl2].terminate(Terminator::Return(vec![
-      (proc.rets[0].var, true, Operand::Copy(Place::local(y)))
-    ]));
-    println!("before opt:\n{:#?}", proc);
-    proc.optimize(&names);
-    println!("after opt:\n{:#?}", proc);
-    let cfg = &mut proc.body;
-    let allocs = proc.allocs.as_deref().unwrap();
-    println!("allocs = {:#?}", allocs);
-    let res = regalloc_vcode(&names, &func_mono, &funcs, &consts, cfg, allocs,
-      (&*proc.rets).into());
-    println!("{:#?}", res);
-  }
 }

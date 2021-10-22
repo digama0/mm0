@@ -519,9 +519,9 @@ theorem decodeMov64T (rex ast b l: nat):
   $ decodeMov64 rex ast b l -> ast e. XAST $;
 
 def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
-$ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
+$ E. v E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 12) : 0) b /\
-    readOpcodeModRM rex opc r l1 /\
+    readOpcodeModRM rex 0 r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastMov (opSizeW rex v) (Rm_i r imm)) $;
 theorem decodeMovImmT (rex ast b l: nat):
@@ -631,7 +631,7 @@ def decodeTest (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
-    ast = xastBinop binopTst (opSizeW rex 1) (Rm_r r reg)) $;
+    ast = xastBinop binopTst (opSizeW rex v) (Rm_r r reg)) $;
 theorem decodeTestT (rex ast b l: nat):
   $ decodeTest rex ast b l -> ast e. XAST $;
 

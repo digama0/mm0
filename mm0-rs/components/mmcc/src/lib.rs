@@ -114,6 +114,7 @@ mod build_vcode;
 mod arch;
 mod regalloc;
 mod linker;
+mod codegen;
 
 use std::collections::HashMap;
 use {types::{entity::Entity, mir}, predef::PredefMap};
@@ -126,6 +127,7 @@ pub use types::Idx;
 pub use symbol::{Symbol, Interner, intern, init_dense_symbol_map};
 pub use nameck::DeclarationError;
 pub use ty::{CtxPrint, CtxDisplay, DisplayCtx};
+pub use linker::LinkedCode;
 use types::{IdxVec, VarId, LambdaId, ty, ast, hir};
 
 /// Global configuration for the compiler.
@@ -251,13 +253,91 @@ impl<C: Config> Compiler<C> {
   /// The compiler is reset to the initial state after this operation, except for the user state
   /// [`Compiler::config`], so it can be used to compile another program but the library functions
   /// must first be loaded in again.
-  pub fn finish(&mut self) -> Result<(), C::Error> {
+  pub fn finish(&mut self) -> LinkedCode {
     let names = std::mem::replace(&mut self.names, symbol::Interner::with(Self::make_names));
     let mir = std::mem::take(&mut self.mir);
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
-    let _code = linker::LinkedCode::link(&names, &mir, &init, &allocs, &globals);
-    Ok(())
+    LinkedCode::link(&names, &mir, &init, &allocs, &globals)
+  }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::wildcard_imports)]
+mod test {
+  use std::fs::File;
+use std::{collections::HashMap, rc::Rc};
+  use crate::LinkedCode;
+use crate::{Idx, linker::ConstData, regalloc::regalloc_vcode};
+  use crate::types::{IdxVec, IntTy, Size, Spanned, hir::ProcKind, mir::*};
+
+  fn assert_eq_hex(data: &[u8], hex: &str) {
+    let mut result = String::from(hex);
+    result.retain(|c| c.is_ascii_hexdigit());
+    assert_eq!(hex::encode(data), result);
+  }
+
+  #[test] fn two_plus_two() {
+    let names = HashMap::new();
+    let consts = ConstData::default();
+    let mut fresh_var = VarId::default();
+    let u8 = IntTy::UInt(Size::S8);
+    let u8ty = Rc::new(TyKind::Int(u8));
+    let mir = HashMap::default();
+    let mut cfg = Cfg::default();
+
+    let bl1 = cfg.new_block(CtxId::ROOT);
+    let [x1, x2] = [(); 2].map(|_| {
+      let x = fresh_var.fresh();
+      cfg[bl1].stmts.push(Statement::Let(
+        LetKind::Let(x, true, None),
+        Rc::new(TyKind::Int(u8)),
+        Constant::int(u8, 2.into()).into()));
+      x
+    });
+    let sum = fresh_var.fresh();
+    cfg[bl1].stmts.push(Statement::Let(
+      LetKind::Let(sum, true, None),
+      Rc::new(TyKind::Int(u8)),
+      RValue::Binop(Binop::Add(u8),
+        Operand::Copy(Place::local(x1)),
+        Operand::Copy(Place::local(x2)))));
+    let eq = fresh_var.fresh();
+    cfg[bl1].stmts.push(Statement::Let(
+      LetKind::Let(eq, true, None),
+      Rc::new(TyKind::Bool),
+      RValue::Binop(Binop::Eq(u8),
+        Operand::Copy(Place::local(sum)),
+        Constant::int(u8, 4.into()).into())));
+    let y = fresh_var.fresh();
+    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None,
+      Rc::new(TyKind::Pure(Rc::new(ExprKind::Var(eq))))));
+    let bl2 = cfg.new_block(bl2ctx);
+    cfg[bl1].terminate(Terminator::Assert(eq.into(), y, true, bl2));
+    cfg[bl2].terminate(Terminator::Exit(Constant::unit().into()));
+
+    // println!("before opt:\n{:#?}", cfg);
+    cfg.optimize(&[]);
+    // println!("after opt:\n{:#?}", cfg);
+    let allocs = cfg.storage(&names);
+    // println!("allocs = {:#?}", allocs);
+    let code = LinkedCode::link(&names, &mir, &cfg, &allocs, &[]);
+    // println!("code = {:#?}", code);
+    // code.write_elf(&mut File::create("two_plus_two").unwrap());
+    let mut out = Vec::new();
+    code.write_elf(&mut out).unwrap();
+    assert_eq_hex(&out, "\
+      7f45 4c46 0201 0100 0000 0000 0000 0000\
+      0200 3e00 0100 0000 7800 4000 0000 0000\
+      4000 0000 0000 0000 0000 0000 0000 0000\
+      0000 0000 4000 3800 0100 4000 0000 0000\
+      0100 0000 0700 0000 7800 0000 0000 0000\
+      7800 4000 0000 0000 0000 0000 0000 0000\
+      2800 0000 0000 0000 2800 0000 0000 0000\
+      0000 2000 0000 0000 ba02 0000 00be 0200\
+      0000 4002 d680 fa04 400f 94c6 4080 fe00\
+      7502 0f0b b83c 0000 0033 ff0f 0500 0000\
+    ");
   }
 }

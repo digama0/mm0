@@ -5,6 +5,8 @@ use std::{convert::TryFrom, fmt::Debug};
 use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};
 
+use crate::codegen::InstSink;
+use crate::LinkedCode;
 use crate::types::{IdxVec, Size,
   vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
 
@@ -75,13 +77,13 @@ pub(crate) enum DivOrRemKind {
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ShiftKind {
-  Shl,
+  // Rol = 0,
+  // Ror = 1,
+  Shl = 4,
   /// Inserts zeros in the most significant bits.
-  ShrL,
+  ShrL = 5,
   /// Replicates the sign bit in the most significant bits.
-  ShrA,
-  // Rol,
-  // Ror,
+  ShrA = 7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -164,10 +166,10 @@ pub(crate) enum CC {
   S = 8,
   /// not-negative (no sign)
   NS = 9,
-  /// parity (aka PE = parity even)
-  P = 10,
-  /// not parity (aka PO = parity odd)
-  NP = 11,
+  // /// parity (aka PE = parity even)
+  // P = 10,
+  // /// not parity (aka PO = parity odd)
+  // NP = 11,
   /// `<` signed (less, aka NGE = not greater equal)
   L = 12,
   /// `>=` signed (not less, aka GE = greater equal)
@@ -191,8 +193,8 @@ impl CC {
       CC::NBE => CC::BE,
       CC::S => CC::NS,
       CC::NS => CC::S,
-      CC::P => CC::NP,
-      CC::NP => CC::P,
+      // CC::P => CC::NP,
+      // CC::NP => CC::P,
       CC::L => CC::NL,
       CC::NL => CC::L,
       CC::LE => CC::NLE,
@@ -203,6 +205,7 @@ impl CC {
 
 /// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
 pub(crate) enum Binop {
   Add = 0,
   Or = 1,
@@ -215,6 +218,7 @@ pub(crate) enum Binop {
 
 /// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
 pub(crate) enum Unop {
   Inc = 0,
   Dec = 1,
@@ -383,7 +387,7 @@ impl AMode {
         let shift = match sc { 3 => 1, 5 => 2, 9 => 3, _ => unreachable!() };
         AMode { off: self.off, base: reg, si: Some(ShiftIndex { index: reg, shift }) }
       }
-      (Some(_), _, _) => AMode::reg(code.emit_lea(*self)).add_scaled(code, sc, reg),
+      (Some(_), _, _) => AMode::reg(code.emit_lea(Size::S64, *self)).add_scaled(code, sc, reg),
       (None, _, _) => {
         let sc = code.emit_imm(Size::S64, sc);
         let mul = code.emit_mul(Size::S64, reg, sc).0;
@@ -686,6 +690,7 @@ pub(crate) enum Inst {
   },
   /// Load effective address: `dst <- addr`
   Lea {
+    sz: Size, // 4 or 8
     dst: VReg,
     addr: AMode,
   },
@@ -773,8 +778,8 @@ pub(crate) enum Inst {
   },
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: RegMem },
-  /// Traps if the condition code is set.
-  TrapIf { cc: CC },
+  /// Traps if the condition code is not set.
+  Assert { cc: CC },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
 }
@@ -842,11 +847,11 @@ impl VInst for Inst {
         src.collect_operands(args);
         args.push(Operand::reg_def(dst));
       }
-      Inst::Lea { dst, ref addr } => {
+      Inst::Lea { dst, ref addr, .. } => {
         addr.collect_operands(args);
         args.push(Operand::reg_def(dst));
       }
-      Inst::Store { sz, ref dst, src } => {
+      Inst::Store { ref dst, src, .. } => {
         args.push(Operand::reg_use(src));
         dst.collect_operands(args);
       }
@@ -875,7 +880,7 @@ impl VInst for Inst {
       // Other instructions that have no operands
       Inst::Fallthrough { .. } |
       Inst::JmpCond { .. } |
-      Inst::TrapIf { .. } |
+      Inst::Assert { .. } |
       Inst::Ud2 => {}
     }
   }
@@ -917,8 +922,8 @@ impl Flags<'_> {
     dst
   }
 
-  pub(crate) fn trap_if(self) -> InstId {
-    self.0.emit(Inst::TrapIf { cc: self.1 })
+  pub(crate) fn assert(self) -> InstId {
+    self.0.emit(Inst::Assert { cc: self.1 })
   }
 
   pub(crate) fn branch(self, tru: BlockId, fal: BlockId) -> InstId {
@@ -927,9 +932,9 @@ impl Flags<'_> {
 }
 
 impl VCode<Inst> {
-  pub(crate) fn emit_lea(&mut self, addr: AMode) -> VReg {
+  pub(crate) fn emit_lea(&mut self, sz: Size, addr: AMode) -> VReg {
     let dst = self.fresh_vreg();
-    self.emit(Inst::Lea { dst, addr });
+    self.emit(Inst::Lea { sz, dst, addr });
     dst
   }
 
@@ -981,7 +986,9 @@ impl VCode<Inst> {
         (_, RegMemImm::Uninit) => {}
         (RegMem::Reg(dst), RegMemImm::Reg(src)) => { code.emit(Inst::MovRR { sz, dst, src }); }
         (RegMem::Reg(dst), RegMemImm::Mem(src)) => { code.emit(Inst::load_mem(sz, dst, src)); }
-        (RegMem::Reg(dst), RegMemImm::Imm(src)) => { code.emit(Inst::Imm { sz, dst, src }); }
+        (RegMem::Reg(dst), RegMemImm::Imm(src)) => {
+          code.emit(Inst::Imm { sz: sz.max(Size::S32), dst, src });
+        }
         (RegMem::Mem(dst), RegMemImm::Reg(src)) => { code.emit(Inst::Store { sz, dst, src }); }
         _ => {
           let temp = code.fresh_vreg();
@@ -1036,7 +1043,7 @@ pub(crate) enum PInst {
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
-    sz: Size, // 4 or 8
+    sz: Size, // 1, 2, 4 or 8
     dst: PReg,
     src: PRegMemImm,
   },
@@ -1102,6 +1109,7 @@ pub(crate) enum PInst {
   },
   /// Load effective address: `dst <- addr`
   Lea {
+    sz: Size, // 4 or 8
     dst: PReg,
     addr: PAMode,
   },
@@ -1176,17 +1184,21 @@ pub(crate) enum PInst {
   },
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: PRegMem },
-  /// Traps if the condition code is set.
-  TrapIf { cc: CC },
+  /// Traps if the condition code is not set.
+  Assert { cc: CC },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
 pub(crate) enum DispLayout {
-  S0,
-  S8,
-  S32,
+  /// 0 byte immediate, `mm = 00`
+  S0 = 0,
+  /// 1 byte immediate, `mm = 01`
+  S8 = 1,
+  /// 4 byte immediate, `mm = 10`
+  S32 = 2,
 }
 
 impl DispLayout {
@@ -1199,13 +1211,19 @@ impl DispLayout {
   }
 }
 
-#[derive(Clone, Copy)]
+/// Layout of the Mod/RM and SIB bytes.
+#[derive(Clone, Copy, Debug)]
 #[allow(clippy::upper_case_acronyms)]
 pub(crate) enum ModRMLayout {
+  /// `11ooonnn` where `rn = o` and `rm = reg(n)`
   Reg,
+  /// `00ooo101 + imm32` where `rn = o` and `rm = [RIP + imm32]`
   #[allow(unused)] RIP,
+  /// `00ooo100 + ssiii101 + imm32` where `rn = o` and `rm = [0 + sc*ix + imm32]`
   Sib0,
+  /// `mmooo100 + ssiiibbb + disp0/8/32` where `rn = o` and `rm = [reg(b) + sc*ix + disp]`
   SibReg(DispLayout),
+  /// `mmooonnn + disp0/8/32` where `rn = o` and `rm = [reg(b) + disp]`
   Disp(DispLayout),
 }
 
@@ -1221,19 +1239,23 @@ impl ModRMLayout {
   }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum OpcodeLayout {
   /// `decodeBinopRAX` layout: `00ooo01v + imm32`
   BinopRAX,
-  /// `decodeBinopImm` layout: `1000000v + modrm + imm32`
-  BinopImm(ModRMLayout),
+  /// `decodeBinopImm` layout for 8-bit operand: `1000000v + modrm + imm8`
+  BinopImmS8(ModRMLayout),
+  /// `decodeBinopImm` layout for 32-bit operand: `1000000v + modrm + imm32`
+  BinopImmS32(ModRMLayout),
   /// `decodeBinopImm8` layout: `0x83 + modrm + imm8`
   BinopImm8(ModRMLayout),
   /// `decodeBinopReg` layout: `00ooo0dv + modrm`
   BinopReg(ModRMLayout),
   /// `decodeBinopHi` layout: `1100000v + modrm + imm8`
   BinopHi(ModRMLayout),
-  /// `decodeBinopHiReg` layout: `110100xv + modrm`
+  /// `decodeBinopHiReg` layout with immediate 1: `1101000v + modrm`
+  BinopHi1(ModRMLayout),
+  /// `decodeBinopHiReg` layout: `1101001v + modrm`
   BinopHiReg(ModRMLayout),
   /// `decodeMovSX` layout: `0x63 + modrm`
   MovSX(ModRMLayout),
@@ -1243,8 +1265,8 @@ pub(crate) enum OpcodeLayout {
   Mov32,
   /// `decodeMov64` layout: `1011vrrr + imm64`
   Mov64,
-  /// `decodeMovImm` layout: `1100011v + modrm + imm32`
-  MovImm(ModRMLayout),
+  // /// `decodeMovImm` layout: `1100011v + modrm + imm32`
+  // MovImm(ModRMLayout),
   /// `decodePushImm` layout with 8 bit immediate: `0x6A + imm8`
   PushImm8,
   /// `decodePushImm` layout with 32 bit immediate: `0x68 + imm32`
@@ -1287,8 +1309,8 @@ pub(crate) enum OpcodeLayout {
   Jcc,
   /// `decodeTwoSysCall` layout: `0x0F 0x05`
   SysCall,
-  /// `trapIf` pseudo-instruction: `jcc !cond l; ud2; l:`
-  TrapIf,
+  /// `assert` pseudo-instruction: `jcc cond l; ud2; l:`
+  Assert,
   /// `ud2` instruction: `0x0F 0x0B`
   Ud2,
 }
@@ -1299,21 +1321,21 @@ impl OpcodeLayout {
       Self::Ret | Self::PushReg | Self::PopReg => 1, // opcode
       Self::PushImm8 | Self::Jump8 | Self::Jcc8 | Self::TestRAX8 | // opcode + imm8
       Self::Ud2 | Self::SysCall => 2, // 0F + opcode
-      Self::TrapIf => 4, // jcc8 + ud2
+      Self::Assert => 4, // jcc8 + ud2
       Self::BinopRAX | Self::Mov32 | Self::PushImm32 |
       Self::Jump32 | Self::Call | Self::TestRAX32 => 5, // opcode + imm32
       Self::Jcc => 6, // 0F + opcode + imm32
       Self::Mov64 => 9, // opcode + imm64
-      Self::BinopReg(modrm) | Self::BinopHiReg(modrm) |
+      Self::BinopReg(modrm) | Self::BinopHi1(modrm) | Self::BinopHiReg(modrm) |
       Self::MovSX(modrm) | Self::MovReg(modrm) |
       Self::Lea(modrm) | Self::Test(modrm) |
       Self::Hi(modrm) => 1 + modrm.len(), // opcode + modrm
-      Self::BinopImm8(modrm) | Self::BinopHi(modrm) |
+      Self::BinopImmS8(modrm) | Self::BinopImm8(modrm) | Self::BinopHi(modrm) |
       Self::HiTest8(modrm) | // opcode + modrm + imm8
       Self::SetCC(modrm) | Self::CMov(modrm) |
       Self::MovX(modrm) => 2 + modrm.len(), // 0F + opcode + modrm
-      Self::BinopImm(modrm) |
-      Self::MovImm(modrm) |
+      Self::BinopImmS32(modrm) |
+      // Self::MovImm(modrm) |
       Self::HiTest32(modrm) => 5 + modrm.len(), // opcode + modrm + imm32
     }
   }
@@ -1323,6 +1345,12 @@ impl OpcodeLayout {
 pub(crate) struct InstLayout {
   rex: bool,
   opc: OpcodeLayout,
+}
+
+impl Debug for InstLayout {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if self.rex { write!(f, "REX + {:?}", self.opc) } else { self.opc.fmt(f) }
+  }
 }
 
 impl InstLayout {
@@ -1400,14 +1428,39 @@ fn layout_rmi(rex: &mut bool, r: PReg, rm: &PRegMemImm) -> ModRMLayout {
   layout_opc_rmi(rex, rm)
 }
 
+fn high_reg(rex: &mut bool, r: PReg) { *rex |= r.index() & 4 != 0 }
+
+fn high_amode(rex: &mut bool, a: &PAMode) {
+  if a.base.is_valid() { high_reg(rex, a.base) }
+  if let Some(si) = &a.si { high_reg(rex, si.index) }
+}
+
+fn high_rm(rex: &mut bool, rm: &PRegMem) {
+  match rm {
+    &RegMem::Reg(r) => high_reg(rex, r),
+    RegMem::Mem(a) => high_amode(rex, a)
+  }
+}
+
+fn high_rmi(rex: &mut bool, rmi: &PRegMemImm) {
+  match rmi {
+    &PRegMemImm::Reg(r) => high_reg(rex, r),
+    PRegMemImm::Mem(a) => high_amode(rex, a),
+    PRegMemImm::Imm(_) => {}
+  }
+}
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn layout_binop_lo(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
   let mut rex = sz == Size::S64;
+  if sz == Size::S8 { high_reg(&mut rex, dst); high_rmi(&mut rex, src) }
   let mut opc = match *src {
-    PRegMemImm::Imm(i) if i as i8 as u32 == i =>
-      OpcodeLayout::BinopImm8(layout_opc_reg(&mut rex, dst)),
-    PRegMemImm::Imm(i) => OpcodeLayout::BinopImm(layout_opc_reg(&mut rex, dst)),
+    PRegMemImm::Imm(i) => match sz {
+      Size::S8 => OpcodeLayout::BinopImmS8(layout_opc_reg(&mut rex, dst)),
+      Size::S16 => unimplemented!(),
+      _ if i as i8 as u32 == i => OpcodeLayout::BinopImm8(layout_opc_reg(&mut rex, dst)),
+      _ => OpcodeLayout::BinopImmS32(layout_opc_reg(&mut rex, dst)),
+    }
     _ => OpcodeLayout::BinopReg(layout_rmi(&mut rex, dst, src))
   };
   if dst == RAX && matches!(src, PRegMemImm::Imm(..)) &&
@@ -1415,20 +1468,6 @@ fn layout_binop_lo(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
   {
     opc = OpcodeLayout::BinopRAX
   }
-  InstLayout { rex, opc }
-}
-
-fn layout_test(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
-  let mut rex = sz == Size::S64;
-  let opc = match *src {
-    PRegMemImm::Imm(i) => match (dst, sz) {
-      (RAX, Size::S8) => OpcodeLayout::TestRAX8,
-      (RAX, _) => OpcodeLayout::TestRAX32,
-      (_, Size::S8) => OpcodeLayout::HiTest8(layout_opc_reg(&mut rex, dst)),
-      (_, _) => OpcodeLayout::HiTest32(layout_opc_reg(&mut rex, dst)),
-    }
-    _ => OpcodeLayout::Test(layout_rmi(&mut rex, dst, src))
-  };
   InstLayout { rex, opc }
 }
 
@@ -1441,6 +1480,7 @@ impl PInst {
       PInst::Binop { sz, dst, ref src, .. } => layout_binop_lo(sz, dst, src),
       PInst::Unop { sz, dst, .. } => {
         let mut rex = sz == Size::S64;
+        if sz == Size::S8 { high_reg(&mut rex, dst) }
         InstLayout { opc: OpcodeLayout::Hi(layout_opc_reg(&mut rex, dst)), rex }
       }
       PInst::DivRem { sz, ref src } | PInst::Mul { sz, ref src } => {
@@ -1449,7 +1489,10 @@ impl PInst {
       }
       PInst::Imm { sz, dst, src } => {
         let opc = match src {
-          0 => OpcodeLayout::BinopReg(ModRMLayout::Reg), // xor dst, dst
+          0 => {
+             // xor dst, dst
+             return layout_binop_lo(sz.min(Size::S32), dst, &PRegMemImm::Reg(dst))
+          }
           _ if src as i32 as u64 == src => OpcodeLayout::Mov32,
           _ => OpcodeLayout::Mov64,
         };
@@ -1472,24 +1515,43 @@ impl PInst {
       }
       PInst::Load64 { dst, ref src } =>
         InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut true, dst, src)), rex: true },
-      PInst::Lea { dst, ref addr } =>
-        InstLayout { opc: OpcodeLayout::Lea(layout_mem(&mut true, dst, addr)), rex: true },
+      PInst::Lea { sz, dst, ref addr } => {
+        let mut rex = sz == Size::S64;
+        InstLayout { opc: OpcodeLayout::Lea(layout_mem(&mut rex, dst, addr)), rex }
+      }
       PInst::Store { sz, ref dst, src } => {
         let mut rex = sz == Size::S64;
+        if sz == Size::S8 { high_amode(&mut rex, dst); high_reg(&mut rex, src) }
         InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut rex, src, dst)), rex }
       }
-      PInst::Shift { sz, dst, num_bits: None, .. } => {
+      PInst::Shift { sz, dst, num_bits, .. } => {
         let mut rex = sz == Size::S64;
-        InstLayout { opc: OpcodeLayout::BinopHiReg(layout_opc_reg(&mut rex, dst)), rex }
-      }
-      PInst::Shift { sz, dst, num_bits: Some(_), .. } => {
-        let mut rex = sz == Size::S64;
-        InstLayout { opc: OpcodeLayout::BinopHi(layout_opc_reg(&mut rex, dst)), rex }
+        if sz == Size::S8 { high_reg(&mut rex, dst) }
+        let opc = match num_bits {
+          None => OpcodeLayout::BinopHiReg(layout_opc_reg(&mut rex, dst)),
+          Some(1) => OpcodeLayout::BinopHi1(layout_opc_reg(&mut rex, dst)),
+          Some(_) => OpcodeLayout::BinopHi(layout_opc_reg(&mut rex, dst)),
+        };
+        InstLayout { rex, opc }
       }
       PInst::Cmp { sz, op: Cmp::Cmp, src1, ref src2 } => layout_binop_lo(sz, src1, src2),
-      PInst::Cmp { sz, op: Cmp::Test, src1, ref src2 } => layout_test(sz, src1, src2),
+      PInst::Cmp { sz, op: Cmp::Test, src1, ref src2 } => {
+        let mut rex = sz == Size::S64;
+        if sz == Size::S8 { high_reg(&mut rex, src1); high_rmi(&mut rex, src2) }
+        let opc = match *src2 {
+          PRegMemImm::Imm(i) => match (src1, sz) {
+            (RAX, Size::S8) => OpcodeLayout::TestRAX8,
+            (RAX, _) => OpcodeLayout::TestRAX32,
+            (_, Size::S8) => OpcodeLayout::HiTest8(layout_opc_reg(&mut rex, src1)),
+            (_, _) => OpcodeLayout::HiTest32(layout_opc_reg(&mut rex, src1)),
+          }
+          _ => OpcodeLayout::Test(layout_rmi(&mut rex, src1, src2))
+        };
+        InstLayout { rex, opc }
+      }
       PInst::SetCC { dst, .. } => {
         let mut rex = false;
+        high_reg(&mut rex, dst);
         InstLayout { opc: OpcodeLayout::SetCC(layout_opc_reg(&mut rex, dst)), rex }
       }
       PInst::CMov { sz, cc, dst, ref src } => {
@@ -1514,7 +1576,7 @@ impl PInst {
       PInst::JmpKnown { short: false, .. } => InstLayout { opc: OpcodeLayout::Jump32, rex: false },
       PInst::JmpCond { short: true, .. } => InstLayout { opc: OpcodeLayout::Jcc8, rex: false },
       PInst::JmpCond { short: false, .. } => InstLayout { opc: OpcodeLayout::Jcc, rex: false },
-      PInst::TrapIf { .. } => InstLayout { opc: OpcodeLayout::TrapIf, rex: false },
+      PInst::Assert { .. } => InstLayout { opc: OpcodeLayout::Assert, rex: false },
       PInst::Ud2 => InstLayout { opc: OpcodeLayout::Ud2, rex: false },
     }
   }
@@ -1543,6 +1605,306 @@ impl PInst {
         PInst::JmpCond { cc, dst, short: false }.len()
       ),
       _ => { let len = self.len(); (len, len) }
+    }
+  }
+
+  #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+  pub(crate) fn write(&self, buf: &mut InstSink<'_>) {
+    const REX_W: u8 = 1 << 3;
+    const REX_R: u8 = 1 << 2;
+    const REX_X: u8 = 1 << 1;
+    const REX_B: u8 = 1 << 0;
+
+    fn op_size_w(rex: &mut u8, sz: Size) -> u8 {
+      match sz {
+        Size::S8 => 0,
+        Size::S16 => unimplemented!(),
+        Size::S32 => 1,
+        Size::S64 => { *rex |= REX_W; 1 },
+        Size::Inf => unreachable!(),
+      }
+    }
+
+    fn get_binop(inst: &PInst) -> (Size, PReg, PRegMemImm, u8) {
+      match *inst {
+        PInst::Binop { sz, dst, src, op } => (sz, dst, src, op as u8),
+        PInst::Cmp { sz, op: Cmp::Cmp, src1, src2 } => (sz, src1, src2, 7),
+        PInst::Imm { sz, dst, src: 0 } =>
+          (sz.min(Size::S32), dst, PRegMemImm::Reg(dst), Binop::Xor as u8),
+        _ => unreachable!()
+      }
+    }
+
+    fn to_rm(rmi: PRegMemImm) -> PRegMem {
+      match rmi {
+        PRegMemImm::Reg(r) => PRegMem::Reg(r),
+        PRegMemImm::Mem(m) => PRegMem::Mem(m),
+        PRegMemImm::Imm(_) => unreachable!(),
+      }
+    }
+
+    #[inline] fn encode_reg8(n: u8, rex: &mut u8, x: u8) -> u8 {
+      if n >= 8 { *rex |= x }
+      n & 7
+    }
+
+    #[inline] fn encode_reg(preg: PReg, rex: &mut u8, x: u8) -> u8 {
+      encode_reg8(preg.index() as u8, rex, x)
+    }
+
+    fn write_disp(disp: DispLayout, buf: &mut InstSink<'_>, n: u32) {
+      match disp {
+        DispLayout::S0 => assert!(n == 0),
+        DispLayout::S8 => buf.push_u8(n as u8),
+        DispLayout::S32 => buf.push_u32(n),
+      }
+    }
+
+    fn encode_offset(buf: &InstSink<'_>, off: &Offset) -> u32 {
+      match *off {
+        Offset::Real(off) => off,
+        Offset::Spill(..) => unreachable!("removed by regalloc"),
+        Offset::Global(id, n) => buf[id] + n,
+        Offset::Const(n) => buf.rodata_start + n,
+      }
+    }
+
+    fn encode_si(si: Option<PShiftIndex>, rex: &mut u8) -> u8 {
+      match si {
+        Some(ShiftIndex { index, shift }) => (shift << 6) + (encode_reg(index, rex, REX_X) << 3),
+        None => 4 << 3
+      }
+    }
+
+    fn write_opc_modrm(modrm: ModRMLayout,
+      rex: &mut u8, buf: &mut InstSink<'_>, arg1: u8, arg2: PRegMem
+    ) {
+      let opc = encode_reg8(arg1, rex, REX_R);
+      match (modrm, arg2) {
+        (ModRMLayout::Reg, PRegMem::Reg(rm2)) =>
+          buf.push_u8((3 << 6) + (opc << 3) + encode_reg(rm2, rex, REX_B)),
+        (ModRMLayout::Sib0, PRegMem::Mem(a)) => {
+          buf.push_u8((opc << 3) + 4);
+          buf.push_u8(encode_si(a.si, rex) + 5);
+          let off = encode_offset(buf, &a.off);
+          buf.push_u32(off);
+        }
+        (ModRMLayout::SibReg(disp), PRegMem::Mem(a)) => {
+          buf.push_u8(((disp as u8) << 6) + (opc << 3) + 4);
+          buf.push_u8(encode_si(a.si, rex) + encode_reg(a.base, rex, REX_B));
+          let off = encode_offset(buf, &a.off);
+          write_disp(disp, buf, off);
+        }
+        (ModRMLayout::Disp(disp), PRegMem::Mem(a)) => {
+          buf.push_u8(((disp as u8) << 6) + (opc << 3) + encode_reg(a.base, rex, REX_B));
+          let off = encode_offset(buf, &a.off);
+          write_disp(disp, buf, off);
+        }
+        _ => unreachable!(),
+      }
+    }
+
+    fn write_modrm(modrm: ModRMLayout,
+      rex: &mut u8, buf: &mut InstSink<'_>, arg1: PReg, arg2: PRegMem
+    ) {
+      write_opc_modrm(modrm, rex, buf, arg1.index() as u8, arg2)
+    }
+
+    let layout = self.layout_inst();
+    buf.update_rip(layout.len());
+    if layout.rex { buf.push_u8(0) }
+    let mut rex = 0;
+    match (layout.opc, self) {
+      (OpcodeLayout::BinopRAX, _) =>
+        if let (sz, RAX, PRegMemImm::Imm(src), op) = get_binop(self) {
+          buf.push_u8(0x04 + (op << 3) + op_size_w(&mut rex, sz));
+          buf.push_u32(src);
+        } else { unreachable!() },
+      (OpcodeLayout::BinopImmS8(modrm), _) =>
+        if let (Size::S8, dst, PRegMemImm::Imm(src), op) = get_binop(self) {
+          buf.push_u8(0x80);
+          write_opc_modrm(modrm, &mut rex, buf, op, PRegMem::Reg(dst));
+          buf.push_u8(src as u8);
+        } else { unreachable!() },
+      (OpcodeLayout::BinopImmS32(modrm), _) =>
+        if let (sz, dst, PRegMemImm::Imm(src), op) = get_binop(self) {
+          buf.push_u8(0x80 + op_size_w(&mut rex, sz));
+          write_opc_modrm(modrm, &mut rex, buf, op, PRegMem::Reg(dst));
+          buf.push_u32(src);
+        } else { unreachable!() },
+      (OpcodeLayout::BinopImm8(modrm), _) =>
+        if let (sz, dst, PRegMemImm::Imm(src), op) = get_binop(self) {
+          assert!(op_size_w(&mut rex, sz) == 1);
+          buf.push_u8(0x83);
+          write_opc_modrm(modrm, &mut rex, buf, op, PRegMem::Reg(dst));
+          buf.push_u8(src as u8);
+        } else { unreachable!() },
+      (OpcodeLayout::BinopReg(modrm), _) => {
+        let (sz, dst, src, op) = get_binop(self);
+        buf.push_u8(0x02 + (op << 3) + op_size_w(&mut rex, sz));
+        write_modrm(modrm, &mut rex, buf, dst, to_rm(src));
+      }
+      (OpcodeLayout::BinopHi(modrm), &PInst::Shift { sz, kind, dst, num_bits: Some(n) }) => {
+        buf.push_u8(0xc0 + op_size_w(&mut rex, sz));
+        write_opc_modrm(modrm, &mut rex, buf, kind as u8, PRegMem::Reg(dst));
+        buf.push_u8(n);
+      }
+      (OpcodeLayout::BinopHi1(modrm), &PInst::Shift { sz, kind, dst, num_bits: Some(1) }) => {
+        buf.push_u8(0xd0 + op_size_w(&mut rex, sz));
+        write_opc_modrm(modrm, &mut rex, buf, kind as u8, PRegMem::Reg(dst));
+      }
+      (OpcodeLayout::BinopHiReg(modrm), &PInst::Shift { sz, kind, dst, num_bits: None }) => {
+        buf.push_u8(0xd2 + op_size_w(&mut rex, sz));
+        write_opc_modrm(modrm, &mut rex, buf, kind as u8, PRegMem::Reg(dst));
+      }
+      (OpcodeLayout::MovSX(modrm), &PInst::MovsxRmR { ext_mode: ExtMode::LQ, dst, src }) => {
+        buf.push_u8(0x63); rex |= REX_W;
+        write_modrm(modrm, &mut rex, buf, dst, src);
+      }
+      (OpcodeLayout::MovReg(modrm), _) => {
+        let (op, r, rm) = match *self {
+          PInst::MovRR { sz, dst, src } => (0x8a + op_size_w(&mut rex, sz), dst, src.into()),
+          PInst::MovzxRmR { ext_mode: ExtMode::LQ, dst, src } => (0x8b, dst, src),
+          PInst::Load64 { dst, src } => (0x8a + op_size_w(&mut rex, Size::S64), dst, src.into()),
+          PInst::Store { sz, dst, src } => (0x88 + op_size_w(&mut rex, sz), src, dst.into()),
+          _ => unreachable!(),
+        };
+        buf.push_u8(op);
+        write_modrm(modrm, &mut rex, buf, r, rm);
+      }
+      (OpcodeLayout::Mov32, &PInst::Imm { sz, dst, src }) => {
+        buf.push_u8(0xb0 + (op_size_w(&mut rex, sz) << 3) + encode_reg(dst, &mut rex, REX_B));
+        buf.push_u32(src as u32);
+      }
+      (OpcodeLayout::Mov64, &PInst::Imm { sz, dst, src }) => {
+        buf.push_u8(0xb0 + (op_size_w(&mut rex, sz) << 3) + encode_reg(dst, &mut rex, REX_B));
+        buf.push_u64(src);
+      }
+      // (OpcodeLayout::MovImm(modrm), _) => unreachable!(),
+      (OpcodeLayout::PushImm8, &PInst::Push64 { src: PRegMemImm::Imm(src) }) => {
+        buf.push_u8(0x6a);
+        buf.push_u8(src as u8);
+      }
+      (OpcodeLayout::PushImm32, &PInst::Push64 { src: PRegMemImm::Imm(src) }) => {
+        buf.push_u8(0x68);
+        buf.push_u32(src);
+      }
+      (OpcodeLayout::PushReg, &PInst::Push64 { src: PRegMemImm::Reg(src) }) =>
+        buf.push_u8(0x50 + encode_reg(src, &mut rex, REX_B)),
+      (OpcodeLayout::PopReg, &PInst::Pop64 { dst }) =>
+        buf.push_u8(0x58 + encode_reg(dst, &mut rex, REX_B)),
+      (OpcodeLayout::Jump8, &PInst::JmpKnown { short: true, dst }) => {
+        let dst = buf.rip_relative_block(dst);
+        buf.push_u8(0xeb);
+        buf.push_u8(dst as u8);
+      }
+      (OpcodeLayout::Jump32, &PInst::JmpKnown { short: false, dst }) => {
+        let dst = buf.rip_relative_block(dst);
+        buf.push_u8(0xe9);
+        buf.push_u32(dst as u32);
+      }
+      (OpcodeLayout::Jcc8, &PInst::JmpCond { cc, short: true, dst }) => {
+        let dst = buf.rip_relative_block(dst);
+        buf.push_u8(0x70 + cc as u8);
+        buf.push_u8(dst as u8);
+      }
+      (OpcodeLayout::Call, &PInst::CallKnown { f }) => {
+        let dst = buf.rip_relative_proc(f);
+        buf.push_u8(0xe8);
+        buf.push_u32(dst as u32);
+      }
+      (OpcodeLayout::Ret, PInst::Ret) => buf.push_u8(0xc3),
+      (OpcodeLayout::Lea(modrm), &PInst::Lea { sz, dst, addr }) => {
+        assert!(op_size_w(&mut rex, sz) == 1);
+        buf.push_u8(0x8d);
+        write_modrm(modrm, &mut rex, buf, dst, RegMem::Mem(addr));
+      }
+      (OpcodeLayout::Test(modrm), &PInst::Cmp { sz, op: Cmp::Test, src1, src2 }) => {
+        buf.push_u8(0x84 + op_size_w(&mut rex, sz));
+        write_modrm(modrm, &mut rex, buf, src1, to_rm(src2));
+      }
+      (OpcodeLayout::TestRAX8,
+        &PInst::Cmp { sz: Size::S8, op: Cmp::Test, src1: RAX, src2: PRegMemImm::Imm(imm) }
+      ) => {
+        buf.push_u8(0xa8);
+        buf.push_u8(imm as u8);
+      }
+      (OpcodeLayout::TestRAX32,
+        &PInst::Cmp { sz, op: Cmp::Test, src1: RAX, src2: PRegMemImm::Imm(imm) }
+      ) => {
+        buf.push_u8(0xa8 + op_size_w(&mut rex, sz));
+        buf.push_u32(imm);
+      }
+      (OpcodeLayout::Hi(modrm), _) => {
+        let (op1, op2, rm) = match *self {
+          PInst::Unop { sz, op: Unop::Inc, dst } => (0xfe + op_size_w(&mut rex, sz), 0, dst.into()),
+          PInst::Unop { sz, op: Unop::Dec, dst } => (0xfe + op_size_w(&mut rex, sz), 1, dst.into()),
+          PInst::Unop { sz, op: Unop::Not, dst } => (0xf6 + op_size_w(&mut rex, sz), 2, dst.into()),
+          PInst::Unop { sz, op: Unop::Neg, dst } => (0xf6 + op_size_w(&mut rex, sz), 3, dst.into()),
+          PInst::DivRem { sz, src } => (0xf6 + op_size_w(&mut rex, sz), 6, src),
+          PInst::Mul { sz, src } => (0xf6 + op_size_w(&mut rex, sz), 4, src),
+          PInst::Push64 { src: PRegMemImm::Mem(a) } => (0xff, 6, a.into()),
+          _ => unreachable!(),
+        };
+        buf.push_u8(op1);
+        write_opc_modrm(modrm, &mut rex, buf, op2, rm);
+      }
+      (OpcodeLayout::HiTest8(modrm),
+        &PInst::Cmp { sz: Size::S8, op: Cmp::Test, src1, src2: PRegMemImm::Imm(imm) }
+      ) => {
+        buf.push_u8(0xf6);
+        write_opc_modrm(modrm, &mut rex, buf, 0, src1.into());
+        buf.push_u8(imm as u8);
+      }
+      (OpcodeLayout::HiTest32(modrm),
+        &PInst::Cmp { sz, op: Cmp::Test, src1, src2: PRegMemImm::Imm(imm) }
+      ) => {
+        assert!(op_size_w(&mut rex, sz) == 1);
+        buf.push_u8(0xf6);
+        write_opc_modrm(modrm, &mut rex, buf, 0, src1.into());
+        buf.push_u32(imm);
+      }
+      (OpcodeLayout::SetCC(modrm), &PInst::SetCC { cc, dst }) => {
+        buf.push_u8(0x0f);
+        buf.push_u8(0x90 + cc as u8);
+        write_opc_modrm(modrm, &mut rex, buf, 0, dst.into());
+      }
+      (OpcodeLayout::CMov(modrm), &PInst::CMov { sz, cc, dst, src }) => {
+        assert!(op_size_w(&mut rex, sz) == 1);
+        buf.push_u8(0x0f);
+        buf.push_u8(0x40 + cc as u8);
+        write_modrm(modrm, &mut rex, buf, dst, src);
+      }
+      (OpcodeLayout::MovX(modrm), _) => {
+        let (opc, ext_mode, dst, src) = match *self {
+          PInst::MovzxRmR { ext_mode, dst, src } => (0xb6, ext_mode, dst, src),
+          PInst::MovsxRmR { ext_mode, dst, src } => (0xbe, ext_mode, dst, src),
+          _ => unreachable!()
+        };
+        assert!(op_size_w(&mut rex, ext_mode.dst()) == 1);
+        buf.push_u8(0x0f);
+        buf.push_u8(opc + (ext_mode.src() == Size::S16) as u8);
+        write_modrm(modrm, &mut rex, buf, dst, src);
+      }
+      (OpcodeLayout::Jcc, &PInst::JmpCond { cc, short: false, dst }) => {
+        let dst = buf.rip_relative_block(dst);
+        buf.push_u8(0x0f);
+        buf.push_u8(0x80 + cc as u8);
+        buf.push_u32(dst as u32);
+      }
+      (OpcodeLayout::SysCall, PInst::SysCall) => { buf.push_u8(0x0f); buf.push_u8(0x05); }
+      (OpcodeLayout::Assert, &PInst::Assert { cc }) => {
+        buf.push_u8(0x70 + cc as u8); buf.push_u8(2); // jcc cond +2
+        buf.push_u8(0x0f); buf.push_u8(0x0b); // ud2
+      }
+      (OpcodeLayout::Ud2, PInst::Ud2) => { buf.push_u8(0x0f); buf.push_u8(0x0b); }
+      _ => unreachable!(),
+    }
+
+    if layout.rex {
+      buf.set_rex(0x40 + rex);
+    } else {
+      assert!(rex == 0);
     }
   }
 }
