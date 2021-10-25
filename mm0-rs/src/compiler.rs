@@ -371,7 +371,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     if !ast.errors.is_empty() {
       for e in &ast.errors {
         to_snippet(e, &path, &ast.source,
-          |s| println!("{}", DisplayList::from(s).to_string()))
+          |s| println!("{}", DisplayList::from(s)))
       }
     }
     let ast = Arc::new(ast);
@@ -405,7 +405,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   };
   if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {}", path)) }
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
-    fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s).to_string()) }
+    fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s)) }
     let mut to_range = mk_to_range();
     if let FileContents::Ascii(text) = &file.text {
       for e in &errors { e.to_snippet(&path, text, &mut to_range, print) }

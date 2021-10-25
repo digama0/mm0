@@ -587,7 +587,7 @@ impl Elaborator {
   /// `u: e1 = e2`, with `#undef` meaning that `e1` and `e2` are equal after unification.
   fn unify1(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {
     self.unify_core(e1, e2).map_err(|e| self.format_env().pretty(|p|
-      format!("{}\n{}", p.unify_err(e1, e2).pretty(80).to_string(), e)))
+      format!("{}\n{}", p.unify_err(e1, e2).pretty(80), e)))
   }
 
   /// Unify expressions `e1` and `e2`. Returns a conversion proof
