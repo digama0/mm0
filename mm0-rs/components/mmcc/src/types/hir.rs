@@ -1,8 +1,10 @@
 //! The high level IR, used during type inference.
 
+use std::fmt::Debug;
+
 use num::BigInt;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
-use crate::{FileSpan, Symbol};
+use crate::{FileSpan, Symbol, types::indent};
 use super::{Mm0Expr, VarId, IntTy, ProofId, ty};
 pub use super::ast::ProcKind;
 
@@ -187,7 +189,6 @@ pub struct Variant<'a>(pub ty::Expr<'a>, pub VariantType<'a>);
 pub type Arg<'a> = (ty::ArgAttr, ArgKind<'a>);
 
 /// An argument declaration for a function.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind<'a> {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
@@ -195,6 +196,29 @@ pub enum ArgKind<'a> {
   /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
   /// invocations, they act as let binders in the remainder of the arguments.)
   Let(ty::TuplePattern<'a>, ty::Expr<'a>, Option<Box<Expr<'a>>>),
+}
+
+impl ArgKind<'_> {
+  fn debug_with_attr(&self,
+    attr: ty::ArgAttr,
+    f: &mut std::fmt::Formatter<'_>
+  ) -> std::fmt::Result {
+    if attr.contains(ty::ArgAttr::IMPLICIT) { write!(f, "implicit ")? }
+    if attr.contains(ty::ArgAttr::GHOST) { write!(f, "ghost ")? }
+    if attr.contains(ty::ArgAttr::MUT) { write!(f, "mut ")? }
+    if attr.contains(ty::ArgAttr::GLOBAL) { write!(f, "global ")? }
+    write!(f, "{:?}", self)
+  }
+}
+
+impl Debug for ArgKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Lam(pat) => pat.fmt(f),
+      Self::Let(pat, _, Some(e)) => write!(f, "{:?} := {:?}", pat, e),
+      Self::Let(pat, e, _) => write!(f, "{:?} := {:?}", pat, e),
+    }
+  }
 }
 
 impl<'a> From<&ArgKind<'a>> for ty::ArgKind<'a> {
@@ -220,7 +244,7 @@ pub struct Label<'a> {
 }
 
 /// A block is a list of statements, with an optional terminating expression.
-#[derive(Default, Debug)]
+#[derive(Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Block<'a> {
   /// The list of statements in the block.
@@ -233,11 +257,31 @@ pub struct Block<'a> {
   pub muts: Vec<VarId>,
 }
 
+impl Debug for Block<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.debug_indent(0, f)
+  }
+}
+
+impl Block<'_> {
+  fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if !self.muts.is_empty() {
+      indent(i, f)?; write!(f, "#![mut")?;
+      for &v in &self.muts { write!(f, " {}", v)? }
+      writeln!(f, "]")?
+    }
+    for stmt in &self.stmts { indent(i, f)?; stmt.k.debug_indent(i, f)? }
+    if let Some(expr) = &self.expr {
+      indent(i, f)?; expr.k.0.debug_indent(i, f)?
+    }
+    Ok(())
+  }
+}
+
 /// A statement in a block.
 pub type Stmt<'a> = Spanned<'a, StmtKind<'a>>;
 
 /// A statement in a block.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum StmtKind<'a> {
   /// A let binding.
@@ -252,6 +296,41 @@ pub enum StmtKind<'a> {
   /// A label, which looks exactly like a local function but has no independent stack frame.
   /// They are called like regular functions but can only appear in tail position.
   Label(VarId, Box<[Label<'a>]>),
+}
+
+impl Debug for StmtKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.debug_indent(0, f)
+  }
+}
+
+impl StmtKind<'_> {
+  fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      StmtKind::Let { lhs, rhs } => {
+        write!(f, "let {:?} = ", lhs)?;
+        rhs.k.0.debug_indent(i, f)?;
+        writeln!(f, ";")
+      }
+      StmtKind::Expr(e) => {
+        e.0.debug_indent(i, f)?;
+        writeln!(f, ";")
+      }
+      StmtKind::Label(a, labs) => {
+        for (i, lab) in labs.iter().enumerate() {
+          writeln!(f, "label {:?}.{}(", a, i)?;
+          for &(attr, ref arg) in &*lab.args {
+            indent(i+1, f)?; arg.debug_with_attr(attr, f)?; writeln!(f, ",")?;
+            if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+          }
+          indent(i, f)?; writeln!(f, ") = {{")?;
+          lab.body.debug_indent(i+1, f)?;
+          indent(i, f)?; writeln!(f, "}};")?;
+        }
+        Ok(())
+      }
+    }
+  }
 }
 
 /// The different kinds of projection, used in defining places.
@@ -337,7 +416,6 @@ impl<'a> Place<'a> {
 }
 
 /// A place expression.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(clippy::type_complexity)]
 pub enum PlaceKind<'a> {
@@ -359,6 +437,50 @@ pub enum PlaceKind<'a> {
   Proj(ListKind, Box<(ty::Ty<'a>, Place<'a>)>, u32),
   /// An upstream error.
   Error
+}
+
+impl Debug for PlaceKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.debug_indent(0, f)
+  }
+}
+
+impl PlaceKind<'_> {
+  fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      PlaceKind::Var(v) => write!(f, "{}", v),
+      PlaceKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }
+      PlaceKind::Index(args) => {
+        let (_, arr, idx, h) = &**args;
+        arr.k.0.debug_indent(i, f)?;
+        write!(f, "[")?;
+        idx.k.0.debug_indent(i, f)?;
+        if let Ok(h) = h {
+          write!(f, ", ")?;
+          h.k.0.debug_indent(i, f)?;
+        }
+        write!(f, "]")
+      }
+      PlaceKind::Slice(args) => {
+        let (_, arr, [idx, len], h) = &**args;
+        arr.k.0.debug_indent(i, f)?;
+        write!(f, "[")?;
+        idx.k.0.debug_indent(i, f)?;
+        write!(f, "..+")?;
+        len.k.0.debug_indent(i, f)?;
+        if let Ok(h) = h {
+          write!(f, ", ")?;
+          h.k.0.debug_indent(i, f)?;
+        }
+        write!(f, "]")
+      }
+      PlaceKind::Proj(lk, e, j) => {
+        e.1.k.0.debug_indent(i, f)?;
+        if let ListKind::Array = lk { write!(f, "[{}]", j) } else { write!(f, ".{}", j) }
+      }
+      PlaceKind::Error => write!(f, "??"),
+    }
+  }
 }
 
 /// (Elaborated) unary operations.
@@ -485,7 +607,6 @@ impl<'a> Expr<'a> {
 }
 
 /// An expression. A block is a list of expressions.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(clippy::type_complexity)]
 pub enum ExprKind<'a> {
@@ -616,6 +737,216 @@ pub enum ExprKind<'a> {
   Error
 }
 
+impl Debug for ExprKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.debug_indent(0, f)
+  }
+}
+
+impl ExprKind<'_> {
+  fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ExprKind::Unit => write!(f, "()"),
+      ExprKind::ITrue => write!(f, "itrue"),
+      ExprKind::Var(v, _) => write!(f, "{}", v),
+      ExprKind::Const(c) => write!(f, "{}", c),
+      ExprKind::Bool(b) => write!(f, "{}", b),
+      ExprKind::Int(n) => write!(f, "{}", n),
+      ExprKind::Unop(op, e) => { write!(f, "{:?} ", op)?; e.k.0.debug_indent(i, f) }
+      ExprKind::Binop(op, e1, e2) => {
+        e1.k.0.debug_indent(i, f)?;
+        write!(f, " {:?} ", op)?;
+        e2.k.0.debug_indent(i, f)
+      }
+      ExprKind::Eq(_, false, e1, e2) => {
+        e1.k.0.debug_indent(i, f)?;
+        write!(f, " == ")?;
+        e2.k.0.debug_indent(i, f)
+      }
+      ExprKind::Eq(_, true, e1, e2) => {
+        e1.k.0.debug_indent(i, f)?;
+        write!(f, " != ")?;
+        e2.k.0.debug_indent(i, f)
+      }
+      ExprKind::Sn(e, h) => {
+        write!(f, "sn(")?;
+        e.k.0.debug_indent(i, f)?;
+        write!(f, ", ")?;
+        match h {
+          None => write!(f, "-)"),
+          Some(h) => {
+            h.k.0.debug_indent(i, f)?;
+            write!(f, ")")
+          }
+        }
+      }
+      ExprKind::Index(args) => {
+        let (_, [arr, idx], h) = &**args;
+        arr.k.0.debug_indent(i, f)?;
+        write!(f, "[")?;
+        idx.k.0.debug_indent(i, f)?;
+        if let Ok(h) = h {
+          write!(f, ", ")?;
+          h.k.0.debug_indent(i, f)?;
+        }
+        write!(f, "]")
+      }
+      ExprKind::Slice(args) => {
+        let (_, [arr, idx, len], h) = &**args;
+        arr.k.0.debug_indent(i, f)?;
+        write!(f, "[")?;
+        idx.k.0.debug_indent(i, f)?;
+        write!(f, "..+")?;
+        len.k.0.debug_indent(i, f)?;
+        if let Ok(h) = h {
+          write!(f, ", ")?;
+          h.k.0.debug_indent(i, f)?;
+        }
+        write!(f, "]")
+      }
+      ExprKind::Proj(lk, e, j) => {
+        e.1.k.0.debug_indent(i, f)?;
+        if let ListKind::Array = lk { write!(f, "[{}]", j) } else { write!(f, ".{}", j) }
+      }
+      ExprKind::Rval(e) => e.k.0.debug_indent(i, f),
+      ExprKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }
+      ExprKind::List(_, es) => {
+        writeln!(f, "[")?;
+        for e in es {
+          indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
+        }
+        indent(i, f)?; writeln!(f, "]")
+      }
+      ExprKind::Ghost(e) => {
+        write!(f, "ghost(")?; e.k.0.debug_indent(i, f)?; write!(f, ")")
+      }
+      ExprKind::Ref(e) => { write!(f, "ref ")?; e.k.0.debug_indent(i, f) }
+      ExprKind::Borrow(e) => { write!(f, "&")?; e.k.0.debug_indent(i, f) }
+      ExprKind::Mm0(e) => {
+        write!(f, "{:?}", e.expr)?;
+        if !e.subst.is_empty() {
+          writeln!(f, "[")?;
+          for e in &e.subst {
+            indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
+          }
+          indent(i, f)?; writeln!(f, "]")?;
+        }
+        Ok(())
+      }
+      ExprKind::Cast(e, ty, _) => {
+        write!(f, "cast(")?;
+        e.k.0.debug_indent(i, f)?;
+        write!(f, ": {:?})", ty)
+      }
+      ExprKind::Uninit => write!(f, "uninit"),
+      ExprKind::Sizeof(ty) => {
+        write!(f, "sizeof({:?})", ty)
+      }
+      ExprKind::Typeof(e) => {
+        write!(f, "typeof(")?;
+        e.k.0.debug_indent(i, f)?;
+        write!(f, ")")
+      }
+      ExprKind::Assert(e) => {
+        write!(f, "assert(")?;
+        e.k.0.debug_indent(i, f)?;
+        write!(f, ")")
+      }
+      ExprKind::Assign { lhs, rhs, map, gen } => {
+        lhs.k.0.debug_indent(i, f)?;
+        write!(f, " <- ")?;
+        rhs.k.0.debug_indent(i, f)?;
+        write!(f, " with [")?;
+        for (new, old, _) in &**map { write!(f, "{} <- {}, ", new, old)? }
+        write!(f, "]")
+      }
+      ExprKind::Call(c) => {
+        use itertools::Itertools;
+        write!(f, "{}", c.f.k)?;
+        if !c.tys.is_empty() { write!(f, "<{:?}>", c.tys.iter().format(", "))? }
+        write!(f, "(")?;
+        for e in &c.args {
+          indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
+        }
+        if let Some(var) = &c.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+        indent(i, f)?; writeln!(f, ")")
+      }
+      ExprKind::Mm0Proof(p) => write!(f, "{:?}", p),
+      ExprKind::Block(bl) => {
+        writeln!(f, "{{")?;
+        bl.debug_indent(i+1, f)?;
+        indent(i, f)?; writeln!(f, "}}")
+      }
+      ExprKind::If { hyp, cond, cases, gen, muts } => {
+        if !muts.is_empty() {
+          write!(f, "#[muts")?;
+          for &v in muts { write!(f, " {}", v)? }
+          writeln!(f, "]")?; indent(i, f)?;
+        }
+        write!(f, "if ")?;
+        if let Some([h, _]) = hyp { write!(f, "{}: ", h)? }
+        cond.k.0.debug_indent(i+1, f)?;
+        writeln!(f, " {{")?;
+        cases[0].k.0.debug_indent(i+1, f)?;
+        indent(i, f)?; writeln!(f, "}} else ")?;
+        if let Some([_, h]) = hyp { write!(f, "{}: ", h)? }
+        writeln!(f, "{{")?;
+        cases[1].k.0.debug_indent(i+1, f)?;
+        indent(i, f)?; writeln!(f, "}}")
+      }
+      ExprKind::While(w) => {
+        if !w.muts.is_empty() {
+          write!(f, "#[muts")?;
+          for &v in &*w.muts { write!(f, " {}", v)? }
+          writeln!(f, "]")?; indent(i, f)?;
+        }
+        write!(f, "{}: while ", w.label)?;
+        if let Some(h) = w.hyp { write!(f, "{}: ", h)? }
+        w.cond.k.0.debug_indent(i+1, f)?;
+        if let Some(var) = &w.var {
+          writeln!(f)?;
+          indent(i+1, f)?; writeln!(f, "{:?}", var)?;
+          indent(i, f)?; writeln!(f, "{{")?;
+        } else {
+          writeln!(f, " {{")?;
+        }
+        w.body.debug_indent(i+1, f)?;
+        indent(i, f)?; writeln!(f, "}}")
+      }
+      ExprKind::Unreachable(e) => {
+        write!(f, "unreachable ")?;
+        e.k.0.debug_indent(i, f)
+      }
+      ExprKind::Jump(lab, j, es, var) => {
+        write!(f, "jump {}.{}(", lab, j)?;
+        for e in es {
+          indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
+        }
+        if let Some(var) = var { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+        indent(i, f)?; writeln!(f, ")")
+      }
+      ExprKind::Break(lab, e) => {
+        write!(f, "break {} ", lab)?;
+        e.k.0.debug_indent(i, f)
+      }
+      ExprKind::Return(es) => {
+        writeln!(f, "return(")?;
+        for e in es {
+          indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
+        }
+        indent(i, f)?; writeln!(f, ")")
+      }
+      ExprKind::UnpackReturn(e) => {
+        write!(f, "return ")?;
+        e.1.k.0.debug_indent(i, f)
+      },
+      ExprKind::Infer(true) => write!(f, "?_"),
+      ExprKind::Infer(false) => write!(f, "_"),
+      ExprKind::Error => write!(f, "??"),
+    }
+  }
+}
+
 /// A `cast` kind, which determines what the type of `h` in `(cast x h)` is.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
@@ -648,7 +979,6 @@ impl<'a> CastKind<'a> {
 pub type Item<'a> = Spanned<'a, ItemKind<'a>>;
 
 /// A top level program item. (A program AST is a list of program items.)
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ItemKind<'a> {
   /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
@@ -677,4 +1007,48 @@ pub enum ItemKind<'a> {
     /// The value of the declaration
     rhs: Expr<'a>,
   },
+}
+
+impl Debug for ItemKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match self {
+      &Self::Proc { kind, ref name, tyargs, ref args, gen, ref rets, ref variant, ref body } => {
+        write!(f, "{}", match kind {
+          ProcKind::Func => "func",
+          ProcKind::Proc => "proc",
+          ProcKind::Main => "#[main] proc",
+        })?;
+        write!(f, " {}", name.k)?;
+        if tyargs != 0 {
+          write!(f, "<{}>", (0..tyargs).map(|n| format!("T{}", n)).format(", "))?
+        }
+        write!(f, "(")?;
+        if !args.is_empty() {
+          writeln!(f)?;
+          for &(attr, ref arg) in &**args {
+            write!(f, "  ")?;
+            arg.debug_with_attr(attr, f)?;
+            writeln!(f, ",")?;
+          }
+        }
+        if let Some(var) = variant { writeln!(f, "  {:?},", var)? }
+        if !rets.is_empty() {
+          writeln!(f, ") -> (")?;
+          for &(attr, ref arg) in &**rets {
+            write!(f, "  ")?;
+            arg.debug_with_attr(attr, f)?;
+            writeln!(f, ",")?;
+          }
+        }
+        writeln!(f, ") = {{")?;
+        body.debug_indent(1, f)?;
+        writeln!(f, "}}")
+      }
+      Self::Global { lhs, rhs } => {
+        write!(f, "global {:?} = ", lhs)?;
+        rhs.k.0.debug_indent(1, f)
+      }
+    }
+  }
 }

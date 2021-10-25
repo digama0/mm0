@@ -737,24 +737,19 @@ impl<'a> BuildMir<'a> {
       hir::ExprKind::Mm0(types::Mm0Expr {expr, subst}) => RValue::Mm0(expr,
         subst.into_iter().map(|e| self.as_temp(e).map(Into::into))
           .collect::<Block<Box<[_]>>>()?),
-      hir::ExprKind::Cast(e, ty, hir::CastKind::Int) =>
-        RValue::Cast(CastKind::Int, self.operand(*e)?, self.tr(ty)),
       hir::ExprKind::Cast(e, _, hir::CastKind::Ptr) =>
         RValue::Pun(PunKind::Ptr, self.expr_place(*e)?),
-      hir::ExprKind::Cast(e, ty, hir::CastKind::Subtype(h)) => {
+      hir::ExprKind::Cast(e, ty, ck) => {
+        let e_ty = e.k.1 .1;
         let e = self.operand(*e)?;
-        let ty = self.tr(ty);
-        RValue::Cast(CastKind::Subtype(self.operand(*h)?), e, ty)
-      }
-      hir::ExprKind::Cast(e, ty, hir::CastKind::Wand(h)) => {
-        let e = self.operand(*e)?;
-        let ty = self.tr(ty);
-        RValue::Cast(CastKind::Wand(h.map(|h| self.operand(*h)).transpose()?), e, ty)
-      }
-      hir::ExprKind::Cast(e, ty, hir::CastKind::Mem(h)) => {
-        let e = self.operand(*e)?;
-        let ty = self.tr(ty);
-        RValue::Cast(CastKind::Mem(self.operand(*h)?), e, ty)
+        let ck = match ck {
+          hir::CastKind::Int => CastKind::Int,
+          hir::CastKind::Ptr => unreachable!(),
+          hir::CastKind::Subtype(h) => CastKind::Subtype(self.operand(*h)?),
+          hir::CastKind::Wand(h) => CastKind::Wand(h.map(|h| self.operand(*h)).transpose()?),
+          hir::CastKind::Mem(h) => CastKind::Mem(self.operand(*h)?),
+        };
+        RValue::Cast(ck, e, self.tr(e_ty))
       }
       hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
       hir::ExprKind::Sizeof(ty) => Constant::sizeof(Size::Inf, self.tr(ty)).into(),

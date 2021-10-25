@@ -4,6 +4,7 @@ use byteorder::{LE, WriteBytesExt};
 use crate::{LinkedCode, regalloc::PCode, types::vcode::{GlobalId, ProcId, BlockId}};
 
 pub(crate) const FUNCTION_ALIGN: u32 = 16;
+pub(crate) const TEXT_START: u32 = 0x40_0078;
 
 #[inline] fn align_to<const N: u64>(i: u64) -> u64 { (i + N - 1) & !(N - 1) }
 
@@ -17,7 +18,6 @@ impl LinkedCode {
   /// This can then be executed to run the compiled program.
   #[allow(clippy::cast_lossless)]
   pub fn write_elf(&self, w: &mut impl Write) -> io::Result<()> {
-    const TEXT_START: u64 = 0x40_0078;
     const BSS_ALIGN: u64 = 16;
     const HEADER: [u8; 0x60] = [
       // ELF header
@@ -51,25 +51,28 @@ impl LinkedCode {
       0, 0, 0, 0, 0, 0, 0, 0, // p_paddr = 0 (physical addr, unused)
     ];
 
-    let rodata_start = align_to::<{FUNCTION_ALIGN as u64}>(TEXT_START + u64::from(self.text_size));
+    let rodata_start = align_to::<{FUNCTION_ALIGN as u64}>((TEXT_START + self.text_size).into());
     let file_end = rodata_start + u64::try_from(self.rodata.len()).expect("overflow");
     let global_start = align_to::<BSS_ALIGN>(file_end);
     let global_end = global_start + u64::from(self.global_size);
     w.write_all(&HEADER)?;
-    w.write_u64::<LE>(file_end - TEXT_START)?; // p_filesz = size of segment in the file image
-    w.write_u64::<LE>(global_end - TEXT_START)?; // p_memsz = size of segment in memory
-    w.write_u64::<LE>(1 << 21)?; // p_align = 2^21 = 0x200000 (segment alignment)
+    // p_filesz = size of segment in the file image
+    w.write_u64::<LE>(file_end - u64::from(TEXT_START))?;
+    // p_memsz = size of segment in memory
+    w.write_u64::<LE>(global_end - u64::from(TEXT_START))?;
+    // p_align = 2^21 = 0x200000 (segment alignment)
+    w.write_u64::<LE>(1 << 21)?;
     // end of program header, now at offset 0x78
 
     let mut ctx = InstSink {
       linked: self, proc: &self.init,
       rodata_start: rodata_start.try_into().expect("overflow"),
-      proc_start: TEXT_START.try_into().expect("impossible"),
+      proc_start: TEXT_START,
       local_rip: 0,
       buf: ArrayVec::new(),
     };
     ctx.write_to(w)?;
-    w.write_all(function_pad(TEXT_START + u64::from(self.init.len)));
+    w.write_all(function_pad(u64::from(TEXT_START + self.init.len)));
 
     for &(start, ref code) in &self.funcs.0 {
       ctx.proc = code;

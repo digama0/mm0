@@ -266,11 +266,10 @@ impl<C: Config> Compiler<C> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::wildcard_imports)]
 mod test {
-  use std::fs::File;
-use std::{collections::HashMap, rc::Rc};
-  use crate::LinkedCode;
-use crate::{Idx, linker::ConstData, regalloc::regalloc_vcode};
-  use crate::types::{IdxVec, IntTy, Size, Spanned, hir::ProcKind, mir::*};
+  use crate::types::Binop;
+  use crate::types::ast::{Block, ExprKind, ItemKind, StmtKind, TypeKind};
+  use crate::{Compiler, intern};
+  use crate::types::{Size, Spanned, hir::ProcKind};
 
   fn assert_eq_hex(data: &[u8], hex: &str) {
     let mut result = String::from(hex);
@@ -278,12 +277,13 @@ use crate::{Idx, linker::ConstData, regalloc::regalloc_vcode};
     assert_eq!(hex::encode(data), result);
   }
 
-  #[test] fn two_plus_two() {
+  #[test] fn two_plus_two_ir() {
+    use std::{collections::HashMap, rc::Rc};
+    use crate::{LinkedCode, Idx, types::IntTy, mir::*};
+
     let names = HashMap::new();
-    let consts = ConstData::default();
     let mut fresh_var = VarId::default();
     let u8 = IntTy::UInt(Size::S8);
-    let u8ty = Rc::new(TyKind::Int(u8));
     let mir = HashMap::default();
     let mut cfg = Cfg::default();
 
@@ -338,6 +338,53 @@ use crate::{Idx, linker::ConstData, regalloc::regalloc_vcode};
       0000 2000 0000 0000 ba02 0000 00be 0200\
       0000 4002 d680 fa04 400f 94c6 4080 fe00\
       7502 0f0b b83c 0000 0033 ff0f 0500 0000\
+    ");
+  }
+
+  #[test] fn two_plus_two() {
+    let mut compiler = Compiler::new(());
+    let main = Spanned::dummy(ItemKind::Proc {
+      intrinsic: None,
+      kind: ProcKind::Main,
+      name: Spanned::dummy(intern("main")),
+      tyargs: 0,
+      args: Box::new([]),
+      rets: vec![],
+      variant: None,
+      body: Block {
+        stmts: vec![Spanned::dummy(StmtKind::Expr(ExprKind::Assert(
+          Box::new(Spanned::dummy(ExprKind::Binop(Binop::Eq,
+            Box::new(Spanned::dummy(ExprKind::Typed(
+              Box::new(Spanned::dummy(ExprKind::Binop(Binop::Add,
+                Box::new(Spanned::dummy(ExprKind::Int(2.into()))),
+                Box::new(Spanned::dummy(ExprKind::Int(2.into())))
+              ))),
+              Box::new(Spanned::dummy(TypeKind::UInt(Size::S8)))
+            ))),
+            Box::new(Spanned::dummy(ExprKind::Int(4.into())))
+          )))
+        )))],
+        expr: None,
+      },
+    });
+    compiler.add(&main, Default::default(), ());
+    let code = compiler.finish();
+    println!("code = {:#?}", code);
+    // code.write_elf(&mut File::create("two_plus_two").unwrap());
+    let mut out = Vec::new();
+    code.write_elf(&mut out).unwrap();
+    assert_eq_hex(&out, "\
+      7f45 4c46 0201 0100 0000 0000 0000 0000\
+      0200 3e00 0100 0000 7800 4000 0000 0000\
+      4000 0000 0000 0000 0000 0000 0000 0000\
+      0000 0000 4000 3800 0100 4000 0000 0000\
+      0100 0000 0700 0000 7800 0000 0000 0000\
+      7800 4000 0000 0000 0000 0000 0000 0000\
+      3800 0000 0000 0000 3800 0000 0000 0000\
+      0000 2000 0000 0000 e813 0000 00b8 3c00\
+      0000 33ff 0f05 0000 0000 0000 0000 0000\
+      ba02 0000 00be 0200 0000 4002 d6b8 0400\
+      0000 3ad0 0f94 c180 f900 7502 0f0b c300\
     ");
   }
 }

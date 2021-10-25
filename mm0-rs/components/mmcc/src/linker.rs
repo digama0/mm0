@@ -6,7 +6,7 @@ use std::hash::Hash;
 use std::ops::Index;
 
 use crate::build_vcode::VCodeCtx;
-use crate::codegen::FUNCTION_ALIGN;
+use crate::codegen::{FUNCTION_ALIGN, TEXT_START};
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{self, TyKind, ExprKind};
@@ -250,13 +250,12 @@ impl LinkedCode {
     let init = regalloc_vcode(
       names, &coll.funcs.0, &func_abi, &coll.consts, init, allocs, VCodeCtx::Start(globals)).1;
 
-    let mut text_size = init.len;
+    let mut pos = (TEXT_START + init.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     let funcs = func_code.0.into_iter().map(|code| {
-      text_size = (text_size + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
-      let pos = text_size;
+      let start = pos;
       let code = code.expect("impossible");
-      text_size += code.len;
-      (pos, code)
+      pos = (pos + code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
+      (start, code)
     }).collect();
 
     Self {
@@ -266,7 +265,7 @@ impl LinkedCode {
       init,
       func_names: coll.funcs.1,
       funcs,
-      text_size,
+      text_size: pos - TEXT_START,
     }
   }
 }

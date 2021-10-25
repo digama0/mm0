@@ -12,6 +12,7 @@ use itertools::Itertools;
 use num::Signed;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use types::IntTy;
+use crate::types::hir::CastKind;
 use crate::{Config, FileSpan, ItemContext, Symbol, alphanumber, u32_as_usize};
 use super::types;
 use types::{Binop, BinopType, FieldName, Idx, IdxVec, LambdaId, ProofId,
@@ -1143,7 +1144,7 @@ impl<'a> ExpectTy<'a> {
 }
 
 /// An expectation for an expression, used to communicate top-down typing information.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum ExpectExpr<'a> {
   /// This can be any expression.
   Any,
@@ -1997,7 +1998,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     Ok(())
   }
 
-  fn relate_whnf_ty(&mut self, from: WhnfTy<'a>, to: WhnfTy<'a>, mut rel: Relation) -> StdResult<Vec<Coercion>, ()> {
+  fn relate_whnf_ty(&mut self,
+    from: WhnfTy<'a>, to: WhnfTy<'a>, mut rel: Relation
+  ) -> StdResult<Vec<Coercion<'a>>, ()> {
     macro_rules! check {($($i:ident),*) => {{
       $(if from.$i != to.$i { return Err(()) })*
     }}}
@@ -2158,7 +2161,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn relate_ty(&mut self, span: &'a FileSpan,
     pe: Option<Expr<'a>>, from: Ty<'a>, to: Ty<'a>, rel: Relation
-  ) -> Result<(), Vec<Coercion>> {
+  ) -> Result<(), Vec<Coercion<'a>>> {
     if from == to { return Ok(()) }
     match self.relate_whnf_ty(from.into(), to.into(), rel) {
       Ok(coes) if coes.is_empty() => Ok(()),
@@ -2166,8 +2169,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       Err(()) => {
         if let Some(pe) = pe {
           // ignore the original type and just try to check the value at the target
-          // TODO: record that we are doing this?
-          if self.try_check_pure_expr(span, pe, to) {return Ok(())}
+          if self.try_check_pure_expr(span, pe, to) {
+            return Err(vec![Coercion::TypedPure(to)])
+          }
         }
         self.errors.push(hir::Spanned {span, k: TypeError::Relate(from, to, rel)});
         Err(vec![Coercion::Error])
@@ -2632,21 +2636,30 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     (self.as_pure(&e.span, pe), ty)
   }
 
-  fn apply_coe(&mut self, c: Coercion, _e: Expr<'a>) -> Expr<'a> {
+  fn apply_coe(&mut self, c: Coercion<'a>, e: Expr<'a>) -> Expr<'a> {
     match c {
+      Coercion::TypedPure(_) => e,
       Coercion::Error => self.common.e_error,
     }
   }
 
-  fn apply_coe_expr(&mut self, c: Coercion, e: hir::Expr<'a>) -> hir::Expr<'a> {
-    let _ = self;
+  fn apply_coe_expr(&mut self, c: Coercion<'a>, e: hir::Expr<'a>) -> hir::Expr<'a> {
     match c {
+      Coercion::TypedPure(ty) => {
+        let pe = e.k.1 .0;
+        hir::Spanned {
+          span: e.span,
+          k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Wand(None)), (pe, ty))
+        }
+      }
       Coercion::Error => e.map_into(|_|
         (hir::ExprKind::Error, (Some(self.common.e_error), self.common.t_error))),
     }
   }
 
-  fn coerce_pure_expr(&mut self, sp: &'a FileSpan, mut e: Expr<'a>, from: Ty<'a>, to: Ty<'a>) -> Expr<'a> {
+  fn coerce_pure_expr(&mut self,
+    sp: &'a FileSpan, mut e: Expr<'a>, from: Ty<'a>, to: Ty<'a>
+  ) -> Expr<'a> {
     if let Err(coe) = self.relate_ty(sp, Some(e), from, to, Relation::Coerce) {
       for c in coe { e = self.apply_coe(c, e) }
     }
@@ -2965,6 +2978,15 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         unreachable!("parsed as-conversions are not emitted by the front end"),
 
       &ast::ExprKind::Binop(op, ref e1, ref e2) => {
+        if let Binop::Eq | Binop::Ne = op {
+          let (e1, pe1) = self.lower_expr(e1, ExpectExpr::Any);
+          let ty = e1.ty();
+          let (e2, pe2) = self.lower_expr(e2, ExpectExpr::HasTy(ty));
+          return ret![
+            hir::ExprKind::Eq(ty, op == types::Binop::Ne, Box::new(e1), Box::new(e2)),
+            pe1.and_then(|pe1| Ok(intern!(self, ExprKind::Binop(op, pe1, pe2?)))),
+            self.common.t_bool]
+        }
         let opty = op.ty();
         let (ity, (e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
           let ityin = self.as_int_ty(span, expect).unwrap_or(IntTy::INT);
@@ -2978,7 +3000,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e1.ty())),
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e2.ty())));
           let tyin2 = self.common.int_ty(ityin2);
-          let e1 = self.coerce_expr(e1, pe1, tyin2);
+          let e1 = self.coerce_expr(e1, pe1, tyin1);
           let e2 = self.coerce_expr(e2, pe2, tyin2);
           (ityin2, (e1, pe1), (e2, pe2), tyout)
         } else {

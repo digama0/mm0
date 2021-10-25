@@ -112,13 +112,17 @@ where Flags: BitOrAssign<A> + BitOrAssign<B> + BitOrAssign<C> {
 
 /// A `T` together with precomputed flag data for it. If `T: AddFlags`,
 /// then the [`WithMeta::new`] function can be used to perform the precomputation.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct WithMeta<T> {
   /// The flags.
   pub flags: Flags,
   /// The kind data.
   pub k: T
+}
+impl<T: std::fmt::Debug> std::fmt::Debug for WithMeta<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.k.fmt(f)
+    }
 }
 impl<T> std::hash::Hash for WithMeta<T> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -202,15 +206,18 @@ impl BitOrAssign<Lifetime> for Flags {
 /// simply because types don't line up.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub enum Coercion {
+pub enum Coercion<'a> {
+  /// The value can be typed at the target type, without regard for the source.
+  TypedPure(Ty<'a>),
   /// An error coercion maps `X -> Y` for any `X, Y`. To use this variant,
   /// an error must have been previously reported regarding this type error.
   Error,
 }
 
-impl BitOrAssign<Coercion> for Flags {
-  fn bitor_assign(&mut self, coe: Coercion) {
+impl<'a> BitOrAssign<Coercion<'a>> for Flags {
+  fn bitor_assign(&mut self, coe: Coercion<'a>) {
     match coe {
+      Coercion::TypedPure(_) => {}
       Coercion::Error => *self |= Flags::HAS_ERROR,
     }
   }
@@ -406,7 +413,7 @@ pub type Ty<'a> = &'a TyS<'a>;
 pub type TyS<'a> = WithMeta<TyKind<'a>>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind<'a> {
   /// `()` is the type with one element; `sizeof () = 0`.
@@ -687,6 +694,54 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TyKind<'a> {
   }
 }
 
+impl std::fmt::Debug for TyKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match *self {
+      TyKind::Var(v) => write!(f, "{:?}", v),
+      TyKind::Unit => write!(f, "()"),
+      TyKind::True => write!(f, "true"),
+      TyKind::False => write!(f, "false"),
+      TyKind::Bool => write!(f, "bool"),
+      TyKind::Int(ity) => write!(f, "{}", ity),
+      TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
+      TyKind::Own(ty) => match ty.k {
+        TyKind::Ref(lft, ty) => write!(f, "&'{:?} {:?}", &lft, ty),
+        _ => write!(f, "own {:?}", ty)
+      },
+      TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
+      TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
+      TyKind::List(tys) => write!(f, "[{:?}]", tys.iter().format(", ")),
+      TyKind::Sn(e, ty) => write!(f, "sn({:?}: {:?})", e, ty),
+      TyKind::Struct(args) => write!(f, "[{:?}]", args.iter().format(", ")),
+      TyKind::All(a, pr) => write!(f, "A. {:?} {:?}", a, pr),
+      TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
+      TyKind::Wand(p, q) => write!(f, "({:?} -* {:?})", p, q),
+      TyKind::Not(pr) => write!(f, "~{:?}", pr),
+      TyKind::And(tys) => write!(f, "({:?})", tys.iter().format(" /\\ ")),
+      TyKind::Or(tys) => write!(f, "({:?})", tys.iter().format(" \\/ ")),
+      TyKind::If(cond, then, els) =>
+        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
+      TyKind::Ghost(ty) => write!(f, "ghost({:?})", ty),
+      TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
+      TyKind::Pure(e) => write!(f, "{:?}", e),
+      TyKind::User(name, tys, es) => {
+        use itertools::Itertools;
+        write!(f, "{}", name)?;
+        if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
+        write!(f, "({:?})", es.iter().format(", "))
+      }
+      TyKind::Heap(x, v, t) => write!(f, "({:?} => {:?}: {:?})", x, v, t),
+      TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
+      TyKind::Input => write!(f, "Input"),
+      TyKind::Output => write!(f, "Output"),
+      TyKind::Moved(ty) => write!(f, "|{:?}|", ty),
+      TyKind::Infer(v) => write!(f, "?T{:?}", v.0),
+      TyKind::Error => write!(f, "??"),
+    }
+  }
+}
+
 impl<'a> TyS<'a> {
   /// Returns true if this is a copy type (i.e. `|T| = T`).
   #[inline] #[must_use] pub fn is_copy(&self) -> bool {
@@ -805,7 +860,7 @@ pub type RExprTy<'a> = (RExpr<'a>, Ty<'a>);
 pub type ExprTy<'a> = (OExpr<'a>, Ty<'a>);
 
 /// A pure expression.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind<'a> {
   /// A `()` literal.
@@ -997,6 +1052,60 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ExprKind<'a> {
       ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", p!(cond), p!(then), p!(els)),
       ExprKind::Infer(v) => write!(f, "?v{}", v.0),
       ExprKind::Error => "??".fmt(f),
+    }
+  }
+}
+
+impl std::fmt::Debug for ExprKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ExprKind::Unit => write!(f, "()"),
+      ExprKind::Var(v) => write!(f, "{}", v),
+      ExprKind::Const(c) => write!(f, "{}", c),
+      ExprKind::Bool(b) => write!(f, "{}", b),
+      ExprKind::Int(n) => write!(f, "{}", n),
+      ExprKind::Unop(op, e) => { write!(f, "{} {:?}", op, e) }
+      ExprKind::Binop(op, e1, e2) => write!(f, "({:?} {} {:?})", e1, op, e2),
+      ExprKind::Index(arr, idx) => write!(f, "{:?}[{:?}]", arr, idx),
+      ExprKind::Slice([arr, idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
+      ExprKind::Proj(e, j) => write!(f, "{:?}.{}", e, j),
+      ExprKind::UpdateIndex([a, i, val]) => write!(f, "({:?}[{:?}] .= {:?})", a, i, val),
+      ExprKind::UpdateSlice([a, i, l, val]) =>
+        write!(f, "({:?}[{:?}..+{:?}] .= {:?})", a, i, l, val),
+      ExprKind::UpdateProj(a, n, val) => write!(f, "({:?}.{:?} .= {:?})", a, n, val),
+      ExprKind::List(es) => {
+        use itertools::Itertools;
+        writeln!(f, "({:?})", es.iter().format(", "))
+      }
+      ExprKind::Array(es) => {
+        use itertools::Itertools;
+        writeln!(f, "[{:?}]", es.iter().format(", "))
+      }
+      ExprKind::Ref(e) => write!(f, "ref {:?}", e),
+      ExprKind::Mm0(e) => {
+        write!(f, "{:?}", e.expr)?;
+        if !e.subst.is_empty() {
+          write!(f, "[")?;
+          for e in e.subst {
+            write!(f, "{:?},", e)?;
+          }
+          writeln!(f, "]")?;
+        }
+        Ok(())
+      }
+      ExprKind::Sizeof(ty) => {
+        write!(f, "sizeof({:?})", ty)
+      }
+      ExprKind::Call {f: func, tys, args} => {
+        use itertools::Itertools;
+        write!(f, "{}", func)?;
+        if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
+        write!(f, "({:?})", args.iter().format(", "))
+      }
+      ExprKind::If { cond, then, els } =>
+        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
+      ExprKind::Infer(v) => write!(f, "{:?}", v),
+      ExprKind::Error => write!(f, "??"),
     }
   }
 }

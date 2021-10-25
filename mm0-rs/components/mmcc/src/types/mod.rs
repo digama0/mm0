@@ -606,6 +606,10 @@ impl std::fmt::Display for Binop {
   }
 }
 
+fn indent(i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  (0..i).try_for_each(|_| write!(f, "  "))
+}
+
 /// A field accessor.
 #[derive(Copy, Clone, Debug)]
 pub enum FieldName {

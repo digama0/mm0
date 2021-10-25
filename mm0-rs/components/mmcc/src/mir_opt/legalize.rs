@@ -6,12 +6,12 @@ use std::collections::HashMap;
 use super::super::types::{self, Size, IntTy};
 #[allow(clippy::wildcard_imports)] use super::*;
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Predicate {
   As(IntTy),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum PackedOp {
   Copy(VarId),
   Const(Box<Constant>),
