@@ -5,7 +5,6 @@
 //! and timeout.
 
 use std::collections::{hash_map::Entry, HashMap};
-use std::convert::TryInto;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;

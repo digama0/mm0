@@ -1,7 +1,6 @@
 //! The mid level IR, a basic block based representation used for most optimizations.
 
 use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
-use std::convert::{TryFrom, TryInto};
 use std::mem;
 use bit_vec::BitVec;
 use num::BigInt;

@@ -6,7 +6,6 @@ use crate::{
 };
 use byteorder::{WriteBytesExt, LE};
 use mm0_util::{u32_as_usize, SortId, SortVec, TermId, TermVec, ThmId, ThmVec};
-use std::convert::{TryFrom, TryInto};
 use std::io::{self, Cursor, Read, Write};
 use zerocopy::{AsBytes, U32};
 

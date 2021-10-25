@@ -1,7 +1,6 @@
 //! The [`Environment`] contains all elaborated proof data, as well as the lisp global context.
 
 use std::ops::Deref;
-use std::convert::TryInto;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
@@ -1157,9 +1156,11 @@ impl Environment {
   /// Convert an [`ArcString`] to an [`AtomId`]. This version of [`get_atom`](Self::get_atom)
   /// avoids the string clone in the case that the atom is new.
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomId {
-    let ctx = &mut self.data;
-    *self.atoms.entry(s.clone()).or_insert_with(move ||
-      (AtomId(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
+    *self.atoms.entry(s.clone()).or_insert_with(|| {
+      let a = AtomId(self.data.len().try_into().expect("too many atoms"));
+      self.data.push(AtomData::new(s));
+      a
+    })
   }
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,

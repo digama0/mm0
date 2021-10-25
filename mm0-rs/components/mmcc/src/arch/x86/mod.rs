@@ -1,6 +1,6 @@
 //! x86-specific parts of the compiler.
 
-use std::{convert::TryFrom, fmt::Debug};
+use std::fmt::Debug;
 
 use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};

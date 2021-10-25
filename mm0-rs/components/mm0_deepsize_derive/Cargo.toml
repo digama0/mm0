@@ -11,7 +11,7 @@
 # will likely look very different (and much more reasonable)
 
 [package]
-edition = "2018"
+edition = "2021"
 name = "mm0_deepsize_derive"
 version = "0.1.2"
 authors = ["Aeledfyr <aeledfyr@gmail.com>", "Mario Carneiro <di.gama@gmail.com>"]

@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
-use std::convert::TryInto;
 use std::mem;
 use crate::elab::{ElabError, Elaborator, Environment,
   Result as EResult,

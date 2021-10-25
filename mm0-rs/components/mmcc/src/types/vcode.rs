@@ -1,6 +1,6 @@
 //! The low level IR, based on cranelift's `VCode`.
 
-use std::{convert::TryInto, fmt::Debug, iter::FromIterator};
+use std::{fmt::Debug, iter::FromIterator};
 
 use crate::{Idx, types::IdxVec};
 

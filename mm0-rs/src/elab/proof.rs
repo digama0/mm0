@@ -213,10 +213,9 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   fn add_direct(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
-        let vec = &mut self.vec;
-        let n = vec.len();
-        let vars = e.key().vars(&mut self.bv, |i| vec[i].2);
-        vec.push((e.key().clone(), false, vars));
+        let n = self.vec.len();
+        let vars = e.key().vars(&mut self.bv, |i| self.vec[i].2);
+        self.vec.push((e.key().clone(), false, vars));
         e.insert(n);
         n
       }

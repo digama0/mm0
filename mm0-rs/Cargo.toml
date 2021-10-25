@@ -2,7 +2,7 @@
 name = "mm0-rs"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "MM0/MM1 language toolchain"
 repository = "https://github.com/digama0/mm0"
 readme = "README.md"

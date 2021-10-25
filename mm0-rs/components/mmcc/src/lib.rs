@@ -86,7 +86,7 @@ macro_rules! mk_id {
     }
     impl crate::Idx for $id {
       fn into_usize(self) -> usize { self.into() }
-      fn from_usize(n: usize) -> Self { $id(std::convert::TryFrom::try_from(n).expect("overflow")) }
+      fn from_usize(n: usize) -> Self { $id(TryFrom::try_from(n).expect("overflow")) }
       fn fresh(&mut self) -> Self {
         let n = *self;
         self.0 += 1;

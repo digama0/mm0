@@ -200,12 +200,9 @@ impl Environment {
     match e {
       ExprNode::Dummy(_, _) => return Err("dummy not permitted".into()),
       &ExprNode::Ref(i) => match i.checked_sub(args.len()) {
-        None => {
-          use std::convert::TryInto;
-          if let (_, Type::Reg(s, 0)) = args[i] {
-            out.push_seg(StringSeg::Var(s, i.try_into().expect("too many refs")));
-          } else {unreachable!()}
-        }
+        None => if let (_, Type::Reg(s, 0)) = args[i] {
+          out.push_seg(StringSeg::Var(s, i.try_into().expect("too many refs")));
+        } else {unreachable!()}
         Some(j) => out.flush().built.extend_from_slice(&heap[j]),
       },
       &ExprNode::App(t, ref ns) => match terms.get(&t) {

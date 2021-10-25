@@ -71,7 +71,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::{borrow::Borrow, convert::TryInto};
+use std::borrow::Borrow;
 
 mod atoms;
 mod ids;
@@ -626,7 +626,6 @@ impl<'a> From<&'a FileSpan> for Span {
 #[allow(unused)]
 #[cfg(all(feature = "memory", not(target_arch = "wasm32")))]
 fn get_memory_rusage() -> usize {
-  use std::convert::TryInto;
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);

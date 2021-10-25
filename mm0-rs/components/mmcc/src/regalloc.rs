@@ -8,7 +8,6 @@
 //! so they remain symbolic at this stage.
 
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
 
 use mm0_util::u32_as_usize;
 use regalloc2::{Allocation, Edit, Function, PReg, ProgPoint, SpillSlot, VReg};

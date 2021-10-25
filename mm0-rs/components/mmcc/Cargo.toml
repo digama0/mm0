@@ -2,7 +2,7 @@
 name = "mmcc"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Metamath C proof producing compiler"
 repository = "https://github.com/digama0/mm0"
 readme = "README.md"
@@ -27,7 +27,7 @@ bit-vec = "0.6"
 bit-set = "0.5"
 hashbrown = "0.11"
 typed-arena = "2.0"
-bumpalo = { version = "3.7", features = ["boxed", "collections"] }
+bumpalo = { version = "3.8", features = ["boxed", "collections"] }
 regalloc2 = { git = "https://github.com/bytecodealliance/regalloc2.git" }
 mm0_util = { path = "../mm0_util", default-features = false }
 mm0_deepsize = { path = "../mm0_deepsize", optional = true, features = [

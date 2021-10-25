@@ -1,4 +1,4 @@
-use std::{convert::{TryFrom, TryInto}, io::{self, Write}, ops::Index};
+use std::{io::{self, Write}, ops::Index};
 use arrayvec::ArrayVec;
 use byteorder::{LE, WriteBytesExt};
 use crate::{LinkedCode, regalloc::PCode, types::vcode::{GlobalId, ProcId, BlockId}};

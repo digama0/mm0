@@ -1,6 +1,6 @@
 //! Types used in the rest of the compiler.
 
-use std::{convert::TryInto, fmt::Display, ops::BitOrAssign};
+use std::{fmt::Display, ops::BitOrAssign};
 use num::BigInt;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{FileSpan, Symbol};

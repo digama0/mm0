@@ -4,7 +4,6 @@
 use std::borrow::{Borrow, Cow};
 use std::{cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
 use std::result::Result as StdResult;
-use std::convert::{TryFrom, TryInto};
 use bumpalo::Bump;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use hir::{Context, ContextNext};

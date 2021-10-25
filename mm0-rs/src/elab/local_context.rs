@@ -342,10 +342,8 @@ impl<'a> ElabTermMut<'a> {
         n += 1;
       }
     } else {a};
-    let is = &mut self.elab.lc.vars.entry(a).or_insert_with({
-      let fsp = &self.fsp;
-      move || (true, InferSort::new(try_get_span(fsp, e)))
-    }).1;
+    let is = &mut self.elab.lc.vars.entry(a).or_insert_with(
+      || (true, InferSort::new(try_get_span(&self.fsp, e)))).1;
     let res = match (is, tgt) {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.as_ref().err(e, "expected a bound variable, got regular variable")),
@@ -363,9 +361,10 @@ impl<'a> ElabTermMut<'a> {
           InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.expect("expected a sort")),
           _ => None,
         };
-        let mvars = &mut self.elab.lc.mvars;
         let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
-        Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt, Some(sp))).clone())
+        let val = &*sorts.entry(s).or_insert_with(||
+          new_mvar(&mut self.elab.lc.mvars, tgt, Some(sp)));
+        Ok(val.clone())
       }
       (&mut (InferSort::Reg(sort, _) | InferSort::Bound(sort)), tgt) =>
         self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
@@ -609,15 +608,14 @@ impl Elaborator {
           sorts.keys().next().expect("impossible")
             .ok_or_else(|| ElabError::new_e(src, "could not infer type"))
         } else {
-          let env = &self.env;
           sorts.keys().find_map(|s| s.filter(|&s| {
-            match env.pe.coes.get(&s) {
+            match self.env.pe.coes.get(&s) {
               None => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2)),
               Some(m) => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2 || m.contains_key(&s2))),
             }
           })).ok_or_else(|| {
             ElabError::new_e(src, format!("could not infer consistent type from {{{}}}",
-              sorts.keys().filter_map(|&k| k.map(|s| &env.sorts[s].name)).format(", ")))
+              sorts.keys().filter_map(|&k| k.map(|s| &self.env.sorts[s].name)).format(", ")))
           })
         } {
           Ok(sort) => {

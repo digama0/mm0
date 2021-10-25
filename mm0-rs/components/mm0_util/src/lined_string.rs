@@ -76,7 +76,6 @@ impl LinedString {
   /// `idx` must be a valid index in the string.
   #[must_use]
   pub fn to_pos(&self, idx: usize) -> Position {
-    use std::convert::TryInto;
     let (pos, line) = match self.lines.binary_search(&idx) {
       Ok(n) => (idx, n + 1),
       Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n),
@@ -110,7 +109,6 @@ impl LinedString {
   /// Get the total number of lines in the file (as a `u32` for LSP compatibility).
   #[must_use]
   pub fn num_lines(&self) -> u32 {
-    use std::convert::TryInto;
     self.lines.len().try_into().expect("too many lines")
   }
 

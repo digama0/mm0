@@ -6,7 +6,6 @@ use crate::{
 use byteorder::LE;
 use mm0_util::{SortId, TermId, ThmId};
 use std::borrow::Cow;
-use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
 use std::{io, mem, mem::size_of};
 use zerocopy::{FromBytes, LayoutVerified, U16, U32, U64};

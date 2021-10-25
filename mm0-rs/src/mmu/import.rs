@@ -152,9 +152,8 @@ impl<H: NodeHash> Dedup<H> {
   fn add(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
-        let vec = &mut self.vec;
-        let n = vec.len();
-        vec.push((e.key().clone(), false));
+        let n = self.vec.len();
+        self.vec.push((e.key().clone(), false));
         e.insert(n);
         n
       }

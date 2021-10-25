@@ -1,6 +1,5 @@
 //! Importer for MMB files into the [`Environment`].
 
-use std::convert::{TryFrom, TryInto};
 use std::rc::Rc;
 use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};

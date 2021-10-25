@@ -8,7 +8,6 @@
 //! into sequences of x86 instructions.
 
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
 use std::ops::Mul;
 use std::rc::Rc;
 
@@ -195,17 +194,15 @@ impl<'a> LowerCtx<'a> {
 
   fn get_alloc(&mut self, a: AllocId) -> (&(RegMem, Size), u64) {
     assert_ne!(a, AllocId::ZERO);
-    let code = &mut self.code;
     let m = self.allocs[a].m;
-    let globals = &self.globals;
     (self.var_map.entry(a).or_insert_with(|| {
-      let rm = if let Some(&id) = globals.get(&a) {
+      let rm = if let Some(&id) = self.globals.get(&a) {
         RegMem::Mem(AMode::global(id))
       } else if m.on_stack {
         RegMem::Mem(AMode::spill(
-          code.fresh_spill(m.size.try_into().expect("allocation too large"))))
+          self.code.fresh_spill(m.size.try_into().expect("allocation too large"))))
       } else {
-        RegMem::Reg(code.fresh_vreg())
+        RegMem::Reg(self.code.fresh_vreg())
       };
       (rm, Size::from_u64(m.size))
     }), m.size)
@@ -879,10 +876,9 @@ impl<'a> LowerCtx<'a> {
               let a = self.allocs.get(v);
               if a != AllocId::ZERO {
                 if let RValue::Pun(_, p) = rv {
-                  let code = &mut self.code;
-                  let m = self.allocs[a].m;
                   let rm = self.get_place(p);
-                  self.var_map.entry(a).or_insert_with(|| (rm, Size::from_u64(m.size)));
+                  self.var_map.entry(a).or_insert_with(||
+                    (rm, Size::from_u64(self.allocs[a].m.size)));
                 } else {
                   let (&(dst, sz), size) = self.get_alloc(a);
                   self.build_rvalue(ty, size, sz, dst, rv);

@@ -11,7 +11,6 @@
 //! [`types::ast`](super::types::ast) module.
 
 use std::collections::{HashMap, hash_map::Entry};
-use std::convert::TryInto;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::rc::Rc;

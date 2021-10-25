@@ -56,7 +56,6 @@ mod parser;
 mod ty;
 mod write;
 
-use std::convert::{TryFrom, TryInto};
 use std::ffi::CStr;
 use std::mem::size_of;
 
@@ -268,7 +267,7 @@ impl NumdStmtCmd {
   }
 }
 
-impl std::convert::TryFrom<u8> for StmtCmd {
+impl TryFrom<u8> for StmtCmd {
   type Error = ParseError;
   fn try_from(cmd: u8) -> Result<Self, Self::Error> {
     Ok(match cmd {
@@ -406,7 +405,7 @@ pub enum ProofCmd {
   Sorry,
 }
 
-impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
+impl TryFrom<(u8, u32)> for ProofCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     Ok(match cmd {
@@ -494,7 +493,7 @@ pub enum UnifyCmd {
   Hyp,
 }
 
-impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
+impl TryFrom<(u8, u32)> for UnifyCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     Ok(match cmd {

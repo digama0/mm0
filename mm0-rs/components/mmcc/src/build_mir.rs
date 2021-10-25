@@ -1,7 +1,6 @@
 //! Build the mid-level IR from HIR
 
 use std::{rc::Rc, fmt::Debug, mem};
-use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use types::{IntTy, Size};
@@ -245,8 +244,7 @@ impl<'a> Translator<'a> {
   }
 
   fn location(&mut self, var: HVarId) -> VarId {
-    let next = &mut self.next_var;
-    *self.locations.entry(var).or_insert_with(|| next.fresh())
+    *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())
   }
   // fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
   //   self.located.entry(var).or_insert_with(Vec::new)

@@ -1,7 +1,6 @@
 //! Handles layout of functions, globals, constants in the overall program.
 
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::hash::Hash;
 use std::ops::Index;
 

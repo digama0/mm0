@@ -11,7 +11,6 @@ pub mod pir;
 pub mod vcode;
 
 use std::borrow::Cow;
-use std::convert::{TryFrom, TryInto};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut, Range, RangeBounds};
 use num::{BigInt, Signed};

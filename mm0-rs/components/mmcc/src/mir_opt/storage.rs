@@ -2,7 +2,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
-use std::convert::TryInto;
 
 use crate::{Idx, Symbol};
 use crate::types::IntTy;

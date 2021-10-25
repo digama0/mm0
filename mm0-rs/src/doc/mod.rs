@@ -4,7 +4,6 @@ use bit_set::BitSet;
 use clap::ArgMatches;
 use lsp_types::Url;
 use pulldown_cmark::escape::WriteWrapper;
-use std::convert::{TryFrom, TryInto};
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::mem;
