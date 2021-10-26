@@ -26,7 +26,7 @@ struct Translator<'a> {
   places: TrMap<ty::Place<'a>, EPlace>,
   gen_vars: HashMap<GenId, GenMap>,
   locations: HashMap<HVarId, VarId>,
-  // located: HashMap<VarId, Vec<VarId>>,
+  located: HashMap<VarId, Vec<VarId>>,
   next_var: VarId,
   cur_gen: GenId,
   subst: HashMap<HVarId, Expr>,
@@ -236,6 +236,10 @@ impl<'a> Translator<'a> {
       else if gen == GenId::ROOT { self.next_var.fresh() }
       else { let dom = gm.dominator; self.tr_var(v, dom) };
     self.gen_vars.get_mut(&gen).expect("unknown generation").cache.insert(v, val);
+    match self.locations.entry(v) {
+      Entry::Occupied(e) => { let root = *e.get(); self.locate(root).push(val) }
+      Entry::Vacant(e) => { e.insert(val); }
+    }
     val
   }
 
@@ -244,11 +248,12 @@ impl<'a> Translator<'a> {
   }
 
   fn location(&mut self, var: HVarId) -> VarId {
-    *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())
+    dbg!(var, *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())).1
   }
-  // fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
-  //   self.located.entry(var).or_insert_with(Vec::new)
-  // }
+
+  fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
+    self.located.entry(var).or_insert_with(Vec::new)
+  }
 
   fn add_gen(&mut self, dominator: GenId, gen: GenId, value: HashMap<HVarId, VarId>) {
     assert!(self.gen_vars.insert(gen,
@@ -717,18 +722,15 @@ impl<'a> BuildMir<'a> {
         let vh = h.map(|h| self.as_temp(*h)).transpose()?.map(Into::into);
         RValue::Pun(PunKind::Sn(vh), vx.into())
       }
-      hir::ExprKind::List(lk, es) => {
-        let vs = es.into_iter().map(|e| self.as_temp(e).map(Into::into))
-          .collect::<Block<Box<[_]>>>()?;
-        match lk {
-          hir::ListKind::List | hir::ListKind::Struct => RValue::List(vs),
-          hir::ListKind::Array => RValue::Array(vs),
-          hir::ListKind::And => {
-            let mut vs = vs.into_vec();
-            let_unchecked!(v as Operand::Move(v) = vs.remove(0));
-            RValue::Pun(PunKind::And(vs), v)
-          }
-        }
+      hir::ExprKind::List(hir::ListKind::List | hir::ListKind::Struct, es) =>
+        RValue::List(es.into_iter().map(|e| self.operand(e)).collect::<Block<_>>()?),
+      hir::ExprKind::List(hir::ListKind::Array, es) =>
+        RValue::Array(es.into_iter().map(|e| self.operand(e)).collect::<Block<_>>()?),
+      hir::ExprKind::List(hir::ListKind::And, es) => {
+        let mut it = es.into_iter();
+        let v = self.as_temp(it.next().expect("AND must have an argument"))?;
+        let vs = it.map(|e| self.operand(e)).collect::<Block<_>>()?;
+        RValue::Pun(PunKind::And(vs), v.into())
       }
       hir::ExprKind::Ghost(e) => RValue::Ghost(self.copy_or_move(*e)?),
       hir::ExprKind::Borrow(e) => RValue::Borrow(self.place(*e)?),

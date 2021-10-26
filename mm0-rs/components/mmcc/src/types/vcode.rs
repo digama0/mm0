@@ -225,7 +225,7 @@ impl<I> Default for VCode<I> {
 
 impl<I> VCode<I> {
   /// Create a new unused `VReg`.
-  pub fn fresh_vreg(&mut self) -> VReg {
+  #[must_use] pub fn fresh_vreg(&mut self) -> VReg {
     let v = VReg::new(self.num_vregs, RegClass::Int);
     self.num_vregs += 1;
     v
@@ -233,7 +233,7 @@ impl<I> VCode<I> {
 
   /// Create a new unused `SpillId`. (It is allowable to use size 0 here and grow it later with
   /// `grow_spill`.)
-  pub fn fresh_spill(&mut self, sz: u32) -> SpillId { self.spills.push(sz) }
+  #[must_use] pub fn fresh_spill(&mut self, sz: u32) -> SpillId { self.spills.push(sz) }
 
   /// Ensure that the given spill is at least the specified size.
   pub fn grow_spill(&mut self, n: SpillId, sz: u32) {

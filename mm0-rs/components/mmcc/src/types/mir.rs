@@ -245,42 +245,39 @@ impl std::fmt::Debug for TyKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match self {
-      TyKind::Var(v) => write!(f, "v{}", v),
+      TyKind::Var(v) => write!(f, "{:?}", v),
       TyKind::Unit => write!(f, "()"),
       TyKind::True => write!(f, "true"),
       TyKind::False => write!(f, "false"),
       TyKind::Bool => write!(f, "bool"),
-      TyKind::Int(ity) => ity.fmt(f),
-      TyKind::Array(ty, n) => write!(f, "(array {:?} {:?})", ty, n),
+      TyKind::Int(ity) => write!(f, "{}", ity),
+      TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
       TyKind::Own(ty) => match &**ty {
-        TyKind::Ref(lft, ty) => write!(f, "(& {:?} {:?})", lft, ty),
-        _ => write!(f, "(own {:?})", ty)
+        TyKind::Ref(lft, ty) => write!(f, "&'{:?} {:?}", lft, ty),
+        _ => write!(f, "own {:?}", ty)
       },
-      TyKind::Ref(lft, ty) => write!(f, "(ref {:?} {:?})", lft, ty),
-      TyKind::RefSn(x) => write!(f, "(&sn {:?})", x),
-      TyKind::Sn(e, ty) => write!(f, "(sn {{{:?}: {:?}}})", e, ty),
-      TyKind::Struct(args) => {
-        write!(f, "(struct")?;
-        for arg in &**args { write!(f, " {{{:?}}}", arg)? }
-        write!(f, ")")
-      }
+      TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
+      TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
+      TyKind::Sn(e, ty) => write!(f, "sn({:?}: {:?})", e, ty),
+      TyKind::Struct(args) => write!(f, "({:?})", args.iter().format(", ")),
       TyKind::All(a, p, q) => write!(f, "A. {:?}: {:?}, {:?}", a, p, q),
       TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
       TyKind::Wand(p, q) => write!(f, "({:?} -* {:?})", p, q),
       TyKind::Not(pr) => write!(f, "~{:?}", pr),
       TyKind::And(tys) => write!(f, "({:?})", tys.iter().format(" /\\ ")),
       TyKind::Or(tys) => write!(f, "({:?})", tys.iter().format(" \\/ ")),
-      TyKind::If(cond, then, els) => write!(f, "(if {:?} {:?} {:?})", cond, then, els),
-      TyKind::Ghost(ty) => write!(f, "(ghost {:?})", ty),
-      TyKind::Uninit(ty) => write!(f, "(? {:?})", ty),
-      TyKind::Pure(e) => e.fmt(f),
+      TyKind::If(cond, then, els) =>
+        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
+      TyKind::Ghost(ty) => write!(f, "ghost({:?})", ty),
+      TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
+      TyKind::Pure(e) => write!(f, "{:?}", e),
       TyKind::User(name, tys, es) => {
-        write!(f, "({}", name)?;
-        for ty in &**tys { write!(f, " ")?; ty.fmt(f)? }
-        for e in &**es { write!(f, " ")?; e.fmt(f)? }
-        write!(f, ")")
+        use itertools::Itertools;
+        write!(f, "{}", name)?;
+        if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
+        write!(f, "({:?})", es.iter().format(", "))
       }
-      TyKind::Heap(x, v, t) => write!(f, "{:?} => {:?}: {:?}", x, v, t),
+      TyKind::Heap(x, v, t) => write!(f, "({:?} => {:?}: {:?})", x, v, t),
       TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
       TyKind::Input => write!(f, "Input"),
       TyKind::Output => write!(f, "Output"),
@@ -422,7 +419,6 @@ pub type EPlace = Rc<EPlaceKind>;
 pub type EPlaceTy = (Option<EPlace>, Ty);
 
 /// A place expression.
-#[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Hash, PartialEq, Eq)]
 pub enum EPlaceKind {
@@ -437,6 +433,17 @@ pub enum EPlaceKind {
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(EPlace, Ty, u32),
+}
+
+impl std::fmt::Debug for EPlaceKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      EPlaceKind::Var(v) => write!(f, "{:?}", v),
+      EPlaceKind::Index(arr, _, idx) => write!(f, "{:?}[{:?}]", arr, idx),
+      EPlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
+      EPlaceKind::Proj(e, _, j) => write!(f, "{:?}.{}", e, j),
+    }
+  }
 }
 
 impl EPlaceKind {

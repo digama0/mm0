@@ -11,12 +11,13 @@ use std::collections::HashMap;
 use std::ops::Mul;
 use std::rc::Rc;
 
+use arrayvec::ArrayVec;
 use num::BigInt;
 use regalloc2::{Operand as ROperand, PReg};
 
 use crate::build_mir::{Diverged, Initializer};
 use crate::linker::ConstData;
-use crate::types::entity::ConstTc;
+use crate::types::entity::{IntrinsicProc, ConstTc, ProcTc, ProcTy};
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
   Inst, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
@@ -713,11 +714,74 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_syscall(&mut self, f: SysCall, args: &[RegMemImm]) {
+  fn build_intrinsic(&mut self,
+    vbl: VBlockId,
+    f: IntrinsicProc,
+    args: &[(bool, Operand)],
+    reach: bool,
+    tgt: BlockId,
+    rets: &[VarId],
+  ) {
+    let mut rmis = ArrayVec::<RegMemImm<u64>, 6>::new();
+    let (f, ret) = match (f, rets, args) {
+      (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
+        rmis.extend([self.get_operand(fname), 0.into(), 0.into()]);
+        (SysCall::Open, ret)
+      }
+      (IntrinsicProc::Create, &[ret], [(true, fname)]) => {
+        rmis.extend([self.get_operand(fname), (1 + (1<<6) + (1<<9)).into(), 0.into()]);
+        (SysCall::Open, ret)
+      }
+      (IntrinsicProc::Read, &[ret],  [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+        rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
+        (SysCall::Read, ret)
+      }
+      (IntrinsicProc::Write, &[ret],  [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+        rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
+        (SysCall::Write, ret)
+      }
+      (IntrinsicProc::FStat, &[_buf_new, ret], [(true, fd), (_, _buf_old), (true, p)]) => {
+        rmis.extend([fd, p].map(|x| self.get_operand(x)));
+        (SysCall::FStat, ret)
+      }
+      (IntrinsicProc::MMap, &[ret], [(true, len), (true, prot), (true, fd)]) => {
+        rmis.extend([
+          0.into(),
+          self.get_operand(len),
+          self.get_operand(prot),
+          2.into(),
+          self.get_operand(fd),
+          0.into()
+        ]);
+        (SysCall::MMap, ret)
+      }
+      (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
+          rmis.extend([
+            0.into(),
+            self.get_operand(len),
+            self.get_operand(prot),
+            (2+32).into(),
+            u64::from(u32::MAX).into(),
+            0.into()
+          ]);
+          (SysCall::MMap, ret)
+      }
+      e => panic!("intrinsic has the wrong number of arguments: {:?}", e)
+    };
+    let vreg = self.code.fresh_vreg();
+    self.build_syscall(f, &rmis, vreg);
+    let a = self.allocs.get(ret);
+    if a != AllocId::ZERO {
+      let (dst, sz) = *self.get_alloc(a).0;
+      self.code.emit_copy(sz, dst, vreg);
+    }
+    self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
+  }
+
+  fn build_syscall(&mut self, f: SysCall, args: &[RegMemImm<u64>], dst: VReg) {
     let (rax, ref argregs) = SYSCALL_ARG_REGS;
     debug_assert!(args.len() <= argregs.len());
     let fname = self.code.fresh_vreg();
-    let dst = self.code.fresh_vreg();
     self.code.emit_copy(Size::S32, fname.into(), u64::from(f as u8));
     let mut params = vec![ROperand::reg_fixed_use(fname, rax)];
     for (arg, &reg) in args.iter().zip(argregs) {
@@ -739,7 +803,10 @@ impl<'a> LowerCtx<'a> {
           dst: VBlockId(tgt.0)
         }))),
       Terminator::Return(ref args) => self.build_ret(args),
-      Terminator::Exit(_) => self.build_syscall(SysCall::Exit, &[0.into()]),
+      Terminator::Exit(_) => {
+        let dst = self.code.fresh_vreg();
+        self.build_syscall(SysCall::Exit, &[0.into()], dst);
+      }
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
         let src = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
@@ -752,8 +819,15 @@ impl<'a> LowerCtx<'a> {
       Terminator::Assert(_, _, false, _) => { self.code.emit(Inst::Ud2); }
       Terminator::Call { f, se, ref tys, ref args, reach, tgt, ref rets } => {
         if !tys.is_empty() { unimplemented!("monomorphization") }
-        let f = *self.func_mono.get(&f).expect("function ABI not found");
-        self.build_call(vbl, f, args, reach, tgt, rets)
+        if let Some(&f) = self.func_mono.get(&f) {
+          self.build_call(vbl, f, args, reach, tgt, rets)
+        } else if let Some(&Entity::Proc(Spanned {
+          k: ProcTc::Typed(ProcTy {intrinsic: Some(intrinsic), ..}), ..
+        })) = self.names.get(&f) {
+          self.build_intrinsic(vbl, intrinsic, args, reach, tgt, rets)
+        } else {
+          panic!("function ABI not found");
+        }
       }
       Terminator::Unreachable(_) |
       Terminator::Dead => unreachable!(),

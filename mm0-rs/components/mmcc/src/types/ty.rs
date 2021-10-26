@@ -229,7 +229,7 @@ pub type TuplePattern<'a> = &'a TuplePatternS<'a>;
 pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
 
 /// A strongly typed tuple pattern.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
@@ -239,6 +239,26 @@ pub enum TuplePatternKind<'a> {
   /// An error that has been reported.
   /// (We keep the original tuple pattern so that name scoping still works.)
   Error(TuplePattern<'a>, Ty<'a>),
+}
+
+impl std::fmt::Debug for TuplePatternKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match *self {
+      TuplePatternKind::Name(name, v, ty) => write!(f, "{:?}{{{}}}: {:?}", v, name, ty),
+      TuplePatternKind::Tuple(args, mk, _) => match mk {
+        TupleMatchKind::Unit => write!(f, "()"),
+        TupleMatchKind::True => write!(f, "itrue"),
+        TupleMatchKind::List |
+        TupleMatchKind::Struct |
+        TupleMatchKind::Sn |
+        TupleMatchKind::Own => write!(f, "({:?})", args.iter().format(", ")),
+        TupleMatchKind::Array => write!(f, "[{:?}]", args.iter().format(", ")),
+        TupleMatchKind::And => write!(f, "<{:?}>", args.iter().format(", ")),
+      }
+      TuplePatternKind::Error(pat, ty) => write!(f, "{:?} ??as {:?}", pat, ty),
+    }
+  }
 }
 
 /// Defines the kind of pattern match being performed by a [`TuplePatternKind::Tuple`]. The [`Ty`]
@@ -605,13 +625,17 @@ impl AddFlags for TyKind<'_> {
         f.remove(Flags::IS_NON_COPY | Flags::IS_RELEVANT);
         *f |= ty;
       }
-      TyKind::Own(ty) => *f |= (Flags::IS_NON_COPY, ty),
+      TyKind::Own(ty) => *f |= (Flags::IS_NON_COPY | Flags::IS_RELEVANT, ty),
       TyKind::Not(ty) => *f |= ty,
       TyKind::Ghost(ty) => {*f |= ty; f.remove(Flags::IS_RELEVANT)}
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => {*f |= ty; f.remove(Flags::IS_NON_COPY)}
       TyKind::Ref(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
-      TyKind::RefSn(p) => {*f |= p; f.remove(Flags::IS_NON_COPY)}
+      TyKind::RefSn(p) => {
+        *f |= p;
+        f.remove(Flags::IS_NON_COPY);
+        *f |= Flags::IS_RELEVANT;
+      }
       TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY | Flags::IS_RELEVANT)}
       TyKind::Struct(args) => *f |= args,
       TyKind::All(pat, p) => {*f |= pat; f.remove(Flags::IS_RELEVANT); *f |= p}
@@ -780,7 +804,7 @@ pub type RPlace<'a> = Result<Place<'a>, &'a FileSpan>;
 pub type RPlaceTy<'a> = (RPlace<'a>, Ty<'a>);
 
 /// A place expression.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PlaceKind<'a> {
   /// A variable reference.
@@ -796,6 +820,18 @@ pub enum PlaceKind<'a> {
   Proj(Place<'a>, Ty<'a>, u32),
   /// A type error that has been reported.
   Error,
+}
+
+impl std::fmt::Debug for PlaceKind<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      PlaceKind::Var(v) => write!(f, "{}", v),
+      PlaceKind::Index(arr, _, idx) => write!(f, "{:?}[{:?}]", arr, idx),
+      PlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
+      PlaceKind::Proj(e, _, j) => write!(f, "{:?}.{}", e, j),
+      PlaceKind::Error => write!(f, "??"),
+    }
+  }
 }
 
 impl<'a> PlaceS<'a> {

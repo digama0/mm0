@@ -9,7 +9,7 @@ use crate::codegen::{FUNCTION_ALIGN, TEXT_START};
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{self, TyKind, ExprKind};
-use crate::types::entity::{ConstTc, Entity, ProcTc};
+use crate::types::entity::{ConstTc, Entity, ProcTc, ProcTy};
 use crate::types::mir::{
   Cfg, ConstKind, Constant, Place, Proc, RValue, Terminator, Ty, VarId, Visitor};
 use crate::types::vcode::{GlobalId, ProcId, ConstRef};
@@ -110,11 +110,17 @@ impl<'a> Collector<'a> {
     calls
   }
 
-  fn collect_func(&mut self, f: Symbol, args: &[Ty]) -> ProcId {
+  fn collect_func(&mut self, f: Symbol, args: &[Ty]) -> Option<ProcId> {
     if !args.is_empty() {
       unimplemented!("functions with type args")
     }
-    if let Some(&id) = self.funcs.0.get(&f) { return id }
+    if let Some(&id) = self.funcs.0.get(&f) { return Some(id) }
+    if_chain! {
+      if let Some(Entity::Proc(tc)) = self.names.get(&f);
+      if let ProcTc::Typed(ty) = &tc.k;
+      if ty.intrinsic.is_some();
+      then { return None }
+    }
     let id = self.funcs.1.push(f);
     self.funcs.0.insert(f, id);
     if let Some(imps) = self.implications.get_mut(&f) {
@@ -130,7 +136,7 @@ impl<'a> Collector<'a> {
       self.implications.insert(f, Some(calls));
     }
     self.postorder.push(id);
-    id
+    Some(id)
   }
 
   fn alloc_const(&mut self, ty: &TyKind, e: &ExprKind) -> Option<(u32, u32)> {

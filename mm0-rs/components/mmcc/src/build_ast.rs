@@ -14,9 +14,8 @@ use std::collections::{HashMap, hash_map::Entry};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::rc::Rc;
-use crate::types::IdxVec;
 use crate::{FileSpan, Symbol};
-use super::types::{Binop, Spanned, FieldName, VarId, ast::{self, LabelId}};
+use crate::types::{Binop, Spanned, FieldName, VarId, IdxVec, ast::{self, LabelId}};
 
 #[derive(Debug)]
 enum Ctx {

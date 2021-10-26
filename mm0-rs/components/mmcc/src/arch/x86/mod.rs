@@ -582,7 +582,7 @@ pub(crate) enum SysCall {
   Write = 1,
   /// `err <- fstat(fd, statbuf)`.
   FStat = 5,
-  /// `p <- mmap(0, len, prot, flags, fd, off)`.
+  /// `p <- mmap(0, len, prot, flags, fd, 0)`.
   /// * If `fd == u32::MAX` then `flags = MAP_PRIVATE + MAP_ANONYMOUS = 2 + 32 = 34`
   /// * If `fd != u32::MAX` then `flags = MAP_PRIVATE = 2`
   MMap = 9,
@@ -1265,8 +1265,8 @@ pub(crate) enum OpcodeLayout {
   Mov32,
   /// `decodeMov64` layout: `1011vrrr + imm64`
   Mov64,
-  // /// `decodeMovImm` layout: `1100011v + modrm + imm32`
-  // MovImm(ModRMLayout),
+  /// `decodeMovImm` layout: `1100011v + modrm + imm32`
+  MovImm(ModRMLayout),
   /// `decodePushImm` layout with 8 bit immediate: `0x6A + imm8`
   PushImm8,
   /// `decodePushImm` layout with 32 bit immediate: `0x68 + imm32`
@@ -1335,7 +1335,7 @@ impl OpcodeLayout {
       Self::SetCC(modrm) | Self::CMov(modrm) |
       Self::MovX(modrm) => 2 + modrm.len(), // 0F + opcode + modrm
       Self::BinopImmS32(modrm) |
-      // Self::MovImm(modrm) |
+      Self::MovImm(modrm) |
       Self::HiTest32(modrm) => 5 + modrm.len(), // opcode + modrm + imm32
     }
   }
@@ -1488,13 +1488,15 @@ impl PInst {
         InstLayout { opc: OpcodeLayout::Hi(layout_opc_rm(&mut rex, src)), rex }
       }
       PInst::Imm { sz, dst, src } => {
-        let opc = match src {
-          0 => {
+        let opc = match (sz, src) {
+          (_, 0) => {
              // xor dst, dst
              return layout_binop_lo(sz.min(Size::S32), dst, &PRegMemImm::Reg(dst))
           }
-          _ if src as i32 as u64 == src => OpcodeLayout::Mov32,
-          _ => OpcodeLayout::Mov64,
+          (Size::S64, _) if src as i32 as u64 == src =>
+            OpcodeLayout::MovImm(layout_opc_reg(&mut true, dst)),
+          (Size::S64, _) => OpcodeLayout::Mov64,
+          _ => OpcodeLayout::Mov32,
         };
         InstLayout { rex: sz == Size::S64 || large_preg(dst), opc }
       }
@@ -1780,7 +1782,11 @@ impl PInst {
         buf.push_u8(0xb0 + (op_size_w(&mut rex, sz) << 3) + encode_reg(dst, &mut rex, REX_B));
         buf.push_u64(src);
       }
-      // (OpcodeLayout::MovImm(modrm), _) => unreachable!(),
+      (OpcodeLayout::MovImm(modrm), &PInst::Imm { sz, dst, src }) => {
+        buf.push_u8(0xc6 + op_size_w(&mut rex, sz));
+        write_opc_modrm(modrm, &mut rex, buf, 0, PRegMem::Reg(dst));
+        buf.push_u32(src as u32);
+      }
       (OpcodeLayout::PushImm8, &PInst::Push64 { src: PRegMemImm::Imm(src) }) => {
         buf.push_u8(0x6a);
         buf.push_u8(src as u8);
@@ -1901,6 +1907,7 @@ impl PInst {
       _ => unreachable!(),
     }
 
+    debug_assert!(usize::from(layout.len()) == buf.len());
     if layout.rex {
       buf.set_rex(0x40 + rex);
     } else {

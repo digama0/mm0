@@ -262,19 +262,85 @@ make_prims! {
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular
   /// function calls.
   enum IntrinsicProc {
-    /// Intrinsic for the [`fstat`](https://man7.org/linux/man-pages/man2/fstat.2.html) system call.
-    FStat: "sys_fstat",
-    /// Intrinsic for the [`open`](https://man7.org/linux/man-pages/man2/open.2.html) system call.
+    /// Intrinsic for the [`open`](https://man7.org/linux/man-pages/man2/open.2.html) system call,
+    /// for the reading case.
+    /// ```text
+    /// intrinsic proc sys_open(filename: &CStr) -> u32;
+    /// ```
     Open: "sys_open",
-    /// Intrinsic for the [`mmap`](https://man7.org/linux/man-pages/man2/mmap.2.html) system call.
+    /// Intrinsic for the [`open`](https://man7.org/linux/man-pages/man2/open.2.html) system call,
+    /// for the creation case.
+    /// ```text
+    /// intrinsic proc sys_create(filename: &CStr) -> u32;
+    /// ```
+    Create: "sys_create",
+    /// Intrinsic for the [`read`](https://man7.org/linux/man-pages/man2/read.2.html) system call.
+    /// ```text
+    /// intrinsic proc sys_read(fd: u32, count: u32, ghost buf: [u8; count], p: &sn buf) -> u32;
+    /// ```
+    Read: "sys_read",
+    /// Intrinsic for the [`write`](https://man7.org/linux/man-pages/man2/write.2.html) system call.
+    /// ```text
+    /// intrinsic proc sys_write(fd: u32, count: u32, ghost mut buf: [u8; count], p: &sn buf) -> u32;
+    /// ```
+    Write: "sys_write",
+    /// Intrinsic for the [`fstat`](https://man7.org/linux/man-pages/man2/fstat.2.html) system call.
+    /// ```text
+    /// intrinsic proc sys_fstat(fd: u32, ghost mut buf: Stat, p: &sn buf) -> u32;
+    /// ```
+    FStat: "sys_fstat",
+    /// Intrinsic for the [`mmap`](https://man7.org/linux/man-pages/man2/mmap.2.html) system call,
+    /// in the file-mapping case.
+    /// ```text
+    /// intrinsic proc sys_mmap(len: u64, prot: u32, fd: u32) -> u64;
+    /// ```
     MMap: "sys_mmap",
+    /// Intrinsic for the [`mmap`](https://man7.org/linux/man-pages/man2/mmap.2.html) system call,
+    /// in the anonymous case.
+    /// ```text
+    /// intrinsic proc sys_mmap_anon(len: u64, prot: u32) -> u64;
+    /// ```
+    MMapAnon: "sys_mmap_anon",
   }
 
   /// Intrinsic global variables.
   enum IntrinsicGlobal {}
 
   /// Intrinsic constants.
-  enum IntrinsicConst {}
+  enum IntrinsicConst {
+    /// A C-style string: a zero-terminated array of characters with unknown length.
+    /// ```text
+    /// intrinsic struct CStr {
+    ///   ghost len: nat,
+    ///   buf: [u8; len + 1],
+    ///   eq0: all i, buf[i] = some 0 <-> i = len
+    /// }
+    /// ```
+    CStr: "CStr",
+    /// The buffer filled by `fstat`.
+    /// ```text
+    /// intrinsic struct Stat {
+    ///   st_dev: u64,
+    ///   st_ino: u64,
+    ///   st_nlink: u64,
+    ///   st_mode: u32,
+    ///   st_uid: u32,
+    ///   st_gid: u32,
+    ///   _pad: i32,
+    ///   st_rdev: u64,
+    ///   st_size: i64,
+    ///   st_blksize: i64,
+    ///   st_blocks: i64,
+    ///   st_atime: i64,
+    ///   st_atime_nsec: i64,
+    ///   st_mtime: i64,
+    ///   st_mtime_nsec: i64,
+    ///   st_ctime: i64,
+    ///   st_ctime_nsec: i64,
+    /// }
+    /// ```
+    Stat: "Stat",
+  }
 
   /// Intrinsic typedefs.
   enum IntrinsicType {}
@@ -339,8 +405,10 @@ impl ProcTc {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ProcTy {
-  /// The kind of the procedure (`func`, `proc`, `intrinsic`)
+  /// The kind of the procedure (`func`, `proc`, `main`)
   pub kind: ast::ProcKind,
+  /// If this is an intrinsic, this gives the intrinsic identifier.
+  pub intrinsic: Option<IntrinsicProc>,
   /// The number of type arguments (not included in `args`). There are no higher
   /// order types so this is essentially just `{A : *} {B : *} ...` with `tyargs`
   /// variables (named by their index).

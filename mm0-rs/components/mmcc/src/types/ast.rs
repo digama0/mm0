@@ -297,6 +297,7 @@ pub struct Label {
 }
 
 /// A block is a list of statements, with an optional terminating expression.
+#[derive(Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Block {
   /// The list of statements in the block.
@@ -555,7 +556,7 @@ impl ExprKind {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ExprKind::Unit => write!(f, "()"),
-      ExprKind::Var(v) => write!(f, "{}", v),
+      ExprKind::Var(v) => write!(f, "{:?}", v),
       ExprKind::Const(c) => write!(f, "{}", c),
       ExprKind::Bool(b) => write!(f, "{}", b),
       ExprKind::Int(n) => write!(f, "{}", n),
@@ -610,7 +611,7 @@ impl ExprKind {
         for e in es {
           indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        indent(i, f)?; writeln!(f, "]")
+        indent(i, f)?; write!(f, "]")
       }
       ExprKind::Ghost(e) => {
         write!(f, "ghost(")?; e.k.debug_indent(i, f)?; write!(f, ")")
@@ -624,7 +625,7 @@ impl ExprKind {
           for e in &e.subst {
             indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
           }
-          indent(i, f)?; writeln!(f, "]")?;
+          indent(i, f)?; write!(f, "]")?;
         }
         Ok(())
       }
@@ -672,12 +673,12 @@ impl ExprKind {
         use itertools::Itertools;
         write!(f, "{}", func.k)?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
-        write!(f, "(")?;
+        writeln!(f, "(")?;
         for e in args {
           indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
         if let Some(var) = variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::Entail(p, es) => {
         write!(f, "{:?}", p.k)?;
@@ -686,14 +687,14 @@ impl ExprKind {
           for e in &**es {
             indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
           }
-          indent(i, f)?; writeln!(f, ")")?;
+          indent(i, f)?; write!(f, ")")?;
         }
         Ok(())
       }
       ExprKind::Block(bl) => {
         writeln!(f, "{{")?;
         bl.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::If { ik: _, hyp, cond, then, els } => {
         write!(f, "if ")?;
@@ -705,7 +706,7 @@ impl ExprKind {
         if let Some([_, h]) = hyp { write!(f, "{}: ", h)? }
         writeln!(f, "{{")?;
         els.k.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::While { label, muts, hyp, cond, var, body, .. } => {
         if !muts.is_empty() {
@@ -724,7 +725,7 @@ impl ExprKind {
           writeln!(f, " {{")?;
         }
         body.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::Unreachable(e) => {
         write!(f, "unreachable ")?;
@@ -736,7 +737,7 @@ impl ExprKind {
           indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
         if let Some(var) = var { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::Break(lab, e) => {
         write!(f, "break {} ", lab)?;
@@ -747,7 +748,7 @@ impl ExprKind {
         for e in es {
           indent(i+1, f)?; e.k.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::Infer(true) => write!(f, "?_"),
       ExprKind::Infer(false) => write!(f, "_"),

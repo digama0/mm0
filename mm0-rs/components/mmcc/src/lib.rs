@@ -53,6 +53,7 @@
   clippy::redundant_pub_crate,
   clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
+  clippy::single_match_else,
   clippy::too_many_lines,
   clippy::use_self
 )]
@@ -160,6 +161,18 @@ pub trait ItemContext<C: Config + ?Sized> {
 impl<C: Config> ItemContext<C> for () {
   type Printer = ();
   fn print(&mut self) {}
+
+  fn emit_type_errors<'a>(&mut self, _ctx: &mut C,
+    errs: Vec<hir::Spanned<'a, TypeError<'a>>>,
+    pr: &impl DisplayCtx<'a>,
+  ) -> Result<bool, C::Error> {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for err in errs {
+      writeln!(out, "at {:?}: {}", err.span, CtxPrint(pr, &err.k)).expect("impossible");
+    }
+    panic!("type errors:\n{}", out)
+  }
 }
 
 /// A trait for printing lambda expressions embedded in the code.
@@ -256,6 +269,7 @@ impl<C: Config> Compiler<C> {
   pub fn finish(&mut self) -> LinkedCode {
     let names = std::mem::replace(&mut self.names, symbol::Interner::with(Self::make_names));
     let mir = std::mem::take(&mut self.mir);
+    println!("{:?}", mir);
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
@@ -266,10 +280,10 @@ impl<C: Config> Compiler<C> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::wildcard_imports)]
 mod test {
-  use crate::types::Binop;
-  use crate::types::ast::{Block, ExprKind, ItemKind, StmtKind, TypeKind};
-  use crate::{Compiler, intern};
-  use crate::types::{Size, Spanned, hir::ProcKind};
+  use crate::types::ast::{
+    ArgAttr, ArgKind, Block, ExprKind, ItemKind, Ret, StmtKind, TuplePatternKind, TypeKind};
+  use crate::{Compiler, FileSpan, Idx, Symbol, intern};
+  use crate::types::{Binop, Size, Spanned, VarId, hir::ProcKind, entity::IntrinsicProc};
 
   fn assert_eq_hex(data: &[u8], hex: &str) {
     let mut result = String::from(hex);
@@ -324,7 +338,7 @@ mod test {
     // println!("allocs = {:#?}", allocs);
     let code = LinkedCode::link(&names, &mir, &cfg, &allocs, &[]);
     // println!("code = {:#?}", code);
-    // code.write_elf(&mut File::create("two_plus_two").unwrap());
+    // code.write_elf(&mut std::fs::File::create("two_plus_two").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
     assert_eq_hex(&out, "\
@@ -370,7 +384,7 @@ mod test {
     compiler.add(&main, Default::default(), ());
     let code = compiler.finish();
     println!("code = {:#?}", code);
-    // code.write_elf(&mut File::create("two_plus_two").unwrap());
+    // code.write_elf(&mut std::fs::File::create("two_plus_two").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
     assert_eq_hex(&out, "\
@@ -385,6 +399,137 @@ mod test {
       0000 33ff 0f05 0000 0000 0000 0000 0000\
       ba02 0000 00be 0200 0000 4002 d6b8 0400\
       0000 3ad0 0f94 c180 f900 7502 0f0b c300\
+    ");
+  }
+
+  #[test] fn hello_world() {
+    let mut compiler = Compiler::new(());
+    let hello = b"hello world";
+    let write = intern("write");
+
+    // Add write intrinsic:
+    // intrinsic proc write(fd: u32, count: u32, ghost mut buf: [u8; count], p: &sn buf) -> u32;
+    let mut fresh = VarId::default();
+    let fd = fresh.fresh();
+    let count = fresh.fresh();
+    let buf = fresh.fresh();
+    compiler.add(
+      &Spanned::dummy(ItemKind::Proc {
+        intrinsic: Some(IntrinsicProc::Write),
+        kind: ProcKind::Proc,
+        name: Spanned::dummy(write),
+        tyargs: 0,
+        args: Box::new([
+          // fd: u32
+          Spanned::dummy((ArgAttr::empty(), ArgKind::Lam(TuplePatternKind::Typed(
+            Box::new(Spanned::dummy(TuplePatternKind::Name(false, intern("fd"), fd))),
+            Box::new(Spanned::dummy(TypeKind::UInt(Size::S32))),
+          )))),
+          // count: u32
+          Spanned::dummy((ArgAttr::empty(), ArgKind::Lam(TuplePatternKind::Typed(
+            Box::new(Spanned::dummy(TuplePatternKind::Name(false, intern("count"), count))),
+            Box::new(Spanned::dummy(TypeKind::UInt(Size::S32))),
+          )))),
+          // ghost mut buf: ref [u8; count]
+          Spanned::dummy((ArgAttr::GHOST | ArgAttr::MUT, ArgKind::Lam(TuplePatternKind::Typed(
+              Box::new(Spanned::dummy(TuplePatternKind::Name(false, intern("buf"), buf))),
+              Box::new(Spanned::dummy(TypeKind::Ref(None,
+                Box::new(Spanned::dummy(TypeKind::Array(
+                  Box::new(Spanned::dummy(TypeKind::UInt(Size::S8))),
+                  Box::new(Spanned::dummy(ExprKind::Var(count))),
+                ))),
+              ))),
+            )))),
+          // p: &sn buf
+          Spanned::dummy((ArgAttr::empty(), ArgKind::Lam(TuplePatternKind::Typed(
+            Box::new(Spanned::dummy(TuplePatternKind::Name(false, intern("p"), fresh.fresh()))),
+            Box::new(Spanned::dummy(TypeKind::RefSn(
+              Box::new(Spanned::dummy(ExprKind::Var(buf)))
+            ))),
+          )))),
+        ]),
+        rets: vec![
+          // -> u32
+          Ret::Reg(Spanned::dummy(TuplePatternKind::Typed(
+            Box::new(Spanned::dummy(TuplePatternKind::Name(false, Symbol::UNDER, fresh.fresh()))),
+            Box::new(Spanned::dummy(TypeKind::UInt(Size::S32))),
+          )))
+        ],
+        variant: None,
+        body: Block::default()
+      }),
+      Default::default(), ());
+
+    // main() {
+    //   let hello: [u8; 11] = ['h', 'e', 'l', 'l', 'o', ...];
+    //   write(1, 11, ref hello, &hello);
+    // }
+    let mut fresh = VarId::default();
+    let v = fresh.fresh();
+    compiler.add(
+      &Spanned::dummy(ItemKind::Proc {
+        intrinsic: None,
+        kind: ProcKind::Main,
+        name: Spanned::dummy(intern("main")),
+        tyargs: 0,
+        args: Box::new([]),
+        rets: vec![],
+        variant: None,
+        body: Block {
+          stmts: vec![
+            Spanned::dummy(StmtKind::Let {
+              lhs: Spanned::dummy(TuplePatternKind::Typed(
+                Box::new(Spanned::dummy(TuplePatternKind::Name(false, intern("hello"), v))),
+                Box::new(Spanned::dummy(TypeKind::Array(
+                  Box::new(Spanned::dummy(TypeKind::UInt(Size::S8))),
+                  Box::new(Spanned::dummy(ExprKind::Int(hello.len().into()))),
+                ))),
+              )),
+              rhs: Spanned::dummy(ExprKind::List(hello.iter().map(|&c| {
+                Spanned::dummy(ExprKind::Int(c.into()))
+              }).collect()))
+            }),
+            Spanned::dummy(StmtKind::Expr(ExprKind::Call {
+              f: Spanned::dummy(write),
+              tys: vec![],
+              args: vec![
+                Spanned::dummy(ExprKind::Int(1.into())),
+                Spanned::dummy(ExprKind::Int(hello.len().into())),
+                Spanned::dummy(ExprKind::Ref(Box::new(Spanned::dummy(ExprKind::Var(v))))),
+                Spanned::dummy(ExprKind::Borrow(Box::new(Spanned::dummy(ExprKind::Var(v))))),
+              ],
+              variant: None,
+            }))
+          ],
+          expr: None,
+        },
+      }),
+      Default::default(), ());
+    let code = compiler.finish();
+    println!("code = {:#?}", code);
+    // code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
+    let mut out = Vec::new();
+    code.write_elf(&mut out).unwrap();
+    assert_eq_hex(&out, "\
+      7f45 4c46 0201 0100 0000 0000 0000 0000\
+      0200 3e00 0100 0000 7800 4000 0000 0000\
+      4000 0000 0000 0000 0000 0000 0000 0000\
+      0000 0000 4000 3800 0100 4000 0000 0000\
+      0100 0000 0700 0000 7800 0000 0000 0000\
+      7800 4000 0000 0000 0000 0000 0000 0000\
+      b800 0000 0000 0000 b800 0000 0000 0000\
+      0000 2000 0000 0000 e813 0000 00b8 3c00\
+      0000 33ff 0f05 0000 0000 0000 0000 0000\
+      4883 ec0b b868 0000 0040 8804 24ba 6500\
+      0000 4088 5424 0141 b96c 0000 0044 884c\
+      2402 bf6c 0000 0040 887c 2403 b96f 0000\
+      0040 884c 2404 41ba 2000 0000 4488 5424\
+      05be 7700 0000 4088 7424 0641 b86f 0000\
+      0044 8844 2407 b872 0000 0040 8844 2408\
+      ba6c 0000 0040 8854 2409 41b9 6400 0000\
+      4488 4c24 0a48 8d34 24b8 0100 0000 48c7\
+      c701 0000 0048 c7c2 0b00 0000 0f05 4883\
+      c40b c300 0000 0000 0000 0000 0000 0000\
     ");
   }
 }

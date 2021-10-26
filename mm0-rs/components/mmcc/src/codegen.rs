@@ -95,6 +95,7 @@ pub(crate) struct InstSink<'a> {
 }
 
 impl InstSink<'_> {
+  pub(crate) fn len(&self) -> usize { self.buf.len() }
   pub(crate) fn push_u8(&mut self, n: u8) { self.buf.push(n) }
   pub(crate) fn push_u32(&mut self, n: u32) {
     self.buf.try_extend_from_slice(&n.to_le_bytes()).expect("instruction overflow")

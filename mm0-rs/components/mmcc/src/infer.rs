@@ -3,10 +3,8 @@
 
 use std::borrow::{Borrow, Cow};
 use std::{cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
-use std::result::Result as StdResult;
 use bumpalo::Bump;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
-use hir::{Context, ContextNext};
 use itertools::Itertools;
 use num::Signed;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
@@ -128,6 +126,120 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TypeError<'a> {
   }
 }
 
+/// A context is a singly linked list of logical variable declarations.
+/// The collection of all contexts forms a tree.
+#[derive(Copy, Clone, Debug)]
+struct Context<'a>(Option<&'a ContextNext<'a>>);
+
+/// A nonempty context extends a context by a single variable declaration.
+#[derive(Copy, Clone, Debug)]
+struct ContextNext<'a> {
+  /// The total number of variables in this context.
+  len: u32,
+  /// The variable name.
+  var: VarId,
+  /// The variable's generation ID.
+  gen: GenId,
+  /// The variable's value.
+  val: Expr<'a>,
+  /// The variable's type.
+  ty: Ty<'a>,
+  /// The parent context, which this context extends.
+  parent: Context<'a>,
+}
+
+impl<'a> PartialEq for Context<'a> {
+  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+}
+impl<'a> Eq for Context<'a> {}
+
+impl<'a> PartialEq for ContextNext<'a> {
+  fn eq(&self, other: &Self) -> bool { std::ptr::eq(self, other) }
+}
+impl<'a> Eq for ContextNext<'a> {}
+
+impl<'a> From<&'a ContextNext<'a>> for Context<'a> {
+  fn from(ctx: &'a ContextNext<'a>) -> Self { Self(Some(ctx)) }
+}
+
+impl<'a> Context<'a> {
+  /// The root context, with no variables.
+  const ROOT: Self = Context(None);
+
+  /// The length of a context (the number of variables).
+  #[must_use] fn len(self) -> u32 {
+    if let Some(c) = &self.0 {c.len} else {0}
+  }
+
+  /// Is this context root?
+  #[must_use] fn is_empty(self) -> bool { self.0.is_none() }
+
+  /// The parent context, or `ROOT` if the context is already root.
+  #[must_use] fn parent(self) -> Self {
+    if let Some(c) = &self.0 {c.parent} else {Self::ROOT}
+  }
+
+  /// The greatest lower bound of two contexts, i.e. the largest
+  /// context of which both `self` and `other` are descended.
+  #[must_use] fn glb(mut self, mut other: Self) -> Self {
+    if self.len() == other.len() {
+      return self
+    }
+    while other.len() > self.len() {
+      other = other.parent();
+    }
+    while self.len() > other.len() {
+      self = self.parent();
+    }
+    while self != other {
+      self = self.parent();
+      other = other.parent();
+    }
+    self
+  }
+
+  /// Retrieve a variable from the context by ID, returning the `ContextNext`
+  /// containing that variable's data.
+  #[must_use] fn find(mut self, v: VarId) -> Option<&'a ContextNext<'a>> {
+    loop {
+      if let Some(c) = self.0 {
+        if c.var == v { return self.0 }
+        self = c.parent
+      } else { return None }
+    }
+  }
+}
+
+impl<'a> IntoIterator for Context<'a> {
+  type Item = &'a ContextNext<'a>;
+  type IntoIter = ContextIter<'a>;
+  fn into_iter(self) -> ContextIter<'a> { ContextIter(self.0) }
+}
+
+/// An iterator over the context, from the most recently introduced variable
+/// to the beginning.
+#[must_use] #[derive(Debug)]
+struct ContextIter<'a>(Option<&'a ContextNext<'a>>);
+
+impl<'a> Iterator for ContextIter<'a> {
+  type Item = &'a ContextNext<'a>;
+  fn next(&mut self) -> Option<&'a ContextNext<'a>> {
+    let c = self.0?;
+    self.0 = c.parent.0;
+    Some(c)
+  }
+}
+
+impl<'a> ContextNext<'a> {
+  /// Create a new `ContextNext`, automatically filling the `len` field.
+  #[must_use] fn new(
+    parent: Context<'a>, v: VarId,
+    gen: GenId, val: Expr<'a>, ty: Ty<'a>
+  ) -> Self {
+    Self {len: parent.len() + 1, var: v, gen, val, ty, parent}
+  }
+}
+
 #[derive(Copy, Clone, Debug)]
 struct Interned<T>(T);
 
@@ -198,7 +310,7 @@ impl<'a, T: PartialEq + Copy> UnifyCtx<MVarValue<'a, T>> for () {
 
   fn unify_values(&mut self,
     &value1: &MVarValue<'a, T>, &value2: &MVarValue<'a, T>
-  ) -> StdResult<MVarValue<'a, T>, Self::Error> {
+  ) -> Result<MVarValue<'a, T>, Self::Error> {
     match (value1, value2) {
       (MVarValue::Assigned(ty1), MVarValue::Assigned(ty2)) =>
         if ty1 == ty2 { Ok(value1) } else { Err((ty1, ty2)) },
@@ -383,6 +495,18 @@ struct WhnfTy<'a> {
   ty: Ty<'a>,
 }
 
+impl Debug for WhnfTy<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if self.moved { write!(f, "|")? }
+    if self.ghost { write!(f, "ghost(")? }
+    if self.uninit { write!(f, "Uninit(")? }
+    write!(f, "{:?}", self.ty)?;
+    if self.uninit { write!(f, ")")? }
+    if self.ghost { write!(f, ")")? }
+    if self.moved { write!(f, "|")? }
+    Ok(())
+  }
+}
 impl<'a> WhnfTy<'a> {
   fn to_ty(mut self, ctx: &mut InferCtx<'a, '_>) -> Ty<'a> {
     if self.moved { self.ty = intern!(ctx, TyKind::Moved(self.ty)) }
@@ -476,7 +600,7 @@ impl<'a> Subst<'a> {
     match e.k {
       PlaceKind::Var(v) => match self.subst_var(ctx, sp, v) {
         Some(&WithMeta {k: ExprKind::Ref(pl), ..}) => pl,
-        _ => e
+        _ => intern!(ctx, PlaceKind::Error),
       },
       PlaceKind::Index(a, ty, i) => subst!(PlaceKind::Index, a, ty, i),
       PlaceKind::Slice(a, ty, [i, l]) =>
@@ -1904,7 +2028,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     }
   }
 
-  fn equate_lft(&mut self, a: Lifetime, b: Lifetime) -> StdResult<(), ()> {
+  fn equate_lft(&mut self, a: Lifetime, b: Lifetime) -> Result<(), ()> {
     if a == b { return Ok(()) }
     match (a, b) {
       (Lifetime::Infer(v), _) => {
@@ -1920,7 +2044,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     Ok(())
   }
 
-  fn equate_expr(&mut self, a: Expr<'a>, b: Expr<'a>) -> StdResult<(), ()> {
+  fn equate_expr(&mut self, a: Expr<'a>, b: Expr<'a>) -> Result<(), ()> {
     if a == b { return Ok(()) }
     match (a.k, b.k) {
       (ExprKind::Error, _) | (_, ExprKind::Error) => {}
@@ -1976,7 +2100,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     Ok(())
   }
 
-  fn equate_place(&mut self, a: Place<'a>, b: Place<'a>) -> StdResult<(), ()> {
+  fn equate_place(&mut self, a: Place<'a>, b: Place<'a>) -> Result<(), ()> {
     if a == b { return Ok(()) }
     match (a.k, b.k) {
       (PlaceKind::Error, _) | (_, PlaceKind::Error) => {}
@@ -1999,7 +2123,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn relate_whnf_ty(&mut self,
     from: WhnfTy<'a>, to: WhnfTy<'a>, mut rel: Relation
-  ) -> StdResult<Vec<Coercion<'a>>, ()> {
+  ) -> Result<Vec<Coercion<'a>>, ()> {
     macro_rules! check {($($i:ident),*) => {{
       $(if from.$i != to.$i { return Err(()) })*
     }}}
@@ -2776,7 +2900,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
     let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
     let ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k.ty()?;
-    let ProcTy {kind, tyargs, args, rets, variant} = ty.clone();
+    let ProcTy {kind, tyargs, args, rets, variant, ..} = ty.clone();
     assert_eq!(tys.len(), u32_as_usize(tyargs));
     let args = args.from_global(self, tys);
     let (es, pes, subst) = self.check_args(span, es, args, |x| x.k.1);
@@ -3274,7 +3398,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
       ast::ExprKind::Ref(e) => {
         let (e, pe) = self.lower_place(e);
-        let ty = e.ty();
+        let ty = intern!(self, TyKind::Ref(Lifetime::Extern, e.ty()));
         ret![Ref(Box::new(e)), pe.map(|pe| self.place_to_expr(pe)), ty]
       }
 
@@ -4108,7 +4232,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let item = Entity::Proc(Spanned {
           span: span.clone(),
           k: ProcTc::Typed(ProcTy {
-            kind, tyargs,
+            kind, intrinsic, tyargs,
             args: t_args.to_global(self),
             rets: t_rets.to_global(self),
             variant: variant.to_global(self),

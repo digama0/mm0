@@ -51,120 +51,6 @@ impl<T> super::Spanned<T> {
   }
 }
 
-/// A context is a singly linked list of logical variable declarations.
-/// The collection of all contexts forms a tree.
-#[derive(Copy, Clone, Debug)]
-pub struct Context<'a>(pub Option<&'a ContextNext<'a>>);
-
-/// A nonempty context extends a context by a single variable declaration.
-#[derive(Copy, Clone, Debug)]
-pub struct ContextNext<'a> {
-  /// The total number of variables in this context.
-  pub len: u32,
-  /// The variable name.
-  pub var: VarId,
-  /// The variable's generation ID.
-  pub gen: GenId,
-  /// The variable's value.
-  pub val: ty::Expr<'a>,
-  /// The variable's type.
-  pub ty: ty::Ty<'a>,
-  /// The parent context, which this context extends.
-  pub parent: Context<'a>,
-}
-
-impl<'a> PartialEq for Context<'a> {
-  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-}
-impl<'a> Eq for Context<'a> {}
-
-impl<'a> PartialEq for ContextNext<'a> {
-  fn eq(&self, other: &Self) -> bool { std::ptr::eq(self, other) }
-}
-impl<'a> Eq for ContextNext<'a> {}
-
-impl<'a> From<&'a ContextNext<'a>> for Context<'a> {
-  fn from(ctx: &'a ContextNext<'a>) -> Self { Self(Some(ctx)) }
-}
-
-impl<'a> Context<'a> {
-  /// The root context, with no variables.
-  pub const ROOT: Self = Context(None);
-
-  /// The length of a context (the number of variables).
-  #[must_use] pub fn len(self) -> u32 {
-    if let Some(c) = &self.0 {c.len} else {0}
-  }
-
-  /// Is this context root?
-  #[must_use] pub fn is_empty(self) -> bool { self.0.is_none() }
-
-  /// The parent context, or `ROOT` if the context is already root.
-  #[must_use] pub fn parent(self) -> Self {
-    if let Some(c) = &self.0 {c.parent} else {Self::ROOT}
-  }
-
-  /// The greatest lower bound of two contexts, i.e. the largest
-  /// context of which both `self` and `other` are descended.
-  #[must_use] pub fn glb(mut self, mut other: Self) -> Self {
-    if self.len() == other.len() {
-      return self
-    }
-    while other.len() > self.len() {
-      other = other.parent();
-    }
-    while self.len() > other.len() {
-      self = self.parent();
-    }
-    while self != other {
-      self = self.parent();
-      other = other.parent();
-    }
-    self
-  }
-
-  /// Retrieve a variable from the context by ID, returning the `ContextNext`
-  /// containing that variable's data.
-  #[must_use] pub fn find(mut self, v: VarId) -> Option<&'a ContextNext<'a>> {
-    loop {
-      if let Some(c) = self.0 {
-        if c.var == v { return self.0 }
-        self = c.parent
-      } else { return None }
-    }
-  }
-}
-
-impl<'a> IntoIterator for Context<'a> {
-  type Item = &'a ContextNext<'a>;
-  type IntoIter = ContextIter<'a>;
-  fn into_iter(self) -> ContextIter<'a> { ContextIter(self.0) }
-}
-
-/// An iterator over the context, from the most recently introduced variable
-/// to the beginning.
-#[must_use] #[derive(Debug)]
-pub struct ContextIter<'a>(Option<&'a ContextNext<'a>>);
-
-impl<'a> Iterator for ContextIter<'a> {
-  type Item = &'a ContextNext<'a>;
-  fn next(&mut self) -> Option<&'a ContextNext<'a>> {
-    let c = self.0?;
-    self.0 = c.parent.0;
-    Some(c)
-  }
-}
-
-impl<'a> ContextNext<'a> {
-  /// Create a new `ContextNext`, automatically filling the `len` field.
-  #[must_use] pub fn new(
-    parent: Context<'a>, v: VarId,
-    gen: GenId, val: ty::Expr<'a>, ty: ty::Ty<'a>
-  ) -> Self {
-    Self {len: parent.len() + 1, var: v, gen, val, ty, parent}
-  }
-}
-
 /// The type of variant, or well founded order that recursions decrease.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
@@ -448,7 +334,7 @@ impl Debug for PlaceKind<'_> {
 impl PlaceKind<'_> {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      PlaceKind::Var(v) => write!(f, "{}", v),
+      PlaceKind::Var(v) => write!(f, "{:?}", v),
       PlaceKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }
       PlaceKind::Index(args) => {
         let (_, arr, idx, h) = &**args;
@@ -748,7 +634,7 @@ impl ExprKind<'_> {
     match self {
       ExprKind::Unit => write!(f, "()"),
       ExprKind::ITrue => write!(f, "itrue"),
-      ExprKind::Var(v, _) => write!(f, "{}", v),
+      ExprKind::Var(v, _) => write!(f, "{:?}", v),
       ExprKind::Const(c) => write!(f, "{}", c),
       ExprKind::Bool(b) => write!(f, "{}", b),
       ExprKind::Int(n) => write!(f, "{}", n),
@@ -815,7 +701,7 @@ impl ExprKind<'_> {
         for e in es {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        indent(i, f)?; writeln!(f, "]")
+        indent(i, f)?; write!(f, "]")
       }
       ExprKind::Ghost(e) => {
         write!(f, "ghost(")?; e.k.0.debug_indent(i, f)?; write!(f, ")")
@@ -829,7 +715,7 @@ impl ExprKind<'_> {
           for e in &e.subst {
             indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
           }
-          indent(i, f)?; writeln!(f, "]")?;
+          indent(i, f)?; write!(f, "]")?;
         }
         Ok(())
       }
@@ -864,18 +750,18 @@ impl ExprKind<'_> {
         use itertools::Itertools;
         write!(f, "{}", c.f.k)?;
         if !c.tys.is_empty() { write!(f, "<{:?}>", c.tys.iter().format(", "))? }
-        write!(f, "(")?;
+        writeln!(f, "(")?;
         for e in &c.args {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
         if let Some(var) = &c.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::Mm0Proof(p) => write!(f, "{:?}", p),
       ExprKind::Block(bl) => {
         writeln!(f, "{{")?;
         bl.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::If { hyp, cond, cases, gen, muts } => {
         if !muts.is_empty() {
@@ -892,7 +778,7 @@ impl ExprKind<'_> {
         if let Some([_, h]) = hyp { write!(f, "{}: ", h)? }
         writeln!(f, "{{")?;
         cases[1].k.0.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::While(w) => {
         if !w.muts.is_empty() {
@@ -911,7 +797,7 @@ impl ExprKind<'_> {
           writeln!(f, " {{")?;
         }
         w.body.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}}")
+        indent(i, f)?; write!(f, "}}")
       }
       ExprKind::Unreachable(e) => {
         write!(f, "unreachable ")?;
@@ -923,7 +809,7 @@ impl ExprKind<'_> {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
         if let Some(var) = var { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::Break(lab, e) => {
         write!(f, "break {} ", lab)?;
@@ -934,7 +820,7 @@ impl ExprKind<'_> {
         for e in es {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        indent(i, f)?; writeln!(f, ")")
+        indent(i, f)?; write!(f, ")")
       }
       ExprKind::UnpackReturn(e) => {
         write!(f, "return ")?;
