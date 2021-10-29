@@ -2,4 +2,4 @@
 
 // We only support x86 at the moment.
 mod x86;
-pub(crate) use x86::*;
+pub use x86::*;

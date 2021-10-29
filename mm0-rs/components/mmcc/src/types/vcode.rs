@@ -1,12 +1,12 @@
 //! The low level IR, based on cranelift's `VCode`.
 
-use std::{fmt::Debug, iter::FromIterator};
+use std::{collections::HashMap, fmt::Debug, iter::FromIterator};
 
-use crate::{Idx, types::IdxVec};
+use crate::{Idx, types::{IdxVec, mir}};
 
 use mm0_util::u32_as_usize;
-pub(crate) use regalloc2::{
-  PReg, VReg, RegClass, InstRange, Operand, Block as BlockId, Inst as InstId};
+pub(crate) use regalloc2::{PReg, VReg, RegClass, InstRange, Operand, Inst as InstId};
+pub use regalloc2::Block as BlockId;
 
 use super::Size;
 
@@ -196,6 +196,7 @@ pub(crate) struct ProcAbi {
 pub struct VCode<I> {
   pub(crate) abi: ProcAbi,
   pub(crate) insts: IdxVec<InstId, I>,
+  pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
   pub(crate) blocks: IdxVec<BlockId, (InstId, InstId)>,
   pub(crate) block_preds: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
@@ -211,6 +212,7 @@ impl<I> Default for VCode<I> {
     Self {
       abi: Default::default(),
       insts: Default::default(),
+      block_map: HashMap::new(),
       blocks: Default::default(),
       block_preds: Default::default(),
       block_succs: Default::default(),

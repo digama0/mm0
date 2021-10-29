@@ -112,10 +112,11 @@ mod build_mir;
 mod mir_opt;
 mod symbol;
 mod build_vcode;
-mod arch;
+pub mod arch;
 mod regalloc;
 mod linker;
 mod codegen;
+pub mod proof;
 
 use std::collections::HashMap;
 use {types::{entity::Entity, mir}, predef::PredefMap};
@@ -128,7 +129,7 @@ pub use types::Idx;
 pub use symbol::{Symbol, Interner, intern, init_dense_symbol_map};
 pub use nameck::DeclarationError;
 pub use ty::{CtxPrint, CtxDisplay, DisplayCtx};
-pub use linker::LinkedCode;
+pub use linker::{LinkedCode, TEXT_START};
 use types::{IdxVec, VarId, LambdaId, ty, ast, hir};
 
 /// Global configuration for the compiler.
@@ -273,7 +274,7 @@ impl<C: Config> Compiler<C> {
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
-    LinkedCode::link(&names, &mir, &init, &allocs, &globals)
+    LinkedCode::link(&names, mir, init, &allocs, &globals)
   }
 }
 
@@ -336,7 +337,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, &mir, &cfg, &allocs, &[]);
+    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]);
     // println!("code = {:#?}", code);
     // code.write_elf(&mut std::fs::File::create("two_plus_two").unwrap());
     let mut out = Vec::new();

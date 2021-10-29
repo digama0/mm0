@@ -65,29 +65,22 @@ impl PRegSet {
   #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.hw_enc()) != 0 }
 }
 
-/// What kind of division or remainer instruction this is?
-#[derive(Clone, Debug)]
-pub(crate) enum DivOrRemKind {
-  SignedDiv,
-  UnsignedDiv,
-  SignedRem,
-  UnsignedRem,
-}
-
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ShiftKind {
+pub enum ShiftKind {
   // Rol = 0,
   // Ror = 1,
+  /// Left shift.
   Shl = 4,
-  /// Inserts zeros in the most significant bits.
+  /// Logical right shift: Inserts zeros in the most significant bits.
   ShrL = 5,
-  /// Replicates the sign bit in the most significant bits.
+  /// Arithmetic right shift: Replicates the sign bit in the most significant bits.
   ShrA = 7,
 }
 
+/// A binop which is used only for its effect on the flags.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Cmp {
+pub enum Cmp {
   /// CMP instruction: compute `a - b` and set flags from result.
   Cmp,
   /// TEST instruction: compute `a & b` and set flags from result.
@@ -97,7 +90,7 @@ pub(crate) enum Cmp {
 /// These indicate ways of extending (widening) a value, using the Intel
 /// naming: B(yte) = u8, W(ord) = u16, L(ong)word = u32, Q(uad)word = u64
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ExtMode {
+pub enum ExtMode {
   /// Byte (u8) -> Longword (u32).
   BL,
   /// Byte (u8) -> Quadword (u64).
@@ -112,7 +105,7 @@ pub(crate) enum ExtMode {
 
 impl ExtMode {
   /// Calculate the `ExtMode` from passed bit lengths of the from/to types.
-  pub(crate) fn new(from: Size, to: Size) -> Option<ExtMode> {
+  #[must_use] pub fn new(from: Size, to: Size) -> Option<ExtMode> {
     match (from, to) {
       (Size::S8, Size::S16 | Size::S32) => Some(ExtMode::BL),
       (Size::S8, Size::S64) => Some(ExtMode::BQ),
@@ -124,7 +117,7 @@ impl ExtMode {
   }
 
   /// Return the source register size in bytes.
-  pub(crate) fn src(self) -> Size {
+  #[must_use] pub fn src(self) -> Size {
     match self {
       ExtMode::BL | ExtMode::BQ => Size::S8,
       ExtMode::WL | ExtMode::WQ => Size::S16,
@@ -133,7 +126,7 @@ impl ExtMode {
   }
 
   /// Return the destination register size in bytes.
-  pub(crate) fn dst(self) -> Size {
+  #[must_use] pub fn dst(self) -> Size {
     match self {
       ExtMode::BL | ExtMode::WL => Size::S32,
       ExtMode::BQ | ExtMode::WQ | ExtMode::LQ => Size::S64,
@@ -145,7 +138,7 @@ impl ExtMode {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
-pub(crate) enum CC {
+pub enum CC {
   ///  overflow
   O = 0,
   /// no overflow
@@ -181,7 +174,8 @@ pub(crate) enum CC {
 }
 
 impl CC {
-  pub(crate) fn invert(self) -> Self {
+  /// Invert the logical meaning of a condition code, e.g. `Z <-> NZ`, `LE <-> G` etc.
+  #[must_use] pub fn invert(self) -> Self {
     match self {
       CC::O => CC::NO,
       CC::NO => CC::O,
@@ -203,39 +197,52 @@ impl CC {
   }
 }
 
-/// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
+/// Some basic ALU operations.
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
-pub(crate) enum Binop {
+pub enum Binop {
+  /// Addition
   Add = 0,
+  /// Bitwise OR
   Or = 1,
+  /// Addition with carry
   Adc = 2,
+  /// Subtract with borrow
   Sbb = 3,
+  /// Bitwise AND
   And = 4,
+  /// Subtract
   Sub = 5,
+  /// Bitwise XOR
   Xor = 6,
 }
 
-/// Some basic ALU operations.  TODO: maybe add Adc, Sbb.
+/// Some basic ALU operations.
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
-pub(crate) enum Unop {
+pub enum Unop {
+  /// Increment (add 1)
   Inc = 0,
+  /// Decrement (subtract 1)
   Dec = 1,
+  /// Bitwise NOT
   Not = 2,
+  /// Signed integer negation
   Neg = 3,
 }
 
 /// A shift amount, which can be used as an addend in an addressing mode.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ShiftIndex<Reg = VReg> {
-  pub(crate) index: Reg,
-  pub(crate) shift: u8, /* 0 .. 3 only */
+pub struct ShiftIndex<Reg = VReg> {
+  /// The register value to shift
+  pub index: Reg,
+  /// The reg will be shifted by `2 ^ shift`, where `shift in 0..3`
+  pub shift: u8,
 }
 
 /// A base offset for an addressing mode.
 #[derive(Clone, Copy)]
-pub(crate) enum Offset<N = u32> {
+pub enum Offset<N = u32> {
   /// A real offset, relative to zero.
   Real(N),
   /// An offset relative to the given spill slot. `base` must be 0 in this case
@@ -309,17 +316,18 @@ impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Offset<N> {
   }
 }
 
-pub(crate) trait IsReg {
+/// A trait to factor the commonalities of [`VReg`] and [`PReg`].
+pub trait IsReg: Sized + Eq {
+  /// A special value of the type representing the invalid value.
   fn invalid() -> Self;
-  fn is_valid(&self) -> bool;
+  /// Is this value not the invalid values?
+  fn is_valid(&self) -> bool { *self != Self::invalid() }
 }
 impl IsReg for VReg {
   fn invalid() -> Self { VReg::invalid() }
-  fn is_valid(&self) -> bool { *self != VReg::invalid() }
 }
 impl IsReg for PReg {
   fn invalid() -> Self { PReg::invalid() }
-  fn is_valid(&self) -> bool { *self != PReg::invalid() }
 }
 
 /// A memory address. This has the form `off+base+si`, where `off` is a base memory location
@@ -328,12 +336,13 @@ impl IsReg for PReg {
 /// Note that `base` must be 0 if `off` is `Spill(..)` because spill slots are RSP-relative,
 /// so there is no space for a second register in the encoding.
 #[derive(Clone, Copy)]
-pub(crate) struct AMode<Reg = VReg> {
-  pub(crate) off: Offset,
+pub struct AMode<Reg = VReg> {
+  /// A constant addend on the address
+  pub off: Offset,
   /// `VReg::invalid` means no added register
-  pub(crate) base: Reg,
+  pub base: Reg,
   /// Optionally add a shifted register
-  pub(crate) si: Option<ShiftIndex<Reg>>,
+  pub si: Option<ShiftIndex<Reg>>,
 }
 
 impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
@@ -412,8 +421,10 @@ impl std::ops::Add<u32> for &AMode {
 /// 32, 64, or 128 bit value.
 #[allow(variant_size_differences)]
 #[derive(Copy, Clone)]
-pub(crate) enum RegMem<Reg = VReg> {
+pub enum RegMem<Reg = VReg> {
+  /// A register
   Reg(Reg),
+  /// A reference to a memory address
   Mem(AMode<Reg>),
 }
 
@@ -1020,9 +1031,13 @@ impl PAMode {
 /// A version of `RegMemImm` post-register allocation.
 #[derive(Copy, Clone)]
 #[allow(variant_size_differences)]
-pub(crate) enum PRegMemImm {
+pub enum PRegMemImm {
+  /// A register.
   Reg(PReg),
+  /// A value stored at the given address.
   Mem(PAMode),
+  /// An immediate (a constant value). This is usually sign extended,
+  /// even though it is stored as `u32`.
   Imm(u32),
 }
 
@@ -1036,8 +1051,10 @@ impl Debug for PRegMemImm {
   }
 }
 
-#[derive(Debug)]
-pub(crate) enum PInst {
+/// A representation of x86 assembly instructions.
+#[derive(Clone, Copy, Debug)]
+#[allow(missing_docs)]
+pub enum PInst {
   // /// A length 0 no-op instruction.
   // Nop,
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
@@ -1190,9 +1207,10 @@ pub(crate) enum PInst {
   Ud2,
 }
 
+/// The layout of a displacement, used in [`ModRMLayout`].
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
-pub(crate) enum DispLayout {
+pub enum DispLayout {
   /// 0 byte immediate, `mm = 00`
   S0 = 0,
   /// 1 byte immediate, `mm = 01`
@@ -1202,7 +1220,9 @@ pub(crate) enum DispLayout {
 }
 
 impl DispLayout {
-  pub(crate) fn len(self) -> u8 {
+  /// The length of the displacement value in bytes.
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(self) -> u8 {
     match self {
       Self::S0 => 0,
       Self::S8 => 1,
@@ -1214,7 +1234,7 @@ impl DispLayout {
 /// Layout of the Mod/RM and SIB bytes.
 #[derive(Clone, Copy, Debug)]
 #[allow(clippy::upper_case_acronyms)]
-pub(crate) enum ModRMLayout {
+pub enum ModRMLayout {
   /// `11ooonnn` where `rn = o` and `rm = reg(n)`
   Reg,
   /// `00ooo101 + imm32` where `rn = o` and `rm = [RIP + imm32]`
@@ -1228,7 +1248,9 @@ pub(crate) enum ModRMLayout {
 }
 
 impl ModRMLayout {
-  pub(crate) fn len(self) -> u8 {
+  /// The length of the Mod/RM byte and everything after it.
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(self) -> u8 {
     match self {
       Self::Reg => 1, // ModRM
       Self::RIP => 5, // ModRM + imm32
@@ -1239,8 +1261,9 @@ impl ModRMLayout {
   }
 }
 
+/// The layout of the opcode byte and everything after it.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum OpcodeLayout {
+pub enum OpcodeLayout {
   /// `decodeBinopRAX` layout: `00ooo01v + imm32`
   BinopRAX,
   /// `decodeBinopImm` layout for 8-bit operand: `1000000v + modrm + imm8`
@@ -1316,7 +1339,9 @@ pub(crate) enum OpcodeLayout {
 }
 
 impl OpcodeLayout {
-  fn len(self) -> u8 {
+  /// The length of the opcode byte and everything after it.
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(self) -> u8 {
     match self {
       Self::Ret | Self::PushReg | Self::PopReg => 1, // opcode
       Self::PushImm8 | Self::Jump8 | Self::Jcc8 | Self::TestRAX8 | // opcode + imm8
@@ -1341,10 +1366,15 @@ impl OpcodeLayout {
   }
 }
 
+/// The layout of an instruction, which is a broad categorization of
+/// which of several encodings it falls into, including in particular
+/// enough information to determine the byte length of the instruction.
 #[derive(Clone, Copy)]
-pub(crate) struct InstLayout {
-  rex: bool,
-  opc: OpcodeLayout,
+pub struct InstLayout {
+  /// Does the instruction have a REX byte?
+  pub rex: bool,
+  /// The layout of the instruction itself.
+  pub opc: OpcodeLayout,
 }
 
 impl Debug for InstLayout {
@@ -1354,7 +1384,9 @@ impl Debug for InstLayout {
 }
 
 impl InstLayout {
-  pub(crate) fn len(self) -> u8 { self.rex as u8 + self.opc.len() }
+  /// The byte length of any instruction with this layout.
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(self) -> u8 { self.rex as u8 + self.opc.len() }
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]

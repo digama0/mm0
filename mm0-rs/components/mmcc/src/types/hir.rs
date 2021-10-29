@@ -181,7 +181,8 @@ pub enum StmtKind<'a> {
   Expr((ExprKind<'a>, ty::ExprTy<'a>)),
   /// A label, which looks exactly like a local function but has no independent stack frame.
   /// They are called like regular functions but can only appear in tail position.
-  Label(VarId, Box<[Label<'a>]>),
+  /// If the `bool` is false then the label group is dead (never jumped to).
+  Label(VarId, bool, Box<[Label<'a>]>),
 }
 
 impl Debug for StmtKind<'_> {
@@ -202,9 +203,9 @@ impl StmtKind<'_> {
         e.0.debug_indent(i, f)?;
         writeln!(f, ";")
       }
-      StmtKind::Label(a, labs) => {
+      StmtKind::Label(a, r, labs) => {
         for (i, lab) in labs.iter().enumerate() {
-          writeln!(f, "label {:?}.{}(", a, i)?;
+          writeln!(f, "{}label {:?}.{}(", if *r {""} else {"ghost "}, a, i)?;
           for &(attr, ref arg) in &*lab.args {
             indent(i+1, f)?; arg.debug_with_attr(attr, f)?; writeln!(f, ",")?;
             if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
@@ -246,7 +247,7 @@ pub struct While<'a> {
   /// The loop condition.
   pub cond: Box<Expr<'a>>,
   /// The variant, which must decrease on every round around the loop.
-  pub var: Option<Variant<'a>>,
+  pub variant: Option<Variant<'a>>,
   /// The body of the loop.
   pub body: Box<Block<'a>>,
   /// The generation after the loop.
@@ -789,7 +790,7 @@ impl ExprKind<'_> {
         write!(f, "{}: while ", w.label)?;
         if let Some(h) = w.hyp { write!(f, "{}: ", h)? }
         w.cond.k.0.debug_indent(i+1, f)?;
-        if let Some(var) = &w.var {
+        if let Some(var) = &w.variant {
           writeln!(f)?;
           indent(i+1, f)?; writeln!(f, "{:?}", var)?;
           indent(i, f)?; writeln!(f, "{{")?;

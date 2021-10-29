@@ -860,6 +860,8 @@ pub struct Cfg {
   pub ctxs: Contexts,
   /// The set of basic blocks, containing the actual code.
   pub blocks: BlockVec<BasicBlock>,
+  /// The block tree, which encodes the reducible structure of the CFG.
+  pub tree: BlockTree,
   /// The largest variable in the CFG plus one, used for generating fresh variables.
   pub max_var: VarId,
   /// The mapping from basic blocks to their predecessors, calculated lazily.
@@ -1063,7 +1065,7 @@ impl<'a> Iterator for Successors<'a> {
           self.0 = SuccessorsState::IfNeg(bl2);
           Some((Edge::If(true), bl1))
         }
-        Terminator::Jump(bl, _) => {
+        Terminator::Jump(bl, _, _) => {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Jump, bl))
         }
@@ -1602,7 +1604,10 @@ pub enum Terminator {
   /// intersection of the two contexts are optional, where if they are not specified then they
   /// are assumed to keep their values. Variables in the target context but not the source must
   /// be specified.
-  Jump(BlockId, Vec<(VarId, bool, Operand)>),
+  ///
+  /// This is the only terminator that admits back-edges, and the final argument is the variant,
+  /// a ghost value to prove that this jump decreases the variant of the target.
+  Jump(BlockId, Vec<(VarId, bool, Operand)>, Option<Operand>),
   /// Semantically equivalent to `Jump(tgt, [])`, with the additional guarantee that this jump is
   /// the only incoming edge to the target block. This is used to cheaply append basic blocks.
   Jump1(BlockId),
@@ -1662,8 +1667,11 @@ impl std::fmt::Debug for Terminator {
     }
     use itertools::Itertools;
     match self {
-      Self::Jump(bl, args) => write!(f,
-        "jump {:?}({:?})", bl, args.iter().map(DebugArg).format(", ")),
+      Self::Jump(bl, args, variant) => {
+        write!(f, "jump {:?}({:?})", bl, args.iter().map(DebugArg).format(", "))?;
+        if let Some(var) = variant { write!(f, " variant {:?}", var)? }
+        Ok(())
+      },
       Self::Jump1(bl) => write!(f, "jump {:?}", bl),
       Self::Return(args) => write!(f, "return {:?}", args.iter().map(DebugArg).format(", ")),
       Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
@@ -1749,7 +1757,7 @@ pub(crate) trait Visitor {
 
   fn visit_terminator(&mut self, term: &Terminator) {
     match term {
-      Terminator::Jump(_, args) |
+      Terminator::Jump(_, args, _) |
       Terminator::Return(args) => for (_, r, o) in args { if *r { self.visit_operand(o) } }
       Terminator::Call { args, .. } => for (r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Unreachable(o) |
@@ -1889,6 +1897,45 @@ impl BasicBlock {
       Some(t) => writeln!(f, "    {:?};", t),
     }
   }
+}
+
+/// The block tree is a spanning tree of (parts of) the CFG with the following properties:
+///
+/// * The entry is in the block tree
+/// * If B is in the CFG and is the target of a [`Terminator::Jump`], then it is in the block tree
+///
+/// Here "`B` is in the block tree" means that `One(B)` appears somewhere in the tree.
+/// (In `LabelGroup(ls, t)`, every block in `ls` also appears in `t`).
+///
+/// The context C of a block in the tree is defined as:
+/// * The outermost context is empty
+/// * If `LabelGroup(ls, t)` is in context `C`, then `Many(t)` has context `C' = C ++ ls`
+/// * If `Many(ls)` is in context `C`, then `ls[i]` is in context `C ++ ls[i+1..]`
+/// * If `One(B)` is in context `C`, then `B` is closed in `C`, where:
+///
+/// A block `B` in the CFG is closed in a set `S` of blocks if:
+/// * If it terminates in `Jump(s)` then `s` is in `S`
+/// * If it terminates in a `Jump1`, `Assert` or `Call` going to `B'` then `B'` is closed in `S`
+/// * Otherwise, it is closed in `S`
+///
+/// In other words, the block tree enumerates all the jump targets, in such a way that every
+/// block jumps forward in the `Many` order, except for back-edges that are represented as
+/// `LabelGroup` nodes in the tree.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub enum BlockTree {
+  /// A label group, which makes the list of `BlockId`s available as jump targets in
+  /// the remainder of the list.
+  LabelGroup(Box<(SmallVec<[BlockId; 2]>, Vec<BlockTree>)>),
+  /// A topological order on blocks, such that all jumps only go to blocks later in
+  /// the list (or to blocks in the context up the tree).
+  Many(Vec<BlockTree>),
+  /// An individual block.
+  One(BlockId),
+}
+
+impl Default for BlockTree {
+  fn default() -> Self { Self::One(BlockId::ENTRY) }
 }
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.

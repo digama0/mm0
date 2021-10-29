@@ -139,7 +139,6 @@ struct LowerCtx<'a> {
   consts: &'a ConstData,
   code: VCode,
   var_map: HashMap<AllocId, (RegMem, Size)>,
-  block_map: HashMap<BlockId, VBlockId>,
   ctx: TyCtx<'a>,
   unpatched: Vec<(VBlockId, InstId)>,
   globals: HashMap<AllocId, GlobalId>,
@@ -167,7 +166,6 @@ impl<'a> LowerCtx<'a> {
       funcs,
       consts,
       code: VCode::default(),
-      block_map: HashMap::new(),
       var_map: HashMap::new(),
       ctx: TyCtx::new(cfg),
       unpatched: vec![],
@@ -797,7 +795,7 @@ impl<'a> LowerCtx<'a> {
     block_args: &ChunkVec<BlockId, VReg>, vbl: VBlockId, term: &Terminator
   ) {
     match *term {
-      Terminator::Jump(tgt, ref args) => self.build_jump(vbl, block_args, tgt, args),
+      Terminator::Jump(tgt, ref args, _) => self.build_jump(vbl, block_args, tgt, args),
       Terminator::Jump1(tgt) =>
         self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
@@ -855,7 +853,7 @@ impl<'a> LowerCtx<'a> {
       } else if !bl.is_dead() {
         for &(e, j) in &preds[i] {
           if !matches!(e, Edge::Jump) { continue }
-          let_unchecked!(args as Terminator::Jump(_, args) = cfg[j].terminator());
+          let_unchecked!(args as Terminator::Jump(_, args, _) = cfg[j].terminator());
           for &(v, b, _) in args { if b { insert(&mut out, v) } }
         }
       }
@@ -938,7 +936,7 @@ impl<'a> LowerCtx<'a> {
   fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
     visit_blocks(self.cfg, move |i, bl| {
       let vbl = self.code.new_block(block_args[i].iter().copied());
-      self.block_map.insert(i, vbl);
+      self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
       for (i, stmt) in bl.stmts.iter().enumerate() {
@@ -974,17 +972,17 @@ impl<'a> LowerCtx<'a> {
   }
 
   fn finish(self) -> VCode {
-    let LowerCtx { mut code, block_map, unpatched, abi_args, abi_rets, can_return, .. } = self;
-    let mut patch = |dst: &mut VBlockId| { *dst = block_map[&BlockId(dst.0)]; *dst };
+    let LowerCtx { mut code, unpatched, abi_args, abi_rets, can_return, .. } = self;
+    macro_rules! patch {($dst:expr) => {{ *$dst = code.block_map[&BlockId($dst.0)]; *$dst }}}
     for (vbl, inst) in unpatched {
-      match &mut code[inst] {
+      match &mut code.insts[inst] {
         Inst::Fallthrough { dst } |
         Inst::JmpKnown { dst, .. } => {
-          let dst = patch(dst);
+          let dst = patch!(dst);
           code.add_edge(vbl, dst)
         }
         Inst::JmpCond { taken, not_taken, .. } => {
-          let (bl1, bl2) = (patch(taken), patch(not_taken));
+          let (bl1, bl2) = (patch!(taken), patch!(not_taken));
           code.add_edge(vbl, bl1);
           code.add_edge(vbl, bl2);
         }

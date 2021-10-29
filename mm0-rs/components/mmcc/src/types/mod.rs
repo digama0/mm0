@@ -7,7 +7,6 @@ pub mod ty;
 pub mod global;
 pub mod hir;
 pub mod mir;
-pub mod pir;
 pub mod vcode;
 
 use std::borrow::Cow;

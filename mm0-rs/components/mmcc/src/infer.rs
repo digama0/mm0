@@ -1166,6 +1166,8 @@ struct LabelData<'a> {
   /// * `Set(Some(e))` means all breaks have the same value `e`, and
   /// * `Set(None)` means that there are multiple exit values.
   value: AgreeExpr<'a>,
+  /// True if there has been at least one jump to this label group.
+  has_jump: bool,
   /// The return type of the block containing the label group.
   ret: Ty<'a>,
   /// The dynamic contexts at `break` points that need to be merged into the block exit context.
@@ -3682,6 +3684,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         self.labels.insert(label, LabelData {
           labels: Box::new([(&[], variant)]),
           value: AgreeExpr::Set(Err(span)),
+          has_jump: false,
           ret: self.common.t_unit,
           dcs: vec![],
         });
@@ -3729,7 +3732,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (_, variant) = labels.into_vec().into_iter().next().expect("while label");
         ret![
           While(Box::new(hir::While {
-            label, hyp, cond: Box::new(cond), var: variant, body,
+            label, hyp, cond: Box::new(cond), variant, body,
             gen: self.dc.generation, muts: muts.clone(), trivial
           })),
           Ok(unit!()), ret]
@@ -3743,7 +3746,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
 
       &ast::ExprKind::Jump(ast::LabelId(lab, i), ref args, ref pf) => {
-        let (tgt, variant) = self.labels[&lab].labels[i as usize];
+        let label_data = self.labels.get_mut(&lab).expect("well formed");
+        label_data.has_jump = true;
+        let (tgt, variant) = label_data.labels[i as usize];
         let num_args = tgt.iter().filter(|&arg| matches!(arg.k.1, ArgKind::Lam(_))).count();
         if args.len() != num_args { error!(span, NumArgs(num_args, args.len())) }
         let (args, _, subst) = self.check_args(span, args, tgt, |x| x.k.1);
@@ -4113,7 +4118,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           todo.push(UnelabLabelData {ctx, body, args});
           (args2, variant)
         }).collect::<Box<[_]>>();
-        let data = LabelData {labels: labs2, value: AgreeExpr::Unset, ret: tgt, dcs: vec![]};
+        let data = LabelData {
+          labels: labs2,
+          has_jump: false, value: AgreeExpr::Unset,
+          ret: tgt, dcs: vec![]
+        };
         assert!(self.labels.insert(v, data).is_none());
         UnelabStmt::Label(v, todo.into())
       }
@@ -4132,6 +4141,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       UnelabStmt::Expr(e) => hir::StmtKind::Expr(e),
       UnelabStmt::Label(v, labs) => {
+        let has_jump = self.labels[&v].has_jump;
         let blocks = labs.into_vec().into_iter().map(|UnelabLabelData {ctx, body, args}| {
           self.dc.context = ctx;
           let (bl2, pe2) = self.check_block(&body.span, &body.k, tgt.1);
@@ -4152,7 +4162,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             }
           }
         }
-        hir::StmtKind::Label(v, labels.into_vec().into_iter().zip(blocks)
+        hir::StmtKind::Label(v, has_jump, labels.into_vec().into_iter().zip(blocks)
           .map(|((_, variant), (body, args))| hir::Label {args, variant, body}).collect())
       }
     }}

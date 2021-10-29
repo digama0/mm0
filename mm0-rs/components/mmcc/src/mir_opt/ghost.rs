@@ -284,7 +284,7 @@ impl Cfg {
       fn apply_terminator(&mut self, _: &Self::Doms,
           id: BlockId, term: &Terminator, d: &mut GhostDom) {
         match term {
-          Terminator::Jump(_, args) => {
+          Terminator::Jump(_, args, _) => {
             let GhostDom {vars, ..} = mem::take(d);
             for &(v, vr, ref o) in args {
               if vr && vars.contains(&v) {
@@ -355,7 +355,7 @@ impl Cfg {
     let Cfg {ctxs, blocks, ..} = self;
     for i in 0..blocks.len() {
       let blocks = &mut *blocks.0;
-      if let Some(Terminator::Jump(tgt, ref mut args)) = blocks[i].term {
+      if let Some(Terminator::Jump(tgt, ref mut args, _)) = blocks[i].term {
         let tgt_ctx = blocks[tgt.0 as usize].ctx;
         let s = cache[tgt].get_or_insert_with(|| {
           ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()

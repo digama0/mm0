@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::ops::Index;
 
 use crate::build_vcode::VCodeCtx;
-use crate::codegen::{FUNCTION_ALIGN, TEXT_START};
+use crate::codegen::FUNCTION_ALIGN;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{self, TyKind, ExprKind};
@@ -20,10 +20,11 @@ type GenericCall = (Symbol, Box<[Ty]>);
 
 type ConstVal = (u32, ConstRef);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct ConstData {
-  map: HashMap<Symbol, ConstVal>,
-  rodata: Vec<u8>,
+  pub(crate) map: HashMap<Symbol, ConstVal>,
+  pub(crate) ordered: Vec<Symbol>,
+  pub(crate) rodata: Vec<u8>,
 }
 
 impl std::ops::Index<Symbol> for ConstData {
@@ -204,34 +205,42 @@ impl<'a> Collector<'a> {
       then { self.eval_const(ty, whnf) }
       else { None }
     }.expect("cannot resolve constant to an integer value");
+    if matches!(value.1, ConstRef::Ptr(_)) {
+      self.consts.ordered.push(c);
+    }
     self.consts.map.insert(c, value);
     value
   }
 }
 
+/// The start of the `.text` section, also the entry point for the program.
+pub const TEXT_START: u32 = 0x40_0078;
+
 //// A completed code object. This includes the list of instructions,
 /// and can be serialized to a list of bytes using the [`LinkedCode::write_elf`] method.
 #[derive(Debug)]
 pub struct LinkedCode {
-  pub(crate) rodata: Vec<u8>,
+  pub(crate) mir: HashMap<Symbol, Proc>,
+  pub(crate) consts: ConstData,
   pub(crate) globals: IdxVec<GlobalId, (u32, u32)>,
   pub(crate) global_size: u32,
-  pub(crate) init: Box<PCode>,
+  pub(crate) init: (Cfg, Box<PCode>),
   pub(crate) func_names: IdxVec<ProcId, Symbol>,
   pub(crate) funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
+  pub(crate) postorder: Vec<ProcId>,
   pub(crate) text_size: u32,
 }
 
 impl LinkedCode {
   pub(crate) fn link(
     names: &HashMap<Symbol, Entity>,
-    mir: &HashMap<Symbol, Proc>,
-    init: &Cfg,
+    mir: HashMap<Symbol, Proc>,
+    init: Cfg,
     allocs: &Allocations,
     globals: &[(Symbol, VarId, Ty)]
   ) -> Self {
-    let mut coll = Collector::new(names, mir);
-    coll.collect_cfg(init, &[]);
+    let mut coll = Collector::new(names, &mir);
+    coll.collect_cfg(&init, &[]);
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
     let mut func_code = IdxVec::from_default(coll.funcs.1.len());
     for &f in &coll.postorder {
@@ -252,10 +261,10 @@ impl LinkedCode {
       global_size += size;
       (off, size)
     }).collect();
-    let init = regalloc_vcode(
-      names, &coll.funcs.0, &func_abi, &coll.consts, init, allocs, VCodeCtx::Start(globals)).1;
+    let init_code = regalloc_vcode(
+      names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)).1;
 
-    let mut pos = (TEXT_START + init.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
+    let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     let funcs = func_code.0.into_iter().map(|code| {
       let start = pos;
       let code = code.expect("impossible");
@@ -264,13 +273,15 @@ impl LinkedCode {
     }).collect();
 
     Self {
-      rodata: coll.consts.rodata,
+      consts: coll.consts,
       globals: globals_out,
       global_size,
-      init,
+      init: (init, init_code),
       func_names: coll.funcs.1,
       funcs,
+      postorder: coll.postorder,
       text_size: pos - TEXT_START,
+      mir,
     }
   }
 }

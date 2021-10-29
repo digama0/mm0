@@ -388,7 +388,7 @@ impl BasicBlock {
       for (v, _, _) in args { map.remove(v); }
     };
     match *term {
-      Terminator::Jump(id, ref args) => jump_implicits(id, args),
+      Terminator::Jump(id, ref args, _) => jump_implicits(id, args),
       Terminator::Jump1(id) => jump_implicits(id, &[]),
       _ => {}
     }

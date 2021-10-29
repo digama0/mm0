@@ -1,10 +1,9 @@
 use std::{io::{self, Write}, ops::Index};
 use arrayvec::ArrayVec;
 use byteorder::{LE, WriteBytesExt};
-use crate::{LinkedCode, regalloc::PCode, types::vcode::{GlobalId, ProcId, BlockId}};
+use crate::{LinkedCode, TEXT_START, regalloc::PCode, types::vcode::{GlobalId, ProcId, BlockId}};
 
 pub(crate) const FUNCTION_ALIGN: u32 = 16;
-pub(crate) const TEXT_START: u32 = 0x40_0078;
 
 #[inline] fn align_to<const N: u64>(i: u64) -> u64 { (i + N - 1) & !(N - 1) }
 
@@ -51,8 +50,8 @@ impl LinkedCode {
       0, 0, 0, 0, 0, 0, 0, 0, // p_paddr = 0 (physical addr, unused)
     ];
 
-    let rodata_start = align_to::<{FUNCTION_ALIGN as u64}>((TEXT_START + self.text_size).into());
-    let file_end = rodata_start + u64::try_from(self.rodata.len()).expect("overflow");
+    let rodata_start = u64::from(TEXT_START + self.text_size);
+    let file_end = rodata_start + u64::try_from(self.consts.rodata.len()).expect("overflow");
     let global_start = align_to::<BSS_ALIGN>(file_end);
     let global_end = global_start + u64::from(self.global_size);
     w.write_all(&HEADER)?;
@@ -65,14 +64,14 @@ impl LinkedCode {
     // end of program header, now at offset 0x78
 
     let mut ctx = InstSink {
-      linked: self, proc: &self.init,
+      linked: self, proc: &self.init.1,
       rodata_start: rodata_start.try_into().expect("overflow"),
       proc_start: TEXT_START,
       local_rip: 0,
       buf: ArrayVec::new(),
     };
     ctx.write_to(w)?;
-    w.write_all(function_pad(u64::from(TEXT_START + self.init.len)));
+    w.write_all(function_pad(u64::from(TEXT_START + self.init.1.len)));
 
     for &(start, ref code) in &self.funcs.0 {
       ctx.proc = code;
@@ -81,7 +80,7 @@ impl LinkedCode {
       w.write_all(function_pad(u64::from(code.len)));
     }
 
-    w.write_all(&self.rodata)
+    w.write_all(&self.consts.rodata)
   }
 }
 

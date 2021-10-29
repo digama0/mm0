@@ -3,6 +3,7 @@
 use std::{rc::Rc, fmt::Debug, mem};
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use smallvec::SmallVec;
 use types::{IntTy, Size};
 use crate::{Idx, Symbol};
 use super::types;
@@ -395,13 +396,48 @@ type LabelData = (BlockId, Rc<[(VarId, bool)]>);
 
 #[derive(Debug)]
 struct LabelGroupData {
-  /// This is `Some((gen, labs, muts))` if jumping to this label is valid. `gen, muts` are
+  /// This is `Some(((gen, muts), labs))` if jumping to this label is valid. `gen, muts` are
   /// parameters to the [`JoinBlock`] (which are shared between all labels), and
   /// `labs[i] = (tgt, args)` give the target block and the list of variable names to pass
   jumps: Option<(JoinPoint, Rc<[LabelData]>)>,
   /// The [`JoinBlock`] for breaking to this label, as well as a `BlockDest` which receives the
   /// `break e` expression.
   brk: Option<(JoinBlock, BlockDest)>,
+}
+
+#[derive(Default, Debug)]
+struct BlockTreeBuilder {
+  groups: Vec<(Vec<BlockTree>, SmallVec<[BlockId; 2]>)>,
+  ordered: Vec<BlockTree>,
+}
+
+impl BlockTreeBuilder {
+  fn push(&mut self, bl: BlockId) { self.ordered.push(BlockTree::One(bl)) }
+  fn push_group(&mut self, group: SmallVec<[BlockId; 2]>) {
+    self.groups.push((std::mem::take(&mut self.ordered), group))
+  }
+
+  fn pop(&mut self) {
+    let (many, group) = self.groups.pop().expect("unbalanced stack");
+    let group = Box::new((group, std::mem::replace(&mut self.ordered, many)));
+    self.ordered.push(BlockTree::LabelGroup(group));
+  }
+
+  fn truncate(&mut self, n: usize) {
+    for _ in n..self.groups.len() { self.pop() }
+  }
+
+  fn append_to(&mut self, bt: &mut BlockTree) {
+    assert!(self.groups.is_empty(), "unbalanced stack");
+    if !self.ordered.is_empty() {
+      if let BlockTree::Many(vec) = bt {
+        vec.append(&mut self.ordered)
+      } else {
+        self.ordered.insert(0, std::mem::take(bt));
+        *bt = BlockTree::Many(std::mem::take(&mut self.ordered));
+      }
+    }
+  }
 }
 
 /// The global initializer, which contains let bindings for every global variable.
@@ -432,6 +468,8 @@ pub(crate) struct BuildMir<'a> {
   tr: Translator<'a>,
   /// The stack of labels in scope
   labels: Vec<(HVarId, LabelGroupData)>,
+  /// The in-progress parts of the `BlockTree`
+  tree: BlockTreeBuilder,
   /// If this is `Some(args)` then `args` are the names of the return places.
   /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
   returns: Option<Rc<[(VarId, bool)]>>,
@@ -467,6 +505,7 @@ impl Default for BuildMir<'_> {
     Self {
       cfg: Cfg::default(),
       labels: vec![],
+      tree: Default::default(),
       returns: None,
       tr,
       vars: Default::default(),
@@ -915,7 +954,7 @@ impl<'a> BuildMir<'a> {
             this.cur_block().terminate(Terminator::Unreachable(h.into()));
             return Err(Diverged)
           }
-          hir::ExprKind::Jump(lab, i, es, _variant) => {
+          hir::ExprKind::Jump(lab, i, es, variant) => {
             let (jp, jumps) = this.labels.iter()
               .rfind(|p| p.0 == lab).expect("missing label")
               .1.jumps.as_ref().expect("label does not expect jump");
@@ -924,7 +963,8 @@ impl<'a> BuildMir<'a> {
             let args = args.iter().zip(es).map(|(&(v, r), e)| {
               Ok((v, r, this.operand(e)?))
             }).collect::<Block<Vec<_>>>()?;
-            this.join(&jb, args)
+            let variant = variant.map(|v| this.operand(*v)).transpose()?;
+            this.join(&jb, args, variant)
           }
           hir::ExprKind::Break(lab, e) => {
             let (jb, dest) = this.labels.iter()
@@ -934,7 +974,7 @@ impl<'a> BuildMir<'a> {
               None => { this.expr(*e, None)?; vec![] }
               Some(v) => vec![(v, !e.k.1 .1.ghostly(), this.operand(*e)?)]
             };
-            this.join(&jb, args)
+            this.join(&jb, args, None)
           }
           hir::ExprKind::Return(es) =>
             match this.expr_return(|_| es.into_iter(), Self::expr_place)? {}
@@ -1072,10 +1112,14 @@ impl<'a> BuildMir<'a> {
     }));
   }
 
-  fn join(&mut self, &JoinBlock(tgt, ref jp): &JoinBlock, mut args: Vec<(VarId, bool, Operand)>) {
+  fn join(&mut self,
+    &JoinBlock(tgt, ref jp): &JoinBlock,
+    mut args: Vec<(VarId, bool, Operand)>,
+    variant: Option<Operand>,
+  ) {
     let ctx = self.cfg[tgt].ctx;
     self.join_args(ctx, jp, &mut args);
-    self.cur_block().terminate(Terminator::Jump(tgt, args))
+    self.cur_block().terminate(Terminator::Jump(tgt, args, variant))
   }
 
   fn let_stmt(&mut self, global: bool, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
@@ -1107,40 +1151,47 @@ impl<'a> BuildMir<'a> {
     match stmt.k {
       hir::StmtKind::Let { lhs, rhs } => self.let_stmt(false, lhs, rhs),
       hir::StmtKind::Expr(e) => self.expr(hir::Spanned {span: stmt.span, k: e}, None),
-      hir::StmtKind::Label(v, labs) => {
-        let base_ctx = self.cur_ctx;
-        let base_bl = self.cur_block;
-        let base_gen = self.tr.cur_gen;
+      hir::StmtKind::Label(v, has_jump, labs) => {
         let &(ref brk, dest) = brk.expect("we need a join point for the break here");
-        let mut bodies = vec![];
-        let jumps = labs.into_vec().into_iter().map(|lab| {
-          let (bl, args) = self.push_args(lab.args, |_, _, _| {});
-          bodies.push(lab.body);
-          self.cur_ctx = base_ctx;
-          (bl, args)
-        }).collect();
-        self.labels.push((v, LabelGroupData {
-          jumps: Some(((base_gen, brk.1 .1.clone()), Rc::clone(&jumps))),
-          brk: Some((brk.clone(), dest))
-        }));
-        for (&(bl, _), body) in jumps.iter().zip(bodies) {
-          self.cur_ctx = self.cfg[bl].ctx;
-          self.cur_block = bl;
-          self.tr.cur_gen = base_gen;
-          if let Ok(()) = self.block(body, dest.map(PreVar::Ok)) {
-            self.join(brk, match dest { None => vec![], Some(v) => vec![(v, true, v.into())] })
+        if has_jump {
+          let base_ctx = self.cur_ctx;
+          let base_bl = self.cur_block;
+          let base_gen = self.tr.cur_gen;
+          let mut bodies = vec![];
+          let jumps = labs.into_vec().into_iter().map(|lab| {
+            let (bl, args) = self.push_args(lab.args, |_, _, _| {});
+            bodies.push(lab.body);
+            self.cur_ctx = base_ctx;
+            (bl, args)
+          }).collect::<Rc<[_]>>();
+          self.tree.push_group(jumps.iter().map(|p| p.0).collect());
+          self.labels.push((v, LabelGroupData {
+            jumps: Some(((base_gen, brk.1 .1.clone()), jumps.clone())),
+            brk: Some((brk.clone(), dest))
+          }));
+          for (&(bl, _), body) in jumps.iter().zip(bodies) {
+            self.cur_ctx = self.cfg[bl].ctx;
+            self.cur_block = bl;
+            self.tr.cur_gen = base_gen;
+            self.tree.push(bl);
+            if let Ok(()) = self.block(body, dest.map(PreVar::Ok)) {
+              let args = match dest { None => vec![], Some(v) => vec![(v, true, v.into())] };
+              self.join(brk, args, None)
+            }
           }
+          self.cur_ctx = base_ctx;
+          self.cur_block = base_bl;
+          self.tr.cur_gen = base_gen;
+        } else {
+          self.labels.push((v, LabelGroupData { jumps: None, brk: Some((brk.clone(), dest)) }));
         }
-        self.cur_ctx = base_ctx;
-        self.cur_block = base_bl;
-        self.tr.cur_gen = base_gen;
         Ok(())
       }
     }
   }
 
   fn block(&mut self, hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest) -> Block<()> {
-    let reset = self.labels.len();
+    let reset = (self.labels.len(), self.tree.groups.len());
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
       let dest2 = dest.map(|v| self.tr_gen(v, gen));
       Some((JoinBlock(self.new_block(), (gen, muts.into())), dest2))
@@ -1150,8 +1201,10 @@ impl<'a> BuildMir<'a> {
       if let Some(e) = expr { self.expr(*e, dest) }
       else { self.expr_unit(dest); Ok(()) }
     })();
-    self.labels.truncate(reset);
+    self.labels.truncate(reset.0);
+    self.tree.truncate(reset.1);
     if let Some((JoinBlock(tgt, (gen, _)), _)) = jb {
+      self.tree.push(tgt);
       self.set((tgt, self.cfg[tgt].ctx, gen));
       Ok(())
     } else { r }
@@ -1230,10 +1283,12 @@ impl<'a> BuildMir<'a> {
         // If neither diverges, we put `goto after` at the end of each block
         let join = JoinBlock(self.new_block(), (gen, muts.into()));
         self.set(tru);
-        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, true, v.into())] });
+        let args = match trans { None => vec![], Some(v) => vec![(v, true, v.into())] };
+        self.join(&join, args.clone(), None);
         self.set(fal);
-        self.join(&join, match trans { None => vec![], Some(v) => vec![(v, true, v.into())] });
+        self.join(&join, args, None);
         // And the after block is the end of the statement
+        self.tree.push(join.0);
         self.set((join.0, base_ctx, gen));
       }
     }
@@ -1241,7 +1296,7 @@ impl<'a> BuildMir<'a> {
   }
 
   fn rvalue_while(&mut self,
-    hir::While { label, hyp, cond, var: _, body, gen, muts, trivial }: hir::While<'a>,
+    hir::While { label, hyp, cond, variant, body, gen, muts, trivial }: hir::While<'a>,
     ret: ty::ExprTy<'a>,
   ) -> Block<RValue> {
     // If `has_break` is true, then this looks like
@@ -1287,7 +1342,9 @@ impl<'a> BuildMir<'a> {
     // after:
     //   dest := ()
     let base_bl = self.new_block();
-    self.cur_block().terminate(Terminator::Jump(base_bl, vec![]));
+    self.tree.push_group([base_bl].into_iter().collect());
+    self.tree.push(base_bl);
+    self.cur_block().terminate(Terminator::Jump(base_bl, vec![], None));
     self.cur_block = base_bl;
     let base_gen = self.tr.cur_gen;
     let base_ctx = self.cur_ctx;
@@ -1356,7 +1413,7 @@ impl<'a> BuildMir<'a> {
         if let Some((ref join, _)) = brk {
           // We don't set `exit_point` because it is ignored in this case
           self.set((fal, fal_ctx, test.2));
-          self.join(join, vec![]);
+          self.join(join, vec![], None);
         } else {
           // Set `exit_point` to the `after` block (the false branch of the if),
           // and `vh: !cond` is the output
@@ -1367,15 +1424,22 @@ impl<'a> BuildMir<'a> {
       }
       //   _ := body
       self.block(*body, None)?;
+      // If we are checking termination, then this is a failure condition because
+      // we don't have any proof to go with the back-edge.
+      if crate::proof::VERIFY_TERMINATION {
+        panic!("Add an explicit (continue) in the loop to prove termination");
+      }
       //   goto base
-      self.join(&JoinBlock(base_bl, (base_gen, muts)), vec![]);
+      self.join(&JoinBlock(base_bl, (base_gen, muts)), vec![], None);
       // We've diverged, there is nothing more to do in the loop
       Err(Diverged)
     })().expect_err("it's a loop");
 
+    self.tree.pop();
     if let Some((JoinBlock(tgt, (gen, _)), _)) = self.labels.pop().expect("underflow").1.brk {
       // If `has_break` is true, then the final location after the while loop is the join point
       // `after`, and the context is `base_ctx` because the while loop doesn't add any bindings
+      self.tree.push(tgt);
       self.set((tgt, base_ctx, gen));
       // We return `()` from the loop expression
       Ok(Constant::unit().into())
@@ -1383,15 +1447,22 @@ impl<'a> BuildMir<'a> {
       // If `has_break` is false, then the final location is the false branch inside the loop,
       // which we may or may not have reached before diverging (if for example the loop condition
       // diverges). If we did reach it then we pull out the position and return the value.
-      exit_point.map(|(pos, rv)| { self.set(pos); rv })
+      exit_point.map(|(pos, rv)| {
+        self.tree.push(pos.0);
+        self.set(pos);
+        rv
+      })
     }
   }
 
   fn expr_call(&mut self,
-    hir::Call {f, side_effect: se, tys, args, variant: _, gen, rk}: hir::Call<'a>,
+    hir::Call {f, side_effect: se, tys, args, variant, gen, rk}: hir::Call<'a>,
     tgt: ty::Ty<'a>,
     dest: &[PreVar],
   ) -> Block<()> {
+    if variant.is_some() {
+      unimplemented!("recursive functions not supported")
+    }
     let tys = self.tr(tys);
     let args = args.into_iter().map(|e| Ok((!e.k.1 .1.ghostly(), self.operand(e)?)))
       .collect::<Block<Box<[_]>>>()?;
@@ -1457,9 +1528,12 @@ impl<'a> BuildMir<'a> {
     it: hir::Item<'a>
   ) -> Option<Symbol> {
     match it.k {
-      hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant: _, body } => {
+      hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
           if attr.contains(ty::ArgAttr::NONDEP) { ArgAttr::NONDEP } else { ArgAttr::empty() }
+        }
+        if variant.is_some() {
+          unimplemented!("recursive functions not supported")
         }
         let mut args2 = Vec::with_capacity(args.len());
         assert_eq!(self.push_args(args, |attr, var, ty| {
@@ -1477,6 +1551,7 @@ impl<'a> BuildMir<'a> {
           Err(Diverged) => {}
         }
         self.cfg.max_var = self.tr.next_var;
+        self.tree.append_to(&mut self.cfg.tree);
         mir.insert(name.k, Proc {
           kind,
           name: Spanned {span: name.span.clone(), k: name.k},
@@ -1498,6 +1573,7 @@ impl<'a> BuildMir<'a> {
           Ok(self.cur())
         })();
         self.cfg.max_var = self.tr.next_var;
+        self.tree.append_to(&mut self.cfg.tree);
         init.cfg = self.cfg;
         init.globals = self.globals;
         None
@@ -1546,6 +1622,7 @@ impl Initializer {
       build.cur_block().terminate(Terminator::Exit(o));
       Ok(())
     })();
+    build.tree.append_to(&mut build.cfg.tree);
     (build.cfg, build.globals)
   }
 }

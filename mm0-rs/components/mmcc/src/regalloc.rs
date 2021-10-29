@@ -17,7 +17,7 @@ use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offs
 use crate::linker::ConstData;
 use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
-use crate::types::mir::{Arg, Cfg};
+use crate::types::mir::{self, Arg, Cfg};
 use crate::{Entity, Idx, Symbol};
 use crate::build_vcode::{VCode, VCodeCtx, build_vcode};
 use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId, BlockId};
@@ -107,6 +107,7 @@ mk_id! {
 #[derive(Debug)]
 pub(crate) struct PCode {
   pub(crate) insts: IdxVec<PInstId, PInst>,
+  pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
   pub(crate) blocks: IdxVec<BlockId, (PInstId, PInstId)>,
   pub(crate) block_addr: IdxVec<BlockId, u32>,
   pub(crate) len: u32,
@@ -297,6 +298,7 @@ pub(crate) fn regalloc_vcode(
   let mut code = PCodeBuilder {
     code: Box::new(PCode {
       insts: IdxVec::new(),
+      block_map: vcode.block_map,
       blocks: IdxVec::from(vec![]),
       block_addr: IdxVec::from(vec![0]),
       len: 0,
