@@ -597,7 +597,7 @@ impl ElfProof<'_> {
   pub fn validate(&self) {
     // basicElf_ok
     assert!(self.p_filesz() <= self.p_memsz());
-    assert!(self.p_filesz() == self.content().len().try_into().unwrap());
+    assert!(self.p_filesz() == u64::try_from(self.content().len()).unwrap());
     assert!(!self.content().is_empty());
 
     // assemble
