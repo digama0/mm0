@@ -103,7 +103,6 @@ macro_rules! mk_id {
 #[macro_use] extern crate lazy_static;
 
 pub mod types;
-mod predef;
 pub mod build_ast;
 mod union_find;
 pub mod infer;
@@ -119,7 +118,7 @@ mod codegen;
 pub mod proof;
 
 use std::collections::HashMap;
-use {types::{entity::Entity, mir}, predef::PredefMap};
+use types::{entity::Entity, mir};
 use bumpalo::Bump;
 use infer::TypeError;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
@@ -205,9 +204,6 @@ pub struct Compiler<C> {
   mir: HashMap<Symbol, mir::Proc>,
   /// The accumulated global initializers, to be placed in the start routine.
   init: build_mir::Initializer,
-  /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
-  /// compiler lemmas.
-  predef: PredefMap<Symbol>,
   /// If the main function has been provided, this is a pointer to it.
   main: Option<Symbol>,
 }
@@ -223,7 +219,6 @@ impl<C> Compiler<C> {
       names: Self::make_names(i),
       mir: Default::default(),
       init: Default::default(),
-      predef: PredefMap::new(|_, s| i.intern(s)),
       main: None,
       config,
     })

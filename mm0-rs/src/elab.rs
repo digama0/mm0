@@ -21,7 +21,6 @@ use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::result::Result as StdResult;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use std::time::{Duration, Instant};
@@ -117,7 +116,7 @@ pub struct ElabError {
 }
 
 /// The main result type used by functions in the elaborator.
-pub type Result<T> = StdResult<T, ElabError>;
+pub type Result<T, E = ElabError> = std::result::Result<T, E>;
 
 impl ElabError {
 
@@ -652,7 +651,7 @@ pub struct ElaborateBuilder<'a, F> {
 }
 
 impl<'a, T: Send, F> ElaborateBuilder<'a, F>
-where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
+where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
   /// Creates a future to poll for the completed environment, given an import resolver.
   ///
   /// # Returns
@@ -672,7 +671,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
 
     type ImportMap<D> = HashMap<Span, (FileRef, D)>;
     struct FrozenElaborator(Elaborator);
-    #[allow(clippy::non_send_fields_in_send_ty)]
+    #[allow(unknown_lints)] #[allow(clippy::non_send_fields_in_send_ty)]
     unsafe impl Send for FrozenElaborator {}
 
     enum UnfinishedStmt<T> {

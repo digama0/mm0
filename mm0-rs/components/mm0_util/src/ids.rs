@@ -52,9 +52,14 @@ macro_rules! id_wrapper {
         self.0.iter_mut().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
 
+      /// Returns the index that will be returned by the next call to `push`.
+      pub fn peek(&self) -> $id {
+        $id(self.0.len() as $ty)
+      }
+
       /// Push a new element to the vector, and return the ID of the element just pushed.
       pub fn push(&mut self, t: T) -> $id {
-        let n = $id(self.0.len() as $ty);
+        let n = self.peek();
         self.0.push(t);
         n
       }

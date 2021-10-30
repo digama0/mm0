@@ -5,7 +5,6 @@
 //!
 //! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#pre-expressions
 
-use std::result::Result as StdResult;
 use crate::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
 use crate::{AtomId, TermKind, DeclKey, Modifiers,
@@ -360,7 +359,7 @@ impl LispVal {
   }
 
   fn as_mvar<T>(&self, f: impl FnOnce(&Self, &LispRef) -> T) -> Option<T> {
-    fn rec<T, F: FnOnce(&LispVal, &LispRef) -> T>(e: &LispVal, f: F) -> StdResult<T, Option<F>> {
+    fn rec<T, F: FnOnce(&LispVal, &LispRef) -> T>(e: &LispVal, f: F) -> Result<T, Option<F>> {
       match &**e {
         LispKind::Annot(_, e2) => rec(e2, f),
         LispKind::Ref(mutex) => {
@@ -555,7 +554,7 @@ impl Elaborator {
   /// Assign metavariable `mv` to `e` (or fail). `m` is the underlying reference of `mv`.
   /// If `sym` is false then this is the result of `mv =?= e`, otherwise it
   /// is `e =?= mv`; currently we don't use this information.
-  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> StdResult<(), AssignError> {
+  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> Result<(), AssignError> {
     let e = &e.as_mvar(|e2, _| e2.clone()).unwrap_or_else(|| e.clone());
     if mv.ptr_eq(e) {return Ok(())}
     if self.occurs(mv, e) {

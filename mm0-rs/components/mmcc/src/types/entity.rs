@@ -490,7 +490,7 @@ impl Entity {
   }
 }
 // impl TuplePattern {
-//   fn on_names<E>(&self, f: &mut impl FnMut(bool, Symbol, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
+//   fn on_names<E>(&self, f: &mut impl FnMut(bool, Symbol, &Option<FileSpan>) -> Result<(), E>) -> Result<(), E> {
 //     match self {
 //       &TuplePattern::Name(ghost, n, ref sp) => if n != Symbol::UNDER { f(ghost, n, sp)? },
 //       TuplePattern::Typed(p, _) => p.on_names(f)?,

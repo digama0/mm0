@@ -8,6 +8,7 @@
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 
 mod parser;
+mod proof;
 
 use std::{collections::HashMap, rc::Rc};
 // use bumpalo::Bump;
@@ -92,9 +93,12 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
 
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
-#[derive(Clone, Default, DeepSizeOf)]
+#[derive(Clone, DeepSizeOf)]
 pub struct Compiler {
   inner: Rc<mmcc::Compiler<Config>>,
+  /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
+  /// compiler lemmas.
+  predef: proof::Predefs,
 }
 
 impl std::fmt::Debug for Compiler {
@@ -110,15 +114,30 @@ impl EnvDebug for Compiler {
 
 impl Remap for Compiler {
   type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { Compiler { inner: self.inner.clone() } }
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Compiler {
+      inner: self.inner.clone(),
+      predef: self.predef.remap(r),
+    }
+  }
 }
 
 impl Compiler {
+  /// Construct a new compiler object.
+  pub fn new(elab: &mut Elaborator) -> Self {
+    Self {
+      inner: Default::default(),
+      predef: proof::Predefs::new(elab)
+    }
+  }
+
   /// Add the given MMC text (as a list of lisp literals) to the compiler state,
   /// performing typehecking but not code generation. This can be called multiple
   /// times to add multiple functions, but each lisp literal is already a list of
   /// top level items that are typechecked as a unit.
-  pub fn add(&mut self, elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>) -> Result<()> {
+  pub fn add(&mut self,
+    elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>
+  ) -> Result<()> {
     let compiler = Rc::make_mut(&mut self.inner);
     let fsp = FileSpan {file: elab.path.clone(), span: sp};
     let mut cache = HashMap::default();
@@ -145,9 +164,9 @@ impl Compiler {
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
-  #[allow(clippy::unused_self)]
-  pub fn finish(&mut self, _elab: &mut Elaborator, _sp: Span, _a1: AtomId, _a2: AtomId) -> Result<()> {
-    Ok(())
+  pub fn finish(&mut self, elab: &mut Elaborator, sp: Span, name: AtomId) -> Result<()> {
+    let compiler = Rc::make_mut(&mut self.inner);
+    proof::render_proof(&self.predef, elab, sp, name, &compiler.finish().proof())
   }
 
   /// Main entry point to the compiler. Does basic parsing and forwards to
@@ -161,12 +180,10 @@ impl Compiler {
         Ok(LispVal::undef())
       }
       Some(Keyword::Finish) => {
-        let a1 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(sp, "mmc-finish: syntax error"))?;
-        let a2 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
+        let name = it.next().and_then(|e| e.as_atom()).ok_or_else(||
           ElabError::new_e(sp, "mmc-finish: syntax error"))?;
         self.add(elab, sp, it)?;
-        self.finish(elab, sp, a1, a2)?;
+        self.finish(elab, sp, name)?;
         Ok(LispVal::undef())
       }
       _ => Err(ElabError::new_e(sp,

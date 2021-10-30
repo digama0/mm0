@@ -4,7 +4,6 @@ use std::{fs, io};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{VecDeque, HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
-use std::result::Result as StdResult;
 use std::thread::{ThreadId, self};
 use std::time::Instant;
 use futures::{FutureExt, future::BoxFuture};
@@ -39,7 +38,7 @@ const USE_LOCATION_LINKS: bool = false;
 #[derive(Debug)]
 struct ServerError(BoxError);
 
-type Result<T> = StdResult<T, ServerError>;
+type Result<T, E = ServerError> = std::result::Result<T, E>;
 
 impl From<serde_json::Error> for ServerError {
   fn from(e: serde_json::error::Error) -> Self { ServerError(Box::new(e)) }
@@ -587,7 +586,7 @@ impl RequestHandler {
     }
   }
 
-  fn finish<T: Serialize>(self, resp: StdResult<T, ResponseError>) -> Result<()> {
+  fn finish<T: Serialize>(self, resp: Result<T, ResponseError>) -> Result<()> {
     let Server {reqs, conn, ..} = &*SERVER;
     reqs.ulock().remove(&self.id);
     conn.sender.send(Message::Response(match resp {
@@ -641,7 +640,7 @@ fn trim_margin(s: &str) -> String {
 }
 
 impl<T> ElabResult<T> {
-  fn into_response_error(self) -> StdResult<Option<(T, FrozenEnv)>, ResponseError> {
+  fn into_response_error(self) -> Result<Option<(T, FrozenEnv)>, ResponseError> {
     match self {
       ElabResult::Ok(data, _, env) => Ok(Some((data, env))),
       ElabResult::Canceled => Err(response_err(ErrorCode::RequestCanceled, "")),
@@ -661,7 +660,7 @@ fn try_old(file: &Arc<VirtualFile>)  -> Option<(FileContents, FrozenEnv)> {
   }))
 }
 
-async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
+async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseError> {
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
     None => return $ret
@@ -798,7 +797,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
 
 async fn definition<T>(path: FileRef, pos: Position,
     f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T + Send) ->
-    StdResult<Vec<T>, ResponseError> {
+    Result<Vec<T>, ResponseError> {
   let vfs = &SERVER.vfs;
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
@@ -876,7 +875,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 }
 
 #[allow(deprecated)] // workaround rust#60681
-async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
+async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
 
@@ -1018,7 +1017,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   }
 }
 
-async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
+async fn completion(path: FileRef, _pos: Position) -> Result<CompletionResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let (text, env) = if let Some(old) = try_old(&file) { old } else {
@@ -1048,7 +1047,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   Ok(CompletionResponse::Array(res))
 }
 
-async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
+async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, ResponseError> {
   let data = if let Some(data) = ci.data {data} else {
     let p = BuiltinProc::from_str(&ci.label)
       .ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
@@ -1087,7 +1086,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
 
 async fn references<T>(
   path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T + Send
-) -> StdResult<Vec<T>, ResponseError> {
+) -> Result<Vec<T>, ResponseError> {
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
     None => return Ok(vec![])

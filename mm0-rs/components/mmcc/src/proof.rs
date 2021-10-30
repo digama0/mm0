@@ -296,6 +296,12 @@ impl<'a> Proc<'a> {
   #[must_use] pub fn start(&self) -> u64 { self.start.into() }
   /// The code of the function as a byte slice.
   #[must_use] pub fn content(&self) -> &'a [u8] { self.content }
+
+  /// The name of the function, or `None` for the init function.
+  #[must_use] pub fn name(&self) -> Option<Symbol> {
+    self.id.map(|id| self.code.func_names[id])
+  }
+
   /// An iterator over the blocks of the procedure in assembly order.
   #[must_use] pub fn assembly_blocks(&self) -> AssemblyBlocks<'_> {
     AssemblyBlocks {
@@ -304,6 +310,7 @@ impl<'a> Proc<'a> {
       iter: 0..self.proc.blocks.len(),
     }
   }
+
   /// Get a (physical) block by block ID.
   #[must_use] pub fn vblock(&self, id: VBlockId) -> VBlock<'_> {
     VBlock::new(self, id.index())

@@ -640,9 +640,12 @@ impl<A: Remap, B: Remap> Remap for (A, B) {
   type Target = (A::Target, B::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r)) }
 }
-impl<A: Remap> Remap for [A; 2] {
-  type Target = [A::Target; 2];
-  fn remap(&self, r: &mut Remapper) -> Self::Target { [self[0].remap(r), self[1].remap(r)] }
+impl<A: Remap, const N: usize> Remap for [A; N] {
+  type Target = [A::Target; N];
+  fn remap(&self, r: &mut Remapper) -> Self::Target {
+    let arr = self.iter().map(|e| e.remap(r)).collect::<arrayvec::ArrayVec<_, N>>();
+    unsafe { arr.into_inner_unchecked() }
+  }
 }
 impl<A: Remap, B: Remap, C: Remap> Remap for (A, B, C) {
   type Target = (A::Target, B::Target, C::Target);

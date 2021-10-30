@@ -524,6 +524,7 @@ name = "mm0-rs"
 version = "0.1.0"
 dependencies = [
  "annotate-snippets",
+ "arrayvec 0.7.1",
  "bit-set",
  "bitflags",
  "byteorder",

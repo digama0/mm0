@@ -3,7 +3,6 @@
 
 use std::ops::Deref;
 use std::mem;
-use std::result::Result as StdResult;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
 use crate::{AtomId, TermKind, ThmKind, Type as EType, Span, FileSpan, BoxError, MAX_BOUND_VARS};
@@ -1121,7 +1120,7 @@ impl Elaborator {
   /// in which case it returns `Ok(Err((ap, proof_closure)))` where `(proof_closure)` should
   /// evaluate to some value `proof`, which can be passed to [`AwaitingProof::finish`]
   /// to finish adding the theorem to the environment.
-  pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<StdResult<(), (AwaitingProof, LispVal)>> {
+  pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<Result<(), (AwaitingProof, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let (x, args, hyps, ret, proof) = match es {
       [x, args, hyps, ret] => (x, args, hyps, ret, None),

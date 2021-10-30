@@ -48,7 +48,7 @@ use super::{ObjectKind, Remap, Remapper, Spans};
 #[derive(Clone, Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenEnv(Arc<Environment>);
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[allow(unknown_lints)] #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for FrozenEnv {}
 unsafe impl Sync for FrozenEnv {}
 

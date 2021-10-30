@@ -1,0 +1,24 @@
+import "assembler.mm1";
+
+local def is_asmp (p: nat) (s: string) (x y: nat) (P: set): wff =
+$ y = x + len s /\ p <> s <> x e. P $;
+
+local def asmp_A (A B: set): set =
+$ S\ p, S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\
+  p <> t1 <> x e. A /\ p <> t2 <> (x + len t1) e. B)} $;
+
+axiom is_asmp_A (p s t x y z A B)
+  (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $): $ is_asmp p s x z A $;
+
+local def asmp_at (n: nat) (A: set): set =
+$ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
+
+axiom is_asmp_at (p s x y A)
+  (h1: $ is_asmp p s x y A $): $ is_asmp p s x y (asmp_at x A) $;
+
+local def asmi (ast: nat): set =
+$ S\ p, S\ s, {x | decode ast s} $;
+
+axiom asmiI (p s x y n)
+  (h1: $ decode ast s $) (h2: $ len s = n $) (h3: $ x + n = y $):
+  $ is_asmp p s x y (asmi ast) $;

@@ -4,7 +4,6 @@
 use std::rc::Rc;
 use std::hash::Hash;
 use std::ops::Index;
-use std::result::Result as StdResult;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::{AtomId, Type};
@@ -95,7 +94,7 @@ pub trait NodeHash: Hash + Eq + Sized {
   /// parse it into a [`NodeHash`] object. If the object has already been constructed,
   /// it may also return an index to the element in the [`Dedup`].
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
-    de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>>;
+    de: &mut Dedup<Self>) -> Result<Result<Self, usize>>;
 
   /// Calculate the variable dependence of a [`NodeHash`] object, given a function
   /// `deps` that will provide the dependencies of elements. Bump `bv` if this object
@@ -356,7 +355,7 @@ impl NodeHash for ExprHash {
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
-      de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
+      de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
@@ -571,7 +570,7 @@ impl NodeHash for ProofHash {
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
-      de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
+      de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match kind {
         ProofKind::Expr | ProofKind::Conv => match nh.var_map.get(&a) {
