@@ -1,5 +1,5 @@
 //! The compiler lemmas we need from `compiler.mm1`
-#![allow(clippy::many_single_char_names, clippy::similar_names)]
+#![allow(clippy::many_single_char_names, clippy::similar_names, clippy::equatable_if_let)]
 #![allow(unused, clippy::unused_self, clippy::diverging_sub_expression)]
 #![allow(non_snake_case)]
 
