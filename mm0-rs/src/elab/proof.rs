@@ -343,7 +343,8 @@ where
 /// all internal references to [`ExprNode`] are replaced by `usize` indexes.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum ExprHash {
-  /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
+  /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
+  /// `ProofKind` is here for consistency, but the only valid kind is [`ProofKind::Expr`].
   Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),

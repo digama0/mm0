@@ -2676,14 +2676,13 @@ theorem decodeBinopRAX_I
   (h1: $ splitBits ((1 <> v) : (2 <> 2) : (1 <> o) : 0) y $)
   (h2: $ splitBits ((2 <> pc) : (2 <> 0) : 0) x $)
   (h3: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> 0) : 0) opc $)
-  (h4: $ readModRM rex reg r l $)
-  (h5: $ opSizeW rex v = sz $)
-  (h6: $ readImm sz imm l $):
+  (h4: $ opSizeW rex v = sz $)
+  (h5: $ readImm sz imm l $):
   $ decodeAux rex (xastBinop opc sz (Rm_i (RM_reg x0) imm)) (ch x y) l $ =
 '(decodeBinopI @ orl @ orl @ orl @ orl @ orr @ iexie @ iexde @ iexde @
   mpbiri (iani (iani (decodeBinop_lem (appendSi append1) (appendSi append1)
-      h1 h2 h3 ,bvSizeSi) @ mpbir (readImmeq1 h5) h6) @
-    eqcom @ xastBinopeq eqid h5 @ Rm_ieq1 @ RM_regeq dec0) ,eqtac);
+      h1 h2 h3 ,bvSizeSi) @ mpbir (readImmeq1 h4) h5) @
+    eqcom @ xastBinopeq eqid h4 @ Rm_ieq1 @ RM_regeq dec0) ,eqtac);
 
 theorem decodeBinopImmI
   (h1: $ splitBits ((1 <> v) : (3 <> 0) : 0) y $)
@@ -3788,15 +3787,15 @@ $ b != 0 /\ d e. Bits (wsizeBits sz) /\ d = a // b /\ m = a % b $;
 do {
   (def execXAST_clauses
     -- XASTArith
-    '{{{{((op sz rm) => (Unop q)
+    '{{{{((op sz rm) => (xastUnop q)
           $ E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2) $)
-       + ((op sz ds) => (Binop d s)
+       + ((op sz ds) => (xastBinop d s)
           $ E. d E. s (
             readEA k sz (destEA k ds) d /\
             readEA k sz (srcEA k ds) s /\
             writeBinop k op sz (destEA k ds) d s k2) $)}
       + {(<> =>
-        {(#f => (sz rm) => (Mul n src res lo hi)
+        {(#f => (sz rm) => (xastMul n src res lo hi)
           $ E. n E. src E. res (
             n = wsizeBits sz /\
             readEA k sz (RM_EA k rm) src /\
@@ -3806,7 +3805,7 @@ do {
               (E. lo E. hi (
                 splitBits ((n <> lo) : (n <> hi) : 0) res /\
                 k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $)
-       + (#t => (sz rm) => (Div n a b d m)
+       + (#t => (sz rm) => (xastDiv n a b d m)
           $ E. n E. a E. b E. d E. m (
             n = wsizeBits sz /\
             readEA k sz (RM_EA k rm) b /\
@@ -3817,23 +3816,23 @@ do {
               (splitBits ((n <> readRegSz k sz RAX) :
                           (n <> readRegSz k sz RDX) : 0) a /\
                 eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $)})
-       + ((sz ds) => (Lea)
+       + ((sz ds) => (xastLea)
           $ writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $)}}
 
     -- XASTData
      + {(<> => sz =>
        {(<> =>
-        {(#f => (ds sz2) => (MovZX src)
+        {(#f => (ds sz2) => (xastMovZX src)
           $ E. src (readEA k sz (srcEA k ds) src /\
             writeEA k sz2 (destEA k ds) src k2) $)
-       + (#t => (ds sz2) => (MovSX src)
+       + (#t => (ds sz2) => (xastMovSX src)
           $ E. src (readEA k sz (srcEA k ds) src /\
             writeEA k sz2 (destEA k ds) (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $)})
      + (<> =>
-        {(0 => (rm r) => (Xchg v)
+        {(0 => (rm r) => (xastXchg v)
           $ E. v (readEA k sz (RM_EA k rm) v /\
             writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $)
-       + (1 => (rm r) => (CmpXchg src acc dst ki)
+       + (1 => (rm r) => (xastCmpXchg src acc dst ki)
           $ E. src E. acc E. dst E. ki (
             acc = readRegSz k sz RAX /\
             readEA k sz (RM_EA k rm) dst /\
@@ -3841,35 +3840,35 @@ do {
             ifp (acc = dst)
               (writeEA ki sz (RM_EA k rm) (readRegSz k sz r) k2)
               (writeEA ki sz (EA_r RAX) dst k2)) $)
-       + (2 => (rm r) => (Xadd v)
+       + (2 => (rm r) => (xastXadd v)
           $ E. v (readEA k sz (RM_EA k rm) v /\
             writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
     + (<> => c =>
-        {((sz ds) => (CMov v)
+        {((sz ds) => (xastCMov v)
           $ E. v (readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
             writeEA k sz (destEA k ds) v k2) $)
-       + ((b rm) => (SetCC v)
+       + ((b rm) => (xastSetCC v)
           $ writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $)})}}
 
     -- XASTFlow
-   + {{{{(rm => (Jump v)
+   + {{{{(rm => (xastJump v)
           $ E. v (readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $)
-       + ((c q) => (JCC)
+       + ((c q) => (xastJCC)
           $ k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $)}
-      + {(irm => (Call ki)
+      + {(irm => (xastCall ki)
           $ E. ki (pushRIP k ki /\ EA_jump ki (immRM_EA k irm) k2) $)
-       + (q => (Ret ki)
+       + (q => (xastRet ki)
           $ E. ki (popRIP k ki /\ k2 = setReg ki RSP (readReg ki RSP +_64 q)) $)}}
-      + {(0 => (Leave)
+      + {(0 => (xastLeave)
           $ popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $)
-      > {(irm => (Push) $ pushImmRM k irm k2 $)
-       + (rm => (Pop)   $ popWrite k rm k2 $)}}}
+      > {(irm => (xastPush) $ pushImmRM k irm k2 $)
+       + (rm => (xastPop)   $ popWrite k rm k2 $)}}}
 
     -- XASTMisc
-      + {(0 => (CMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
-       + (1 => (CLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
-       + (2 => (STC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
-       + (3 => (SysCall r11)
+      + {(0 => (xastCMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
+       + (1 => (xastCLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
+       + (2 => (xastSTC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
+       + (3 => (xastSysCall r11)
           $ E. r11 (r11 e. u64 /\
             k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $)}}})
 
@@ -3957,7 +3956,7 @@ do (mk-cases-eqns execXAST_clauses @ match-fn* @ (rvars ((name . dummies) stmt) 
   (def thname (atom-app 'execXAST name))
   (def bis @ append (map (fn (x) '(,x nat)) dummies)
     '((k nat ())) (map (fn (x) '(,x nat ())) vars) '((k2 nat ())))
-  (def stmt $ execXAST k ,'(,(atom-app 'xast name) . ,vars) k2 <-> ,stmt $)
+  (def stmt $ execXAST k ,'(,name . ,vars) k2 <-> ,stmt $)
   (add-tac-thm! thname bis () stmt 'pub @ fn ()
     (named '(trud ,(ctx ,eqtac)))));
 

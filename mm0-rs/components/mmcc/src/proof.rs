@@ -12,7 +12,7 @@ use crate::types::{mir::{self, Cfg}, vcode::ConstRef};
 
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
-pub use crate::arch::{PInst as VInst, InstLayout};
+pub use crate::arch::{self, PInst as VInst};
 
 /// If true, we are proving total correctness, so all recursions and loops
 /// must come with a variant that decreases on recursive calls.
@@ -373,6 +373,7 @@ impl<'a> VBlock<'a> {
   /// An iterator over the instructions in the block.
   #[must_use] pub fn insts(&self) -> InstIter<'a> {
     InstIter {
+      ctx: self.ctx,
       start: self.start,
       insts: self.insts.iter(),
     }
@@ -382,6 +383,7 @@ impl<'a> VBlock<'a> {
 /// An iterator over the instructions in the block.
 #[derive(Debug)]
 pub struct InstIter<'a> {
+  ctx: &'a Proc<'a>,
   start: u32,
   insts: std::slice::Iter<'a, VInst>,
 }
@@ -393,7 +395,7 @@ impl<'a> Iterator for InstIter<'a> {
     let layout = inst.layout_inst();
     let start = self.start;
     self.start += u32::from(layout.len());
-    Some(Inst { start, layout, inst })
+    Some(Inst { ctx: self.ctx, start, layout, inst })
   }
   fn size_hint(&self) -> (usize, Option<usize>) { let n = self.len(); (n, Some(n)) }
 }
@@ -404,12 +406,20 @@ impl ExactSizeIterator for InstIter<'_> {
 /// A reference to a physical instruction.
 #[derive(Debug)]
 pub struct Inst<'a> {
+  ctx: &'a Proc<'a>,
   /// The address of the instruction relative to the function start.
   pub start: u32,
   /// The layout of the instruction.
-  pub layout: InstLayout,
+  pub layout: arch::InstLayout,
   /// The physical instruction
   pub inst: &'a VInst,
+}
+
+impl<'a> Inst<'a> {
+  /// The byte data for this instruction.
+  pub fn content(&self) -> &'a [u8] {
+    &self.ctx.content[self.start as usize..][..self.layout.len() as usize]
+  }
 }
 
 /// A tree-structured proof of correctness of a block.

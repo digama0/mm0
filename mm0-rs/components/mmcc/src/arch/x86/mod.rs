@@ -1,4 +1,5 @@
 //! x86-specific parts of the compiler.
+pub mod proof;
 
 use std::fmt::Debug;
 
@@ -1243,7 +1244,7 @@ pub enum ModRMLayout {
   Sib0,
   /// `mmooo100 + ssiiibbb + disp0/8/32` where `rn = o` and `rm = [reg(b) + sc*ix + disp]`
   SibReg(DispLayout),
-  /// `mmooonnn + disp0/8/32` where `rn = o` and `rm = [reg(b) + disp]`
+  /// `mmooonnn + disp0/8/32` where `rn = o` and `rm = [reg(n) + disp]`
   Disp(DispLayout),
 }
 

@@ -8,7 +8,7 @@ $ S\ p, S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\
   p <> t1 <> x e. A /\ p <> t2 <> (x + len t1) e. B)} $;
 
 axiom is_asmp_A (p s t x y z A B)
-  (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $): $ is_asmp p s x z A $;
+  (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $): $ is_asmp p s x z (asmp_A A B) $;
 
 local def asmp_at (n: nat) (A: set): set =
 $ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
@@ -19,6 +19,39 @@ axiom is_asmp_at (p s x y A)
 local def asmi (ast: nat): set =
 $ S\ p, S\ s, {x | decode ast s} $;
 
-axiom asmiI (p s x y n)
+axiom asmiI (p s x y ast n)
   (h1: $ decode ast s $) (h2: $ len s = n $) (h3: $ x + n = y $):
   $ is_asmp p s x y (asmi ast) $;
+
+local def asmJCC (c tgt: nat): set =
+$ S\ p, S\ s, {x | decode (xastJCC c (tgt -_64 (x + len s))) s} $;
+
+axiom asmJCC_I (p s x y c tgt q n)
+  (h1: $ decode (xastJCC c q) s $) (e: $ tgt -_64 y = q $)
+  (h2: $ len s = n $) (h3: $ x + n = y $):
+  $ is_asmp p s x y (asmJCC c tgt) $;
+
+local def asmCall (tgt: nat): set =
+$ S\ p, S\ s, {x | decode (xastCall (immRM_imm (tgt -_64 (p + x + len s)))) s} $;
+
+axiom asmCallI (p s x y src tgt q n)
+  (h1: $ decode (xastCall (immRM_imm q)) s $) (e1: $ p + y = src $) (e2: $ tgt -_64 src = q $)
+  (h2: $ len s = n $) (h3: $ x + n = y $):
+  $ is_asmp p s x y (asmCall tgt) $;
+
+theorem strlen0: $ len s0 = x0 $ = '(eqtr (leneq s2ns0) @ eqtr4 len0 h2n0);
+theorem strlen1: $ len (s1 c0) = x1 $ = '(eqtr (leneq s2ns1) @ eqtr4 len1 h2n1);
+theorem strlenA: $ len (s '+ t) = len s + len t $ = '(eqtr (leneq s2nsadd) appendlen);
+theorem strlenS: $ len (c ': s) = suc (len s) $ = '(eqtr (leneq s2nscons) lenS);
+theorem strlenSi (h: $ len s = a $) (h2: $ suc a = b $): $ len (c ': s) = b $ =
+'(eqtr strlenS @ eqtr (suceq h) h2);
+do {
+  (def (strlenn n) @ atom-app 'strlen (hexstring n))
+  (for 1 15 @ fn (a)
+    @ let ([b {a + 1}] [xb (hexdigit b)] [name (strlenn b)])
+    (def args @ rmap (range 0 b) @ fn (i) (atom-app 'c i))
+    (def str @ foldr args #undef @ fn (a b) @ if (def? b) '(scons ,a ,b) '(s1 ,a))
+    @ add-tac-thm! name
+      (map (fn (x) '(,x char ())) args) () '(eq (len ,str) ,xb) () @ fn ()
+      '(strlenSi ,(strlenn a) ,(decsucn a)))
+};
