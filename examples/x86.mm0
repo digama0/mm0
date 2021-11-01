@@ -340,7 +340,7 @@ theorem xastMulT (sz rm: nat):
   $ xastMul sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
 theorem xastDivT (sz rm: nat):
   $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
-theorem xastCDX_T (sz ds: nat):
+theorem xastCDX_T (sz: nat):
   $ xastCDX sz e. XAST <-> sz e. WSize $;
 theorem xastLeaT (sz ds: nat):
   $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
