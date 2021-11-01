@@ -327,6 +327,7 @@ pub(crate) fn regalloc_vcode(
       }
       Inst::DivRem { sz, ref src2, .. } => {
         let (_, src, _, _) = (ar.reg(), ar.rm(src2), ar.reg(), ar.reg());
+        code.push(PInst::Cdx { sz });
         code.push(PInst::DivRem { sz, src });
       }
       Inst::Mul { sz, ref src2, .. } => {

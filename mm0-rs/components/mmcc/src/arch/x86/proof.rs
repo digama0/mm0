@@ -42,8 +42,10 @@ impl super::InstLayout {
 #[derive(Clone, Copy, Debug)]
 #[allow(missing_docs)]
 pub enum OpcodeLayout {
-  /// `decodeBinopRAX` layout: `00ooo01v + imm32`
-  BinopRAX { opc: u8, v: bool, imm: u32 },
+  /// `decodeBinopRAX` layout for 8-bit operand: `00ooo01v + imm8`
+  BinopRAX8 { opc: u8, v: bool, imm: u8 },
+  /// `decodeBinopRAX` layout for 32-bit operand: `00ooo01v + imm32`
+  BinopRAX32 { opc: u8, v: bool, imm: u32 },
   /// `decodeBinopImm` layout for 8-bit operand: `1000000v + modrm + imm8`
   BinopImmS8 { v: bool, modrm: ModRMLayout, imm: u8 },
   /// `decodeBinopImm` layout for 32-bit operand: `1000000v + modrm + imm32`
@@ -121,11 +123,13 @@ impl super::OpcodeLayout {
   fn parse(self, p: &mut &[u8]) -> OpcodeLayout {
     let opc = parse_u8(p);
     match self {
-      Self::BinopRAX =>
-        OpcodeLayout::BinopRAX { opc: (opc >> 3) & 7, v: opc & 1 != 0, imm: parse_u32(p) },
-      Self::BinopImmS8(modrm) =>
+      Self::BinopRAX(false) =>
+        OpcodeLayout::BinopRAX8 { opc: (opc >> 3) & 7, v: opc & 1 != 0, imm: parse_u8(p) },
+      Self::BinopRAX(true) =>
+        OpcodeLayout::BinopRAX32 { opc: (opc >> 3) & 7, v: opc & 1 != 0, imm: parse_u32(p) },
+      Self::BinopImm(false, modrm) =>
         OpcodeLayout::BinopImmS8 { v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u8(p) },
-      Self::BinopImmS32(modrm) =>
+      Self::BinopImm(true, modrm) =>
         OpcodeLayout::BinopImmS32 { v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u32(p) },
       Self::BinopImm8(modrm) =>
         OpcodeLayout::BinopImm8 { modrm: modrm.parse(p), imm: parse_u8(p) },
@@ -144,25 +148,25 @@ impl super::OpcodeLayout {
       Self::Mov64 => OpcodeLayout::Mov64 { v: opc & 8 != 0, r: opc & 7, imm: parse_u64(p) },
       Self::MovImm(modrm) =>
         OpcodeLayout::MovImm { v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u32(p) },
-      Self::PushImm8 => OpcodeLayout::PushImm8 { imm: parse_u8(p) },
-      Self::PushImm32 => OpcodeLayout::PushImm32 { imm: parse_u32(p) },
+      Self::PushImm(false) => OpcodeLayout::PushImm8 { imm: parse_u8(p) },
+      Self::PushImm(true) => OpcodeLayout::PushImm32 { imm: parse_u32(p) },
       Self::PushReg => OpcodeLayout::PushReg { r: opc & 7 },
       Self::PopReg => OpcodeLayout::PopReg { r: opc & 7 },
-      Self::Jump8 => OpcodeLayout::Jump8 { imm: parse_u8(p) },
-      Self::Jump32 => OpcodeLayout::Jump32 { imm: parse_u32(p) },
+      Self::Jump(false) => OpcodeLayout::Jump8 { imm: parse_u8(p) },
+      Self::Jump(true) => OpcodeLayout::Jump32 { imm: parse_u32(p) },
       Self::Jcc8 => OpcodeLayout::Jcc8 { cc: opc & 15, imm: parse_u8(p) },
       Self::Call => OpcodeLayout::Call { imm: parse_u32(p) },
       Self::Ret => OpcodeLayout::Ret,
       Self::Lea(modrm) => OpcodeLayout::Lea { modrm: modrm.parse(p) },
       Self::Test(modrm) => OpcodeLayout::Test { v: opc & 1 != 0, modrm: modrm.parse(p) },
-      Self::TestRAX8 => OpcodeLayout::TestRAX8 { v: opc & 1 != 0, imm: parse_u8(p) },
-      Self::TestRAX32 => OpcodeLayout::TestRAX32 { v: opc & 1 != 0, imm: parse_u32(p) },
+      Self::TestRAX(false) => OpcodeLayout::TestRAX8 { v: opc & 1 != 0, imm: parse_u8(p) },
+      Self::TestRAX(true) => OpcodeLayout::TestRAX32 { v: opc & 1 != 0, imm: parse_u32(p) },
       Self::Hi(modrm) =>
         OpcodeLayout::Hi { x: opc & 8 != 0, v: opc & 1 != 0, modrm: modrm.parse(p) },
-      Self::HiTest8(modrm) => OpcodeLayout::HiTest8 {
+      Self::HiTest(false, modrm) => OpcodeLayout::HiTest8 {
         x: opc & 8 != 0, v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u8(p)
       },
-      Self::HiTest32(modrm) => OpcodeLayout::HiTest32 {
+      Self::HiTest(true, modrm) => OpcodeLayout::HiTest32 {
         x: opc & 8 != 0, v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u32(p)
       },
       Self::SetCC(modrm) => OpcodeLayout::SetCC { cc: opc & 15, modrm: modrm.parse(p) },

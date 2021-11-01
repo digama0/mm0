@@ -58,14 +58,15 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
 macro_rules! make_dedup {
   ($($dedup:ident, $hash:ident, $node:ty, $id:ident, $app:ident;)*) => {$(
     #[derive(Clone, Copy, PartialEq, Eq)]
-    struct $id(usize);
+    struct $id(u32);
     impl Idx for $id {
-      fn into_usize(self) -> usize { self.0 }
-      fn from_usize(n: usize) -> Self { Self(n) }
+      fn into_usize(self) -> usize { self.0 as usize }
+      fn from_usize(n: usize) -> Self { Self(n as u32) }
     }
     struct $dedup<'a> {
       pd: &'a Predefs,
       de: proof::Dedup<proof::$hash>,
+      cache: HashMap<ThmId, $id>,
     }
     impl<'a> std::ops::Deref for $dedup<'a> {
       type Target = &'a Predefs;
@@ -76,15 +77,15 @@ macro_rules! make_dedup {
       type Hash = proof::$hash;
       type Id = $id;
       fn new(pd: &'a Predefs, args: &[(Option<AtomId>, Type)]) -> Self {
-        Self { pd, de: proof::Dedup::new(args) }
+        Self { pd, de: proof::Dedup::new(args), cache: Default::default() }
       }
-      fn add(&mut self, h: proof::$hash) -> $id { $id(self.de.add_direct(h)) }
-      fn reuse(&mut self, i: $id) -> $id { $id(self.de.reuse(i.0)) }
+      fn add(&mut self, h: proof::$hash) -> $id { $id::from_usize(self.de.add_direct(h)) }
+      fn reuse(&mut self, i: $id) -> $id { $id::from_usize(self.de.reuse(i.into_usize())) }
       fn build0(&self, i: $id) -> (Box<[$node]>, $node) {
         let (mut ids, heap) = proof::build(&self.de);
-        (heap, ids[i.0].take())
+        (heap, ids[i.into_usize()].take())
       }
-      fn get(&self, i: Self::Id) -> &Self::Hash { &self.de[i.0] }
+      fn get(&self, i: Self::Id) -> &Self::Hash { &self.de[i.into_usize()] }
       const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash = proof::$hash::$app;
       fn is_app_of(&self, i: Self::Id, t: TermId) -> Option<&[usize]> {
         if let proof::$hash::$app(t2, args) = self.get(i) {
@@ -102,26 +103,37 @@ make_dedup! {
 
 impl ProofDedup<'_> {
   fn thm(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
-    self.add(proof::ProofHash::Thm(t, args.iter().map(|x| x.0).collect(), res.0))
+    self.add(proof::ProofHash::Thm(t,
+      args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
   fn thm_r(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
-    self.add_r(proof::ProofHash::Thm(t, args.iter().map(|x| x.0).collect(), res.0))
+    self.add_r(proof::ProofHash::Thm(t,
+      args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
   fn thm_app(&mut self, th: ThmId, args: &[ProofId], t: TermId, es: &[ProofId]) -> ProofId {
     let res = self.app1(t, es);
     self.thm(th, args, res)
   }
+
+  fn cache(&mut self, t: ThmId, res: impl FnOnce(&mut Self) -> ProofId) -> ProofId {
+    if let Some(&id) = self.cache.get(&t) { return id }
+    let res = res(self);
+    let th = self.thm(t, &[], res);
+    *self.cache.entry(t).or_insert(th)
+  }
+
   fn to_expr(&self, de: &mut ExprDedup<'_>, e: ProofId) -> ExprId {
     let e = match *self.get(e) {
-      proof::ProofHash::Ref(ProofKind::Expr, i) if i < e.0 =>
+      proof::ProofHash::Ref(ProofKind::Expr, i) if i < e.into_usize() =>
         // We assume there is no significant subterm sharing in expressions in theorem statements,
         // which is mostly true for theorem statements in the compiler.
-        return self.to_expr(de, ProofId(i)),
+        return self.to_expr(de, ProofId::from_usize(i)),
       proof::ProofHash::Ref(ProofKind::Expr, i) =>
         proof::ExprHash::Ref(ProofKind::Expr, i),
       proof::ProofHash::Dummy(s, sort) => proof::ExprHash::Dummy(s, sort),
       proof::ProofHash::Term(t, ref es) =>
-        proof::ExprHash::App(t, es.iter().map(|&e| self.to_expr(de, ProofId(e)).0).collect()),
+        proof::ExprHash::App(t,
+          es.iter().map(|&e| self.to_expr(de, Idx::from_usize(e)).into_usize()).collect()),
       _ => panic!("to_expr called on non-expr"),
     };
     de.add(e)
@@ -130,10 +142,10 @@ impl ProofDedup<'_> {
   /// Get the conclusion of the provided proof term.
   fn concl(&self, e: ProofId) -> ProofId {
     match *self.get(e) {
-      proof::ProofHash::Ref(ProofKind::Proof, i) => self.concl(ProofId(i)),
+      proof::ProofHash::Ref(ProofKind::Proof, i) => self.concl(ProofId::from_usize(i)),
       proof::ProofHash::Hyp(_, concl) |
       proof::ProofHash::Thm(_, _, concl) |
-      proof::ProofHash::Conv(concl, _, _) => ProofId(concl),
+      proof::ProofHash::Conv(concl, _, _) => ProofId::from_usize(concl),
       _ => panic!("concl called on non-proof"),
     }
   }

@@ -443,26 +443,26 @@ do {
     [(('hex a (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (add_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
       [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (add_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
-    [(('h2n (a)) ('hex b (c))) @ match (decaddn (hexdigit->number a) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (add_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,b ,d) (add_0x0 (,a) ,b (,c) ,d (,p)))]]
-    [(('hex a (b)) ('h2n (c))) @ match (decaddn (hexdigit->number b) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (add_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,a ,d) (add_x00 ,a (,b) (,c) ,d (,p)))]]
-    [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+    [(('h2n (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc c) @ (e p1) '((hex ,e ,f) (add_0x1 (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,c ,f) (add_0x0 (,b) ,c (,d) ,f (,p2)))]]
+    [(('hex a (b)) ('h2n (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc a) @ (e p1) '((hex ,e ,f) (add_x01 ,a (,b) (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,a ,f) (add_x00 ,a (,b) (,d) ,f (,p2)))]]
+    [(('h2n (b)) ('h2n (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d)) ['(,r ,p) '(,r (,p))]])
   --| Raw carry-addition theorem generator: given `a`, `b` in normal form,
   --| returns `(c p)` where `p: suc (a + b) = c`
   (def mkadc @ match-fn*
     [(('hex a (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (adc_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
       [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (adc_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
-    [(('h2n (a)) ('hex b (c))) @ match (decadcn (hexdigit->number a) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (adc_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,b ,d) (adc_0x0 (,a) ,b (,c) ,d (,p)))]]
-    [(('hex a (b)) ('h2n (c))) @ match (decadcn (hexdigit->number b) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (adc_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,a ,d) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
-    [(('h2n (a)) ('h2n (b))) @ match (decadcn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+    [(('h2n (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc c) @ (e p1) '((hex ,e ,f) (adc_0x1 (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,c ,f) (adc_0x0 (,b) ,c (,d) ,f (,p2)))]]
+    [(('hex a (b)) ('h2n (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc a) @ (e p1) '((hex ,e ,f) (adc_x01 ,a (,b) (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,a ,f) (adc_x00 ,a (,b) (,d) ,f (,p2)))]]
+    [(('h2n (b)) ('h2n (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d)) ['(,r ,p) '(,r (,p))]])
 
   --| Addition tactic: usable in refine scripts when the target is `a + b = ?c` (or `suc (a + b) = ?c`),
   --| producing a proof and unifying `?c`

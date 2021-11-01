@@ -2025,12 +2025,13 @@ pub theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $ = '(bitr4 b1
 
 @_ def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
-    (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
+    (Sum (Xp Bool (Xp WSize RM)) (Xp WSize (Option DestSrc))) $;
 @_ def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
 @_ def xastBinop (binop sz ds: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> ds)))) $;
 @_ def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
 @_ def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
-@_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;
+@_ def xastCDX (sz: nat): nat = $ b0 (b0 (b1 (b1 (sz <> 0)))) $;
+@_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> suc ds)))) $;
 
 @_ def XASTData: set =
 $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
@@ -2056,11 +2057,12 @@ $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
 @_ def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
 @_ def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
 
-@_ def XASTMisc: set = $ upto 4 $;
+@_ def XASTMisc: set = $ upto 5 $;
 @_ def xastCMC: nat = $ b1 (b1 0) $;
 @_ def xastCLC: nat = $ b1 (b1 1) $;
 @_ def xastSTC: nat = $ b1 (b1 2) $;
-@_ def xastSysCall: nat = $ b1 (b1 3) $;
+@_ def xastUD2: nat = $ b1 (b1 3) $;
+@_ def xastSysCall: nat = $ b1 (b1 4) $;
 
 @_ def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 
@@ -2077,9 +2079,11 @@ pub theorem xastMulT (sz rm: nat):
 pub theorem xastDivT (sz rm: nat):
   $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $ =
 '(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
+theorem xastCDX_T (sz ds: nat): $ xastCDX sz e. XAST <-> sz e. WSize $ =
+'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @ bian2 opt0);
 pub theorem xastLeaT (sz ds: nat):
   $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $ =
-'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Sumr prelxp);
+'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @ aneq2i optS);
 
 pub theorem xastMovX_T (b sz ds sz2: nat):
   $ xastMovX b sz ds sz2 e. XAST <->
@@ -2143,6 +2147,8 @@ pub theorem xastCMC_T: $ xastCMC e. XAST $ =
 pub theorem xastCLC_T: $ xastCLC e. XAST $ =
 '(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
 pub theorem xastSTC_T: $ xastSTC e. XAST $ =
+'(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
+pub theorem xastUD2T: $ xastUD2 e. XAST $ =
 '(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
 pub theorem xastSysCallT: $ xastSysCall e. XAST $ =
 '(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
@@ -2215,6 +2221,12 @@ pub theorem decodeTwoXaddT (rex ast b l: nat):
   mpbird (eleq1d anr) @ sylibr xastXaddT @
   rsyl anlr @ rsyl readModRM_T @ iand (rsyl anlr @ ian opSizeW_T) anll));
 
+@_ def decodeTwoUD2 (rex ast b l: nat): wff =
+$ b = ch x0 xb /\ l = 0 /\ ast = xastUD2 $;
+pub theorem decodeTwoUD2T (rex ast b l: nat):
+  $ decodeTwoUD2 rex ast b l -> ast e. XAST $ =
+'(mpbiri xastUD2T @ eleq1d anr);
+
 @_ def decodeTwoSysCall (rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 pub theorem decodeTwoSysCallT (rex ast b l: nat):
@@ -2225,12 +2237,12 @@ pub theorem decodeTwoSysCallT (rex ast b l: nat):
 $ decodeTwoCMov rex ast b l \/ decodeTwoJCC rex ast b l \/
   decodeTwoSetCC rex ast b l \/ decodeTwoCmpXchg rex ast b l \/
   decodeTwoMovX rex ast b l \/ decodeTwoXadd rex ast b l \/
-  decodeTwoSysCall rex ast b l $;
+  decodeTwoUD2 rex ast b l \/ decodeTwoSysCall rex ast b l $;
 pub theorem decodeTwoAuxT (rex ast b l: nat):
   $ decodeTwoAux rex ast b l -> ast e. XAST $ =
 (focus
   (def (f x) (atom-app 'decodeTwo x 'T))
-  (foldl '(JCC_ SetCC_ CmpXchg MovX_ Xadd SysCall) (f 'CMov)
+  (foldl '(JCC_ SetCC_ CmpXchg MovX_ Xadd UD2 SysCall) (f 'CMov)
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decodeTwo (rex ast b l .b2 .l2: nat): wff =
@@ -2513,6 +2525,12 @@ pub theorem decodeXchgRAX_T (rex ast b l: nat):
     sylan rex_regT (a1i REX_B_T) @ sylib elBitvec2 @
     elListHd anll));
 
+@_ def decodeCDX (rex ast b l .reg .r: nat): wff =
+$ E. reg E. r (b = ch x9 x9 /\ l = 0 /\ ast = xastCDX (opSize T. (REX_W rex) 1)) $;
+pub theorem decodeCDX_T (rex ast b l: nat):
+  $ decodeCDX rex ast b l -> ast e. XAST $ =
+(named '(eex @ eex @ mpbiri (mpbir xastCDX_T opSizeT) (eleq1d anr)));
+
 @_ def decodeLea (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x8 xd /\
     readModRM rex reg r l /\ RM_isMem r /\
@@ -2568,12 +2586,12 @@ pub theorem decodeFlagT (rex ast b l: nat):
 @_ def decodeMisc (rex ast b l: nat): wff =
 $ decodeXchg rex ast b l \/ decodeXchgRAX rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
-  decodeLea rex ast b l \/ decodeFlag rex ast b l $;
+  decodeCDX rex ast b l \/ decodeLea rex ast b l \/ decodeFlag rex ast b l $;
 pub theorem decodeMiscT (rex ast b l: nat):
   $ decodeMisc rex ast b l -> ast e. XAST $ =
 (focus
   (def (f x) (atom-app 'decode x 'T))
-  (foldl '(XchgRAX_ Test TestRAX_ Lea Flag) (f 'Xchg)
+  (foldl '(XchgRAX_ Test TestRAX_ CDX_ Lea Flag) (f 'Xchg)
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
@@ -2899,14 +2917,17 @@ theorem PROT_RX_T: $ PROT_READ + PROT_EXEC e. Prot $ =
 pub theorem finiteMemory: $ finite Memory $ = '(Arrowfin finns @ xpfin finiteProt finns);
 theorem elMemoryT: $ m e. Memory /\ x e. u64 -> m @ x e. Xp Prot u8 $ = 'appT;
 
-@_ def Exception: set = $ upto 2 $;
+@_ def Exception: set = $ upto 3 $;
 pub theorem finiteException: $ finite Exception $ = 'finns;
 --| Represents the 'syscall' function
 @(add-eval) def exSysCall: nat = $ 0 $;
 --| General protection fault, issued on invalid read/write
 @(add-eval) def exGPF: nat = $ 1 $;
-pub theorem exSysCallT: $ exSysCall e. Exception $ = '(mpbir elupto d0lt2);
-pub theorem exGPF_T: $ exGPF e. Exception $ = '(mpbir elupto d1lt2);
+--| Undefined instruction, issued on ud2 instruction
+@(add-eval) def exUD: nat = $ 2 $;
+pub theorem exSysCallT: $ exSysCall e. Exception $ = '(mpbir elupto d0lt3);
+pub theorem exGPF_T: $ exGPF e. Exception $ = '(mpbir elupto d1lt3);
+pub theorem exUD_T: $ exUD e. Exception $ = '(mpbir elupto d2lt3);
 
 --| ```
 --| data Config = {
@@ -3816,8 +3837,15 @@ do {
               (splitBits ((n <> readRegSz k sz RAX) :
                           (n <> readRegSz k sz RDX) : 0) a /\
                 eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $)})
-       + ((sz ds) => (xastLea)
-          $ writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $)}}
+      + (<> => sz =>
+        {(0 => (xastCDX n src lo hi)
+          $ E. n E. src E. lo E. hi (
+            n = wsizeBits sz /\ n != 8 /\
+            lo = readRegSz k sz RAX /\
+            splitBits ((n <> lo) : (n <> hi) : 0) (sExt n (2 * n) lo) /\
+            k2 = writeReg k sz RDX hi) $)
+       > (ds => (xastLea)
+          $ writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $)})}}
 
     -- XASTData
      + {(<> => sz =>
@@ -3868,7 +3896,8 @@ do {
       + {(0 => (xastCMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
        + (1 => (xastCLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
        + (2 => (xastSTC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
-       + (3 => (xastSysCall r11)
+       + (3 => (xastUD2) $ k2 = setException k (suc exUD) $)
+       + (4 => (xastSysCall r11)
           $ E. r11 (r11 e. u64 /\
             k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $)}}})
 
@@ -3953,7 +3982,8 @@ do {
 
 do (mk-cases-eqns execXAST_clauses @ match-fn* @ (rvars ((name . dummies) stmt) ctx)
   (def vars (rev rvars))
-  (def thname (atom-app 'execXAST name))
+  (def sname (->string name))
+  (def thname (atom-app 'execXAST @ substr 4 (string-len sname) sname))
   (def bis @ append (map (fn (x) '(,x nat)) dummies)
     '((k nat ())) (map (fn (x) '(,x nat ())) vars) '((k2 nat ())))
   (def stmt $ execXAST k ,'(,name . ,vars) k2 <-> ,stmt $)
@@ -4034,7 +4064,9 @@ pub theorem execXAST_T (k ast k2: nat):
 (named @ focus
   '(imp ,(mk-cases-split execXAST_clauses
     @ match-fn @ ((name . _) _)
-    '(syl5ibrcom (imeq1d @ syl6bb ,(atom-app 'execXAST name) execXASTeq2) _)))
+    (def sname (->string name))
+    (def thname (atom-app 'execXAST @ substr 4 (string-len sname) sname))
+    '(syl5ibrcom (imeq1d @ syl6bb ,thname execXASTeq2) _)))
   (focus -- Unop
     '(eexda @ sylan writeUnopT _ anrr)
     '(sylibr anass @ iand anll (rsyl anrl @ rsyl readEA_T64 @ iand anr anllr)))
@@ -4065,6 +4097,11 @@ pub theorem execXAST_T (k ast k2: nat):
   (focus -- Div
     (def h '(rsyl anrr @ anrd eraseFlagsT))
     '(a1i @ eex @ eex @ eex @ eex @ eex @ anwr @ eor ,h ,h))
+  (focus -- CDX
+    '(eexd @ eexd @ eexd @ eexda @ mpbird (eleq1d anrr) @
+      sylan writeRegT (iand anl @ a1i RDX_T) @
+      mpbid (elneq2d @ Bitseqd @ anwr an4l) @ anwr @ rsyl anlr @ anwl @
+      sylbi elListS @ sylib elBitvec2 @ anld @ sylib elListS anr))
   (focus '(a1i @ anrd writeEA_T)) -- Lea
   (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- MovZX
   (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- MovSX
@@ -4095,6 +4132,7 @@ pub theorem execXAST_T (k ast k2: nat):
   (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- CMC
   (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- CLC
   (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- STC
+  (focus '(syl5ibrcom eleq1 @ sylan setExceptionT id @ a1i @ mpbir optS exUD_T)) -- UD2
   (focus -- SysCall
     '(eexda @ mpbird (eleq1d anrr) _)
     '(sylan setExceptionT _ @ a1i @ mpbir optS exSysCallT)

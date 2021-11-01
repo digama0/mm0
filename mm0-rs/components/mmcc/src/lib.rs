@@ -287,6 +287,36 @@ mod test {
     assert_eq!(hex::encode(data), result);
   }
 
+  #[test] fn trivial_ir() {
+    use std::{collections::HashMap, rc::Rc};
+    use crate::{LinkedCode, Idx, types::IntTy, mir::*};
+    let names = Default::default();
+    let mut cfg = Cfg::default();
+    let bl = cfg.new_block(CtxId::ROOT);
+    cfg[bl].terminate(Terminator::Exit(Constant::unit().into()));
+    // println!("before opt:\n{:#?}", cfg);
+    cfg.optimize(&[]);
+    // println!("after opt:\n{:#?}", cfg);
+    let allocs = cfg.storage(&names);
+    // println!("allocs = {:#?}", allocs);
+    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]);
+    println!("code = {:#?}", code);
+    // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
+    let mut out = Vec::new();
+    code.write_elf(&mut out).unwrap();
+    assert_eq_hex(&out, "\
+      7f45 4c46 0201 0100 0000 0000 0000 0000\
+      0200 3e00 0100 0000 7800 4000 0000 0000\
+      4000 0000 0000 0000 0000 0000 0000 0000\
+      0000 0000 4000 3800 0100 4000 0000 0000\
+      0100 0000 0700 0000 7800 0000 0000 0000\
+      7800 4000 0000 0000 0000 0000 0000 0000\
+      1800 0000 0000 0000 1800 0000 0000 0000\
+      0000 2000 0000 0000 b83c 0000 0033 ff0f\
+      0500 0000 0000 0000 0000 0000 0000 0000\
+    ");
+  }
+
   #[test] fn two_plus_two_ir() {
     use std::{collections::HashMap, rc::Rc};
     use crate::{LinkedCode, Idx, types::IntTy, mir::*};
@@ -503,7 +533,7 @@ mod test {
       Default::default(), ());
     let code = compiler.finish();
     println!("code = {:#?}", code);
-    // code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
+    code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
     assert_eq_hex(&out, "\

@@ -67,6 +67,10 @@ macro_rules! make_predefs {
 }
 
 make_predefs! {
+  /// `$F.$: wff`
+  fal: TermId => "fal";
+  /// `$T.$: wff`
+  tru: TermId => "tru";
   /// `eq: nat > nat > wff`
   eq: TermId => "eq";
   /// `eq: nat > nat > wff`
@@ -167,12 +171,31 @@ make_predefs! {
   adc_x01: ThmId => "adc_x01";
 
   sub64: TermId => "sub64";
+
+  /// `bit: nat > nat > nat`
+  bit: TermId => "bit";
   xbit[n: 16][i: 4]: ThmId => format!("xbit{:x}{:x}", n, i);
   xsplitBits[i: 5][n: 16]: ThmId => {
     let mut s = format!("xsplitBits_{:x}", n);
     for &a in SPLIT_BITS_PART[i] { s.push((b'0' + a).into()) }
     s
   };
+
+  /// `wSz8 (have_rex: wff): nat`
+  wSz8: TermId => "wSz8";
+  /// `wSz32: nat`
+  wSz32: TermId => "wSz32";
+  /// `wSz64: nat`
+  wSz64: TermId => "wSz64";
+
+  opSize: TermId => "opSize";
+  opSize_64: ThmId => "opSize_64";
+  opSize_32: ThmId => "opSize_32";
+  opSize_8: ThmId => "opSize_8";
+
+  opSizeW: TermId => "opSizeW";
+  opSizeW_0: ThmId => "opSizeW_0";
+  opSizeW_S: ThmId => "opSizeW_S";
 
   xastJCC: TermId => "xastJCC";
   decode: TermId => "decode";

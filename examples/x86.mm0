@@ -290,12 +290,13 @@ theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $;
 
 def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
-    (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
+    (Sum (Xp Bool (Xp WSize RM)) (Xp WSize (Option DestSrc))) $;
 def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
 def xastBinop (binop sz ds: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> ds)))) $;
 def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
 def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
-def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;
+def xastCDX (sz: nat): nat = $ b0 (b0 (b1 (b1 (sz <> 0)))) $;
+def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> suc ds)))) $;
 
 def XASTData: set =
 $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
@@ -321,11 +322,12 @@ def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
 def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
 
-def XASTMisc: set = $ upto 4 $;
+def XASTMisc: set = $ upto 5 $;
 def xastCMC: nat = $ b1 (b1 0) $;
 def xastCLC: nat = $ b1 (b1 1) $;
 def xastSTC: nat = $ b1 (b1 2) $;
-def xastSysCall: nat = $ b1 (b1 3) $;
+def xastUD2: nat = $ b1 (b1 3) $;
+def xastSysCall: nat = $ b1 (b1 4) $;
 
 def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 
@@ -338,6 +340,8 @@ theorem xastMulT (sz rm: nat):
   $ xastMul sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
 theorem xastDivT (sz rm: nat):
   $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
+theorem xastCDX_T (sz ds: nat):
+  $ xastCDX sz e. XAST <-> sz e. WSize $;
 theorem xastLeaT (sz ds: nat):
   $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
@@ -372,6 +376,7 @@ theorem xastPopT (rm: nat): $ xastPop rm e. XAST <-> rm e. RM $;
 theorem xastCMC_T: $ xastCMC e. XAST $;
 theorem xastCLC_T: $ xastCLC e. XAST $;
 theorem xastSTC_T: $ xastSTC e. XAST $;
+theorem xastUD2T: $ xastUD2 e. XAST $;
 theorem xastSysCallT: $ xastSysCall e. XAST $;
 
 def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
@@ -419,6 +424,11 @@ $ E. v E. reg E. r (
 theorem decodeTwoXaddT (rex ast b l: nat):
   $ decodeTwoXadd rex ast b l -> ast e. XAST $;
 
+def decodeTwoUD2 (rex ast b l: nat): wff =
+$ b = ch x0 xb /\ l = 0 /\ ast = xastUD2 $;
+theorem decodeTwoUD2T (rex ast b l: nat):
+  $ decodeTwoUD2 rex ast b l -> ast e. XAST $;
+
 def decodeTwoSysCall (rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 theorem decodeTwoSysCallT (rex ast b l: nat):
@@ -428,7 +438,7 @@ def decodeTwoAux (rex ast b l: nat): wff =
 $ decodeTwoCMov rex ast b l \/ decodeTwoJCC rex ast b l \/
   decodeTwoSetCC rex ast b l \/ decodeTwoCmpXchg rex ast b l \/
   decodeTwoMovX rex ast b l \/ decodeTwoXadd rex ast b l \/
-  decodeTwoSysCall rex ast b l $;
+  decodeTwoUD2 rex ast b l \/ decodeTwoSysCall rex ast b l $;
 theorem decodeTwoAuxT (rex ast b l: nat):
   $ decodeTwoAux rex ast b l -> ast e. XAST $;
 
@@ -620,6 +630,11 @@ $ l = 0 /\ E. r (
 theorem decodeXchgRAX_T (rex ast b l: nat):
   $ decodeXchgRAX rex ast b l -> ast e. XAST $;
 
+def decodeCDX (rex ast b l .reg .r: nat): wff =
+$ E. reg E. r (b = ch x9 x9 /\ l = 0 /\ ast = xastCDX (opSize T. (REX_W rex) 1)) $;
+theorem decodeCDX_T (rex ast b l: nat):
+  $ decodeCDX rex ast b l -> ast e. XAST $;
+
 def decodeLea (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x8 xd /\
     readModRM rex reg r l /\ RM_isMem r /\
@@ -659,7 +674,7 @@ theorem decodeFlagT (rex ast b l: nat):
 def decodeMisc (rex ast b l: nat): wff =
 $ decodeXchg rex ast b l \/ decodeXchgRAX rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
-  decodeLea rex ast b l \/ decodeFlag rex ast b l $;
+  decodeCDX rex ast b l \/ decodeLea rex ast b l \/ decodeFlag rex ast b l $;
 theorem decodeMiscT (rex ast b l: nat):
   $ decodeMisc rex ast b l -> ast e. XAST $;
 
@@ -749,14 +764,17 @@ theorem PROT_EXEC_T: $ PROT_EXEC e. Prot $;
 def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 theorem finiteMemory: $ finite Memory $;
 
-def Exception: set = $ upto 2 $;
+def Exception: set = $ upto 3 $;
 theorem finiteException: $ finite Exception $;
 --| Represents the 'syscall' function
 def exSysCall: nat = $ 0 $;
 --| General protection fault, issued on invalid read/write
 def exGPF: nat = $ 1 $;
+--| Undefined instruction, issued on ud2 instruction
+def exUD: nat = $ 2 $;
 theorem exSysCallT: $ exSysCall e. Exception $;
 theorem exGPF_T: $ exGPF e. Exception $;
+theorem exUD_T: $ exUD e. Exception $;
 
 --| ```
 --| data Config = {
@@ -1176,6 +1194,12 @@ theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
         (splitBits ((n <> readRegSz k sz RAX) :
                     (n <> readRegSz k sz RDX) : 0) a /\
           eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $;
+theorem execXASTCDX {n src lo hi: nat} (k sz k2: nat):
+  $ execXAST k (xastCDX sz) k2 <-> E. n E. src E. lo E. hi (
+      n = wsizeBits sz /\ n != 8 /\
+      lo = readRegSz k sz RAX /\
+      splitBits ((n <> lo) : (n <> hi) : 0) (sExt n (2 * n) lo) /\
+      k2 = writeReg k sz RDX hi) $;
 theorem execXASTLea (k sz ds k2: nat):
   $ execXAST k (xastLea sz ds) k2 <->
     writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $;
@@ -1240,6 +1264,8 @@ theorem execXASTSTC (k k2: nat):
 theorem execXASTSysCall {r11: nat} (k k2: nat):
   $ execXAST k xastSysCall k2 <-> E. r11 (r11 e. u64 /\
     k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $;
+theorem execXASTUD2 {r11: nat} (k k2: nat):
+  $ execXAST k xastUD2 k2 <-> k2 = setException k (suc exUD) $;
 
 theorem execXAST_T (k ast k2: nat):
   $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $;

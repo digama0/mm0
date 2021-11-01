@@ -31,6 +31,10 @@ macro_rules! app {
 macro_rules! thm {
   ($de:expr, {$($e:tt)*}) => { {$($e)*} };
   ($de:expr, ($($e:tt)*) => $($thm:tt)*) => {thm!($de, $($thm)*: $($e)*)};
+  ($de:expr, CACHE[$thm:ident$([$ix:expr])*]: $($e:tt)*) => {{
+    let th = $de.$thm$([usize::from($ix)])*;
+    $de.cache(th, |de| app!(de, $($e)*))
+  }};
   ($de:expr, $thm:ident$([$ix:expr])*($($args:expr),*): $($e:tt)*) => {{
     let th = $de.$thm$([usize::from($ix)])*;
     let args = &[$($args),*];

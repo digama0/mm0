@@ -242,27 +242,31 @@ impl HexCache {
 }
 
 macro_rules! norm_split_bits {
-  (@push $de:tt ($($out:expr,)*) ($x:expr) ($($stk:tt)*) $n:literal $($rest:tt)*) => {
+  (@push $de:ident $arg:tt ($($out:expr,)*) ($x:expr) ($($stk:tt)*) $n:literal $($rest:tt)*) => {
     let x = $x;
     let n: u8 = $n;
     let a = x & ((1 << n) - 1);
-    norm_split_bits!{@push $de ($($out,)* a,) (x >> n) ($($stk)* (pr (dn[n]) (dn[a]))) $($rest)*}
+    let ea = app!($de, (dn[a]));
+    norm_split_bits!{@push $de $arg ($($out,)* (a, ea),) (x >> n)
+        ($($stk)* (pr (dn[n]) ea)) $($rest)*}
   };
-  (@push $de:tt ($($out:expr,)*) ($x:expr) ($($stk:tt)*)) => {
-    ([$($out),*], norm_split_bits!(@pop $de (d0) $($stk)*))
+  (@push $de:ident $arg:tt ($($out:expr,)*) ($x:expr) ($($stk:tt)*)) => {
+    ([$($out),*], norm_split_bits!(@pop $de $arg (d0) $($stk)*))
   };
-  (@pop $de:tt $e:tt $t:tt $($stk:tt)*) => {
-    norm_split_bits!(@pop $de (cons $t $e) $($stk)*)
+  (@pop $de:ident $arg:tt $e:tt $t:tt $($stk:tt)*) => {
+    norm_split_bits!(@pop $de $arg (cons $t $e) $($stk)*)
   };
-  (@pop ($($de:tt)*) $e:tt) => {thm!($($de)*: $e)};
+  (@pop $de:ident ($($arg:tt)*) $e:tt) => {thm!($de, $($arg)*: $e)};
   ($(fn $f:ident ($a:ident: $($n:literal),*);)*) => {
     impl HexCache {
-      $(pub(super) fn $f(&self, de: &mut ProofDedup<'_>, x: u8) -> ([u8; [$($n),*].len()], ProofId) {
-        norm_split_bits! {@push (de, xsplitBits[SplitBits::$a as usize][x]()) () (x) () $($n)* }
+      $(pub(super) fn $f(&self,
+        de: &mut ProofDedup<'_>, x: u8
+      ) -> ([(u8, ProofId); [$($n),*].len()], ProofId) {
+        norm_split_bits! {@push de (xsplitBits[SplitBits::$a as usize][x]()) () (x) () $($n)* }
       })*
 
       pub(super) fn split_bits(&self, de: &mut ProofDedup<'_>, sb: SplitBits, x: u8
-      ) -> (ArrayVec<u8, 4>, ProofId) {
+      ) -> (ArrayVec<(u8, ProofId), 4>, ProofId) {
         match sb {
           $(SplitBits::$a => {
             let (xs, pr) = self.$f(de, x);

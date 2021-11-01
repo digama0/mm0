@@ -185,11 +185,11 @@ do (begin
     (add-tac-thm! (atom-app name '_ifp) (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
       $ ,p <-> ,q $ () @ fn () '(trud ,pr)))
   (mk-decodeAux_ifp 'decodeAux decodeAux_bit
-    '(6 (7 (2 _ (1 _ _)) (4 (2 (3 (1 _ _) (5 _ _)) (1 (3 _ _) (3 _ _))) (5 _ _)))
+    '(6 (7 (2 _ (1 _ _)) (4 (2 (3 (1 _ _) (5 _ _)) (1 (3 _ _) (3 _ _))) (5 (3 _ _) _)))
       (4 (5 (7 _ (1 (3 _ _) (2 _ _))) (0 (7 _ _) (3 _ _)))
         (7 (5 (3 _ _) _) (2 (3 _ (0 _ _)) (1 _ _))))))
   (mk-decodeAux_ifp 'decodeTwoAux decodeTwoAux_bit
-    '(4 (6 (7 _ _) (7 _ _)) (5 _ (1 _ _)))));
+    '(4 (6 (7 (1 _ _) _) (7 _ _)) (5 _ (1 _ _)))));
 
 theorem orifp_disj: $ (b -> ~p) -> (p /\ a \/ b <-> ifp p a b) $ = '(oreq2d @ bicomd bian1a);
 
@@ -494,6 +494,7 @@ do (begin
   @ fn () @ focus
     (df 'decodeTwoAux_ifp _)
     @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p
+    @ cons (ian (R 1 eq0) @ r el)
     @ cons (ian (R 1 eq0) @ r el) (E 2 @ q (L 2 B) @ qe (R 1 N))
     @ rmap '(3 3 3 3 4) @ fn (n) (E n @ q (L 2 B) @ qe (R 1 M)))
 
@@ -515,36 +516,37 @@ do (begin
   @ fn () @ named @ focus
     (df 'decodeAux_ifp _)
     @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p @ list
-      (E 5 @ q (L 2 B) @ qe (R 1 M))
-      (E 3 @ q (L 2 B) @ qe (R 1 I))
-      Tw
-      (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
-      (E 5 @ q (O2 4 2) @ qe (R 1 N))
-      (E 4 @ q (L 2 B) @ qe (R 1 M))
-      (E 3 @ q (L 3 B) @ q (R 2 el) @ qe (R 1 I))
-      (E 3 @ q (L 2 B) @ qe (R 1 M))
-      (E 2 @ qe (R 2 M))
-      (E 3 @ q (L 2 B) @ qe (R 1 M))
-      (e @ qe (R 1 O))
-      (ian (l eq0) @ r @ e @ q (l B) @ r el)
-      (E 3 @ q (L 2 B) @ qe (R 1 FI))
-      '(anwl efal)
-      (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N))
-      (ian (R 1 eq0) @ r el)
-      (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N))
-      (E 5 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
-      (E 2 @ q (L 2 B) @ qe (R 1 N))
-      (e @ qe (R 1 N))
-      (E 2 @ qe (R 1 M))
-      (E 2 @ q (L 2 B) @ qe (R 1 N))
-      (ian (l eq0) @ r @ e @ q (l B) @ r el)
-      (ian (l eq0) @ r @ e @ q (l B) @ r el)
-      (E 2 @ q (L 2 B) @ qe (R 1 N))
-      (E 4 @ q (L 3 B) @ qe (R 2 O))
-      (ian (R 1 eq0) @ r el)
-      (ian (R 1 eq0) @ r el)
-      (ian (R 1 eq0) @ r el)
-      (E 6 @ q (R 2 B) @ q (O2 3 1) @ r Hi))
+      (E 5 @ q (L 2 B) @ qe (R 1 M)) -- BinopReg
+      (E 3 @ q (L 2 B) @ qe (R 1 I)) -- BinopRAX
+      Tw -- Two
+      (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I)) -- BinopImm
+      (E 5 @ q (O2 4 2) @ qe (R 1 N)) -- BinopImm8
+      (E 4 @ q (L 2 B) @ qe (R 1 M)) -- MovReg
+      (E 3 @ q (L 3 B) @ q (R 2 el) @ qe (R 1 I)) -- TestRAX
+      (E 3 @ q (L 2 B) @ qe (R 1 M)) -- Test
+      (E 2 @ qe (R 2 M)) -- Lea
+      (E 3 @ q (L 2 B) @ qe (R 1 M)) -- Xchg
+      (e @ qe (R 1 O)) -- Pop0
+      (ian (l eq0) @ r @ e @ q (l B) @ r el) -- XchgRAX
+      (E 2 @ ian (R 1 eq0) @ r el) -- CDX
+      (E 3 @ q (L 2 B) @ qe (R 1 FI)) -- Mov64
+      '(anwl efal) -- F. (hole for REX byte)
+      (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N)) -- BinopHi
+      (ian (R 1 eq0) @ r el) -- Leave
+      (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N)) -- Ret
+      (E 5 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I)) -- MovImm
+      (E 2 @ q (L 2 B) @ qe (R 1 N)) -- PushImm
+      (e @ qe (R 1 N)) -- Call
+      (E 2 @ qe (R 1 M)) -- MovSX
+      (E 2 @ q (L 2 B) @ qe (R 1 N)) -- Jump
+      (ian (l eq0) @ r @ e @ q (l B) @ r el) -- PushReg
+      (ian (l eq0) @ r @ e @ q (l B) @ r el) -- PopReg
+      (E 2 @ q (L 2 B) @ qe (R 1 N)) -- JCC8
+      (E 4 @ q (L 3 B) @ qe (R 2 O)) -- BinopHiReg
+      (ian (R 1 eq0) @ r el) -- CLC
+      (ian (R 1 eq0) @ r el) -- STC
+      (ian (R 1 eq0) @ r el) -- CMC
+      (E 6 @ q (R 2 B) @ q (O2 3 1) @ r Hi)) -- Hi
 
   (mk-thm 'decode_determ2 '(ast1 ast2 l l2)
     $ decode ast1 l /\ decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
