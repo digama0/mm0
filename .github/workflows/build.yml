@@ -129,9 +129,13 @@ jobs:
     - name: x86.mmb
       working-directory: examples
       run: mm0-c x86.mmb < x86_join.mm0
+    - name: compiler_join.mm0
+      working-directory: examples
+      run: mm0-rs join compiler.mm0 | tee compiler_join.mm0
     - name: compiler.mm1
       working-directory: examples
       run: mm0-rs compile compiler.mm1 compiler.mmb
-    # - name: compiler.mmb
-    #   working-directory: examples
-    #   run: mm0-c compiler.mmb < x86_join.mm0
+    - name: compiler.mmb
+      working-directory: examples
+      # run: mm0-c compiler.mmb < x86_join.mm0
+      run: mm0-c compiler.mmb < compiler_join.mm0

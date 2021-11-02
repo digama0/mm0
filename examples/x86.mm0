@@ -1261,11 +1261,11 @@ theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
 theorem execXASTSTC (k k2: nat):
   $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
+theorem execXASTUD2 (k k2: nat):
+  $ execXAST k xastUD2 k2 <-> k2 = setException k (suc exUD) $;
 theorem execXASTSysCall {r11: nat} (k k2: nat):
   $ execXAST k xastSysCall k2 <-> E. r11 (r11 e. u64 /\
     k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $;
-theorem execXASTUD2 {r11: nat} (k k2: nat):
-  $ execXAST k xastUD2 k2 <-> k2 = setException k (suc exUD) $;
 
 theorem execXAST_T (k ast k2: nat):
   $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $;

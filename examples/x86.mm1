@@ -2079,7 +2079,7 @@ pub theorem xastMulT (sz rm: nat):
 pub theorem xastDivT (sz rm: nat):
   $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $ =
 '(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
-theorem xastCDX_T (sz ds: nat): $ xastCDX sz e. XAST <-> sz e. WSize $ =
+pub theorem xastCDX_T (sz: nat): $ xastCDX sz e. XAST <-> sz e. WSize $ =
 '(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @ bian2 opt0);
 pub theorem xastLeaT (sz ds: nat):
   $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $ =

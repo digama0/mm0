@@ -533,7 +533,7 @@ mod test {
       Default::default(), ());
     let code = compiler.finish();
     println!("code = {:#?}", code);
-    code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
+    // code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
     assert_eq_hex(&out, "\

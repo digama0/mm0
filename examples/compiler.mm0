@@ -1,0 +1,10 @@
+import "x86.mm0";
+
+-- It should suffice to use x86.mm0 directly for compiler.mm1,
+-- because it (should) add no new axioms,
+-- but in the interim we are using this to keep the partial proofs checked in CI:
+axiom sorry (p: wff): $ p $;
+
+-- Search for theorem ... = 'sorry; to find the incomplete proofs
+-- (or delete the sorry axiom and see what breaks). Proofs depending on this axiom
+-- also show up in the doc-gen tool in the "Axiom use" section.
