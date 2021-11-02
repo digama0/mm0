@@ -180,29 +180,30 @@ impl BuildAssemblyProc<'_> {
     let ([ast, s, h1], res) = self.decode_inst(inst);
     let (n, h2) = self.strlen(s);
     let (y, h3) = self.hex.add(&mut self.thm, x, n);
-    let (a, pr) = match res {
-      DecodeResult::Reg => {
-        let a = app!(self, (asmi ast));
-        (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
-          asmiI(*self.start, s, *x, *y, ast, *n, h1, h2, h3)))
-      }
-      DecodeResult::Jump { tgt, c, q } => {
-        let (q2, he) = self.hex.sub64(&mut self.thm, tgt, y);
-        assert!(q == *q2);
-        let a = app!(self, (asmJCC c {*tgt}));
-        (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
-          asmJCC_I(*self.start, s, *x, *y, c, *tgt, q, *n, h1, he, h2, h3)))
-      }
-      DecodeResult::Call { tgt, q } => {
-        let (src, he1) = self.hex.add(&mut self.thm, self.start, x);
-        let (q2, he2) = self.hex.sub64(&mut self.thm, tgt, src);
-        assert!(q == *q2);
-        let a = app!(self, (asmCall {*tgt}));
-        (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
-          asmCallI(*self.start, s, *x, *y, *src, *tgt, q, *n, h1, he1, he2, h2, h3)))
-      }
-    };
-    (s, a, y, pr)
+    todo!()
+    // let (a, pr) = match res {
+    //   DecodeResult::Reg => {
+    //     let a = app!(self, (asmi ast));
+    //     (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
+    //       asmiI(*self.start, s, *x, *y, ast, *n, h1, h2, h3)))
+    //   }
+    //   DecodeResult::Jump { tgt, c, q } => {
+    //     let (q2, he) = self.hex.sub64(&mut self.thm, tgt, y);
+    //     assert!(q == *q2);
+    //     let a = app!(self, (asmJCC c {*tgt}));
+    //     (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
+    //       asmJCC_I(*self.start, s, *x, *y, c, *tgt, q, *n, h1, he, h2, h3)))
+    //   }
+    //   DecodeResult::Call { tgt, q } => {
+    //     let (src, he1) = self.hex.add(&mut self.thm, self.start, x);
+    //     let (q2, he2) = self.hex.sub64(&mut self.thm, tgt, src);
+    //     assert!(q == *q2);
+    //     let a = app!(self, (asmCall {*tgt}));
+    //     (a, thm!(self, ((is_asmp {*self.start} s {*x} {*y} a)) =>
+    //       asmCallI(*self.start, s, *x, *y, *src, *tgt, q, *n, h1, he1, he2, h2, h3)))
+    //   }
+    // };
+    // (s, a, y, pr)
 
   }
 

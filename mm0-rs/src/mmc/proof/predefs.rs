@@ -215,12 +215,12 @@ make_predefs! {
   is_asmp_A: ThmId => "is_asmp_A";
   asmp_at: TermId => "asmp_at";
   is_asmp_at: ThmId => "is_asmp_at";
-  asmi: TermId => "asmi";
-  asmiI: ThmId => "asmiI";
-  asmJCC: TermId => "asmJCC";
-  asmJCC_I: ThmId => "asmJCC_I";
-  asmCall: TermId => "asmCall";
-  asmCallI: ThmId => "asmCallI";
+  // asmi: TermId => "asmi";
+  // asmiI: ThmId => "asmiI";
+  // asmJCC: TermId => "asmJCC";
+  // asmJCC_I: ThmId => "asmJCC_I";
+  // asmCall: TermId => "asmCall";
+  // asmCallI: ThmId => "asmCallI";
   strlenn[i: 16]: ThmId => format!("strlen{:x}", i);
 
   basicElf_ok: ThmId => "basicElf_ok";
