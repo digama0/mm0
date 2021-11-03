@@ -7,45 +7,68 @@ import "x86_determ.mm1";
 local def _x00: char = 0;
 local def _x01: char = 1;
 local def _x02: char = 2;
-local def _x00x2: string = $ _x00 ': _x00 ': s0 $;
+local def _x00x0: string = $ s0 $;
+local def _x00x1: string = $ s1 _x00 $;
+local def _x00x2: string = $ _x00 ': _x00x1 $;
+local def _x00x3: string = $ _x00 ': _x00x2 $;
 local def _x00x4: string = $ _x00x2 '+ _x00x2 $;
+local def _x00x5: string = $ _x00 ': _x00x4 $;
+local def _x00x6: string = $ _x00x2 '+ _x00x4 $;
+local def _x00x7: string = $ _x00x3 '+ _x00x4 $;
 local def _x00x8: string = $ _x00x4 '+ _x00x4 $;
+local def _x00x9: string = $ _x00 ': _x00x8 $;
+local def _x00xa: string = $ _x00x2 '+ _x00x8 $;
+local def _x00xb: string = $ _x00x3 '+ _x00x8 $;
+local def _x00xc: string = $ _x00x4 '+ _x00x8 $;
+local def _x00xd: string = $ _x00x5 '+ _x00x8 $;
+local def _x00xe: string = $ _x00x6 '+ _x00x8 $;
+local def _x00xf: string = $ _x00x7 '+ _x00x8 $;
+do (def _x00xn @ on-hexstrings @ fn (s) (atom-app "_x00x" s));
 
 theorem _x00_eq: $ _x00 = 0 $ = '{,norm_num : $ ch = _ $};
 theorem _x01_eq: $ _x01 = 1 $ = '{,norm_num : $ ch = _ $};
 theorem _x02_eq: $ _x02 = 2 $ = '{,norm_num : $ ch = _ $};
 
-theorem _x00x2_eq: $ _x00x2 = repeat 0 2 $ =
-'(s2n_RS _x00_eq @ s2n_RS _x00_eq @ s2n_R0);
-theorem _x00x4_eq: $ _x00x4 = repeat 0 4 $ =
-'(eqtr (s2n_RA _x00x2_eq _x00x2_eq) @ repeateq2 ,norm_num);
-theorem _x00x8_eq: $ _x00x8 = repeat 0 8 $ =
-'(eqtr (s2n_RA _x00x4_eq _x00x4_eq) @ repeateq2 ,norm_num);
+theorem _x00x0_eq: $ _x00x0 = repeat 0 x0 $ = '(eqtr4 s2n_R0 @ repeateq2 h2n0);
+theorem _x00x1_eq: $ _x00x1 = repeat 0 x1 $ = '(eqtr4 (s2n_R1 _x00_eq) @ repeateq2 h2n1);
+theorem _x00x2_eq: $ _x00x2 = repeat 0 x2 $ = '(s2n_RS _x00_eq _x00x1_eq ,norm_num);
+theorem _x00x3_eq: $ _x00x3 = repeat 0 x3 $ = '(s2n_RS _x00_eq _x00x2_eq ,norm_num);
+theorem _x00x4_eq: $ _x00x4 = repeat 0 x4 $ = '(s2n_RA _x00x2_eq _x00x2_eq ,norm_num);
+theorem _x00x5_eq: $ _x00x5 = repeat 0 x5 $ = '(s2n_RS _x00_eq _x00x4_eq ,norm_num);
+theorem _x00x6_eq: $ _x00x6 = repeat 0 x6 $ = '(s2n_RA _x00x2_eq _x00x4_eq ,norm_num);
+theorem _x00x7_eq: $ _x00x7 = repeat 0 x7 $ = '(s2n_RA _x00x3_eq _x00x4_eq ,norm_num);
+theorem _x00x8_eq: $ _x00x8 = repeat 0 x8 $ = '(s2n_RA _x00x4_eq _x00x4_eq ,norm_num);
+theorem _x00x9_eq: $ _x00x9 = repeat 0 x9 $ = '(s2n_RS _x00_eq _x00x8_eq ,norm_num);
+theorem _x00xa_eq: $ _x00xa = repeat 0 xa $ = '(s2n_RA _x00x2_eq _x00x8_eq ,norm_num);
+theorem _x00xb_eq: $ _x00xb = repeat 0 xb $ = '(s2n_RA _x00x3_eq _x00x8_eq ,norm_num);
+theorem _x00xc_eq: $ _x00xc = repeat 0 xc $ = '(s2n_RA _x00x4_eq _x00x8_eq ,norm_num);
+theorem _x00xd_eq: $ _x00xd = repeat 0 xd $ = '(s2n_RA _x00x5_eq _x00x8_eq ,norm_num);
+theorem _x00xe_eq: $ _x00xe = repeat 0 xe $ = '(s2n_RA _x00x6_eq _x00x8_eq ,norm_num);
+theorem _x00xf_eq: $ _x00xf = repeat 0 xf $ = '(s2n_RA _x00x7_eq _x00x8_eq ,norm_num);
+do (def _x00xn_eq @ on-hexstrings @ fn (s) (atom-app "_x00x" s "_eq"));
 
 local def ELF_IDENT_s: string =
 $ ,0x7f ': ,"E" ': ,"L" ': ,"F" ':
-  _x02 ': _x01 ': _x01 ': _x00 ': _x00x8 $;
+  _x02 ': _x01 ': _x01 ': _x00x9 $;
 
 theorem ELF_IDENT_eq: $ ELF_IDENT_s = ELF_IDENT $ =
 '(s2n_SAE @ s2n_SAE @ s2n_SAE @ s2n_SAE @ append01i @
   s2n_S _x02_eq @ s2n_S _x01_eq @ s2n_S _x01_eq @
-  s2n_RS _x00_eq _x00x8_eq);
+  eqtr _x00x9_eq @ repeateq2 h2n9);
 
-local def _ch16 (c: char): string = $ c ': _x00 ': s0 $;
-local def _ch32 (c: char): string = $ c ': _x00 ': _x00x2 $;
-local def _ch64 (c: char): string = $ _ch32 c '+ _x00x4 $;
+local def _ch16 (c: char): string = $ c ': _x00x1 $;
+local def _ch32 (c: char): string = $ c ': _x00x3 $;
+local def _ch64 (c: char): string = $ c ': _x00x7 $;
 
 theorem _ch16_eq (h: $ c = a $): $ _ch16 c = u16Bytes a $ =
-'(s2n_toBytesS0 h @ s2n_RS _x00_eq @ s2n_R0);
+'(s2n_toBytesS0 h @ eqtr _x00x1_eq @ repeateq2 h2n1);
 theorem _ch32_eq (h: $ c = a $): $ _ch32 c = u32Bytes a $ =
-'(s2n_toBytesS0 h @ s2n_RS _x00_eq @ _x00x2_eq);
+'(s2n_toBytesS0 h @ eqtr _x00x3_eq @ repeateq2 h2n3);
 theorem _ch64_eq (h: $ c = a $): $ _ch64 c = u64Bytes a $ =
-'(eqtr saddS @ s2n_toBytesS0 h @
-  eqtr (s2n_RA (s2n_RS _x00_eq _x00x2_eq) @ _x00x4_eq) @
-  repeateq2 ,norm_num);
+'(s2n_toBytesS0 h @ eqtr _x00x7_eq @ repeateq2 h2n7);
 
 --| `0x400000` as u64, the hard coded file start point
-local def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00 ': _x00x4 $;
+local def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00x5 $;
 local def load_start (x y): nat = $ ,0x4000 :x x :x y $;
 --| `0x400078`, the hard coded entry point
 local def text_start: nat = $ load_start x7 x8 $;
@@ -61,7 +84,7 @@ theorem load_start_T: $ load_start x y e. u64 $ =
 theorem load_start_eq: $ load_start_s (ch x y) = u64Bytes (load_start x y) $ =
 (focus
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
-  '(xtoBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
+  '(xtoBytesS @ eqtr4 (eqtr _x00x5_eq @ repeateq2 h2n5) toBytes02));
 
 local def ELF_header_s (e: string): string =
 $ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 ,0x3e '+ _ch32 _x01 '+
@@ -76,18 +99,18 @@ theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
   (def h0 '(mpbir (eleq1 ,to_hex) xelu8_1))
   (def h1 '(mpbir (eleq1 ,to_hex) xelu8_2))
   (def h2 '(mpbir (lteq2 @ eqtr bitsNeg1 upto16) ,norm_num))
+  (def (f x) '(eqtr4 (eqtr ,(_x00xn_eq x) @ repeateq2 ,(h2nn x)) toBytes02))
   (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
     '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
   '(ax_mp (iexe ,eqtac) @ ian elBits01 _)
   '(s2n_A ELF_IDENT_eq @ s2n_A (_ch16_eq _x02_eq) @
     s2n_A (_ch16_eq eqid) @ s2n_A (_ch32_eq _x01_eq) @
-    s2n_A he @ s2n_A (_ch64_eq ,norm_num) @
-    s2n_A (eqtr4 _x00x8_eq toBytes02) @ s2n_A (eqtr4 _x00x4_eq toBytes02) @
+    s2n_A he @ s2n_A (_ch64_eq ,norm_num) @ s2n_A ,(f 8) @  s2n_A ,(f 4) @
     s2n_A (! _ch16_eq $64$ _ ,norm_num) @ s2n_A (_ch16_eq eqid) @
     s2n_A (_ch16_eq _x01_eq) @ s2n_A (! _ch16_eq $64$ _ ,norm_num) @
-    s2n_A (eqtr4 _x00x2_eq toBytes02) (eqtr4 _x00x2_eq toBytes02)));
+    s2n_A ,(f 2) ,(f 2)));
 
-local def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00 ': _x00x4 $;
+local def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00x5 $;
 local def PAGE_SIZE: nat = $ 2 ^ ,21 $;
 theorem PAGE_SIZE_val: $ PAGE_SIZE = ,0x200000 $ =
 '(eqtr2 (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 pow12 dec2) @
@@ -96,7 +119,7 @@ theorem PAGE_SIZE_eq: $ PAGE_SIZE_s = u64Bytes PAGE_SIZE $ =
 (focus
   '(eqtr4 _ @ u64Byteseq PAGE_SIZE_val)
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
-  '(xtoBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
+  '(xtoBytesS @ eqtr4 (eqtr _x00x5_eq @ repeateq2 h2n5) toBytes02));
 
 local def basic_pHeader_s (filesz memsz: string): string =
 $ _ch32 _x01 '+ _ch32 ,7 '+
@@ -139,7 +162,7 @@ theorem basic_pHeader_ok
     (s2n_A (_ch32_eq _x01_eq) @
       s2n_A (_ch32_eq @ eqcom @ eqtr PROT_RWX_flags ,norm_num) @
       s2n_A (_ch64_eq eqid) @ s2n_A load_start_eq @
-      s2n_A (eqtr4 _x00x8_eq toBytes02) @
+      s2n_A (eqtr4 (eqtr _x00x8_eq @ repeateq2 h2n8) toBytes02) @
       s2n_A hfs @ s2n_A hms PAGE_SIZE_eq))
   norm_num
   norm_num);

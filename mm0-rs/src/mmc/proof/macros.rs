@@ -14,6 +14,7 @@ macro_rules! app {
   ($de:expr, $e:tt != $e2:tt) => {app!($de, (ne $e $e2))};
   ($de:expr, $e:tt + $e2:tt) => {app!($de, (add $e $e2))};
   ($de:expr, $e:tt * $e2:tt) => {app!($de, (mul $e $e2))};
+  ($de:expr, (($id:ident$([$ix:expr])*) $($e:tt)*)) => {app!($de, ($id$([$ix])*) $($e)*)};
   ($de:expr, ($id:ident$([$ix:expr])+) $($e:tt)*) => {{
     let t = $de.$id$([usize::from($ix)])*;
     let args = &[$(app!($de, $e)),*];

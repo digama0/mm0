@@ -3,7 +3,8 @@
 
 // Lints because of the macro heavy nature of the code
 #![allow(clippy::many_single_char_names, clippy::similar_names,
-  clippy::equatable_if_let, clippy::redundant_else, non_snake_case)]
+  clippy::equatable_if_let, clippy::redundant_else,
+  clippy::if_not_else, non_snake_case)]
 
 // Lints because the code is not finished
 #![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
@@ -194,8 +195,7 @@ pub(crate) fn render_proof(
           .map_err(|e| e.into_elab_error(sp))?;
         todo!()
       }
-      AssemblyItem::Const(_) |
-      AssemblyItem::Padding(_, _) => todo!(),
+      AssemblyItem::Const(_) => todo!(),
     }
   }
   elab.report(ElabError::info(sp, format!("{:#?}", proof)));

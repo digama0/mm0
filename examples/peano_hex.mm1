@@ -151,6 +151,10 @@ theorem s2nscons: $ c ': s = c : s $ =
 '(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
 theorem s2nscons0: $ c ': s0 = s1 c $ =
 '(eqtr s2nsadd @ eqtr (appendeq2 s2ns0) append02);
+theorem sconseq1 (c1 c2 s): $ c1 = c2 -> c1 ': s = c2 ': s $ =
+'(eqtr4g s2nscons s2nscons conseq1);
+theorem sconseq2 (c s1 s2): $ s1 = s2 -> c ': s1 = c ': s2 $ =
+'(eqtr4g s2nscons s2nscons conseq2);
 
 theorem s2n_A (h1: $ s = a $) (h2: $ t = b $): $ s '+ t = a ++ b $ =
 '(eqtr s2nsadd @ appendeq h1 h2);
@@ -160,14 +164,16 @@ theorem s2n_S (h1: $ c = a $) (h2: $ s = b $): $ c ': s = a : b $ =
 theorem s2n_SE (h: $ s = a $): $ c ': s = c : a $ = '(s2n_S eqid h);
 theorem s2n_SAE (h: $ s = a ++ b $): $ c ': s = c : a ++ b $ =
 '(eqtr4 (s2n_SE h) appendS);
+theorem s2n_SASE (h: $ s = a ++ b $): $ c ': s = (c ': a) ++ b $ =
+'(eqtr4 (s2n_SAE h) @ appendeq1 s2nscons);
 theorem append01i (h: $ a = b $): $ a = 0 ++ b $ = '(eqtr4 h append0);
 theorem s2n_R0: $ s0 = repeat a 0 $ = '(eqtr4 s2ns0 repeat0);
 theorem s2n_R1 (h: $ c = a $): $ s1 c = repeat a 1 $ =
 '(eqtr4 (s2n_1 h) repeat1);
-theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $):
-  $ s '+ t = repeat a (m + n) $ = '(eqtr4 (s2n_A h1 h2) repeatadd);
-theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $):
-  $ c ': s = repeat a (suc n) $ = '(eqtr4 (s2n_S h1 h2) repeatS);
+theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $) (h3: $ m + n = p $):
+  $ s '+ t = repeat a p $ = '(eqtr (s2n_A h1 h2) @ eqtr3 repeatadd @ repeateq2 h3);
+theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $) (h3: $ suc n = p $):
+  $ c ': s = repeat a p $ = '(eqtr (s2n_S h1 h2) @ eqtr3 repeatS @ repeateq2 h3);
 theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
 '(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
 

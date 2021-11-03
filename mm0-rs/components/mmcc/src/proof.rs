@@ -78,7 +78,7 @@ impl<'a> ElfProof<'a> {
       code: self.code,
       pos: TEXT_START,
       content: self.content(),
-      state: AssemblyItemState::Init(false),
+      state: AssemblyItemState::Init,
     }
   }
 
@@ -104,26 +104,22 @@ pub enum AssemblyItem<'a> {
   Proc(Proc<'a>),
   /// Insert a block of bytes corresponding to a constant.
   Const(Const<'a>),
-  /// Insert a block of padding, always zeroed.
-  Padding(u32, &'a [u8]),
 }
 
 impl<'a> AssemblyItem<'a> {
   /// The starting virtual address of the item being assembled.
-  #[must_use] pub fn start(&self) -> u64 {
+  #[must_use] pub fn start(&self) -> u32 {
     match *self {
-      AssemblyItem::Proc(ref proc) => proc.start(),
-      AssemblyItem::Const(ref data) => data.start(),
-      AssemblyItem::Padding(start, _) => start.into(),
+      AssemblyItem::Proc(ref proc) => proc.start,
+      AssemblyItem::Const(ref data) => data.start,
     }
   }
 
   /// The byte slice in the file corresponding to the item being assembled.
   #[must_use] pub fn content(&self) -> &'a [u8] {
     match *self {
-      AssemblyItem::Proc(ref proc) => proc.content(),
-      AssemblyItem::Const(ref data) => data.content(),
-      AssemblyItem::Padding(_, content) => content,
+      AssemblyItem::Proc(ref proc) => proc.content,
+      AssemblyItem::Const(ref data) => data.content,
     }
   }
 }
@@ -131,8 +127,8 @@ impl<'a> AssemblyItem<'a> {
 #[derive(Debug)]
 #[allow(variant_size_differences)]
 enum AssemblyItemState<'a> {
-  Init(bool),
-  Proc(ProcId, bool),
+  Init,
+  Proc(ProcId),
   Const(std::slice::Iter<'a, Symbol>),
 }
 
@@ -155,8 +151,8 @@ impl<'a> AssemblyItemIter<'a> {
     left
   }
 
-  fn pad(&mut self) -> &'a [u8] {
-    let aligned = (self.pos + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
+  fn padded_content(&mut self, len: u32) -> &'a [u8] {
+    let aligned = (self.pos + len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     self.advance(aligned - self.pos)
   }
 }
@@ -165,42 +161,31 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
   type Item = AssemblyItem<'a>;
   fn next(&mut self) -> Option<Self::Item> {
     let start = self.pos;
-    macro_rules! pad {() => {
-      match self.pad() {
-        [] => {}
-        pad => return Some(AssemblyItem::Padding(start, pad))
-      }
-    }}
     loop {
       match self.state {
-        AssemblyItemState::Init(ref mut after @ false) => {
-          *after = true;
+        AssemblyItemState::Init => {
+          self.state = AssemblyItemState::Proc(ProcId(0));
           return Some(AssemblyItem::Proc(Proc {
             code: self.code, cfg: &self.code.init.0, proc: &self.code.init.1,
             id: None,
             start,
-            content: self.advance(self.code.init.1.len),
+            content: self.padded_content(self.code.init.1.len),
           }))
         }
-        AssemblyItemState::Init(true) => {
-          self.state = AssemblyItemState::Proc(ProcId(0), false);
-          pad!();
-        }
-        AssemblyItemState::Proc(n, ref mut after @ false) => {
+        AssemblyItemState::Proc(mut n) => {
           if let Some((_, proc)) = self.code.funcs.get(n) {
-            *after = true;
+            n.0 += 1;
             return Some(AssemblyItem::Proc(Proc {
               code: self.code,
               cfg: &self.code.mir[&self.code.func_names[n]].body,
               proc,
               id: Some(n),
               start,
-              content: self.advance(proc.len),
+              content: self.padded_content(proc.len),
             }))
           }
           self.state = AssemblyItemState::Const(self.code.consts.ordered.iter())
         }
-        AssemblyItemState::Proc(ref mut n, true) => { n.0 += 1; pad!() }
         AssemblyItemState::Const(ref mut iter) => {
           let name = *iter.next()?;
           if let (size, ConstRef::Ptr(addr)) = self.code.consts.map[&name] {
@@ -219,19 +204,14 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
 
 /// A constant that has been written to the read-only section.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct Const<'a> {
-  name: Symbol,
-  start: u32,
-  content: &'a [u8],
-}
-
-impl<'a> Const<'a> {
   /// The name of this constant.
-  #[must_use] pub fn name(&self) -> Symbol { self.name }
+  pub name: Symbol,
   /// The starting virtual address of this constant.
-  #[must_use] pub fn start(&self) -> u64 { self.start.into() }
+  pub start: u32,
   /// The byte data stored for this constant.
-  #[must_use] pub fn content(&self) -> &'a [u8] { self.content }
+  pub content: &'a [u8],
 }
 
 /// An iterator over the top level program items in proof order (function dependency order,
@@ -268,9 +248,12 @@ pub struct Proc<'a> {
   code: &'a LinkedCode,
   cfg: &'a Cfg,
   proc: &'a PCode,
-  id: Option<ProcId>,
-  start: u32,
-  content: &'a [u8],
+  /// The function being proven, or `None` for the init function.
+  pub id: Option<ProcId>,
+  /// The starting virtual address for the function.
+  pub start: u32,
+  /// The code of the function as a byte slice. Includes trailing padding.
+  pub content: &'a [u8],
 }
 
 impl LinkedCode {
@@ -290,16 +273,17 @@ impl LinkedCode {
 }
 
 impl<'a> Proc<'a> {
-  /// Returns the function being proven, or `None` for the init function.
-  #[must_use] pub fn proc(&self) -> Option<ProcId> { self.id }
-  /// The starting virtual address for the function.
-  #[must_use] pub fn start(&self) -> u64 { self.start.into() }
-  /// The code of the function as a byte slice.
-  #[must_use] pub fn content(&self) -> &'a [u8] { self.content }
-
   /// The name of the function, or `None` for the init function.
   #[must_use] pub fn name(&self) -> Option<Symbol> {
     self.id.map(|id| self.code.func_names[id])
+  }
+
+  /// The size of the procedure with padding omitted.
+  #[must_use] pub fn len_no_padding(&self) -> u32 { self.proc.len }
+
+  /// The trailing padding of the procedure.
+  #[must_use] pub fn trailing_padding(&self) -> &'a [u8] {
+    &self.content[self.len_no_padding() as usize..]
   }
 
   /// An iterator over the blocks of the procedure in assembly order.
@@ -621,24 +605,23 @@ impl ElfProof<'_> {
     let mut init = None;
     let mut procs = IdxVec::<ProcId, _>::new();
     let mut consts = HashMap::new();
-    let mut pos = self.entry();
+    let mut pos = TEXT_START;
     for item in self.assembly() {
       assert!(pos == item.start() && !item.content().is_empty());
-      pos += u64::try_from(item.content().len()).unwrap();
+      pos += u32::try_from(item.content().len()).unwrap();
       match item {
         AssemblyItem::Proc(code) => {
-          match code.proc() {
+          match code.id {
             None => { assert!(init.is_none()); init = Some(code) }
             Some(p) => assert!(procs.push(code) == p),
           }
+          assert!(!code.trailing_padding().len() < 16)
         }
         AssemblyItem::Const(data) =>
-          assert!(consts.insert(data.start(), data.content()).is_none()),
-        AssemblyItem::Padding(_, pad) =>
-          assert!(!pad.is_empty() && pad.len() < 16),
+          assert!(consts.insert(data.start, data.content).is_none()),
       }
     }
-    assert!(pos == self.p_filesz());
+    assert!(u64::from(pos) == self.p_filesz());
     let init = init.unwrap();
 
     for item in self.proc_proofs() {

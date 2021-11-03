@@ -1652,7 +1652,7 @@ impl PInst {
 
     fn get_binop(inst: &PInst) -> (Size, PReg, PRegMemImm, u8) {
       match *inst {
-        PInst::Binop { sz, dst, src, op } => (sz, dst, src, op as u8),
+        PInst::Binop { op, sz, dst, src } => (sz, dst, src, op as u8),
         PInst::Cmp { sz, op: Cmp::Cmp, src1, src2 } => (sz, src1, src2, 7),
         PInst::Imm { sz, dst, src: 0 } =>
           (sz.min(Size::S32), dst, PRegMemImm::Reg(dst), Binop::Xor as u8),

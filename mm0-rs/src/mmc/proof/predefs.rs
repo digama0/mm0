@@ -95,6 +95,8 @@ make_predefs! {
   ltneri: ThmId => "ltneri";
   /// `leid: $ a <= a $`
   leid: ThmId => "leid";
+  /// `znsub: `
+  znsub: TermId => "znsub";
   /// `pr: nat > nat > nat`
   pr: TermId => "pr";
   /// `cons: nat > nat > nat`
@@ -142,32 +144,18 @@ make_predefs! {
   /// `decadc[0..=f][0..=f]: suc (x[a] + x[b]) = hex(a+b+1)`
   decadcn[a: 16][b: 16]: ThmId => format!("decadc{:x}{:x}", a, b);
 
-  /// `add_xx0 (h1: $ a + c = e $) (h2: $ b + d = f $): $ a :x b + c :x d = e :x f $`
+  // Theorems to compute `a + b = c` and `suc (a + b) = c`
   add_xx0: ThmId => "add_xx0";
-  /// `add_xx1 (h1: $ suc (a + c) = e $) (h2: $ b + d = x1 :x f $): $ a :x b + c :x d = e :x f $`
   add_xx1: ThmId => "add_xx1";
-  /// `adc_xx0 (h1: $ a + c = e $) (h2: $ suc (b + d) = f $): $ suc (a :x b + c :x d) = e :x f $`
-  adc_xx0: ThmId => "adc_xx0";
-  /// `adc_xx1 (h1: $ suc (a + c) = e $) (h2: $ suc (b + d) = x1 :x f $):
-  ///   $ suc (a :x b + c :x d) = e :x f $`
-  adc_xx1: ThmId => "adc_xx1";
-  /// `add_0x0 (h: $ a + c = d $): $ h2n a + b :x c = b :x d $`
   add_0x0: ThmId => "add_0x0";
-  /// `add_0x1 (h1: $ suc b = d $) (h2: $ a + c = x1 :x e $): $ h2n a + b :x c = d :x e $`
   add_0x1: ThmId => "add_0x1";
-  /// `adc_0x0 (h: $ suc (a + c) = d $): $ suc (h2n a + b :x c) = b :x d $`
-  adc_0x0: ThmId => "adc_0x0";
-  /// `adc_0x1 (h1: $ suc b = d $) (h2: $ suc (a + c) = x1 :x e $):
-  ///   $ suc (h2n a + b :x c) = d :x e $`
-  adc_0x1: ThmId => "adc_0x1";
-  /// `add_x00 (h: $ b + c = d $): $ a :x b + h2n c = a :x d $`
   add_x00: ThmId => "add_x00";
-  /// `add_x01 (h1: $ suc a = d $) (h2: $ b + c = x1 :x e $): $ a :x b + h2n c = d :x e $`
   add_x01: ThmId => "add_x01";
-  /// `adc_x00 (h: $ suc (b + c) = d $): $ suc (a :x b + h2n c) = a :x d $`
+  adc_xx0: ThmId => "adc_xx0";
+  adc_xx1: ThmId => "adc_xx1";
+  adc_0x0: ThmId => "adc_0x0";
+  adc_0x1: ThmId => "adc_0x1";
   adc_x00: ThmId => "adc_x00";
-  /// `adc_x01 (h1: $ suc a = d $) (h2: $ suc (b + c) = x1 :x e $):
-  ///   $ suc (a :x b + h2n c) = d :x e $`
   adc_x01: ThmId => "adc_x01";
 
   sub64: TermId => "sub64";
@@ -175,11 +163,6 @@ make_predefs! {
   /// `bit: nat > nat > nat`
   bit: TermId => "bit";
   xbit[n: 16][i: 4]: ThmId => format!("xbit{:x}{:x}", n, i);
-  xsplitBits[i: 5][n: 16]: ThmId => {
-    let mut s = format!("xsplitBits_{:x}", n);
-    for &a in SPLIT_BITS_PART[i] { s.push((b'0' + a).into()) }
-    s
-  };
 
   /// `wSz8 (have_rex: wff): nat`
   wSz8: TermId => "wSz8";
@@ -197,13 +180,21 @@ make_predefs! {
   opSizeW_0: ThmId => "opSizeW_0";
   opSizeW_S: ThmId => "opSizeW_S";
 
-  xastJCC: TermId => "xastJCC";
-  decode: TermId => "decode";
-  decodeAux: TermId => "decodeAux";
-  decode0I: ThmId => "decode0I";
-  decode1I: ThmId => "decode1I";
+  REX[i: 4]: TermId => ["REX_B", "REX_X", "REX_R", "REX_W"][i];
+  REX_0[i: 4]: ThmId => ["REX_B_0", "REX_X_0", "REX_R_0", "REX_W_0"][i];
+  REX_Si[i: 4]: ThmId => ["REX_B_Si", "REX_X_Si", "REX_R_Si", "REX_W_Si"][i];
 
-  /// `asmp_A: set > set > set`
+  base_RIP: TermId => "base_RIP";
+  base_reg: TermId => "base_reg";
+
+  unopInc: TermId => "unopInc";
+  unopDec: TermId => "unopDec";
+  unopNot: TermId => "unopNot";
+  unopNeg: TermId => "unopNeg";
+
+  padn[i: 16]: TermId => format!("_x00x{:x}", i);
+
+  /// `asmp_A (A B: set): set`
   asmp_A: TermId => "asmp_A";
   /// `is_asmp_A (p s t x y z A B)
   ///   (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $):
@@ -213,20 +204,244 @@ make_predefs! {
   ///   (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $):
   ///   $ is_asmp p s x z (asmp_A A B) $`
   is_asmp_A: ThmId => "is_asmp_A";
+  /// `asmp_at (n: nat) (A: set): set`
   asmp_at: TermId => "asmp_at";
+  /// `is_asmp_at (p s x y A): $ is_asmp p s x y A $ > $ is_asmp p s x y (asmp_at x A) $`
   is_asmp_at: ThmId => "is_asmp_at";
-  // asmi: TermId => "asmi";
-  // asmiI: ThmId => "asmiI";
-  // asmJCC: TermId => "asmJCC";
-  // asmJCC_I: ThmId => "asmJCC_I";
-  // asmCall: TermId => "asmCall";
-  // asmCallI: ThmId => "asmCallI";
+  /// `asmp_pad: set`
+  asmp_pad: TermId => "asmp_pad";
+  is_asmp_A_padn[i: 16]: ThmId if i != 0 => format!("is_asmp_A_pad_{:x}", i);
+
+  /// `strlen (s: string) (n: nat): wff`
+  strlen: TermId => "strlen";
   strlenn[i: 16]: ThmId => format!("strlen{:x}", i);
 
-  basicElf_ok: ThmId => "basicElf_ok";
+  /// `parseInst (p ip: nat) (s: string) (I: set): wff`
+  parseInst: TermId => "parseInst";
+  parseInstE: ThmId => "parseInstE";
+  parseInst01: ThmId => "parseInst01";
+  parseInst11: ThmId => "parseInst11";
+  parseInst00: ThmId => "parseInst00";
+  parseInst10: ThmId => "parseInst10";
+
+  /// `IRM_reg (reg: hex): nat`
+  IRM_reg: TermId => "IRM_reg";
+  /// `IRM_mem (si base off: nat): nat`
+  IRM_mem: TermId => "IRM_mem";
+  /// `IRM_imm32 (imm: nat): nat`
+  IRM_imm32: TermId => "IRM_imm32";
+  /// `IRM_imm64 (imm: nat): nat`
+  IRM_imm64: TermId => "IRM_imm64";
+
+  /// `parseUBytes (k n: nat) (s: string): wff`
+  parseUBytes: TermId => "parseUBytes";
+
+  /// `parseIBytesPos (k n: nat) (s: string): wff`
+  parseIBytesPos: TermId => "parseIBytesPos";
+  parseIBytesPosS: ThmId => "parseIBytesPosS";
+  parseIBytesPosS2: ThmId => "parseIBytesPosS2";
+  parseIBytesPosS1: ThmId => "parseIBytesPosS1";
+  parseIBytesPos02: ThmId => "parseIBytesPos02";
+  parseIBytesPos01: ThmId => "parseIBytesPos01";
+
+  /// `parseIBytesNeg (k n: nat) (s: string): wff`
+  parseIBytesNeg: TermId => "parseIBytesNeg";
+  parseIBytesNegS: ThmId => "parseIBytesNegS";
+  parseIBytesNegS2: ThmId => "parseIBytesNegS2";
+  parseIBytesNegS1: ThmId => "parseIBytesNegS1";
+  parseIBytesNegS0: ThmId => "parseIBytesNegS0";
+  parseIBytesNeg02: ThmId => "parseIBytesNeg02";
+  parseIBytesNeg01: ThmId => "parseIBytesNeg01";
+
+  /// `posZ: nat > nat` (the `nat > int` injection)
+  posZ: TermId => "posZ";
+  /// `negZ: nat > nat` (semantically `nat > int`, maps `n: nat` to `-n-1: int` )
+  negZ: TermId => "negZ";
+
+  /// `parseImmN (k imm: nat) (s: string): wff`
+  parseImmN: TermId => "parseImmN";
+  parseImmN_pos: ThmId => "parseImmN_pos";
+  parseImmN_neg: ThmId => "parseImmN_neg";
+
+  /// `parseImm8 (imm: nat) (s: string): wff`
+  parseImm8: TermId => "parseImm8";
+  parseImm8_I: ThmId => "parseImm8_I";
+  /// `parseImm32 (imm: nat) (s: string): wff`
+  parseImm32: TermId => "parseImm32";
+  parseImm32_I: ThmId => "parseImm32_I";
+  /// `parseImm64 (imm: nat) (s: string): wff`
+  parseImm64: TermId => "parseImm64";
+  parseImm64_I: ThmId => "parseImm64_I";
+  /// `parseImm8S (imm: nat) (s s2: string): wff`
+  parseImm8S: TermId => "parseImm8S";
+  parseImm8S_I: ThmId => "parseImm8S_I";
+  /// `parseImm32S (imm: nat) (s s2: string): wff`
+  parseImm32S: TermId => "parseImm32S";
+  parseImm32S_I: ThmId => "parseImm32S_I";
+
+  /// `parseImm (sz imm: nat) (s: string): wff`
+  parseImm: TermId => "parseImm";
+  parseImm_8: ThmId => "parseImm_8";
+  parseImm_32: ThmId => "parseImm_32";
+  parseImm_64: ThmId => "parseImm_64";
+
+  splitBits[i: 5]: TermId => format!("splitBits{}", SPLIT_BITS_NAMES[i]);
+  splitBitsn[i: 5][n: 16]: ThmId => format!("splitBits{}_{:x}", SPLIT_BITS_NAMES[i], n);
+
+  /// `parseDisplacement (mod q: nat) (l l2: string): wff`
+  parseDisplacement: TermId => "parseDisplacement";
+  parseDisplacement_0: ThmId => "parseDisplacement_0";
+  parseDisplacement_8: ThmId => "parseDisplacement_8";
+  parseDisplacement_32: ThmId => "parseDisplacement_32";
+
+  /// `scaleReg (sc: nat) (ix: hex): nat`
+  scaleReg: TermId => "scaleReg";
+
+  /// `parseSI (sc: nat) (ix: hex) (osi: nat): wff`
+  parseSI: TermId => "parseSI";
+  parseSI_n[n: 16]: ThmId => format!("parseSI_{:x}", n);
+
+  /// `sibSideCond (base: hex) (md: nat): wff`
+  sibSideCond: TermId => "sibSideCond";
+  sibSideCond_M[m: 3]: ThmId if m != 0 => format!("sibSideCond_M{}", m);
+  sibSideCond_B[b: 16]: ThmId if b != 5 => format!("sibSideCond_B{:x}", b);
+
+  /// `modrmSideCond (base md: nat): wff`
+  modrmSideCond: TermId => "modrmSideCond";
+  modrmSideCond_m[m: 3]: ThmId if m != 0 => format!("modrmSideCond_5{}", m);
+  modrmSideCond_n[n: 8]: ThmId if n != 4 && n != 5 => format!("modrmSideCond_{:x}", n);
+
+  /// `parseModRM2 (rex rm rm2 mod: nat) (l l2: string): wff`
+  parseModRM2: TermId => "parseModRM2";
+  parseModRM2_reg: ThmId => "parseModRM2_reg";
+  parseModRM2_rip: ThmId => "parseModRM2_rip";
+  parseModRM2_sib0: ThmId => "parseModRM2_sib0";
+  parseModRM2_sibReg: ThmId => "parseModRM2_sibReg";
+  parseModRM2_disp: ThmId => "parseModRM2_disp";
+
+  /// `parseModRM (rex: nat) (rn: hex) (rm: nat) (l l2: string): wff`
+  parseModRM: TermId => "parseModRM";
+  parseModRM_S: ThmId => "parseModRM_S";
+  parseModRM_1: ThmId => "parseModRM_1";
+
+  /// `parseBinop (op: hex) (sz: nat) (dst: hex) (src: nat) (I: set): wff`
+  parseBinop: TermId => "parseBinop";
+  parseBinopBinop: ThmId => "parseBinopBinop";
+  parseBinopClear32: ThmId => "parseBinopClear32";
+  parseBinopClear64: ThmId => "parseBinopClear64";
+
+  /// `hasREX (rex: nat) (b: wff): wff`
+  hasREX: TermId => "hasREX";
+  hasREX0: ThmId => "hasREX0";
+  hasREXS: ThmId => "hasREXS";
+
+  /// `instBinop (opc: hex) (sz: nat) (dst: hex) (src: nat): set`
+  instBinop: TermId => "instBinop";
+  /// `instShift (opc: hex) (sz: nat) (dst: hex) (src: nat): set`
+  instShift: TermId => "instShift";
+  /// `instImm (sz: nat) (dst: hex) (src: nat): set`
+  instImm: TermId => "instImm";
+  /// `instMovSX (dst_sz: nat) (dst: hex) (src_sz src: nat): set`
+  instMovSX: TermId => "instMovSX";
+  /// `instMovZX (dst_sz: nat) (dst: hex) (src_sz src: nat): set`
+  instMovZX: TermId => "instMovZX";
+  /// `instMov (sz dst src: nat): set`
+  instMov: TermId => "instMov";
+  /// `instPush (src: nat): set`
+  instPush: TermId => "instPush";
+  /// `instPop (dst: hex): set`
+  instPop: TermId => "instPop";
+  /// `instJump (tgt: nat): set`
+  instJump: TermId => "instJump";
+  /// `instJCC (c: hex) (tgt: nat): set`
+  instJCC: TermId => "instJCC";
+  /// `instCall (tgt: nat): set`
+  instCall: TermId => "instCall";
+  /// `instRet: set`
+  instRet: TermId => "instRet";
+  /// `instCDX (sz: nat): set`
+  instCDX: TermId => "instCDX";
+  /// `instLea (sz dst si base off: nat): set`
+  instLea: TermId => "instLea";
+  /// `instTest (sz src1 src2: nat): set`
+  instTest: TermId => "instTest";
+  /// `instUnop (op sz: nat) (dst: hex): set`
+  instUnop: TermId => "instUnop";
+  /// `instMul (sz src: nat): set`
+  instMul: TermId => "instMul";
+  /// `instDiv (sz src: nat): set`
+  instDiv: TermId => "instDiv";
+  /// `instSetCC (c: hex) (b: wff) (dst: hex): set`
+  instSetCC: TermId => "instSetCC";
+  /// `instCMov (c: hex) (sz dst src: nat): set`
+  instCMov: TermId => "instCMov";
+  /// `instSysCall: set`
+  instSysCall: TermId => "instSysCall";
+  /// `instUD2: set`
+  instUD2: TermId => "instUD2";
+  /// `instAssert (c: hex): set`
+  instAssert: TermId => "instAssert";
+
+  /// `parseOpc (p ip: nat) (s: string) (rex: nat) (opc: char) (I: set): wff`
+  parseOpc: TermId => "parseOpc";
+  parseBinopRAX: ThmId => "parseBinopRAX";
+  parseBinopImm: ThmId => "parseBinopImm";
+  parseBinopImm8: ThmId => "parseBinopImm8";
+  parseBinopReg: ThmId => "parseBinopReg";
+  parseBinopHi: ThmId => "parseBinopHi";
+  parseBinopHi1: ThmId => "parseBinopHi1";
+  parseBinopHiReg: ThmId => "parseBinopHiReg";
+  parseMovSLQ: ThmId => "parseMovSLQ";
+  parseMovSB: ThmId => "parseMovSB";
+  parseMovZB: ThmId => "parseMovZB";
+  parseMovLoad: ThmId => "parseMovLoad";
+  parseMovZLQ: ThmId => "parseMovZLQ";
+  parseMovStore: ThmId => "parseMovStore";
+  parseMov32: ThmId => "parseMov32";
+  parseMov64: ThmId => "parseMov64";
+  parseMovImm: ThmId => "parseMovImm";
+  parsePushImm8: ThmId => "parsePushImm8";
+  parsePushImm32: ThmId => "parsePushImm32";
+  parsePushReg: ThmId => "parsePushReg";
+  parsePushMem: ThmId => "parsePushMem";
+  parsePopReg: ThmId => "parsePopReg";
+  parseJump8: ThmId => "parseJump8";
+  parseJump32: ThmId => "parseJump32";
+  parseJCC8: ThmId => "parseJCC8";
+  parseJCCTwo: ThmId => "parseJCCTwo";
+  parseCall: ThmId => "parseCall";
+  parseRet: ThmId => "parseRet";
+  parseCDQ: ThmId => "parseCDQ";
+  parseCQO: ThmId => "parseCQO";
+  parseLea32: ThmId => "parseLea32";
+  parseLea64: ThmId => "parseLea64";
+  parseTest: ThmId => "parseTest";
+  parseTestRAX: ThmId => "parseTestRAX";
+  parseTestHi: ThmId => "parseTestHi";
+  parseInc: ThmId => "parseInc";
+  parseDec: ThmId => "parseDec";
+  parseNot: ThmId => "parseNot";
+  parseNeg: ThmId => "parseNeg";
+  parseMul: ThmId => "parseMul";
+  parseDiv: ThmId => "parseDiv";
+  parseSetCC: ThmId => "parseSetCC";
+  parseCMov: ThmId => "parseCMov";
+  parseSysCall: ThmId => "parseSysCall";
+  parseUD2: ThmId => "parseUD2";
+  parseAssert: ThmId => "parseAssert";
+
+  // basicElf_ok: ThmId => "basicElf_ok";
+}
+
+pub(crate) enum Rex {
+  B = 0,
+  X = 1,
+  R = 2,
+  W = 3,
 }
 
 const SPLIT_BITS_PART: [&[u8]; 5] = [&[1, 3], &[2, 2], &[3, 1], &[1, 2, 1], &[1, 1, 1, 1]];
+const SPLIT_BITS_NAMES: [&str; 5] = ["13", "22", "31", "121", "1111"];
 #[derive(Copy, Clone)]
 pub(crate) enum SplitBits {
   Sb13 = 0,
@@ -238,4 +453,3 @@ pub(crate) enum SplitBits {
 impl SplitBits {
   pub(crate) const fn part(self) -> &'static [u8] { SPLIT_BITS_PART[self as usize] }
 }
-
