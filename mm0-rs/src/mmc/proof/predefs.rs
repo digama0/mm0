@@ -257,6 +257,8 @@ make_predefs! {
   posZ: TermId => "posZ";
   /// `negZ: nat > nat` (semantically `nat > int`, maps `n: nat` to `-n-1: int` )
   negZ: TermId => "negZ";
+  znsub_posZ: ThmId => "znsub_posZ";
+  znsub_negZ: ThmId => "znsub_negZ";
 
   /// `parseImmN (k imm: nat) (s: string): wff`
   parseImmN: TermId => "parseImmN";
@@ -394,9 +396,9 @@ make_predefs! {
   parseMovSLQ: ThmId => "parseMovSLQ";
   parseMovSB: ThmId => "parseMovSB";
   parseMovZB: ThmId => "parseMovZB";
+  parseMovStore: ThmId => "parseMovStore";
   parseMovLoad: ThmId => "parseMovLoad";
   parseMovZLQ: ThmId => "parseMovZLQ";
-  parseMovStore: ThmId => "parseMovStore";
   parseMov32: ThmId => "parseMov32";
   parseMov64: ThmId => "parseMov64";
   parseMovImm: ThmId => "parseMovImm";

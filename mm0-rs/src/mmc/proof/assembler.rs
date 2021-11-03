@@ -1,5 +1,5 @@
 use mm0_util::{AtomId, FileSpan, Modifiers, Span};
-use mmcc::{arch::{OpcodeLayout, PInst}, proof::{AssemblyBlocks, Inst, Proc}, types::Size};
+use mmcc::{arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop}, proof::{AssemblyBlocks, Inst, Proc}, types::Size};
 
 use super::{ProofDedup, Predefs, predefs::Rex, ProofId, Dedup, norm_num::{HexCache, Num}};
 
@@ -35,6 +35,12 @@ fn parse_u8(p: &mut &[u8]) -> u8 { parse_arr::<1>(p)[0] }
 fn parse_u32(p: &mut &[u8]) -> u32 { u32::from_le_bytes(parse_arr(p)) }
 fn parse_u64(p: &mut &[u8]) -> u64 { u64::from_le_bytes(parse_arr(p)) }
 
+#[allow(clippy::cast_possible_wrap)]
+fn parse_i8_64(p: &mut &[u8]) -> i64 { i64::from(parse_u8(p) as i8) }
+
+#[allow(clippy::cast_possible_wrap)]
+fn parse_i32_64(p: &mut &[u8]) -> i64 { i64::from(parse_u32(p) as i32) }
+
 type P<A> = (A, ProofId);
 
 impl BuildAssemblyProc<'_> {
@@ -49,6 +55,21 @@ impl BuildAssemblyProc<'_> {
   fn xbit(&mut self, hex: u8, i: u8) -> (P<u8>, ProofId) {
     let a = self.dn((hex >> i) & 1);
     (a, thm!(self.thm, CACHE[xbit[hex][i]]: (bit (h2n {self.hex[hex]}) (dn[i])) = {a.1}))
+  }
+
+  /// Proves `(a, |- a -ZN b = c)` given `b` and `c`.
+  #[allow(clippy::cast_sign_loss)]
+  fn znsub_left(&mut self, b: Num, c: i64) -> (Num, ProofId) {
+    let a = self.hex.from_u64(&mut self.thm, b.val.wrapping_add(c as u64));
+    if c < 0 {
+      let c = self.hex.from_u64(&mut self.thm, !c as u64);
+      let (_, h) = self.hex.adc(&mut self.thm, true, a, c);
+      (a, thm!(self.thm, znsub_negZ(*a, *b, *c, h): (znsub {*a} {*b}) = (negZ {*c})))
+    } else {
+      let c = self.hex.from_u64(&mut self.thm, c as u64);
+      let (_, h) = self.hex.add(&mut self.thm, b, c);
+      (a, thm!(self.thm, znsub_negZ(*a, *b, *c, h): (znsub {*a} {*b}) = (posZ {*c})))
+    }
   }
 
   /// Proves `(a, |- REX_[B/X/R/W] rex = d[a])`
@@ -420,11 +441,19 @@ impl BuildAssemblyProc<'_> {
     ([rn.1, rm, s, l2, th], ret)
   }
 
+  /// Proves `([rn, rm, l, |- parseModRM_N rex rn rm l s0], r)`
+  /// if `f` produces `(l2, r)`.
+  fn parse_modrm(&mut self, p: &mut &[u8], rex: P<Option<u8>>) -> [ProofId; 4] {
+    let ([rn, rm, l, _, th], ()) = self.parse_modrm_then(p, rex, |this, p| {
+      (app!(this, (s0)), ())
+    });
+    [rn, rm, l, th]
+  }
+
   /// Proves `[I, |- parseBinop opc sz dst src I]`.
   fn parse_binop(&mut self, pinst: &PInst,
-    op: u8, sz: ProofId, dst: u8, src: ProofId
+    op: ProofId, sz: ProofId, dst: ProofId, src: ProofId
   ) -> [ProofId; 2] {
-    let (op, dst) = (self.hex[op], self.hex[dst]);
     match pinst {
       PInst::Binop { .. } | PInst::Cmp { .. } => {
         let inst = app!(self.thm, (instBinop op sz dst src));
@@ -463,52 +492,418 @@ impl BuildAssemblyProc<'_> {
     let opch = self.hex.ch(&mut self.thm, opc);
     match layout {
       OpcodeLayout::BinopRAX(_) => {
-        let ([v, eq1, o], h1) = self.hex.split_bits_121(&mut self.thm, y);
-        let ([pc, eq2], h2) = self.hex.split_bits_22(&mut self.thm, x);
-        let opc = (opc >> 3) & 7;
-        let ([eq3, eq4, eq5], h3) = self.hex.split_bits_121(&mut self.thm, opc);
-        assert!((eq1.0, eq2.0, eq3, eq4, eq5.0) == (2, 0, o, pc, 0));
+        let ([v, _, o], h1) = self.hex.split_bits_121(&mut self.thm, y);
+        let ([pc, _], h2) = self.hex.split_bits_22(&mut self.thm, x);
+        let (opc, h3) = self.hex.unsplit_bits_121(&mut self.thm, o.0, pc.0, 0);
         let [sz, h4] = self.op_size_w(rex, v);
         let [src, l, h5] = self.parse_imm(p, sz);
         let esrc = app!(self.thm, (IRM_imm32 src));
-        let [inst, h6] = self.parse_binop(pinst, opc, sz, 0, esrc);
+        let dst = self.hex[0];
+        let [inst, h6] = self.parse_binop(pinst, opc.1, sz, dst, esrc);
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
-          parseBinopRAX(inst, *ip, l, o.1, self.hex[opc], *self.start,
-            pc.1, rex.1, src, sz, v.1, self.hex[x], self.hex[y],
-            h1, h2, h3, h4, h5, h6));
+          parseBinopRAX(inst, *ip, l, o.1, opc.1, *self.start,
+            pc.1, rex.1, src, sz, v.1, self.hex[x], self.hex[y], h1, h2, h3, h4, h5, h6));
         [l, opch, inst, th]
       }
-      OpcodeLayout::BinopImm(..) => todo!(),
-      OpcodeLayout::BinopImm8(_) => todo!(),
-      OpcodeLayout::BinopReg(_) => todo!(),
-      OpcodeLayout::BinopHi(_) => todo!(),
-      OpcodeLayout::BinopHi1(_) => todo!(),
-      OpcodeLayout::BinopHiReg(_) => todo!(),
-      OpcodeLayout::MovSX(_) => todo!(),
-      OpcodeLayout::MovReg(_) => todo!(),
-      OpcodeLayout::Mov32 => todo!(),
-      OpcodeLayout::Mov64 => todo!(),
-      OpcodeLayout::MovImm(_) => todo!(),
-      OpcodeLayout::PushImm(_) => todo!(),
-      OpcodeLayout::PushReg => todo!(),
-      OpcodeLayout::PopReg => todo!(),
-      OpcodeLayout::Jump(_) => todo!(),
-      OpcodeLayout::Jcc8 => todo!(),
-      OpcodeLayout::Call => todo!(),
-      OpcodeLayout::Ret => todo!(),
-      OpcodeLayout::Cdx => todo!(),
-      OpcodeLayout::Lea(_) => todo!(),
-      OpcodeLayout::Test(_) => todo!(),
-      OpcodeLayout::TestRAX(_) => todo!(),
-      OpcodeLayout::Hi(_) => todo!(),
-      OpcodeLayout::HiTest(..) => todo!(),
-      OpcodeLayout::SetCC(_) => todo!(),
-      OpcodeLayout::CMov(_) => todo!(),
-      OpcodeLayout::MovX(_) => todo!(),
-      OpcodeLayout::Jcc => todo!(),
-      OpcodeLayout::SysCall => todo!(),
-      OpcodeLayout::Assert => todo!(),
-      OpcodeLayout::Ud2 => todo!(),
+      OpcodeLayout::BinopImm(..) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let ([opc, dst, l1, l2, h3], (src, h4)) = self.parse_modrm_then(p, rex, |this, p| {
+          let [src, l2, h4] = this.parse_imm(p, sz);
+          (l2, (src, h4))
+        });
+        let esrc = app!(self.thm, (IRM_imm32 src));
+        let [inst, h5] = self.parse_binop(pinst, opc, sz, dst, esrc);
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseBinopImm(inst, dst, *ip, l1, l2, opc, *self.start,
+            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4, h5));
+        [l1, opch, inst, th]
+      }
+      OpcodeLayout::BinopImm8(_) =>  {
+        let v = self.dn(1);
+        let [sz, h1] = self.op_size_w(rex, v);
+        let ([opc, dst, l1, l2, h2], (src, h3)) = self.parse_modrm_then(p, rex, |this, p| {
+          let [src, l2, h3] = this.parse_imm_8(p);
+          (l2, (src, h3))
+        });
+        let esrc = app!(self.thm, (IRM_imm32 src));
+        let [inst, h4] = self.parse_binop(pinst, opc, sz, dst, esrc);
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseBinopImm(inst, dst, *ip, l1, l2, opc, *self.start,
+            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
+        [l1, opch, inst, th]
+      }
+      OpcodeLayout::BinopReg(_) => {
+        let ([v, _, o], h1) = self.hex.split_bits_121(&mut self.thm, y);
+        let ([pc, _], h2) = self.hex.split_bits_22(&mut self.thm, x);
+        let (opc, h3) = self.hex.unsplit_bits_121(&mut self.thm, o.0, pc.0, 0);
+        let [sz, h4] = self.op_size_w(rex, v);
+        let [dst, src, l, h5] = self.parse_modrm(p, rex);
+        let [inst, h6] = self.parse_binop(pinst, opc.1, sz, dst, src);
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseBinopReg(inst, dst, *ip, l, o.1, opc.1, *self.start,
+            pc.1, rex.1, src, sz, v.1, self.hex[x], self.hex[y], h1, h2, h3, h4, h5, h6));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::BinopHi(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let ([opc, dst, l1, l2, h3], (src, h4)) = self.parse_modrm_then(p, rex, |this, p| {
+          let [src, l2, h4] = this.parse_imm_8(p);
+          (l2, (src, h4))
+        });
+        let inst = app!(self, (instShift opc sz dst (IRM_imm32 (posZ src))));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseBinopHi(dst, *ip, l1, l2, opc, *self.start,
+            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
+        [l1, opch, inst, th]
+      }
+      OpcodeLayout::BinopHi1(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let [opc, dst, l, h3] = self.parse_modrm(p, rex);
+        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        let inst = app!(self, (instShift opc sz dst (IRM_imm32 (posZ (dn[1_usize])))));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseBinopHi1(dst, *ip, l, opc, *self.start,
+            rex.1, sz, v.1, self.hex[y], h1, h2, h3));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::BinopHiReg(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let [opc, dst, l, h3] = self.parse_modrm(p, rex);
+        let inst = app!(self, (instShift opc sz dst (IRM_reg {self.hex[1]})));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseBinopHiReg(dst, *ip, l, opc, *self.start,
+            rex.1, sz, v.1, self.hex[y], h1, h2, h3));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::MovSX(_) => {
+        let (_, h1) = self.rex_val(rex, Rex::W);
+        let [dst, src, l, h2] = self.parse_modrm(p, rex);
+        let inst = app!(self, (instMovSX (wSz64) dst (wSz32) src));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseMovSLQ(dst, *ip, l, *self.start, rex.1, src, h1, h2));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::MovX(_) => {
+        let opc2 = parse_u8(p);
+        let [b, h1] = self.has_rex(rex);
+        let v = self.dn(1);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let [dst, src, l, h3] = self.parse_modrm(p, rex);
+        let l2 = app!(self, (scons {self.hex.ch(&mut self.thm, opc2)} l));
+        if opc2 & 8 == 0 {
+          let inst = app!(self, (instMovZX sz dst (wSz8 b) src));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l2, rex.1, opch, inst]) =>
+            parseMovZB(b, dst, *ip, l, *self.start, rex.1, src, sz, h1, h2, h3));
+          [l2, opch, inst, th]
+        } else {
+          let inst = app!(self, (instMovSX sz dst (wSz8 b) src));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l2, rex.1, opch, inst]) =>
+            parseMovSB(b, dst, *ip, l, *self.start, rex.1, src, sz, h1, h2, h3));
+          [l2, opch, inst, th]
+        }
+      }
+      OpcodeLayout::MovReg(_) => {
+        let ([v, d], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        match (d.0 & 1 != 0, self.parse_modrm(p, rex), pinst) {
+          (true, [dst, src, l, h2], PInst::MovzxRmR { ext_mode: ExtMode::LQ, .. }) => {
+            let (_, h3) = self.rex_val(rex, Rex::W);
+            let inst = app!(self, (instMovZX (wSz64) dst (wSz32) src));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              parseMovZLQ(dst, *ip, l, *self.start,
+                rex.1, src, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          }
+          (true, [dst, src, l, h2], _) => {
+            let [sz, h3] = self.op_size_w(rex, v);
+            let inst = app!(self, (instMov sz (IRM_reg dst) src));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              parseMovLoad(dst, *ip, l, *self.start,
+                rex.1, src, sz, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          }
+          (false, [src, dst, l, h2], _) => {
+            let [sz, h3] = self.op_size_w(rex, v);
+            let inst = app!(self, (instMov sz dst (IRM_reg src)));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              parseMovStore(dst, *ip, l, *self.start,
+                rex.1, src, sz, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          }
+        }
+      }
+      OpcodeLayout::Mov64(sz64) => {
+        let ([r, _], h1) = self.hex.split_bits_31(&mut self.thm, y);
+        let (rb, h2) = self.rex_val(rex, Rex::B);
+        let ((_, dst), h3) = self.hex.unsplit_bits_31(&mut self.thm, r.0, rb.0);
+        let (_, h4) = self.rex_val(rex, Rex::W);
+        if sz64 {
+          let [src, l, h5] = self.parse_imm_64(p);
+          let inst = app!(self, (instMov (wSz64) dst (IRM_imm64 src)));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseMov64(dst, *ip, l, *self.start, r.1, rb.1, rex.1, src, self.hex[y], h1, h2));
+          [l, opch, inst, th]
+        } else {
+          let [src, l, h5] = self.parse_imm_32(p);
+          let inst = app!(self, (instMov (wSz32) dst (IRM_imm32 src)));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseMov32(dst, *ip, l, *self.start, r.1, rb.1, rex.1, src, self.hex[y], h1, h2));
+          [l, opch, inst, th]
+        }
+      }
+      OpcodeLayout::MovImm(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let ([_, dst, l1, l2, h3], (src, h4)) = self.parse_modrm_then(p, rex, |this, p| {
+          let [src, l2, h4] = this.parse_imm(p, sz);
+          (l2, (src, h4))
+        });
+        let inst = app!(self, (instMov sz dst (IRM_imm32 src)));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseMov64(dst, *ip, l1, l2, *self.start,
+            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
+        [l1, opch, inst, th]
+      }
+      OpcodeLayout::PushImm(sz32) => {
+        let [src, l, h1] = if sz32 { self.parse_imm_32(p) } else { self.parse_imm_8(p) };
+        let inst = app!(self, (instPush (IRM_imm32 src)));
+        let tgt = app!(self, parseOpc[*self.start, *ip, l, rex.1, opch, inst]);
+        let th = if sz32 {
+          thm!(self, parsePushImm32(*ip, l, *self.start, rex.1, src, h1): tgt)
+        } else {
+          thm!(self, parsePushImm8(*ip, l, *self.start, rex.1, src, h1): tgt)
+        };
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::PushReg | OpcodeLayout::PopReg => {
+        let ([r, _], h1) = self.hex.split_bits_31(&mut self.thm, y);
+        let (rb, h2) = self.rex_val(rex, Rex::B);
+        let ((_, reg), h3) = self.hex.unsplit_bits_31(&mut self.thm, r.0, rb.0);
+        let l = app!(self, (s0));
+        if matches!(layout, OpcodeLayout::PushReg) {
+          let inst = app!(self, (instPush (IRM_reg reg)));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parsePushReg(*ip, *self.start, r.1, rb.1, rex.1, reg, self.hex[y], h1, h2, h3));
+          [l, opch, inst, th]
+        } else {
+          let inst = app!(self, (instPop reg));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parsePopReg(reg, *ip, *self.start, r.1, rb.1, rex.1, self.hex[y], h1, h2, h3));
+          [l, opch, inst, th]
+        }
+      }
+      OpcodeLayout::Jump(sz32) => {
+        let (n, [imm, l, h2]) = if sz32 {
+          (parse_i32_64(&mut {*p}), self.parse_imm_32(p))
+        } else {
+          (parse_i8_64(&mut {*p}), self.parse_imm_8(p))
+        };
+        let (tgt, h1) = self.znsub_left(ip, n);
+        let inst = app!(self, (instJump {*tgt}));
+        let tgt = app!(self, parseOpc[*self.start, *ip, l, rex.1, opch, inst]);
+        let th = if sz32 {
+          thm!(self, parseJump32(imm, *ip, l, *self.start, rex.1, tgt, h1, h2): tgt)
+        } else {
+          thm!(self, parseJump8(imm, *ip, l, *self.start, rex.1, tgt, h1, h2): tgt)
+        };
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Jcc8 => {
+        let (tgt, h1) = self.znsub_left(ip, parse_i8_64(&mut {*p}));
+        let [imm, l, h2] = self.parse_imm_8(p);
+        let inst = app!(self, (instJCC {self.hex[y]} {*tgt}));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseJCC8(self.hex[y], imm, *ip, l, *self.start, rex.1, *tgt, h1, h2));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Jcc => {
+        let opc2 = parse_u8(p);
+        let (tgt, h1) = self.znsub_left(ip, parse_i32_64(&mut {*p}));
+        let [imm, l, h2] = self.parse_imm_32(p);
+        let c = self.hex[opc2 & 15];
+        let l2 = app!(self, (scons {self.hex.ch(&mut self.thm, opc2)} l));
+        let inst = app!(self, (instJCC c {*tgt}));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l2, rex.1, opch, inst]) =>
+          parseJCCTwo(c, imm, *ip, l, *self.start, rex.1, *tgt, h1, h2));
+        [l2, opch, inst, th]
+      }
+      OpcodeLayout::Call => {
+        let (a, h1) = self.hex.add(&mut self.thm, self.start, ip);
+        let (tgt, h2) = self.znsub_left(a, parse_i32_64(&mut {*p}));
+        let [imm, l, h3] = self.parse_imm_32(p);
+        let inst = app!(self, (instCall {*tgt}));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseCall(*a, imm, *ip, l, *self.start, rex.1, *tgt, h1, h2, h3));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Ret => {
+        let l = app!(self, (s0));
+        let inst = app!(self, (instRet));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseRet(*ip, *self.start, rex.1));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Cdx => {
+        let (w, h1) = self.rex_val(rex, Rex::W);
+        let l = app!(self, (s0));
+        if w.0 == 0 {
+          let inst = app!(self, (instCDX (wSz32)));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseCDQ(*ip, *self.start, rex.1, h1));
+          [l, opch, inst, th]
+        } else {
+          let inst = app!(self, (instCDX (wSz64)));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseCQO(*ip, *self.start, rex.1, h1));
+          [l, opch, inst, th]
+        }
+      }
+      OpcodeLayout::Lea(_) => {
+        let [dst, addr, l, h1] = self.parse_modrm(p, rex);
+        let (si, base, off) = app_match!(self, addr => {
+          (IRM_mem si base off) => (si, base, off),
+          !
+        });
+        let (w, h2) = self.rex_val(rex, Rex::W);
+        if w.0 == 0 {
+          let inst = app!(self, (instLea (wSz32) dst si base off));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseLea32(base, dst, *ip, l, off, *self.start, rex.1, si, h1, h2));
+          [l, opch, inst, th]
+        } else {
+          let inst = app!(self, (instLea (wSz64) dst si base off));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parseLea64(base, dst, *ip, l, off, *self.start, rex.1, si, h1, h2));
+          [l, opch, inst, th]
+        }
+      }
+      OpcodeLayout::Test(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let [src2, src1, l, h3] = self.parse_modrm(p, rex);
+        let inst = app!(self, (instTest sz src1 (IRM_reg src2)));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseTest(*ip, l, *self.start, rex.1, src1, src2, sz, v.1, self.hex[y], h1, h2, h3));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::TestRAX(_) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let (w, h2) = self.rex_val(rex, Rex::W);
+        let [sz, h3] = self.op_size(true, w, v);
+        let [src, l, h4] = self.parse_imm(p, sz);
+        let inst = app!(self, (instTest sz (IRM_reg {self.hex[0]}) src));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseTest(*ip, l, *self.start, rex.1, src, sz, v.1, w.1, self.hex[y], h1, h2, h3));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::HiTest(..) => {
+        let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+        let [sz, h2] = self.op_size_w(rex, v);
+        let ([_, src1, l1, l2, h3], (src2, h4)) = self.parse_modrm_then(p, rex, |this, p| {
+          let [src2, l2, h4] = this.parse_imm(p, sz);
+          (l2, (src2, h4))
+        });
+        let (w, h2) = self.rex_val(rex, Rex::W);
+        let [sz, h3] = self.op_size(true, w, v);
+        let [src, l, h4] = self.parse_imm(p, sz);
+        let inst = app!(self, (instTest sz src1 (IRM_imm32 src2)));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseTestHi(*ip, l1, l2, *self.start,
+            rex.1, src1, src2, sz, v.1, self.hex[y], h1, h2, h3, h4));
+        [l1, opch, inst, th]
+      }
+      OpcodeLayout::Hi(_) => match (pinst, self.parse_modrm(p, rex)) {
+        (PInst::Unop { op, .. }, [_, dst, l, h1]) => {
+          let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+          let [sz, h2] = self.op_size_w(rex, v);
+          let [_, dst, l, h3] = self.parse_modrm(p, rex);
+          let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+          macro_rules! op { ($inst:ident, $th:ident) => {{
+            let inst = app!(self, (instUnop ($inst) sz dst));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              $th(dst, *ip, l, *self.start, rex.1, sz, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          }}}
+          match op {
+            Unop::Inc => op!(unopInc, parseInc),
+            Unop::Dec => op!(unopDec, parseDec),
+            Unop::Not => op!(unopNot, parseNot),
+            Unop::Neg => op!(unopNeg, parseNeg),
+          }
+        }
+        (PInst::Mul { .. } | PInst::DivRem { .. }, [_, src, l, h1]) => {
+          let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
+          let [sz, h2] = self.op_size_w(rex, v);
+          let [_, src, l, h3] = self.parse_modrm(p, rex);
+          if matches!(pinst, PInst::Mul { .. }) {
+            let inst = app!(self, (instMul sz src));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              parseMul(*ip, l, *self.start, rex.1, src, sz, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          } else {
+            let inst = app!(self, (instDiv sz src));
+            let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+              parseDiv(*ip, l, *self.start, rex.1, src, sz, v.1, self.hex[y], h1, h2, h3));
+            [l, opch, inst, th]
+          }
+        }
+        (PInst::Push64 { src: PRegMemImm::Mem(_) }, [_, src, l, h1]) => {
+          let inst = app!(self, (instPush src));
+          let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+            parsePushMem(*ip, l, *self.start, rex.1, src, h1));
+          [l, opch, inst, th]
+        }
+        _ => unreachable!(),
+      }
+      OpcodeLayout::SetCC(_) => {
+        let opc2 = parse_u8(p);
+        let [b, h1] = self.has_rex(rex);
+        let [_, dst, l, h2] = self.parse_modrm(p, rex);
+        let c = self.hex[opc2 & 15];
+        let l2 = app!(self, (scons {self.hex.ch(&mut self.thm, opc2)} l));
+        let inst = app!(self, (instSetCC c b dst));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l2, rex.1, opch, inst]) =>
+          parseSetCC(b, c, dst, *ip, l, *self.start, rex.1, h1, h2));
+        [l2, opch, inst, th]
+      }
+      OpcodeLayout::CMov(_) =>  {
+        let opc2 = parse_u8(p);
+        let (w, h1) = self.rex_val(rex, Rex::W);
+        let v = self.dn(1);
+        let [sz, h2] = self.op_size(true, w, v);
+        let [dst, src, l, h3] = self.parse_modrm(p, rex);
+        let c = self.hex[opc2 & 15];
+        let l2 = app!(self, (scons {self.hex.ch(&mut self.thm, opc2)} l));
+        let inst = app!(self, (instCMov c sz (IRM_reg dst) src));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l2, rex.1, opch, inst]) =>
+          parseCMov(c, dst, *ip, l, *self.start, rex.1, src, sz, w.1, h1, h2, h3));
+        [l2, opch, inst, th]
+      }
+      OpcodeLayout::SysCall => {
+        let l = app!(self, (s1 {self.hex.ch(&mut self.thm, 0x05)}));
+        let inst = app!(self, (instSysCall));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseSysCall(*ip, *self.start, rex.1));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Assert => {
+        let [c1, c2, c3] = [0x02, 0x0f, 0x0b].map(|c| self.hex.ch(&mut self.thm, c));
+        let l = app!(self, (scons c1 (scons c2 (s1 c3))));
+        let inst = app!(self, (instAssert {self.hex[y]}));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseAssert(self.hex[y], *ip, *self.start, rex.1));
+        [l, opch, inst, th]
+      }
+      OpcodeLayout::Ud2 => {
+        let l = app!(self, (s1 {self.hex.ch(&mut self.thm, 0x0b)}));
+        let inst = app!(self, (instSysCall));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
+          parseSysCall(*ip, *self.start, rex.1));
+        [l, opch, inst, th]
+      }
     }
   }
 

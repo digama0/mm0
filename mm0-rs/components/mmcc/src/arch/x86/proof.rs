@@ -144,8 +144,8 @@ impl super::OpcodeLayout {
       Self::MovSX(modrm) => OpcodeLayout::MovSX { modrm: modrm.parse(p) },
       Self::MovReg(modrm) =>
         OpcodeLayout::MovReg { d: opc & 2 != 0, v: opc & 1 != 0, modrm: modrm.parse(p) },
-      Self::Mov32 => OpcodeLayout::Mov32 { v: opc & 8 != 0, r: opc & 7, imm: parse_u32(p) },
-      Self::Mov64 => OpcodeLayout::Mov64 { v: opc & 8 != 0, r: opc & 7, imm: parse_u64(p) },
+      Self::Mov64(false) => OpcodeLayout::Mov32 { v: opc & 8 != 0, r: opc & 7, imm: parse_u32(p) },
+      Self::Mov64(true) => OpcodeLayout::Mov64 { v: opc & 8 != 0, r: opc & 7, imm: parse_u64(p) },
       Self::MovImm(modrm) =>
         OpcodeLayout::MovImm { v: opc & 1 != 0, modrm: modrm.parse(p), imm: parse_u32(p) },
       Self::PushImm(false) => OpcodeLayout::PushImm8 { imm: parse_u8(p) },

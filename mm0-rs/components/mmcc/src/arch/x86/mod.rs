@@ -1284,10 +1284,8 @@ pub enum OpcodeLayout {
   MovSX(ModRMLayout),
   /// `decodeMovReg` layout: `100010dv + modrm`
   MovReg(ModRMLayout),
-  /// `decodeMov64` layout, but for 32 bit: `1011vrrr + imm32`
-  Mov32,
-  /// `decodeMov64` layout: `1011vrrr + imm64`
-  Mov64,
+  /// `decodeMov64` layout: `1011vrrr + imm32/64` (32 bit if bool is false)
+  Mov64(bool),
   /// `decodeMovImm` layout: `1100011v + modrm + imm32`
   MovImm(ModRMLayout),
   /// `decodePushImm` layout: `011010x0 + imm8/32`
@@ -1344,9 +1342,9 @@ impl OpcodeLayout {
       Self::Jcc8 | // opcode + imm8
       Self::Ud2 | Self::SysCall => 2, // 0F + opcode
       Self::Assert => 4, // jcc8 + ud2
-      Self::Mov32 | Self::Call => 5, // opcode + imm32
+      Self::Mov64(false) | Self::Call => 5, // opcode + imm32
       Self::Jcc => 6, // 0F + opcode + imm32
-      Self::Mov64 => 9, // opcode + imm64
+      Self::Mov64(true) => 9, // opcode + imm64
       Self::BinopReg(modrm) | Self::BinopHi1(modrm) | Self::BinopHiReg(modrm) |
       Self::MovSX(modrm) | Self::MovReg(modrm) |
       Self::Lea(modrm) | Self::Test(modrm) |
@@ -1522,8 +1520,7 @@ impl PInst {
           }
           (Size::S64, _) if src as i32 as u64 == src =>
             OpcodeLayout::MovImm(layout_opc_reg(&mut true, dst)),
-          (Size::S64, _) => OpcodeLayout::Mov64,
-          _ => OpcodeLayout::Mov32,
+          _ => OpcodeLayout::Mov64(sz == Size::S64),
         };
         InstLayout { rex: sz == Size::S64 || large_preg(dst), opc }
       }
@@ -1795,11 +1792,11 @@ impl PInst {
         buf.push_u8(op);
         write_modrm(modrm, &mut rex, buf, r, rm);
       }
-      (OpcodeLayout::Mov32, &PInst::Imm { sz: Size::S32, dst, src }) => {
+      (OpcodeLayout::Mov64(false), &PInst::Imm { sz: Size::S32, dst, src }) => {
         buf.push_u8(0xb8 + encode_reg(dst, &mut rex, REX_B));
         buf.push_u32(src as u32);
       }
-      (OpcodeLayout::Mov64, &PInst::Imm { sz: Size::S64, dst, src }) => {
+      (OpcodeLayout::Mov64(true), &PInst::Imm { sz: Size::S64, dst, src }) => {
         buf.push_u8(0xb8 + encode_reg(dst, &mut rex, REX_B)); rex |= REX_W;
         buf.push_u64(src);
       }
