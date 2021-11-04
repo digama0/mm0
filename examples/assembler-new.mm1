@@ -1,4 +1,4 @@
-import "assembler.mm1";
+import "assembler-old.mm1";
 
 axiom sorry (p: wff): $ p $;
 

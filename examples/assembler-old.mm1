@@ -225,89 +225,91 @@ theorem basicElf_ok
 -- Linker --
 ------------
 
-local def assembled (c s: string) (start end: nat): wff =
+local def assembledOLD (c s: string) (start end: nat): wff =
 $ end e. u64 /\ end = start + len s /\ E. n (start = text_start + n /\ sublistAt n c s) $;
 
-theorem assembled_start (h: $ assembled c s x y $): $ text_start <= x $ =
+theorem assembledOLD_start (h: $ assembledOLD c s x y $): $ text_start <= x $ =
 (named '(eex (anwl @ mpbiri leaddid1 leeq2) @ anr h));
 
-theorem assembled_end (h: $ assembled c s x y $): $ y <= text_start + len c $ =
+theorem assembledOLD_end (h: $ assembledOLD c s x y $): $ y <= text_start + len c $ =
 (named @ focus
   '(mpbir (leeq1 @ anlr h) @ eex _ @ anr h)
   '(mpbird (leeq1d @ syl6eq addass @ addeq1d anl) @
     sylib leadd2 @ anwr sublistAt_len_le));
 
-local def assembled_func (c s: string) (start end: nat): wff =
-$ assembled c s start end /\ start < end $;
+local def assembledOLD_func (c s: string) (start end: nat): wff =
+$ assembledOLD c s start end /\ start < end $;
 
-theorem assembled_func_lt (h: $ assembled_func c s x y $): $ x < text_start + len c $ =
-'(ltletr (anr h) (assembled_end @ anl h));
+theorem assembledOLD_func_lt (h: $ assembledOLD_func c s x y $): $ x < text_start + len c $ =
+'(ltletr (anr h) (assembledOLD_end @ anl h));
 
-theorem assembled_func_bound (h: $ assembled_func c s x y $):
+theorem assembledOLD_func_bound (h: $ assembledOLD_func c s x y $):
   $ text_start <= x /\ x < text_start + len c $ =
-'(ian (assembled_start @ anl h) @ assembled_func_lt h);
+'(ian (assembledOLD_start @ anl h) @ assembledOLD_func_lt h);
 
-local def assembles (c s: string) (start end: nat) (p q: wff): wff =
+local def assemblesOLD (c s: string) (start end: nat) (p q: wff): wff =
 $ E. n (start = text_start + n /\ sublistAt n c s) ->
   end = start + len s /\ (text_start + len c e. u64 -> p -> q) $;
 
-theorem assembles_trul (h: $ assembles c s x y p (T. /\ q) $): $ assembles c s x y p q $ =
+theorem assemblesOLD_trul (h: $ assemblesOLD c s x y p (T. /\ q) $): $ assemblesOLD c s x y p q $ =
 (named '(sylib (aneq2i @ imeq2i @ imeq2i @ bian1 itru) h));
-theorem assembles_assoc (h: $ assembles c s x y p (q1 /\ q2 /\ q3) $):
-  $ assembles c s x y p (q1 /\ (q2 /\ q3)) $ =
+theorem assemblesOLD_assoc (h: $ assemblesOLD c s x y p (q1 /\ q2 /\ q3) $):
+  $ assemblesOLD c s x y p (q1 /\ (q2 /\ q3)) $ =
 (named '(sylib (aneq2i @ imeq2i @ imeq2i anass) h));
 
-local def assemble1 (s: string) (start end: nat): wff =
+local def assemble1OLD (s: string) (start end: nat): wff =
 $ end = start + len s $;
 
-theorem assemble1_0: $ assemble1 s0 x x $ =
+theorem assemble1OLD_0: $ assemble1OLD s0 x x $ =
 '(eqtr2 (addeq2 @ eqtr (leneq s2ns0) len0) add02);
-theorem assemble1_1 (h1: $ suc x = y $): $ assemble1 (s1 c) x y $ =
+theorem assemble1OLD_1 (h1: $ suc x = y $): $ assemble1OLD (s1 c) x y $ =
 '(eqtr2 (addeq2 @ eqtr (leneq s2ns1) len1) @ eqtr add12 h1);
-theorem assemble1_A_lem: $ y = x + len s -> z = y + len t -> u = s ++ t -> z = x + len u $ =
+theorem assemble1OLD_A_lem: $ y = x + len s -> z = y + len t -> u = s ++ t -> z = x + len u $ =
 '(exp @ exp @ eqtrd anlr @ eqtr4d (anwll addeq1) @
   syl6eqr addass @ addeq2d @ syl6eq appendlen @ leneqd anr);
-theorem assemble1_A (h1: $ assemble1 s x y $) (h2: $ assemble1 t y z $): $ assemble1 (s '+ t) x z $ =
-'(assemble1_A_lem h1 h2 s2nsadd);
-theorem assemble1_S (h1: $ suc x = y $) (h2: $ assemble1 s y z $): $ assemble1 (c ': s) x z $ =
-'(assemble1_A (assemble1_1 h1) h2);
+theorem assemble1OLD_A (h1: $ assemble1OLD s x y $) (h2: $ assemble1OLD t y z $):
+  $ assemble1OLD (s '+ t) x z $ = '(assemble1OLD_A_lem h1 h2 s2nsadd);
+theorem assemble1OLD_S (h1: $ suc x = y $) (h2: $ assemble1OLD s y z $):
+  $ assemble1OLD (c ': s) x z $ =
+'(assemble1OLD_A (assemble1OLD_1 h1) h2);
 
---| `(mk-asm1 x s)` returns a pair `(y p)` where `p: assemble1 s x y`
+--| `(mk-asm1 x s)` returns a pair `(y p)` where `p: assemble1OLD s x y`
 do (def (mk-asm1 x s) @ match s
   [('scons c s)
     @ match (mksuc x) @ (y p)
     @ match (mk-asm1 y s) @ (z p2)
-    '(,z (assemble1_S ,c ,s ,x ,y ,z ,p ,p2))]
+    '(,z (assemble1OLD_S ,c ,s ,x ,y ,z ,p ,p2))]
   [('sadd s t)
     @ match (mk-asm1 x s) @ (y p)
     @ match (mk-asm1 y t) @ (z p2)
-    '(,z (assemble1_A ,s ,t ,x ,y ,z ,p ,p2))]
-  [('s1 c) @ match (mksuc x) @ (y p) '(,y (assemble1_1 ,c ,x ,y ,p))]
-  ['(s0) '(,x (assemble1_0 ,x))]);
+    '(,z (assemble1OLD_A ,s ,t ,x ,y ,z ,p ,p2))]
+  [('s1 c) @ match (mksuc x) @ (y p) '(,y (assemble1OLD_1 ,c ,x ,y ,p))]
+  ['(s0) '(,x (assemble1OLD_0 ,x))]);
 
-local def assembles_func (s: string) (start end: nat): wff =
-$ assemble1 s start end /\ start < end $;
+local def assemblesOLD_func (s: string) (start end: nat): wff =
+$ assemble1OLD s start end /\ start < end $;
 
-theorem assembles_func_I (h: $ assemble1 (c ': s '+ t) x y $):
-  $ assembles_func (c ': s '+ t) x y $ =
+theorem assemblesOLD_func_I (h: $ assemble1OLD (c ': s '+ t) x y $):
+  $ assemblesOLD_func (c ': s '+ t) x y $ =
 '(iani h @ mpbir (lteq (eqcom add0) h) @ mpbi ltadd2 @ mpbir (lteq2 @
     eqtr (leneq @ eqtr s2nsadd @ eqtr (appendeq1 s2nscons) appendS) lenS) lt01S);
 
-theorem assemble_1 (h: $ assemble1 s x y $): $ assembles c s x y p (p /\ assembled c s x y) $ =
+theorem assemble_1 (h: $ assemble1OLD s x y $):
+  $ assemblesOLD c s x y p (p /\ assembledOLD c s x y) $ =
 (named @ focus
   '(iand (a1i h) @ expcom @ expcom @ anim2 @ anim1a @ eex @ exp @ iand _ (a1i h))
   '(sylibr (eleq1 h) @ sylc u64le1 _ anr)
   '(mpbird (leeq1d @ syl6eq addass (addeq1d anll)) @
     sylib leadd2 @ rsyl anlr sublistAt_len_le));
 
-theorem assemble_func (h: $ assembles_func s x y $):
-  $ assembles c s x y p (p /\ assembled_func c s x y) $ =
+theorem assemble_func (h: $ assemblesOLD_func s x y $):
+  $ assemblesOLD c s x y p (p /\ assembledOLD_func c s x y) $ =
 (named '(sylibr (aneq2i @ imeq2i @ imeq2i @ aneq2i @ bian2 @ anr h) @ assemble_1 @ anl h));
 
-theorem assemblesA
-  (h1: $ assembles c s x y p q $)
-  (h2: $ assembles c t y z q r $):
-  $ assembles c (s '+ t) x z p r $ =
+theorem assemblesOLDA
+  (h1: $ assemblesOLD c s x y p q $)
+  (h2: $ assemblesOLD c t y z q r $):
+  $ assemblesOLD c (s '+ t) x z p r $ =
 (named @ focus
   (have 'h3 '(bitr (sublistAteq3 s2nsadd) sublistAt_append))
   '(mpand (syl h1 @ eximi @ anim2 @ sylbi h3 anl) @
@@ -317,11 +319,11 @@ theorem assemblesA
       syl6eq addass @ addeq1d @ anwl anrl) @
     exp @ syld (imp @ anrd anlr) (imp anrr)));
 
-theorem assembles0: $ assembles c s0 x x p p $ =
-(named '(a1i @ iani assemble1_0 idd));
+theorem assemblesOLD0: $ assemblesOLD c s0 x x p p $ =
+(named '(a1i @ iani assemble1OLD_0 idd));
 
-theorem assembles_finish
-  (h1: $ assembles c c ,0x400078 end T. p $)
+theorem assemblesOLD_finish
+  (h1: $ assemblesOLD c c ,0x400078 end T. p $)
   (h2: $ ,0x400078 + n = end $)
   (h3: $ end e. u64 $):
   $ len c = n /\ p $ =
@@ -480,14 +482,14 @@ do {
         ['func
           (def asm @ map assemble-inst data)
           (def str @ foldr asm '(s0) @ fn (asm s) '(sadd ,(nth 1 asm) ,s))
-          '(,str assembled_func (assemble_func @ assembles_func_I ,name_asm) ,asm)]
-        ['string '(,(string->hex data) assembled (assemble_1 ,name_asm) #undef)])
+          '(,str assembledOLD_func (assemble_func @ assemblesOLD_func_I ,name_asm) ,asm)]
+        ['string '(,(string->hex data) assembledOLD (assemble_1 ,name_asm) #undef)])
         @ (str kind asf asm)
       @ match (mk-asm1 (get! pos_x) str) @ (pos2_x pf)
       (def name2 (atom-app pfx name))
       (add-term! name2 () '(string ()) 'local () str)
       (add-tac-thm! name_asm () ()
-        '(assemble1 (,name2) ,(get! pos_x) ,pos2_x) ()
+        '(assemble1OLD (,name2) ,(get! pos_x) ,pos2_x) ()
         (fn () (verb pf)))
       (def prop '(,kind (,content) (,name2) ,(get! pos_x) ,pos2_x))
       (set! pos_x pos2_x)
@@ -502,22 +504,22 @@ do {
     (def filesz_x (->hex filesz))
     @ match (to-uNBytes 64 filesz_x) @ (filesz_s filesz_p)
 
-    (def asmd (atom-app pfx 'assembled))
+    (def asmd (atom-app pfx 'assembledOLD))
     (def asmd-pf
       (def n (len items))
       @ match (ra-list0
-        '((tru) assembles0 ,items)
+        '((tru) assemblesOLD0 ,items)
         (match-fn @ (t p ((_ prop asf _) . its))
-          '((an ,t ,prop) (assemblesA ,p ,asf) ,its))
+          '((an ,t ,prop) (assemblesOLDA ,p ,asf) ,its))
         (match-fn @ ($ T. /\ ,t $ p its)
-          '(,t (assembles_trul ,p) ,its))
+          '(,t (assemblesOLD_trul ,p) ,its))
         (match-fn @ ($ ,q1 /\ ,q2 /\ ,q3 $ p its)
-          '($ ,q1 /\ (,q2 /\ ,q3) $ (assembles_assoc ,p) ,its))
+          '($ ,q1 /\ (,q2 /\ ,q3) $ (assemblesOLD_assoc ,p) ,its))
         n) @ (prop pf _)
       @ match (mkadd start_x filesz_x) @ (fileend_x fileend_p)
       (add-tac-thm! asmd () ()
         '(an (eq (len (,content)) ,filesz_x) ,prop) ()
-        @ fn () '(assembles_finish ,pf ,(verb fileend_p)
+        @ fn () '(assemblesOLD_finish ,pf ,(verb fileend_p)
           ,(verb @ to-elu 64 fileend_x)))
       @ fn (i x)
       @ letrec ([(f i n) @ if {n = 1} x
@@ -547,7 +549,7 @@ do {
         ,(verb @ nth 1 @ mkadd filesz_x bss_x)
         (anli ,asmd)
         ,(verb end_p)
-        (assembled_func_bound ,(asmd-pf entry_idx '(anri ,asmd)))
+        (assembledOLD_func_bound ,(asmd-pf entry_idx '(anri ,asmd)))
         ,(verb @ to-elu 64 end_x)))
 
     (add-thm! (atom-app pfx 'basicElf) () ()
@@ -590,7 +592,7 @@ do {
   --|   This defines the strings in `xs`, the individual items that were declared
   --|   with their given names
   --| * ```
-  --|   theorem (base)_(name)_asm: $ assemble1 base_name start end $;
+  --|   theorem (base)_(name)_asm: $ assemble1OLD base_name start end $;
   --|   ```
   --|   The proof that base_name assembles from `start` to `end`
   --| * ```
@@ -599,8 +601,8 @@ do {
   --|   This is the "content" part of the ELF file, after the header. It is the
   --|   concatenation of all the items
   --| * ```
-  --|   theorem (base)_assembled:
-  --|     $ len content = n /\ (/\_i assembled content name_i x_i x_i+1) $;
+  --|   theorem (base)_assembledOLD:
+  --|     $ len content = n /\ (/\_i assembledOLD content name_i x_i x_i+1) $;
   --|   ```
   --|   The result of assembly, which asserts the total length of the content
   --|   as well as a conjunction asserting that every name_i assembles to its
@@ -658,7 +660,7 @@ local def sat_CFG_func (s: string) (x: nat) (A: set): wff =
 $ E. y sat_CFG s s0 0 x y A $;
 theorem sat_CFG_func_i (h: $ sat_CFG s s0 0 x y A $):
   $ sat_CFG_func s x A $ = (named '(iexie @ mpbiri h @ aneq2d ,eqtac));
-theorem sat_CFG_func_iff (h: $ assemble1 s x y $):
+theorem sat_CFG_func_iff (h: $ assemble1OLD s x y $):
   $ sat_CFG_func s x A <-> A C_ CFG_ok /\ s <> 0 <> x <> y e. A $ =
 '(bitr exan1 @ aneq2a @
   syl5bb (exeqi @
@@ -676,7 +678,7 @@ theorem sat_CFG0: $ sat_CFG s s l x x CFG0 $ =
 @_ local def CFG1 (ast: nat): set =
 $ S\ s, S\ l, S\ x, {y | decode ast s /\ y = x + len s} $;
 theorem CFG1_ok: $ CFG1 ast C_ CFG_ok $ = (named '(mk_CFG_ok anr));
-theorem sat_CFG1 (h1: $ assemble1 s x y $) (h2: $ decode ast s $):
+theorem sat_CFG1 (h1: $ assemble1OLD s x y $) (h2: $ decode ast s $):
   $ sat_CFG (s '+ t) t l x y (CFG1 ast) $ =
 '(sat_CFG_i anr s2nsadd ,eqtac @ iani h2 h1);
 
@@ -687,7 +689,7 @@ theorem sat_CFG_seq (h1: $ sat_CFG s t l x y A $) (h2: $ sat_CFG t u l y z B $):
   $ sat_CFG s u l x z (CFG_seq A B) $ =
 (named @ focus
   '(iani (mk_CFG_ok _) @ eex (mpi (anri h2) @ eexda _) @ anri h1)
-  '(eex @ eex @ eex @ mpd anll @ sylc assemble1_A_lem
+  '(eex @ eex @ eex @ mpd anll @ sylc assemble1OLD_A_lem
     (rsyl anlr @ CFG_ok_i @ anli h1) (anwr @ CFG_ok_i @ anli h2))
   '(sylan (iexe ,eqtac) (syl6eqr appendass @ eqtrd anll @ appendeq2d anrl) @
     sylibr (elsabe @ elsabed @ elsabed @ elabed ,eqtac) @
@@ -695,7 +697,7 @@ theorem sat_CFG_seq (h1: $ sat_CFG s t l x y A $) (h2: $ sat_CFG t u l y z B $):
     iand (iand eqidd anlr) anrr));
 
 @_ local def CFG_S (ast: nat) (A: set): set = $ CFG_seq (CFG1 ast) A $;
-theorem sat_CFG_S (h1: $ assemble1 s x y $) (h2: $ decode ast s $)
+theorem sat_CFG_S (h1: $ assemble1OLD s x y $) (h2: $ decode ast s $)
   (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_S ast A) $ =
 '(sat_CFG_seq (sat_CFG1 h1 h2) h3);
 
@@ -750,6 +752,6 @@ theorem sat_CFG_ex (p: wff a) (A: set a)
 -- @_ local def CFG_mov (sz dest src: nat) (A: set): set =
 -- $ CFG_seq (CFG_ex ds (destsrcIRM ds = dest <> src) (CFG1 (xastMov sz ds))) A $;
 -- theorem sat_CFG_mov (e: $ destsrcIRM ds = dest <> src $)
---   (h1: $ assemble1 s x y $) (h2: $ decode (xastMov sz ds) s $)
+--   (h1: $ assemble1OLD s x y $) (h2: $ decode (xastMov sz ds) s $)
 --   (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_mov sz dest src A) $ =
 -- '(sat_CFG_seq (sat_CFG_ex ,eqtac ,eqtac e CFG1_ok @ sat_CFG1 h1 h2) h3);

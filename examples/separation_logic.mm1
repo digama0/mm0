@@ -1,4 +1,4 @@
-import "assembler2.mm1";
+import "assembler-new.mm1";
 
 ------------------------------------
 -- Separation logic preliminaries --
