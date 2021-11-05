@@ -1,10 +1,16 @@
-use mm0_util::{AtomId, FileSpan, Modifiers, Span};
-use mmcc::{arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop}, proof::{AssemblyBlocks, Inst, Proc}, types::Size};
+#![warn(unused)]
+use std::collections::HashMap;
 
-use super::{ProofDedup, Predefs, predefs::Rex, ProofId, Dedup, norm_num::{HexCache, Num}};
+use mmcc::{Symbol, TEXT_START,
+  arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop},
+  proof::{AssemblyItem, ElfProof, Inst, Proc}, types::Size};
+use crate::{FileSpan, Modifiers, Span, TermId, ThmId, Environment, elab::Result, mmc::proof::Name};
 
-pub(super) struct BuildAssemblyProc<'a> {
-  pub(super) thm: ProofDedup<'a>,
+use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
+  norm_num::{HexCache, Num}, predefs::Rex};
+
+struct BuildAssemblyProc<'a> {
+  thm: ProofDedup<'a>,
   hex: HexCache,
   start: Num,
 }
@@ -17,12 +23,6 @@ impl<'a> std::ops::DerefMut for BuildAssemblyProc<'a> {
   fn deref_mut(&mut self) -> &mut Self::Target { &mut self.thm }
 }
 
-enum DecodeResult {
-  Reg,
-  Jump { tgt: Num, c: ProofId, q: ProofId },
-  Call { tgt: Num, q: ProofId }
-}
-
 fn parse_slice<'a>(p: &mut &'a [u8], n: usize) -> &'a [u8] {
   let (start, rest) = p.split_at(n);
   *p = rest;
@@ -33,7 +33,6 @@ fn parse_arr<const N: usize>(p: &mut &[u8]) -> [u8; N] {
 }
 fn parse_u8(p: &mut &[u8]) -> u8 { parse_arr::<1>(p)[0] }
 fn parse_u32(p: &mut &[u8]) -> u32 { u32::from_le_bytes(parse_arr(p)) }
-fn parse_u64(p: &mut &[u8]) -> u64 { u64::from_le_bytes(parse_arr(p)) }
 
 #[allow(clippy::cast_possible_wrap)]
 fn parse_i8_64(p: &mut &[u8]) -> i64 { i64::from(parse_u8(p) as i8) }
@@ -107,14 +106,14 @@ impl BuildAssemblyProc<'_> {
       let [a, h2] = self.op_size(true, w, v);
       [a, thm!(self.thm, opSizeW_S(a, rex.1, v.1, w.1, h1, h2): (opSizeW {rex.1} {v.1}) = a)]
     } else {
-      let [a, p] = self.op_size(false, (0, rex.1), v);
-      [a, thm!(self.thm, opSizeW_0(a, v.1): (opSizeW {rex.1} {v.1}) = a)]
+      let [a, h] = self.op_size(false, (0, rex.1), v);
+      [a, thm!(self.thm, opSizeW_0(a, v.1, h): (opSizeW {rex.1} {v.1}) = a)]
     }
   }
 
   /// Proves `[k, n, s, |- parseIBytesPos k n s]`.
   /// The bytes to parse come from the first `k+1` bytes of `p`.
-  fn parse_ibytes_pos(&mut self, p: &mut &[u8], mut k: u8) -> [ProofId; 4] {
+  fn parse_ibytes_pos(&mut self, p: &mut &[u8], k: u8) -> [ProofId; 4] {
     let head = parse_slice(p, k.into());
     let byte = parse_u8(p);
     let k = app!(self.thm, (d0));
@@ -222,48 +221,48 @@ impl BuildAssemblyProc<'_> {
   /// The bytes to parse come from the first `k+1` bytes of `p`.
   fn parse_imm_n(&mut self, p: &mut &[u8], k: u8) -> [ProofId; 4] {
     if p[usize::from(k)] < 128 {
-      let [k, imm, s, pr] = self.parse_ibytes_pos(p, k);
+      let [k, imm, s, th] = self.parse_ibytes_pos(p, k);
       let imm2 = app!(self.thm, (posZ imm));
-      [k, imm2, s, thm!(self.thm, parseImmN_pos(k, imm, s, pr): (parseImm k imm2 s))]
+      [k, imm2, s, thm!(self.thm, parseImmN_pos(k, imm, s, th): (parseImm k imm2 s))]
     } else {
-      let [k, imm, s, pr] = self.parse_ibytes_neg(p, k);
+      let [k, imm, s, th] = self.parse_ibytes_neg(p, k);
       let imm2 = app!(self.thm, (negZ imm));
-      [k, imm2, s, thm!(self.thm, parseImmN_neg(k, imm, s, pr): (parseImm k imm2 s))]
+      [k, imm2, s, thm!(self.thm, parseImmN_neg(k, imm, s, th): (parseImm k imm2 s))]
     }
   }
 
   /// Proves `[imm, s, |- parseImm8 imm s]`
   fn parse_imm_8(&mut self, p: &mut &[u8]) -> [ProofId; 3] {
-    let [_, imm, s, pr] = self.parse_imm_n(p, 0);
-    [imm, s, thm!(self.thm, parseImm8_I(imm, s, pr): (parseImm8 imm s))]
+    let [_, imm, s, th] = self.parse_imm_n(p, 0);
+    [imm, s, thm!(self.thm, parseImm8_I(imm, s, th): (parseImm8 imm s))]
   }
 
   /// Proves `[imm, s, |- parseImm32 imm s]`
   fn parse_imm_32(&mut self, p: &mut &[u8]) -> [ProofId; 3] {
-    let [_, imm, s, pr] = self.parse_imm_n(p, 3);
-    [imm, s, thm!(self.thm, parseImm32_I(imm, s, pr): (parseImm32 imm s))]
+    let [_, imm, s, th] = self.parse_imm_n(p, 3);
+    [imm, s, thm!(self.thm, parseImm32_I(imm, s, th): (parseImm32 imm s))]
   }
 
   /// Proves `[imm, s, |- parseImm64 imm s]`
   fn parse_imm_64(&mut self, p: &mut &[u8]) -> [ProofId; 3] {
-    let [_, imm, s, pr] = self.parse_imm_n(p, 7);
-    [imm, s, thm!(self.thm, parseImm64_I(imm, s, pr): (parseImm64 imm s))]
+    let [_, imm, s, th] = self.parse_imm_n(p, 7);
+    [imm, s, thm!(self.thm, parseImm64_I(imm, s, th): (parseImm64 imm s))]
   }
 
   /// Proves `[imm, s, |- parseImm sz imm s]`
   fn parse_imm(&mut self, p: &mut &[u8], sz: ProofId) -> [ProofId; 3] {
     app_match!(self.thm, sz => {
       (wSz8 r) => {
-        let [imm, s, pr] = self.parse_imm_8(p);
-        [imm, s, thm!(self.thm, parseImm_8(imm, r, s, pr): (parseImm sz imm s))]
+        let [imm, s, th] = self.parse_imm_8(p);
+        [imm, s, thm!(self.thm, parseImm_8(imm, r, s, th): (parseImm sz imm s))]
       }
       (wSz32) => {
-        let [imm, s, pr] = self.parse_imm_32(p);
-        [imm, s, thm!(self.thm, parseImm_32(imm, s, pr): (parseImm sz imm s))]
+        let [imm, s, th] = self.parse_imm_32(p);
+        [imm, s, thm!(self.thm, parseImm_32(imm, s, th): (parseImm sz imm s))]
       }
       (wSz64) => {
-        let [imm, s, pr] = self.parse_imm_64(p);
-        [imm, s, thm!(self.thm, parseImm_64(imm, s, pr): (parseImm sz imm s))]
+        let [imm, s, th] = self.parse_imm_64(p);
+        [imm, s, thm!(self.thm, parseImm_64(imm, s, th): (parseImm sz imm s))]
       }
       !
     })
@@ -330,7 +329,7 @@ impl BuildAssemblyProc<'_> {
     rex: P<Option<u8>>,
     f: impl FnOnce(&mut Self, &mut &[u8]) -> (ProofId, R)
   ) -> ([ProofId; 5], R) {
-    /// Get the ModRM byte
+    // Get the ModRM byte
     let modrm = parse_u8(p);
     let (x, y) = (modrm >> 4, modrm & 15);
     let modrmch = self.hex.ch(&mut self.thm, modrm);
@@ -406,7 +405,7 @@ impl BuildAssemblyProc<'_> {
         (rm, l_, l2, ret, thm!(self, (parseModRM2[rex.1, rm, rm2.1, md.1, l_, l2]) =>
           parseModRM2_sibReg(a, base.1, bs.1, index.1, ixh.1, ixl.1, l, l2,
             md.1, osi, rb.1, rex.1, rx.1, sc.1, self.hex[x], self.hex[y],
-            h1, h2, h3, h4, h5, h6, h7, h8)))
+            h1, h2, h3, h4, h5, h6, h7, h8, h9)))
       }
 
     } else {
@@ -444,7 +443,7 @@ impl BuildAssemblyProc<'_> {
   /// Proves `([rn, rm, l, |- parseModRM_N rex rn rm l s0], r)`
   /// if `f` produces `(l2, r)`.
   fn parse_modrm(&mut self, p: &mut &[u8], rex: P<Option<u8>>) -> [ProofId; 4] {
-    let ([rn, rm, l, _, th], ()) = self.parse_modrm_then(p, rex, |this, p| {
+    let ([rn, rm, l, _, th], ()) = self.parse_modrm_then(p, rex, |this, _| {
       (app!(this, (s0)), ())
     });
     [rn, rm, l, th]
@@ -644,13 +643,15 @@ impl BuildAssemblyProc<'_> {
           let [src, l, h5] = self.parse_imm_64(p);
           let inst = app!(self, (instMov (wSz64) dst (IRM_imm64 src)));
           let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
-            parseMov64(dst, *ip, l, *self.start, r.1, rb.1, rex.1, src, self.hex[y], h1, h2));
+            parseMov64(dst, *ip, l, *self.start,
+              r.1, rb.1, rex.1, src, self.hex[y], h1, h2, h3, h4, h5));
           [l, opch, inst, th]
         } else {
           let [src, l, h5] = self.parse_imm_32(p);
           let inst = app!(self, (instMov (wSz32) dst (IRM_imm32 src)));
           let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
-            parseMov32(dst, *ip, l, *self.start, r.1, rb.1, rex.1, src, self.hex[y], h1, h2));
+            parseMov32(dst, *ip, l, *self.start,
+              r.1, rb.1, rex.1, src, self.hex[y], h1, h2, h3, h4, h5));
           [l, opch, inst, th]
         }
       }
@@ -796,7 +797,7 @@ impl BuildAssemblyProc<'_> {
         let [src, l, h4] = self.parse_imm(p, sz);
         let inst = app!(self, (instTest sz (IRM_reg {self.hex[0]}) src));
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
-          parseTest(*ip, l, *self.start, rex.1, src, sz, v.1, w.1, self.hex[y], h1, h2, h3));
+          parseTest(*ip, l, *self.start, rex.1, src, sz, v.1, w.1, self.hex[y], h1, h2, h3, h4));
         [l, opch, inst, th]
       }
       OpcodeLayout::HiTest(..) => {
@@ -806,9 +807,6 @@ impl BuildAssemblyProc<'_> {
           let [src2, l2, h4] = this.parse_imm(p, sz);
           (l2, (src2, h4))
         });
-        let (w, h2) = self.rex_val(rex, Rex::W);
-        let [sz, h3] = self.op_size(true, w, v);
-        let [src, l, h4] = self.parse_imm(p, sz);
         let inst = app!(self, (instTest sz src1 (IRM_imm32 src2)));
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
           parseTestHi(*ip, l1, l2, *self.start,
@@ -816,10 +814,9 @@ impl BuildAssemblyProc<'_> {
         [l1, opch, inst, th]
       }
       OpcodeLayout::Hi(_) => match (pinst, self.parse_modrm(p, rex)) {
-        (PInst::Unop { op, .. }, [_, dst, l, h1]) => {
+        (PInst::Unop { op, .. }, [_, dst, l, h3]) => {
           let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
           let [sz, h2] = self.op_size_w(rex, v);
-          let [_, dst, l, h3] = self.parse_modrm(p, rex);
           let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
           macro_rules! op { ($inst:ident, $th:ident) => {{
             let inst = app!(self, (instUnop ($inst) sz dst));
@@ -834,10 +831,9 @@ impl BuildAssemblyProc<'_> {
             Unop::Neg => op!(unopNeg, parseNeg),
           }
         }
-        (PInst::Mul { .. } | PInst::DivRem { .. }, [_, src, l, h1]) => {
+        (PInst::Mul { .. } | PInst::DivRem { .. }, [_, src, l, h3]) => {
           let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
           let [sz, h2] = self.op_size_w(rex, v);
-          let [_, src, l, h3] = self.parse_modrm(p, rex);
           if matches!(pinst, PInst::Mul { .. }) {
             let inst = app!(self, (instMul sz src));
             let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
@@ -916,52 +912,55 @@ impl BuildAssemblyProc<'_> {
       let rex = parse_u8(p) & 15;
       let hrex = self.hex[rex];
       let srex = (Some(rex), app!(self, (suc (h2n hrex))));
-      let [s, opc, inst, pr] = self.parse_opc(inst.inst, p, inst.layout.opc, ip, srex);
+      let [s, opc, inst, th] = self.parse_opc(inst.inst, p, inst.layout.opc, ip, srex);
       if short {
         let s2 = app!(self, (scons (ch {self.hex[4]} hrex) (s1 opc)));
-        let pr = thm!(self, parseInst10(inst, *ip, opc, *self.start, hrex, pr):
+        let th = thm!(self, parseInst10(inst, *ip, opc, *self.start, hrex, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, pr]
+        [inst, s2, th]
       } else {
         let s2 = app!(self, (scons (ch {self.hex[4]} hrex) (scons opc s)));
-        let pr = thm!(self, parseInst11(inst, *ip, opc, *self.start, hrex, s, pr):
+        let th = thm!(self, parseInst11(inst, *ip, opc, *self.start, hrex, s, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, pr]
+        [inst, s2, th]
       }
     } else {
       let rex = app!(self, (d0));
-      let [s, opc, inst, pr] = self.parse_opc(inst.inst, p, inst.layout.opc, ip, (None, rex));
+      let [s, opc, inst, th] = self.parse_opc(inst.inst, p, inst.layout.opc, ip, (None, rex));
       if short {
         let s2 = app!(self, (s1 opc));
-        let pr = thm!(self, parseInst00(inst, *ip, opc, *self.start, pr):
+        let th = thm!(self, parseInst00(inst, *ip, opc, *self.start, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, pr]
+        [inst, s2, th]
       } else {
         let s2 = app!(self, (scons opc s));
-        let pr = thm!(self, parseInst01(inst, *ip, opc, *self.start, s, pr):
+        let th = thm!(self, parseInst01(inst, *ip, opc, *self.start, s, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, pr]
+        [inst, s2, th]
       }
     }
   }
 
+  /// Given `x`, proves `(s, y, A, |- assemble start s x y A)`, using elements of the iterator
+  /// `iter` in a balanced binary tree of `localAssembleA` nodes.
+  /// The function `f` handles the base case of an individual item in the iterator.
   fn bisect<T>(&mut self,
-    n: usize, iter: &mut impl Iterator<Item=T>, x: Num, padding: Option<&[u8]>,
-    f: &mut impl FnMut(&mut Self, T, Num, Option<&[u8]>) -> (ProofId, ProofId, Num, ProofId),
-  ) -> (ProofId, ProofId, Num, ProofId) {
+    n: usize, iter: &mut impl Iterator<Item=T>, x: Num,
+    f: &mut impl FnMut(&mut Self, T, Num) -> (ProofId, Num, ProofId, ProofId),
+  ) -> (ProofId, Num, ProofId, ProofId) {
     if n <= 1 {
       assert!(n != 0);
       let item = iter.next().expect("iterator size lied");
-      f(self, item, x, padding)
+      f(self, item, x)
     } else {
       let m = n >> 1;
-      let (s, a, y, pr1) = self.bisect(m, iter, x, None, f);
-      let (t, b, z, pr2) = self.bisect(n - m, iter, y, padding, f);
+      let (s, y, a, th1) = self.bisect(m, iter, x, f);
+      let (t, z, b, th2) = self.bisect(n - m, iter, y, f);
       let st = app!(self, (sadd s t));
-      let ab = app!(self, (asmp_A a b));
-      let pr = thm!(self, is_asmp_A(*self.start, s, t, *x, *y, *z, a, b):
-        is_asmp[*self.start, st, *x, *z, ab]);
-      (st, ab, z, pr)
+      let ab = app!(self, (localAssembleA a b));
+      let th = thm!(self, localAssembleA_I(*self.start, s, t, *x, *y, *z, a, b, th1, th2):
+        localAssemble[*self.start, st, *x, *z, ab]);
+      (st, z, ab, th)
     }
   }
 
@@ -976,72 +975,185 @@ impl BuildAssemblyProc<'_> {
           args.push(a);
           #[allow(clippy::cast_possible_truncation)]
           let n = self.hex.h2n(&mut self.thm, args.len() as u8);
-          let res = app!(self, (len s) = {*n});
+          let res = app!(self, (strlen s {*n}));
           let th = self.strlenn[args.len()];
           return (n, self.thm(th, &args, res))
         }
         (s0) => {
           assert!(args.is_empty());
           let n = self.hex.h2n(&mut self.thm, 0);
-          return (n, thm!(self, strlenn[0_usize](): (len s) = {*n}))
+          return (n, thm!(self, strlenn[0_usize](): (strlen s {*n})))
         }
         _ => panic!("not a string literal"),
       })
     }
   }
 
-  /// Given `x`, proves `(s, A, y, |- is_asmp start s x y A)` where
+  /// Given `x`, proves `(s, y, A, |- localAssemble start s x y A)` where
   /// `s` is generated from the assembly blocks.
-  pub(super) fn proc(&mut self, proc: &Proc<'_>) -> (ProofId, ProofId, Num, ProofId) {
+  pub(super) fn blocks(&mut self, proc: &Proc<'_>) -> (ProofId, Num, ProofId, ProofId) {
     let mut iter = proc.assembly_blocks();
     let x = self.hex.h2n(&mut self.thm, 0);
-    let pad = proc.trailing_padding();
-    let pad = if pad.is_empty() { None } else { Some(pad) };
-    self.bisect(iter.len(), &mut iter, x, pad, &mut |this, block, x, pad| {
+    self.bisect(iter.len(), &mut iter, x, &mut |this, block, x| {
       let mut iter = block.insts();
-      let (s, a, y, pr) = this.bisect(iter.len(), &mut iter, x, None, &mut |this, inst, x, _| {
+      let (s, y, a, th) = this.bisect(iter.len(), &mut iter, x, &mut |this, inst, x| {
         let n = this.hex.from_u8(&mut this.thm, inst.layout.len());
         let (y, h2) = this.hex.add(&mut this.thm, x, n);
         let [s, inst, h3] = this.parse_inst(&inst, y);
         let (n2, h1) = this.strlen(s); assert!(n == n2);
-        let pr = thm!(this, parseInstE(*this.start, s, *x, *y, *n, inst, h1, h2, h3):
-          is_asmp[*this.start, s, *x, *y, inst]);
-        (s, inst, y, pr)
+        let th = thm!(this, parseInstE(*this.start, s, *x, *y, *n, inst, h1, h2, h3):
+          localAssemble[*this.start, s, *x, *y, inst]);
+        (s, y, inst, th)
       });
 
-      let a2 = app!(this.thm, (asmp_at {*x} a));
-      let pr = thm!(this.thm, is_asmp_at(*this.start, s, *x, *y, a):
-        is_asmp[*this.start, s, *x, *y, a2]);
-      if let Some(pad) = pad {
-        let i = pad.len().try_into().expect("too much padding");
-        let st = app!(this, (sadd s (padn[i])));
-        let ab = app!(this, (asmp_A a (asmp_pad)));
-        let n = this.hex.h2n(&mut this.thm, i);
-        let (z, h2) = this.hex.add(&mut this.thm, y, n);
-        let pr = thm!(this, is_asmp_A_padn[i](*this.start, s, *x, *y, *z, a, pr, h2):
-          is_asmp[*this.start, st, *x, *z, ab]);
-        (st, ab, z, pr)
-      } else {
-        (s, a2, y, pr)
-      }
+      let a2 = app!(this.thm, (asmAt {*x} a));
+      let th = thm!(this.thm, asmAtI(*this.start, s, *x, *y, a, th):
+        localAssemble[*this.start, s, *x, *y, a2]);
+      (s, y, a2, th)
     })
   }
 }
 
-pub(super) fn assemble_proc(
-  pd: &Predefs,
-  name: AtomId,
-  proc: &Proc<'_>,
-  span: FileSpan,
+struct BuildAssembly<'a> {
+  proc_asm: &'a mut HashMap<Option<Symbol>, (TermId, TermId, ThmId)>,
+  mangler: &'a Mangler,
+  env: &'a mut Environment,
+  pd: &'a Predefs,
+  span: &'a FileSpan,
   full: Span,
-) -> crate::Thm {
+  hex: HexCache,
+  thm: ProofDedup<'a>,
+}
+
+impl<'a> BuildAssembly<'a> {
+  /// Given `x`, proves `(s, y, A, |- assemble s x y A)`, using elements of the iterator `iter`
+  /// in a balanced binary tree of `assembleA` nodes.
+  /// The function `f` handles the base case of an individual item in the iterator.
+  fn bisect<T>(&mut self,
+    n: usize, iter: &mut impl Iterator<Item=T>, x: ProofId,
+    f: &mut impl FnMut(&mut Self, T, ProofId) -> Result<(ProofId, Num, ProofId, ProofId)>,
+  ) -> Result<(ProofId, Num, ProofId, ProofId)> {
+    if n <= 1 {
+      assert!(n != 0);
+      let item = iter.next().expect("iterator size lied");
+      f(self, item, x)
+    } else {
+      let m = n >> 1;
+      let (s, y, a, th1) = self.bisect(m, iter, x, f)?;
+      let (t, z, b, th2) = self.bisect(n - m, iter, *y, f)?;
+      let st = app!(self.thm, (sadd s t));
+      let ab = app!(self.thm, (assembleA a b));
+      let th = thm!(self.thm, assembleA_I(s, t, x, *y, *z, a, b, th1, th2):
+        assemble[st, x, *z, ab]);
+      Ok((st, z, ab, th))
+    }
+  }
+
+  fn assemble_proc(&mut self,
+    proc: &Proc<'_>, global_start: ProofId
+  ) -> Result<(ProofId, Num, ProofId, ProofId)> {
+    let mut thm = ProofDedup::new(self.pd, &[]);
+    let hex = HexCache::new(&mut thm);
+    let start = hex.from_u64(&mut thm, proc.start.into());
+    let mut build = BuildAssemblyProc { thm, hex, start };
+    let (s, y, a, th) = build.blocks(proc);
+    let (y2, th2) = build.hex.add(&mut build.thm, start, y);
+    let start = *start;
+    let a2 = app!(build, (asmProc start a));
+    let th = thm!(build, asmProcI(s, start, *y, *y2, a, th, th2): (assemble s start {*y} a2));
+    let pad = proc.trailing_padding();
+    let (s, Num {val: end_val, e: end}, th) = if pad.is_empty() { (s, y2, th) } else {
+      let i = pad.len().try_into().expect("too much padding");
+      let t = app!(build, (padn[i]));
+      let st = app!(build, (sadd s t));
+      let n = build.hex.h2n(&mut build.thm, i);
+      let (z, h2) = build.hex.add(&mut build.thm, y2, n);
+      let th = thm!(build, (assemble[st, start, *z, a2]) =>
+        assemble_pad(a, *n, s, t, start, *y2, *z, th, h2)((strlen_padn[i](): (strlen t {*n}))));
+      (st, z, th)
+    };
+
+    let code = self.mangler.mangle(self.env, Name::ProcContent(proc.name()));
+    let code = self.env.add_term({
+      let mut de = ExprDedup::new(self.pd, &[]);
+      let e = build.thm.to_expr(&mut de, s);
+      de.build_def0(code, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.string)
+    }).map_err(|e| e.into_elab_error(self.full))?;
+
+    let asm = self.mangler.mangle(self.env, Name::ProcAsm(proc.name()));
+    let asm = self.env.add_term({
+      let mut de = ExprDedup::new(self.pd, &[]);
+      let e = build.thm.to_expr(&mut de, a);
+      de.build_def0(asm, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.set)
+    }).map_err(|e| e.into_elab_error(self.full))?;
+
+    let th = thm!(build.thm, ((assemble ({code}) start end (asmProc start ({asm})))) =>
+      CONV({th} => (assemble (UNFOLD({code}); s) start end (asmProc start (UNFOLD({asm}); a)))));
+    let asm_thm = self.mangler.mangle(self.env, Name::ProcAsmThm(proc.name()));
+    let asm_thm = self.env
+      .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+      .map_err(|e| e.into_elab_error(self.full))?;
+    self.proc_asm.entry(proc.name()).or_insert((code, asm, asm_thm));
+
+    // Import into the context of the global (Name::Content) proof
+    let s = build.to_expr(&mut self.thm, s);
+    let end = Num::new(end_val, build.to_expr(&mut self.thm, end));
+    let a = build.to_expr(&mut self.thm, a);
+    Ok((s, end, a, thm!(self.thm, {asm_thm}():
+      (assemble s global_start {*end} (asmProc global_start a)))))
+  }
+
+  fn assemble(&mut self, proof: &ElfProof<'_>) -> Result<()> {
+    let mut iter = proof.assembly();
+    let x = self.hex.from_u32(&mut self.thm, TEXT_START);
+    let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, *x, &mut |this, item, x| {
+      match item {
+        AssemblyItem::Proc(proc) => this.assemble_proc(&proc, x),
+        AssemblyItem::Const(_) => todo!(),
+      }
+    })?;
+    let h2 = HexCache::is_u64(&mut self.thm, *y);
+    let th = thm!(self.thm, assembledI(a, c, *y, h1, h2): (assembled c a));
+
+    let content = self.mangler.mangle(self.env, Name::Content);
+    let content = self.env.add_term({
+      let mut de = ExprDedup::new(self.pd, &[]);
+      let e = self.thm.to_expr(&mut de, c);
+      de.build_def0(content, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.string)
+    }).map_err(|e| e.into_elab_error(self.full))?;
+
+    let th = thm!(self.thm, ((assembled ({content}) a)) =>
+      CONV({th} => (assembled (UNFOLD({content}); c) a)));
+    let asmd_thm = self.mangler.mangle(self.env, Name::AsmdThm);
+    let asmd_thm = self.env
+      .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+      .map_err(|e| e.into_elab_error(self.full))?;
+    let _ = asmd_thm; // todo
+    Ok(())
+  }
+}
+
+
+pub(super) fn assemble_proof(
+  env: &mut Environment,
+  pd: &Predefs,
+  proc_asm: &mut HashMap<Option<Symbol>, (TermId, TermId, ThmId)>,
+  mangler: &Mangler,
+  proof: &ElfProof<'_>,
+  span: &FileSpan,
+  full: Span,
+) -> Result<()> {
   let mut thm = ProofDedup::new(pd, &[]);
-  let hex = HexCache::new(&mut thm);
-  let mut build = BuildAssemblyProc {
-    start: hex.from_u64(&mut thm, proc.start.into()),
-    hex,
+  let mut build = BuildAssembly {
+    proc_asm,
+    mangler,
+    env,
+    pd,
+    span,
+    full,
+    hex: HexCache::new(&mut thm),
     thm,
   };
-  let pr = build.proc(proc).3;
-  build.thm.build_thm0(name, Modifiers::empty(), span, full, pr)
+  build.assemble(proof)?;
+  Ok(())
 }

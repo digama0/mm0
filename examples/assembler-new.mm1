@@ -28,7 +28,7 @@ do {
 
   ((fn xs @ scan xs @ fn (x) @ scan x mmc-th)
     '(fal tru eq ne d0 suc add mul le lt ltlei ltnei ltneri leid pr
-      znsub cons len sadd scons s0 s1 ch c2n h2n hex)
+      znsub cons len sadd scons s0 s1 ch c2n h2n hex s2n)
     (map dn (range 0 17))
     (join @ map (fn (x) (map (fn (i) (atom-app x i)) hexstrings))
       '(x h2n _x00x decsuc))
@@ -43,54 +43,12 @@ do {
       unopInc unopDec unopNot unopNeg))
 };
 
-@mmc-th local def is_asmp (p: nat) (s: string) (x y: nat) (P: set): wff =
-$ s != 0 /\ y = x + len s /\ (y e. u64 -> p <> s <> x e. P) $;
-
-@mmc-th local def asmp_A (A B: set): set =
-$ S\ p, S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\
-  p <> t1 <> x e. A /\ p <> t2 <> (x + len t1) e. B)} $;
-
-@mmc-th theorem is_asmp_A (p s t x y z A B)
-  (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $):
-  $ is_asmp p (s '+ t) x z (asmp_A A B) $ = 'sorry;
-
-@mmc-th local def asmp_at (n: nat) (A: set): set =
-$ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
-
-@mmc-th theorem is_asmp_at (p s x y A)
-  (h1: $ is_asmp p s x y A $): $ is_asmp p s x y (asmp_at x A) $ = 'sorry;
-
-@mmc-th local def asmp_pad: set = $ S\ p, S\ s, {x | s != 0} $;
-
-theorem is_asmp_pad (p s x y)
-  (h1: $ x0 < n $) (h2: $ s = repeat 0 n $) (h3: $ x + n = y $):
-  $ is_asmp p s x y asmp_pad $ = 'sorry;
-
--- Builds the theorems:
---
--- theorem is_asmp_A_pad_9 (p: nat) (s: string) (x y z: nat) (A: set):
---   $ is_asmp p s x y A $ >
---   $ y + x9 = z $ >
---   $ is_asmp p (s '+ _x00x9) x z (asmp_A A asmp_pad) $;
---
--- for padding of size 1 to 15.
-do (ignore @ on-hexstrings @ fn (n)
-  @ let ([xn (atom-app 'x n)] [i (hex->number xn)] [t '(,(_x00xn i))])
-  @ if (not {i == 0}) @ begin
-  (def name (atom-app "is_asmp_A_pad_" n))
-  (add-tac-thm! name
-    '((p nat ()) (s string ()) (x nat ()) (y nat ()) (z nat ()) (A set ()))
-    '((h1 $ is_asmp p s x y A $) (h2 $ y + ,'(,xn) = z $))
-    $ is_asmp p (s '+ ,t) x z (asmp_A A asmp_pad) $ ()
-    @ fn () @ focus '(is_asmp_A h1 @ is_asmp_pad _ ,(_x00xn_eq i) h2) norm_num)
-  (mmc-th name)
-);
-
 @mmc-th local def strlen (s: string) (n: nat): wff = $ len s = n $;
 @mmc-th theorem strlen0: $ strlen s0 x0 $ = '(eqtr (leneq s2ns0) @ eqtr4 len0 h2n0);
 @mmc-th theorem strlen1: $ strlen (s1 c0) x1 $ = '(eqtr (leneq s2ns1) @ eqtr4 len1 h2n1);
 theorem strlenSi (h: $ strlen s a $) (h2: $ suc a = b $): $ strlen (c ': s) b $ =
 '(eqtr (leneq s2nscons) @ eqtr lenS @ eqtr (suceq h) h2);
+theorem strlen_repeat (h: $ s = repeat 0 n $): $ strlen s n $ = '(eqtr (leneq h) repeatlen);
 do {
   (def (strlenn n) @ atom-app 'strlen (hexstring n))
   (for 1 15 @ fn (a)
@@ -101,7 +59,40 @@ do {
       (map (fn (x) '(,x char ())) args) () '(strlen ,str ,xb) () @ fn ()
       '(strlenSi ,(strlenn a) ,(decsucn a)))
     (mmc-th name))
+  (ignore @ on-hexstrings @ fn (n)
+    @ let ([xn (atom-app 'x n)] [i (hex->number xn)] [t '(,(_x00xn i))])
+    (def name (atom-app "strlen_x00x" n))
+    (add-tac-thm! name () () $ strlen ,t ,'(,xn) $ () @ fn () '(strlen_repeat ,(_x00xn_eq i)))
+    (mmc-th name))
 };
+
+@mmc-th local def assemble (s: string) (x y: nat) (P: set): wff =
+$ s != 0 /\ y = x + len s /\ (y e. u64 -> s <> x e. P) $;
+
+@mmc-th local def assembleA (A B: set): set =
+$ S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ t2 != 0 /\
+  t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
+infixr assembleA: $++asm$ prec 120;
+
+@mmc-th theorem assembleA_I (s t x y z A B)
+  (h1: $ assemble s x y A $) (h2: $ assemble t y z B $):
+  $ assemble (s '+ t) x z (A ++asm B) $ = 'sorry;
+
+@mmc-th local def localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff =
+$ assemble s x y (P @' p) $;
+
+@mmc-th local def localAssembleA (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
+infixr localAssembleA: $+asm$ prec 122;
+
+@mmc-th theorem localAssembleA_I (p s t x y z A B)
+  (h1: $ localAssemble p s x y A $) (h2: $ localAssemble p t y z B $):
+  $ localAssemble p (s '+ t) x z (A +asm B) $ = 'sorry;
+
+@mmc-th local def asmAt (n: nat) (A: set): set =
+$ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
+
+@mmc-th theorem asmAtI (p s x y A)
+  (h1: $ localAssemble p s x y A $): $ localAssemble p s x y (asmAt x A) $ = 'sorry;
 
 --| See `parseInst`. (The `*N` functions are proof-internal, used for proving compiler lemmas.)
 @_ local def parseInstN (p ip s: nat) (I: set): wff =
@@ -112,7 +103,7 @@ $ ip e. u64 -> A. x (ip = x + len s -> p <> s <> x e. I) $;
 @mmc-th local def parseInst (p ip: nat) (s: string) (I: set): wff = $ parseInstN p ip s I $;
 
 @mmc-th theorem parseInstE (p s x y n I) (h1: $ strlen s n $) (h2: $ x + n = y $)
-  (h3: $ parseInst p y s I $): $ is_asmp p s x y I $ = 'sorry;
+  (h3: $ parseInst p y s I $): $ localAssemble p s x y I $ = 'sorry;
 
 --| `parseOpc p ip s rex opc I` means that after decoding the REX byte to `rex`,
 --| if the first byte of the instruction is `opc` and the remainder is `s`,
@@ -724,3 +715,69 @@ $ S\ p, S\ s, {x | E. l1 E. l2 (s = l1 ++ l2 /\
 
 @mmc-th theorem parseAssert:
   $ parseOpc p ip (ch x0 x2 ': ch x0 xf ': s1 (ch x0 xb)) rex (ch x7 c) (instAssert c) $ = 'sorry;
+
+--------------------------------------------
+-- Post-processing the result of assembly --
+--------------------------------------------
+
+@mmc-th local def asmProc (n: nat) (A: set): set =
+$ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p <> t1 <> 0 e. A)} $;
+
+@mmc-th theorem asmProcI (s x n y A)
+  (h1: $ localAssemble x s x0 n A $)
+  (h2: $ x + n = y $):
+  $ assemble s x y (asmProc x A) $ = 'sorry;
+
+@mmc-th theorem assemble_pad
+  (h1: $ assemble s x y (asmProc x A) $)
+  (h2: $ y + n = z $)
+  (h3: $ strlen t n $):
+  $ assemble (s '+ t) x z (asmProc x A) $ = 'sorry;
+
+--| `assembled c P` (assembly output) asserts that if the full file content is `c`,
+--| then `P` holds of some nonempty substring in `c`.
+--| `P` will contain embedded assertions about the position or the
+--| string where relevant (using `asmAt`), so that the existential is uniquely determined.
+@_ local def assembledN (c: nat) (P: set): wff =
+$ E. x E. s (s != 0 /\ sublistAt x c s /\
+  text_start + x + len s e. u64 /\ s <> (text_start + x) e. P) $;
+
+--| `assembled c P` (assembly output) asserts that if the full file content is `c`,
+--| then `P` holds of some nonempty substring in `c`.
+--| `P` will contain embedded assertions about the position or the
+--| string where relevant (using `asmAt`), so that the existential is uniquely determined.
+@mmc-th local def assembled (c: string) (P: set): wff = $ assembledN c P $;
+
+@mmc-th local def isU64 (n: nat): wff = $ n e. u64 $;
+
+-- Proves, for digits i = 0, .., 15:
+-- theorem isU64_5 (a0 a1 a2 a3 a4 a5: hex):
+--   $ isU64 (a5 :x a4 :x a3 :x a2 :x a1 :x a0) $;
+-- (Note that the number of digits is one more than the index value.)
+do (ignore @ on-hexstrings @ fn (n)
+  @ let ([xn (atom-app 'x n)] [i (hex->number xn)] [t '(,(_x00xn i))]
+         [(ai j) (atom-app 'a j)])
+  (def name (atom-app "isU64_" n))
+  (add-tac-thm! name
+    (map (fn (j) '(,(ai j) hex ())) (range 0 {i + 1})) ()
+    '(isU64 ,(foldr (range 0 i) '(h2n ,(ai i)) @ fn (j x) '(hex ,x ,(ai j)))) () @ fn ()
+    '(xelu64i ,(iterate {i // 2} (fn (x) '(xelBits8S ,x)) (atom-app 'xelBits8 {{i % 2} + 1})))));
+
+@mmc-th theorem assembledI
+  (h1: $ assemble c ,0x400078 y A $) (h2: $ isU64 y $): $ assembled c A $ = 'sorry;
+
+@mmc-th theorem assembled_l (h1: $ assembled c (A ++asm B) $): $ assembled c A $ = 'sorry;
+
+@mmc-th theorem assembled_r (h1: $ assembled c (A ++asm B) $): $ assembled c B $ = 'sorry;
+
+@mmc-th local def localAssembled (ctx: nat) (P: set): wff =
+$ assembledN (fst ctx) (P @' snd ctx) $;
+
+@mmc-th theorem localAssembledI (h1: $ assembled c (asmProc p A) $):
+  $ localAssembled (c <> p) A $ = 'sorry;
+
+@mmc-th theorem localAssembled_l
+  (h1: $ localAssembled ctx (A +asm B) $): $ localAssembled ctx A $ = 'sorry;
+
+@mmc-th theorem localAssembled_r
+  (h1: $ localAssembled ctx (A +asm B) $): $ localAssembled ctx B $ = 'sorry;

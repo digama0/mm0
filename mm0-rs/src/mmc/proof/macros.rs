@@ -15,17 +15,47 @@ macro_rules! app {
   ($de:expr, $e:tt + $e2:tt) => {app!($de, (add $e $e2))};
   ($de:expr, $e:tt * $e2:tt) => {app!($de, (mul $e $e2))};
   ($de:expr, (($id:ident$([$ix:expr])*) $($e:tt)*)) => {app!($de, ($id$([$ix])*) $($e)*)};
-  ($de:expr, ($id:ident$([$ix:expr])+) $($e:tt)*) => {{
-    let t = $de.$id$([usize::from($ix)])*;
-    let args = &[$(app!($de, $e)),*];
-    $de.app(t, args)
-  }};
-  ($de:expr, ($id:ident $($e:tt)*)) => {{
-    let t = $de.$id;
+  ($de:expr, ($id:ident$([$ix:expr])+) $($e:tt)*) => {
+    app!($de, ({$de.$id$([usize::from($ix)])*} $($e)*))
+  };
+  ($de:expr, ($id:ident $($e:tt)*)) => {app!($de, ({$de.$id} $($e)*))};
+  ($de:expr, ({$t:expr} $($e:tt)*)) => {{
+    let t = $t;
     let args = &[$(app!($de, $e)),*];
     $de.app(t, args)
   }};
   ($de:expr, $e:ident) => {{$e}};
+  ($de:expr, $($e:tt)*) => {{$($e)*}};
+}
+
+macro_rules! conv {
+  ($de:expr, {$($e:tt)*}) => { {$($e)*} };
+  ($de:expr, (UNFOLD $($args:tt)*)) => {conv!($de, UNFOLD $($args)*)};
+  ($de:expr, UNFOLD($t:ident $($e:tt)*); $($args:tt)*) => {
+    conv!($de, UNFOLD({$de.$id} $($e)*); $($args)*)
+  };
+  ($de:expr, UNFOLD({$t:expr} $($e:tt)*); $($args:tt)*) => {{
+    let t = $t;
+    let args = &[$(app!($de, $e)),*];
+    let conv = conv!($de, $($args)*);
+    $de.unfold(t, args, conv)
+  }};
+  ($de:expr, (($id:ident$([$ix:expr])*) $($e:tt)*)) => {conv!($de, ($id$([$ix])*) $($e)*)};
+  ($de:expr, ($id:ident$([$ix:expr])+) $($e:tt)*) => {{
+    let t = $de.$id$([usize::from($ix)])*;
+    let args = &[$(conv!($de, $e)),*];
+    $de.cong(t, args)
+  }};
+  ($de:expr, (REFL $($e:tt)*)) => {{
+    let e = app!($de, $($e)*);
+    $de.refl_conv(e)
+  }};
+  ($de:expr, ($id:ident $($e:tt)*)) => {{
+    let t = $de.$id;
+    let args = &[$(conv!($de, $e)),*];
+    $de.cong(t, args)
+  }};
+  ($de:expr, $e:ident) => {{$de.refl_conv($e)}};
   ($de:expr, $($e:tt)*) => {{$($e)*}};
 }
 
@@ -37,10 +67,19 @@ macro_rules! thm {
     $de.cache(th, |de| app!(de, $($e)*))
   }};
   ($de:expr, $thm:ident$([$ix:expr])*($($args:expr),*): $($e:tt)*) => {{
-    let th = $de.$thm$([usize::from($ix)])*;
+    thm!($de, {$de.$thm$([usize::from($ix)])*}($($args),*): $($e)*)
+  }};
+  ($de:expr, {$thm:expr}($($args:expr),*): $($e:tt)*) => {{
+    let th = $thm;
     let args = &[$($args),*];
     let res = app!($de, $($e)*);
     $de.thm(th, args, res)
+  }};
+  ($de:expr, CONV($th:tt => $($conv:tt)*): $($e:tt)*) => {{
+    let th = thm!($de, $th);
+    let conv = conv!($de, $($conv)*);
+    let res = app!($de, $($e)*);
+    $de.conv(th, conv, res)
   }};
   ($de:expr, $thm:ident$([$ix:expr])*($($es:expr),*)($(($($args:tt)*))*): $($e:tt)*) => {{
     let th = $de.$thm$([usize::from($ix)])*;
@@ -117,4 +156,4 @@ macro_rules! app_match {
   }};
 }
 
-pub(crate) use {app, thm, app_match};
+pub(crate) use {app, thm, conv, app_match};

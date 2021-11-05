@@ -1,4 +1,4 @@
-use mm0_util::{TermId, ThmId};
+use mm0_util::{SortId, TermId, ThmId};
 
 use crate::{DeclKey, Environment};
 
@@ -7,6 +7,14 @@ fn mk_array<A, const N: usize>(mut f: impl FnMut(usize) -> A) -> [A; N] {
   [(); N].map(|_| { let a = f(i); i += 1; a })
 }
 
+fn get_sort(env: &Environment, s: &[u8]) -> SortId {
+  if_chain! {
+    if let Some(&a) = env.atoms.get(s);
+    if let Some(sort) = env.data[a].sort;
+    then { sort }
+    else { panic!("sort {} not found", std::str::from_utf8(s).expect("utf8")) }
+  }
+}
 fn get_term(env: &Environment, s: &[u8]) -> TermId {
   if_chain! {
     if let Some(&a) = env.atoms.get(s);
@@ -34,6 +42,7 @@ macro_rules! make_predefs {
     if $cond { make_predefs!(@new $ty $env, () () $e) } else { $ty(0) }
   };
   (@new AtomId $env:expr, () () $e:expr) => { $env.get_atom($e) };
+  (@new SortId $env:expr, () () $e:expr) => { get_sort($env, $e) };
   (@new TermId $env:expr, () () $e:expr) => { get_term($env, $e) };
   (@new ThmId $env:expr, () () $e:expr) => { get_thm($env, $e) };
   {$($(#[$attr:meta])* $x:ident $([$i:ident: $n:expr])*:
@@ -75,6 +84,8 @@ make_predefs! {
   eq: TermId => "eq";
   /// `eq: nat > nat > wff`
   ne: TermId => "ne";
+  /// `strict sort set;`
+  set: SortId => "set";
   /// `0: nat`
   d0: TermId => "d0";
   /// `suc: nat > nat`
@@ -101,8 +112,8 @@ make_predefs! {
   pr: TermId => "pr";
   /// `cons: nat > nat > nat`
   cons: TermId => "cons";
-  /// `len: nat > nat`
-  len: TermId => "len";
+  /// `strict sort string;`
+  string: SortId => "string";
   /// `sadd: string > string > string`
   sadd: TermId => "sadd";
   /// `sadd: char > string > string`
@@ -115,14 +126,16 @@ make_predefs! {
   dn[i: 17]: TermId => format!("d{}", i);
   /// `x[0..=f]: hex`
   xn[i: 16]: TermId => format!("x{:x}", i);
-  /// `ch: hex > hex > char`
-  ch: TermId => "ch";
-  /// `c2n: char > nat`
-  c2n: TermId => "c2n";
   /// `h2n: hex > nat`
   h2n: TermId => "h2n";
   /// `hex: nat > hex > nat`
   hex: TermId => "hex";
+  /// `ch: hex > hex > char`
+  ch: TermId => "ch";
+  /// `c2n: char > nat`
+  c2n: TermId => "c2n";
+  /// `s2n: string > nat`
+  s2n: TermId => "s2n";
   /// `h2n[0..=f]: x[i] = d[i]`
   h2nn[i: 16]: ThmId => format!("h2n{:x}", i);
   /// `decsucxf (a b c): suc a = b > suc (hex a xf) (hex b x0)`
@@ -158,8 +171,6 @@ make_predefs! {
   adc_x00: ThmId => "adc_x00";
   adc_x01: ThmId => "adc_x01";
 
-  sub64: TermId => "sub64";
-
   /// `bit: nat > nat > nat`
   bit: TermId => "bit";
   xbit[n: 16][i: 4]: ThmId => format!("xbit{:x}{:x}", n, i);
@@ -194,27 +205,43 @@ make_predefs! {
 
   padn[i: 16]: TermId => format!("_x00x{:x}", i);
 
-  /// `asmp_A (A B: set): set`
-  asmp_A: TermId => "asmp_A";
-  /// `is_asmp_A (p s t x y z A B)
-  ///   (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $):
-  ///   $ is_asmp p s x z (asmp_A A B) $`
-  is_asmp: TermId => "is_asmp";
-  /// `is_asmp_A (p s t x y z A B)
-  ///   (h1: $ is_asmp p s x y A $) (h2: $ is_asmp p t y z B $):
-  ///   $ is_asmp p s x z (asmp_A A B) $`
-  is_asmp_A: ThmId => "is_asmp_A";
-  /// `asmp_at (n: nat) (A: set): set`
-  asmp_at: TermId => "asmp_at";
-  /// `is_asmp_at (p s x y A): $ is_asmp p s x y A $ > $ is_asmp p s x y (asmp_at x A) $`
-  is_asmp_at: ThmId => "is_asmp_at";
-  /// `asmp_pad: set`
-  asmp_pad: TermId => "asmp_pad";
-  is_asmp_A_padn[i: 16]: ThmId if i != 0 => format!("is_asmp_A_pad_{:x}", i);
+  /// `assemble (s: string) (x y: nat) (P: set): wff`
+  assemble: TermId => "assemble";
+  /// `assembleA (A B: set): set`
+  assembleA: TermId => "assembleA";
+  assembleA_I: ThmId => "assembleA_I";
+
+  /// `localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff`
+  localAssemble: TermId => "localAssemble";
+  /// `localAssembleA (A B: set): set`
+  localAssembleA: TermId => "localAssembleA";
+  localAssembleA_I: ThmId => "localAssembleA_I";
+
+  /// `asmAt (n: nat) (A: set): set`
+  asmAt: TermId => "asmAt";
+  asmAtI: ThmId => "asmAtI";
+
+  /// `asmProc (n: nat) (A: set): set`
+  asmProc: TermId => "asmProc";
+  asmProcI: ThmId => "asmProcI";
+  assemble_pad: ThmId => "assemble_pad";
+
+  /// `assembled (c: string) (P: set): wff`
+  assembled: TermId => "assembled";
+  assembledI: ThmId => "assembledI";
+  assembled_l: ThmId => "assembled_l";
+  assembled_r: ThmId => "assembled_r";
+
+  /// `localAssembled (ctx: nat) (P: set): wff`
+  localAssembled: TermId => "localAssembled";
+  localAssembledI: ThmId => "localAssembledI";
+  localAssembled_l: ThmId => "localAssembled_l";
+  localAssembled_r: ThmId => "localAssembled_r";
 
   /// `strlen (s: string) (n: nat): wff`
   strlen: TermId => "strlen";
   strlenn[i: 16]: ThmId => format!("strlen{:x}", i);
+  strlen_padn[i: 16]: ThmId if i != 0 => format!("strlen_x00x{:x}", i);
 
   /// `parseInst (p ip: nat) (s: string) (I: set): wff`
   parseInst: TermId => "parseInst";
@@ -232,6 +259,10 @@ make_predefs! {
   IRM_imm32: TermId => "IRM_imm32";
   /// `IRM_imm64 (imm: nat): nat`
   IRM_imm64: TermId => "IRM_imm64";
+
+  /// `isU64 (n: nat): wff`
+  isU64: TermId => "isU64";
+  isU64n[i: 16]: ThmId => format!("isU64_{:x}", i);
 
   /// `parseUBytes (k n: nat) (s: string): wff`
   parseUBytes: TermId => "parseUBytes";

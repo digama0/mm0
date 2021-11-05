@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::regalloc::PCode;
 use crate::types::mir::BlockTree;
-use crate::{IdxVec, LinkedCode, Symbol, TEXT_START};
+use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
 use crate::codegen::FUNCTION_ALIGN;
 use crate::types::{mir::{self, Cfg}, vcode::ConstRef};
 
@@ -72,7 +72,7 @@ impl<'a> ElfProof<'a> {
   /// The mapping from IDs to function names.
   #[must_use] pub fn func_names(&self) -> &'a IdxVec<ProcId, Symbol> { &self.code.func_names }
 
-  /// The size of the BSS section (zeroed data following the read-only section).
+  /// An iterator over the assembled items (procedures and constants).
   #[must_use] pub fn assembly(&self) -> AssemblyItemIter<'_> {
     AssemblyItemIter {
       code: self.code,
@@ -198,6 +198,18 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
           unreachable!()
         }
       }
+    }
+  }
+  fn size_hint(&self) -> (usize, Option<usize>) { let n = self.len(); (n, Some(n)) }
+}
+
+impl ExactSizeIterator for AssemblyItemIter<'_> {
+  fn len(&self) -> usize {
+    match &self.state {
+      AssemblyItemState::Init => self.code.funcs.len() + self.code.consts.ordered.len() + 1,
+      AssemblyItemState::Proc(n) =>
+        (self.code.funcs.len() - n.into_usize()) + self.code.consts.ordered.len(),
+      AssemblyItemState::Const(it) => it.len(),
     }
   }
 }

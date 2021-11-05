@@ -2120,20 +2120,3 @@ $ S\ vs, (E.s a e. _V, (has_ty a (ty @' vs) *s
 $ ,(letrec ([(f n a x)
     @ if {n = 0} '(cons ,a ,x) (f {n - 1} '(fst ,a) @ f {n - 1} '(snd ,a) x)])
     (f 4 'a 'l)) $;
-
-do {
-  (def mmc-compiler (ref! (mmc-init)))
-  (def mmc-reset
-    (def c mmc-compiler)
-    (fn () (set! c (mmc-init))))
-  (def mmc-add
-    (def c mmc-compiler)
-    (fn xs (apply c '+ xs)))
-  (def mmc-finish
-    (def c mmc-compiler)
-    (fn xs (apply c 'finish xs)))
-  (def mmc-compiler)
-  (def (mmc-compile x . xs)
-    (apply mmc-add xs)
-    (mmc-finish x))
-};

@@ -16,14 +16,12 @@ mod assembler;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use mm0_util::{AtomId, FileSpan, Modifiers, Span, TermId, ThmId};
-use mmcc::Idx;
+use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, SortId, Span, TermId, ThmId};
+use mmcc::{Idx, Symbol, intern};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, ElfProof, Inst, Proc};
 
 use crate::elab::Result;
-use crate::mmc::proof::assembler::{BuildAssemblyProc, assemble_proc};
-use crate::{DeclKey, ElabError, Elaborator, Environment, ExprNode, Proof, ProofNode,
-  Remap, Remapper, Thm, ThmKind, Type};
+use crate::{DeclKey, ElabError, Elaborator, Environment, Expr, ExprNode, Proof, ProofNode, Remap, Remapper, Term, TermKind, Thm, ThmKind, Type};
 use crate::elab::proof::{self, IDedup, ProofKind};
 use self::norm_num::{HexCache, Num};
 
@@ -43,6 +41,8 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
   fn get(&self, i: Self::Id) -> &Self::Hash;
   fn build0(&self, i: Self::Id) -> (Box<[Self::Node]>, Self::Node);
   const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash;
+  fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id;
+  fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id;
   fn app1(&mut self, t: TermId, args: &[Self::Id]) -> Self::Id {
     self.add(Self::APP(t, args.iter().map(|x| x.into_usize()).collect()))
   }
@@ -82,6 +82,12 @@ macro_rules! make_dedup {
       }
       fn add(&mut self, h: proof::$hash) -> $id { $id::from_usize(self.de.add_direct(h)) }
       fn reuse(&mut self, i: $id) -> $id { $id::from_usize(self.de.reuse(i.into_usize())) }
+      fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id {
+        self.add(proof::$hash::Ref(k, i))
+      }
+      fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id {
+        self.add(proof::$hash::Dummy(s, sort))
+      }
       fn build0(&self, i: $id) -> (Box<[$node]>, $node) {
         let (mut ids, heap) = proof::build(&self.de);
         (heap, ids[i.into_usize()].take())
@@ -107,13 +113,36 @@ impl ProofDedup<'_> {
     self.add(proof::ProofHash::Thm(t,
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
+
   fn thm_r(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
     self.add_r(proof::ProofHash::Thm(t,
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
+
   fn thm_app(&mut self, th: ThmId, args: &[ProofId], t: TermId, es: &[ProofId]) -> ProofId {
     let res = self.app1(t, es);
     self.thm(th, args, res)
+  }
+
+  fn refl_conv(&mut self, e: ProofId) -> ProofId {
+    self.add(proof::ProofHash::Refl(e.into_usize()))
+  }
+
+  fn cong(&mut self, t: TermId, args: &[ProofId]) -> ProofId {
+    self.add(proof::ProofHash::Cong(t, args.iter().map(|x| x.into_usize()).collect()))
+  }
+
+  fn conv(&mut self, tgt: ProofId, conv: ProofId, th: ProofId) -> ProofId {
+    self.add(proof::ProofHash::Conv(tgt.into_usize(), conv.into_usize(), th.into_usize()))
+  }
+
+  fn unfold(&mut self, t: TermId, args: &[ProofId], conv: ProofId) -> ProofId {
+    let sub_lhs = proof::ProofHash::conv_side(&mut self.de, conv.into_usize(), false);
+    let lhs = self.app(t, args);
+    self.add(proof::ProofHash::Unfold(t,
+      args.iter().map(|x| x.into_usize()).collect(),
+      lhs.into_usize(), sub_lhs.into_usize(), conv.into_usize()
+    ))
   }
 
   fn cache(&mut self, t: ThmId, res: impl FnOnce(&mut Self) -> ProofId) -> ProofId {
@@ -123,21 +152,21 @@ impl ProofDedup<'_> {
     *self.cache.entry(t).or_insert(th)
   }
 
-  fn to_expr(&self, de: &mut ExprDedup<'_>, e: ProofId) -> ExprId {
-    let e = match *self.get(e) {
+  fn to_expr<'a, D: Dedup<'a>>(&self, de: &mut D, e: ProofId) -> D::Id {
+    match *self.get(e) {
       proof::ProofHash::Ref(ProofKind::Expr, i) if i < e.into_usize() =>
         // We assume there is no significant subterm sharing in expressions in theorem statements,
         // which is mostly true for theorem statements in the compiler.
-        return self.to_expr(de, ProofId::from_usize(i)),
+        self.to_expr(de, ProofId::from_usize(i)),
       proof::ProofHash::Ref(ProofKind::Expr, i) =>
-        proof::ExprHash::Ref(ProofKind::Expr, i),
-      proof::ProofHash::Dummy(s, sort) => proof::ExprHash::Dummy(s, sort),
-      proof::ProofHash::Term(t, ref es) =>
-        proof::ExprHash::App(t,
-          es.iter().map(|&e| self.to_expr(de, Idx::from_usize(e)).into_usize()).collect()),
+        de.ref_(ProofKind::Expr, i),
+      proof::ProofHash::Dummy(s, sort) => de.dummy(s, sort),
+      proof::ProofHash::Term(t, ref es) => {
+        let args = es.iter().map(|&e| self.to_expr(de, Idx::from_usize(e))).collect::<Vec<_>>();
+        de.app(t, &args)
+      }
       _ => panic!("to_expr called on non-expr"),
-    };
-    de.add(e)
+    }
   }
 
   /// Get the conclusion of the provided proof term.
@@ -160,13 +189,65 @@ impl ProofDedup<'_> {
     let (eheap, ret) = de.build0(concl);
     let (heap, head) = self.build0(thm);
     Thm {
-      atom, span, full, doc: None,
-      vis,
-      args: Box::new([]),
-      hyps: Box::new([]),
-      heap: eheap, ret,
+      atom, span, full, doc: None, vis,
+      args: Box::new([]), hyps: Box::new([]), heap: eheap, ret,
       kind: ThmKind::Thm(Some(Proof { heap, hyps: Box::new([]), head })),
     }
+  }
+}
+
+impl ExprDedup<'_> {
+  /// Constructs a definition with no parameters or dummy variables.
+  fn build_def0(&self,
+    atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, e: ExprId, ret: SortId,
+  ) -> Term {
+    let (heap, head) = self.build0(e);
+    Term {
+      atom, span, vis, full, doc: None, args: Box::new([]), ret: (ret, 0),
+      kind: TermKind::Def(Some(Expr { heap, head })),
+    }
+  }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum Name {
+  /// `foo_content: string`: the machine code for a procedure
+  ProcContent(Option<Symbol>),
+  /// `foo_asm: set`: the assembly for a procedure
+  ProcAsm(Option<Symbol>),
+  /// `foo_asmd: assemble foo_content <foo_start> <foo_end> (asmProc <foo_start> foo_asm)`:
+  /// the assembly proof
+  ProcAsmThm(Option<Symbol>),
+  /// `content: string`: The full machine code string
+  Content,
+  /// `asmd: assembled content <asm>`: A theorem that asserts that `content` assembles to a list of
+  /// procedures, referencing the `ProcAsm` definitions,
+  /// for example `assembled content (foo_asm +asm bar_asm +asm my_const_asm)`
+  AsmdThm,
+}
+
+impl std::fmt::Display for Name {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match *self {
+      Name::ProcContent(None) => write!(f, "_start_content"),
+      Name::ProcContent(Some(proc)) => write!(f, "{}_content", proc),
+      Name::ProcAsm(None) => write!(f, "_start_asm"),
+      Name::ProcAsm(Some(proc)) => write!(f, "{}_asm", proc),
+      Name::ProcAsmThm(None) => write!(f, "_start_asmd"),
+      Name::ProcAsmThm(Some(proc)) => write!(f, "{}_asmd", proc),
+      Name::Content => write!(f, "content"),
+      Name::AsmdThm => write!(f, "asmd"),
+    }
+  }
+}
+
+struct Mangler {
+  module: ArcString,
+}
+
+impl Mangler {
+  fn mangle(&self, env: &mut Environment, name: Name) -> AtomId {
+    env.get_atom(format!("_mmc_{}_{}", self.module.as_str(), name).as_bytes())
   }
 }
 
@@ -174,30 +255,12 @@ pub(crate) fn render_proof(
   pd: &Predefs, elab: &mut Elaborator, sp: Span,
   name: AtomId, proof: &ElfProof<'_>
 ) -> Result<()> {
-  let name_str = elab.data[name].name.clone();
-  let name_str = name_str.as_str();
-  macro_rules! atom {($lit:literal $(, $e:expr)*) => {
-    elab.get_atom(format!(concat!("{}_", $lit), name_str $(, $e)*).as_bytes())
-  }}
-
+  let mangler = Mangler {
+    module: elab.data[name].name.clone(),
+  };
+  let fsp = elab.fspan(sp);
   let mut proc_asm = HashMap::new();
-
-  for item in proof.assembly() {
-    match item {
-      AssemblyItem::Proc(proc) => {
-        let name = proc.name();
-        let name = *proc_asm.entry(name).or_insert_with(|| match name {
-          Some(name) => atom!("{}_asm", name),
-          None => atom!("_start_asm"),
-        });
-        let asm_thm = elab.env
-          .add_thm(assemble_proc(pd, name, &proc, elab.fspan(sp), sp))
-          .map_err(|e| e.into_elab_error(sp))?;
-        todo!()
-      }
-      AssemblyItem::Const(_) => todo!(),
-    }
-  }
+  assembler::assemble_proof(&mut elab.env, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
   elab.report(ElabError::info(sp, format!("{:#?}", proof)));
   Ok(())
 }

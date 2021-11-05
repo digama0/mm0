@@ -235,9 +235,21 @@ impl HexCache {
     }
   }
 
-  /// Returns `(c, |- a -_64 b = c)`
-  pub(super) fn sub64(&self, de: &mut ProofDedup<'_>, x: Num, y: Num) -> (Num, ProofId) {
-    todo!()
+  pub(super) fn is_u64(de: &mut ProofDedup<'_>, a: ProofId) -> ProofId {
+    let mut args = vec![];
+    let mut x = a;
+    loop {
+      app_match!(de, x => {
+        (hex a c) => { args.push(c); x = a }
+        (h2n c) => {
+          let i = args.len();
+          args.push(c);
+          let res = app!(de, (isU64 x));
+          return de.thm(de.isU64n[i], &args, res)
+        }
+        v => panic!("not a number"),
+      })
+    }
   }
 }
 
