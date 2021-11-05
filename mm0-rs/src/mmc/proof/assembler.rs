@@ -1,9 +1,7 @@
 #![warn(unused)]
 use std::collections::HashMap;
 
-use mmcc::{Symbol, TEXT_START,
-  arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop},
-  proof::{AssemblyItem, ElfProof, Inst, Proc}, types::Size};
+use mmcc::{Symbol, TEXT_START, arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop}, proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc}, types::Size};
 use crate::{FileSpan, Modifiers, Span, TermId, ThmId, Environment, elab::Result, mmc::proof::Name};
 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
@@ -1015,11 +1013,12 @@ impl BuildAssemblyProc<'_> {
 }
 
 struct BuildAssembly<'a> {
-  proc_asm: &'a mut HashMap<Option<Symbol>, (TermId, TermId, ThmId)>,
+  proc_asm: &'a mut HashMap<Option<Symbol>, (TermId, ThmId)>,
   mangler: &'a Mangler,
   env: &'a mut Environment,
   pd: &'a Predefs,
   span: &'a FileSpan,
+  asmd_lemmas: u32,
   full: Span,
   hex: HexCache,
   thm: ProofDedup<'a>,
@@ -1093,7 +1092,7 @@ impl<'a> BuildAssembly<'a> {
     let asm_thm = self.env
       .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))?;
-    self.proc_asm.entry(proc.name()).or_insert((code, asm, asm_thm));
+    self.proc_asm.insert(proc.name(), (asm, ThmId(0)));
 
     // Import into the context of the global (Name::Content) proof
     let s = build.to_expr(&mut self.thm, s);
@@ -1103,7 +1102,7 @@ impl<'a> BuildAssembly<'a> {
       (assemble s global_start {*end} (asmProc global_start a)))))
   }
 
-  fn assemble(&mut self, proof: &ElfProof<'_>) -> Result<()> {
+  fn assemble(&mut self, proof: &'a ElfProof<'a>) -> Result<()> {
     let mut iter = proof.assembly();
     let x = self.hex.from_u32(&mut self.thm, TEXT_START);
     let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, *x, &mut |this, item, x| {
@@ -1128,16 +1127,78 @@ impl<'a> BuildAssembly<'a> {
     let asmd_thm = self.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))?;
-    let _ = asmd_thm; // todo
-    Ok(())
+
+    let mut iter = proof.assembly();
+    self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.env, asmd_thm))
+  }
+
+  fn mk_lemma(&mut self,
+    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> ProofId
+  ) -> Result<ThmId> {
+    let mut de = ProofDedup::new(self.pd, &[]);
+    let th = mk_proof(self, &mut de);
+    let lem = self.mangler.mangle(self.env, Name::AsmdThmLemma(self.asmd_lemmas));
+    self.asmd_lemmas += 1;
+    self.env
+      .add_thm(de.build_thm0(lem, Modifiers::empty(), self.span.clone(), self.full, th))
+      .map_err(|e| e.into_elab_error(self.full))
+  }
+
+  fn prove_conjuncts(&mut self,
+    n: usize, iter: &mut AssemblyItemIter<'a>,
+    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> ProofId,
+  ) -> Result<()> {
+    if n <= 1 {
+      assert!(n != 0);
+      let item = iter.next().expect("iterator size lied");
+      let mut de = ProofDedup::new(self.pd, &[]);
+      let th = mk_proof(self, &mut de);
+      match item {
+        AssemblyItem::Proc(proc) => {
+          let asmd_thm = self.mangler.mangle(self.env, Name::ProcAsmdThm(proc.name()));
+          let asmd_thm = self.env
+            .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+            .map_err(|e| e.into_elab_error(self.full))?;
+          self.proc_asm.get_mut(&proc.name()).expect("impossible").1 = asmd_thm;
+        }
+        AssemblyItem::Const(_) => todo!(),
+      }
+      Ok(())
+    } else {
+      let m = n >> 1;
+      let left = |this: &Self, de: &mut ProofDedup<'a>| {
+        let th = mk_proof(this, de);
+        let (c, a, b) = app_match!(this.thm, de.concl(th) => {
+          (assembled c (assembleA a b)) => (c, a, b),
+          !
+        });
+        thm!(de, assembled_l(a, b, c, th): (assembled c a))
+      };
+      let right = |this: &Self, de: &mut ProofDedup<'a>| {
+        let th = mk_proof(this, de);
+        let (c, a, b) = app_match!(this.thm, de.concl(th) => {
+          (assembled c (assembleA a b)) => (c, a, b),
+          !
+        });
+        thm!(de, assembled_r(a, b, c, th): (assembled c b))
+      };
+      if n > 16 {
+        let lem1 = self.mk_lemma(&left)?;
+        self.prove_conjuncts(m, iter, &|this, de| de.thm0(this.env, lem1))?;
+        let lem2 = self.mk_lemma(&right)?;
+        self.prove_conjuncts(n - m, iter, &|this, de| de.thm0(this.env, lem2))
+      } else {
+        self.prove_conjuncts(m, iter, &left)?;
+        self.prove_conjuncts(n - m, iter, &right)
+      }
+    }
   }
 }
-
 
 pub(super) fn assemble_proof(
   env: &mut Environment,
   pd: &Predefs,
-  proc_asm: &mut HashMap<Option<Symbol>, (TermId, TermId, ThmId)>,
+  proc_asm: &mut HashMap<Option<Symbol>, (TermId, ThmId)>,
   mangler: &Mangler,
   proof: &ElfProof<'_>,
   span: &FileSpan,
@@ -1153,6 +1214,7 @@ pub(super) fn assemble_proof(
     full,
     hex: HexCache::new(&mut thm),
     thm,
+    asmd_lemmas: 0,
   };
   build.assemble(proof)?;
   Ok(())

@@ -54,6 +54,30 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
     app!(self, a = b)
   }
   #[inline] fn do_from_usize(&self, i: usize) -> Self::Id { Idx::from_usize(i) }
+
+  fn from_expr_node(&mut self, e: &ExprNode, refs: &[Self::Id]) -> Self::Id {
+    match *e {
+      ExprNode::Ref(i) if i < refs.len() => refs[i],
+      ExprNode::Ref(i) => self.ref_(ProofKind::Expr, i),
+      ExprNode::Dummy(s, sort) => self.dummy(s, sort),
+      ExprNode::App(t, ref es) => {
+        let args = es.iter().map(|e| self.from_expr_node(e, refs)).collect::<Vec<_>>();
+        self.app(t, &args)
+      }
+    }
+  }
+  fn from_expr_nodes(&mut self, heap: &[ExprNode]) -> Vec<Self::Id> {
+    let mut refs = Vec::with_capacity(heap.len());
+    for node in heap {
+      let id = self.from_expr_node(node, &refs);
+      refs.push(id)
+    }
+    refs
+  }
+  fn from_expr(&mut self, e: &Expr, refs: &[Self::Id]) -> Self::Id {
+    let refs = self.from_expr_nodes(&e.heap);
+    self.from_expr_node(&e.head, &refs)
+  }
 }
 
 macro_rules! make_dedup {
@@ -122,6 +146,14 @@ impl ProofDedup<'_> {
   fn thm_app(&mut self, th: ThmId, args: &[ProofId], t: TermId, es: &[ProofId]) -> ProofId {
     let res = self.app1(t, es);
     self.thm(th, args, res)
+  }
+
+  fn thm0(&mut self, env: &Environment, name: ThmId) -> ProofId {
+    let thd = &env.thms[name];
+    assert!(thd.args.is_empty() && thd.hyps.is_empty());
+    let refs = self.from_expr_nodes(&thd.heap);
+    let concl = self.from_expr_node(&thd.ret, &refs);
+    self.thm(name, &[], concl)
   }
 
   fn refl_conv(&mut self, e: ProofId) -> ProofId {
@@ -215,8 +247,8 @@ enum Name {
   ProcContent(Option<Symbol>),
   /// `foo_asm: set`: the assembly for a procedure
   ProcAsm(Option<Symbol>),
-  /// `foo_asmd: assemble foo_content <foo_start> <foo_end> (asmProc <foo_start> foo_asm)`:
-  /// the assembly proof
+  /// `foo_asms: assemble foo_content <foo_start> <foo_end> (asmProc <foo_start> foo_asm)`:
+  /// the incomplete assembly proof
   ProcAsmThm(Option<Symbol>),
   /// `content: string`: The full machine code string
   Content,
@@ -224,6 +256,10 @@ enum Name {
   /// procedures, referencing the `ProcAsm` definitions,
   /// for example `assembled content (foo_asm +asm bar_asm +asm my_const_asm)`
   AsmdThm,
+  /// `asmd_lem{n}: assembled content <asm>`: A conjunct in `AsmdThm` extracted as a lemma
+  AsmdThmLemma(u32),
+  /// `foo_asmd: assembled foo_content (asmProc <foo_start> foo_asm)`: the completed assembly proof
+  ProcAsmdThm(Option<Symbol>),
 }
 
 impl std::fmt::Display for Name {
@@ -233,10 +269,13 @@ impl std::fmt::Display for Name {
       Name::ProcContent(Some(proc)) => write!(f, "{}_content", proc),
       Name::ProcAsm(None) => write!(f, "_start_asm"),
       Name::ProcAsm(Some(proc)) => write!(f, "{}_asm", proc),
-      Name::ProcAsmThm(None) => write!(f, "_start_asmd"),
-      Name::ProcAsmThm(Some(proc)) => write!(f, "{}_asmd", proc),
+      Name::ProcAsmThm(None) => write!(f, "_start_asms"),
+      Name::ProcAsmThm(Some(proc)) => write!(f, "{}_asms", proc),
+      Name::ProcAsmdThm(None) => write!(f, "_start_asmd"),
+      Name::ProcAsmdThm(Some(proc)) => write!(f, "{}_asmd", proc),
       Name::Content => write!(f, "content"),
       Name::AsmdThm => write!(f, "asmd"),
+      Name::AsmdThmLemma(n) => write!(f, "asmd_lem{}", n),
     }
   }
 }
