@@ -7,6 +7,14 @@ fn mk_array<A, const N: usize>(mut f: impl FnMut(usize) -> A) -> [A; N] {
   [(); N].map(|_| { let a = f(i); i += 1; a })
 }
 
+fn mk_remap<'a, A, const N: usize>(
+  arr: &'a [A; N],
+  mut f: impl FnMut(usize, &'a A) -> A
+) -> [A; N] {
+  let mut i = 0_usize;
+  [(); N].map(|_| { let a = f(i, &arr[i]); i += 1; a })
+}
+
 fn get_sort(env: &Environment, s: &[u8]) -> SortId {
   if_chain! {
     if let Some(&a) = env.atoms.get(s);
@@ -45,6 +53,13 @@ macro_rules! make_predefs {
   (@new SortId $env:expr, () () $e:expr) => { get_sort($env, $e) };
   (@new TermId $env:expr, () () $e:expr) => { get_term($env, $e) };
   (@new ThmId $env:expr, () () $e:expr) => { get_thm($env, $e) };
+  (@remap $ty:tt $self:expr, $r:expr, ($i:ident, $($is:ident,)*) $cond:tt) => {
+    mk_remap($self, |$i, this| make_predefs!(@remap $ty this, $r, ($($is,)*) $cond))
+  };
+  (@remap $ty:ident $self:expr, $r:expr, () ($cond:expr)) => {
+    if $cond { make_predefs!(@remap $ty $self, $r, () ()) } else { $ty(0) }
+  };
+  (@remap $ty:ident $self:expr, $r:expr, () ()) => {$self.remap($r)};
   {$($(#[$attr:meta])* $x:ident $([$i:ident: $n:expr])*:
       $ty:tt $(if $cond:expr)? => $e:expr;)*} => {
     /// A predef is a name of an external constant, defined in `compiler.mm1` and required
@@ -61,7 +76,7 @@ macro_rules! make_predefs {
     impl crate::Remap for Predefs {
       type Target = Self;
       fn remap(&self, r: &mut crate::Remapper) -> Self {
-        Self { $($x: self.$x.remap(r)),* }
+        Self { $($x: make_predefs!(@remap $ty &self.$x, r, ($($i,)*) ($($cond)?))),* }
       }
     }
 

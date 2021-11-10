@@ -1166,69 +1166,72 @@ impl Environment {
     })
   }
 
-  /// Merge `other` into this environment. This merges definitions with the same name and type,
+  /// Merge statement `s` from `other` into this environment.
+  /// This merges definitions with the same name and type,
   /// and relabels lisp objects with the new [`AtomId`] mapping.
   ///
-  /// This function does not do any merging of lisp data. For this functionality see [`EnvMergeIter`].
-  fn merge_no_lisp(&mut self, remap: &mut Remapper, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
-    for s in other.stmts() {
-      match *s {
-        StmtTrace::Sort(a) => {
-          let i = other.data()[a].sort().expect("wf env");
-          let sort = other.sort(i);
-          let id = match self.add_sort(a.remap(remap), sort.span.clone(), sort.full, sort.mods, sort.doc.clone()) {
+  /// This function does not do any merging of lisp data.
+  /// For this functionality see [`EnvMergeIter`].
+  fn merge_no_lisp(&mut self,
+    remap: &mut Remapper, other: &FrozenEnv, s: &StmtTrace, sp: Span, errors: &mut Vec<ElabError>
+  ) -> Result<(), ElabError> {
+    match *s {
+      StmtTrace::Sort(a) => {
+        let i = other.data()[a].sort().expect("wf env");
+        let sort = other.sort(i);
+        let id = match self.add_sort(a.remap(remap),
+          sort.span.clone(), sort.full, sort.mods, sort.doc.clone())
+        {
+          Ok(id) => id,
+          Err(AddItemError::Redeclaration(id, r)) => {
+            errors.push(ElabError::with_info(sp, r.msg.into(), vec![
+              (sort.span.clone(), r.othermsg.clone().into()),
+              (r.other, r.othermsg.into())
+            ]));
+            id
+          }
+          Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many sorts"))
+        };
+        assert_eq!(remap.sort.len(), i.0 as usize);
+        remap.sort.push(id);
+      }
+      StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
+        DeclKey::Term(tid) => {
+          let otd: &Term = other.term(tid);
+          let id = match self.try_add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
-              errors.push(ElabError::with_info(sp, r.msg.into(), vec![
-                (sort.span.clone(), r.othermsg.clone().into()),
+              let e = ElabError::with_info(sp, r.msg.into(), vec![
+                (otd.span.clone(), r.othermsg.clone().into()),
                 (r.other, r.othermsg.into())
-              ]));
-              id
+              ]);
+              match id { None => return Err(e), Some(id) => {errors.push(e); id} }
             }
-            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many sorts"))
+            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many terms"))
           };
-          assert_eq!(remap.sort.len(), i.0 as usize);
-          remap.sort.push(id);
+          assert_eq!(remap.term.len(), tid.0 as usize);
+          remap.term.push(id);
         }
-        StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
-          DeclKey::Term(tid) => {
-            let otd: &Term = other.term(tid);
-            let id = match self.try_add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
-              Ok(id) => id,
-              Err(AddItemError::Redeclaration(id, r)) => {
-                let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (otd.span.clone(), r.othermsg.clone().into()),
-                  (r.other, r.othermsg.into())
-                ]);
-                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
-              }
-              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many terms"))
-            };
-            assert_eq!(remap.term.len(), tid.0 as usize);
-            remap.term.push(id);
-          }
-          DeclKey::Thm(tid) => {
-            let otd: &Thm = other.thm(tid);
-            let id = match self.try_add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
-              Ok(id) => id,
-              Err(AddItemError::Redeclaration(id, r)) => {
-                let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (otd.span.clone(), r.othermsg.clone().into()),
-                  (r.other, r.othermsg.into())
-                ]);
-                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
-              }
-              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many theorems"))
-            };
-            assert_eq!(remap.thm.len(), tid.0 as usize);
-            remap.thm.push(id);
-          }
-        },
-        StmtTrace::Global(_) => {}
-        StmtTrace::OutputString(ref e) => self.stmts.push(StmtTrace::OutputString(e.remap(remap))),
-      }
+        DeclKey::Thm(tid) => {
+          let otd: &Thm = other.thm(tid);
+          let id = match self.try_add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
+            Ok(id) => id,
+            Err(AddItemError::Redeclaration(id, r)) => {
+              let e = ElabError::with_info(sp, r.msg.into(), vec![
+                (otd.span.clone(), r.othermsg.clone().into()),
+                (r.other, r.othermsg.into())
+              ]);
+              match id { None => return Err(e), Some(id) => {errors.push(e); id} }
+            }
+            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many theorems"))
+          };
+          assert_eq!(remap.thm.len(), tid.0 as usize);
+          remap.thm.push(id);
+        }
+      },
+      StmtTrace::Global(_) => {}
+      StmtTrace::OutputString(ref e) => self.stmts.push(StmtTrace::OutputString(e.remap(remap))),
     }
-    self.pe.merge(other.pe(), remap, sp, &self.sorts, errors);
     Ok(())
   }
 
@@ -1252,7 +1255,7 @@ pub struct EnvMergeIter<'a> {
   remap: Remapper,
   other: &'a FrozenEnv,
   sp: Span,
-  it: std::iter::Enumerate<std::slice::Iter<'a, super::frozen::FrozenAtomData>>,
+  it: std::slice::Iter<'a, StmtTrace>,
 }
 
 /// A lisp merge request. The elaborator receives this struct containing a merge strategy
@@ -1261,6 +1264,7 @@ pub struct EnvMergeIter<'a> {
 /// [`EnvMergeIter::apply_merge`].
 #[derive(Debug)]
 pub struct AwaitingMerge<'a> {
+  /// The new atom ID
   a: AtomId,
   /// The merge strategy (always non-`None` because we handle `None` merge strategy
   /// directly without a request).
@@ -1280,7 +1284,7 @@ impl<'a> EnvMergeIter<'a> {
       atom: other.data().iter().map(|d| env.get_atom_arc(d.name().clone())).collect(),
       ..Default::default()
     };
-    Self {remap, other, sp, it: other.data().iter().enumerate()}
+    Self {remap, other, sp, it: other.stmts().iter()}
   }
 
   /// Poll the environment merge iterator for a result.
@@ -1288,29 +1292,37 @@ impl<'a> EnvMergeIter<'a> {
   /// * `Ok(None)` means that merging is complete. Non-fatal errors will be accumulated into `errors`.
   /// * `Ok(Some(req))` means that we need to handle a merge request `req`, see [`AwaitingMerge`].
   pub fn next(&mut self, env: &mut Environment, errors: &mut Vec<ElabError>) -> Result<Option<AwaitingMerge<'a>>, ElabError> {
-    #[allow(clippy::cast_possible_truncation)]
-    while let Some((i, d)) = self.it.next() {
-      let a = AtomId(i as u32);
-      let data = &mut env.data[self.remap.atom[a]];
-      let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
-      if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {
-        if let Some(new) = newlisp {
-          return Ok(Some(AwaitingMerge {a, strat: strat.clone(), val: val.clone(), new, d}))
+    while let Some(s) = self.it.next() {
+      if let StmtTrace::Global(a_old) = *s {
+        let d = &self.other.data()[a_old];
+        let a = self.remap.atom[a_old];
+        env.stmts.push(StmtTrace::Global(a));
+        let data = &mut env.data[a];
+        let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
+        if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {
+          if let Some(new) = newlisp {
+            return Ok(Some(AwaitingMerge {a, strat: strat.clone(), val: val.clone(), new, d}))
+          }
+        } else {
+          data.lisp = newlisp;
+          if data.lisp.is_none() {
+            data.graveyard = d.graveyard().clone();
+          }
         }
       } else {
-        data.lisp = newlisp;
-        if data.lisp.is_none() {
-          data.graveyard = d.graveyard().clone();
-        }
+        env.merge_no_lisp(&mut self.remap, self.other, s, self.sp, errors)?;
       }
     }
-    env.merge_no_lisp(&mut self.remap, self.other, self.sp, errors)?;
+    env.pe.merge(self.other.pe(), &mut self.remap, self.sp, &env.sorts, errors);
     Ok(None)
   }
+}
 
+impl AwaitingMerge<'_> {
   /// Apply a completed [`AwaitingMerge`] request to the current environment.
-  pub fn apply_merge(&self, env: &mut Environment, AwaitingMerge {a, val, new, d, ..}: AwaitingMerge<'a>) {
-    let data = &mut env.data[self.remap.atom[a]];
+  pub fn apply(self, env: &mut Environment) {
+    let AwaitingMerge {a, val, new, d, ..} = self;
+    let data = &mut env.data[a];
     if val.is_def_strict() {
       match data.lisp {
         ref mut o @ None => *o = Some(new),

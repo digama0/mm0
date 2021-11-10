@@ -735,7 +735,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                         merge.val = elab.apply_merge(*sp,
                             merge.strat.as_deref(), merge.val.clone(), merge.new.val.clone())
                           .unwrap_or_else(|e| {elab.report(e); merge.new.val.clone()});
-                        it.apply_merge(&mut elab.env, merge);
+                        merge.apply(&mut elab.env);
                       }
                     }
                   }
