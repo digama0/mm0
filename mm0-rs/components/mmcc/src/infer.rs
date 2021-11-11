@@ -1126,20 +1126,32 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
   }
 
   fn fmt_lft_mvar(&self, v: LftMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let (ic, inner) = &mut *self.inner.borrow_mut();
-    if let Some(lft) = ic.lft_mvars.lookup(v) { return CtxDisplay::fmt(&lft, self, f) }
+    let mut guard = self.inner.borrow_mut();
+    let (ic, inner) = &mut *guard;
+    if let Some(lft) = ic.lft_mvars.lookup(v) {
+      drop(guard);
+      return CtxDisplay::fmt(&lft, self, f)
+    }
     write!(f, "'{}", inner.lft_mvars.get(v))
   }
 
   fn fmt_expr_mvar(&self, v: ExprMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let (ic, inner) = &mut *self.inner.borrow_mut();
-    if let Some(e) = ic.expr_mvars.lookup(v) { return CtxDisplay::fmt(e, self, f) }
+    let mut guard = self.inner.borrow_mut();
+    let (ic, inner) = &mut *guard;
+    if let Some(e) = ic.expr_mvars.lookup(v) {
+      drop(guard);
+      return CtxDisplay::fmt(e, self, f)
+    }
     write!(f, "?{}", alphanumber(inner.expr_mvars.get(v)))
   }
 
   fn fmt_ty_mvar(&self, v: TyMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let (ic, inner) = &mut *self.inner.borrow_mut();
-    if let Some(ty) = ic.ty_mvars.lookup(v) { return CtxDisplay::fmt(ty, self, f) }
+    let mut guard = self.inner.borrow_mut();
+    let (ic, inner) = &mut *guard;
+    if let Some(ty) = ic.ty_mvars.lookup(v) {
+      drop(guard);
+      return CtxDisplay::fmt(ty, self, f)
+    }
     let mut s = alphanumber(inner.ty_mvars.get(v));
     s.make_ascii_uppercase();
     write!(f, "?{}", s)

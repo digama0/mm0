@@ -712,7 +712,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TyKind<'a> {
       TyKind::Input => "Input".fmt(f),
       TyKind::Output => "Output".fmt(f),
       TyKind::Moved(ty) => write!(f, "|{}|", p!(ty)),
-      TyKind::Infer(v) => write!(f, "?T{}", v.0),
+      TyKind::Infer(v) => ctx.fmt_ty_mvar(v, f),
       TyKind::Error => "??".fmt(f),
     }
   }
@@ -1086,7 +1086,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ExprKind<'a> {
         ")".fmt(f)
       }
       ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", p!(cond), p!(then), p!(els)),
-      ExprKind::Infer(v) => write!(f, "?v{}", v.0),
+      ExprKind::Infer(v) => ctx.fmt_expr_mvar(v, f),
       ExprKind::Error => "??".fmt(f),
     }
   }
