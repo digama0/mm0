@@ -166,6 +166,9 @@ impl Compiler {
   /// Once we are done adding functions, this function performs final linking to produce an executable.
   pub fn finish(&mut self, elab: &mut Elaborator, sp: Span, name: AtomId) -> Result<()> {
     let compiler = Rc::make_mut(&mut self.inner);
+    if compiler.has_type_errors() {
+      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
+    }
     proof::render_proof(&self.predef, elab, sp, name, &compiler.finish().proof())
   }
 

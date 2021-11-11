@@ -206,6 +206,8 @@ pub struct Compiler<C> {
   init: build_mir::Initializer,
   /// If the main function has been provided, this is a pointer to it.
   main: Option<Symbol>,
+  /// If true, some items have not been generated correctly, so compilation cannot proceed.
+  has_type_errors: bool,
 }
 
 impl<C: Default> Default for Compiler<C> {
@@ -220,6 +222,7 @@ impl<C> Compiler<C> {
       mir: Default::default(),
       init: Default::default(),
       main: None,
+      has_type_errors: false,
       config,
     })
   }
@@ -233,7 +236,7 @@ impl<C: Config> Compiler<C> {
   pub fn add(&mut self, item: &ast::Item, var_names: IdxVec<VarId, Symbol>,
     mut ic: impl ItemContext<C>
   ) -> Result<(), C::Error> {
-    let Compiler {names, mir, init, main, ..} = self;
+    let Compiler {names, mir, init, main, has_type_errors, ..} = self;
     let hir_alloc = Bump::new();
     let mut ctx = infer::InferCtx::new(&hir_alloc, names, var_names);
     if let ast::ItemKind::Proc {kind: ast::ProcKind::Main, ref name, ..} = item.k {
@@ -247,7 +250,10 @@ impl<C: Config> Compiler<C> {
     if !ctx.errors.is_empty() {
       let errs = std::mem::take(&mut ctx.errors);
       let pr = ctx.print(&mut ic);
-      if !ic.emit_type_errors(&mut self.config, errs, &pr)? { return Ok(()) }
+      if !ic.emit_type_errors(&mut self.config, errs, &pr)? {
+        *has_type_errors = true;
+        return Ok(())
+      }
     }
     if let Some(item) = item {
       if let Some(n) = build_mir::BuildMir::new(Some(&mut ctx.mvars)).build_item(mir, init, item) {
@@ -255,6 +261,18 @@ impl<C: Config> Compiler<C> {
       }
     }
     Ok(())
+  }
+
+  /// If true, then `finish` will panic.
+  pub fn has_type_errors(&self) -> bool { self.has_type_errors }
+
+  /// Reset the compiler to the initial state.
+  pub fn clear(&mut self) {
+    self.names = symbol::Interner::with(Self::make_names);
+    self.mir = Default::default();
+    self.init = Default::default();
+    self.main = None;
+    self.has_type_errors = false;
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an
@@ -265,7 +283,8 @@ impl<C: Config> Compiler<C> {
   pub fn finish(&mut self) -> LinkedCode {
     let names = std::mem::replace(&mut self.names, symbol::Interner::with(Self::make_names));
     let mir = std::mem::take(&mut self.mir);
-    println!("{:?}", mir);
+    assert!(!self.has_type_errors);
+    // eprintln!("{:#?}", mir);
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);

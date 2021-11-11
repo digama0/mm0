@@ -833,10 +833,10 @@ pub enum ProcKind {
 pub enum Ret {
   /// This is a regular argument, with the given argument pattern.
   Reg(TuplePattern),
-  /// This is an `out` argument: `Out(g, i, n, v, ty)` means that this argument was marked as
+  /// This is an `out` argument: `Out(i, n, v, ty)` means that this argument was marked as
   /// `out` corresponding to argument `i` in the inputs; `n` or `v` is the name of the binder,
   /// and `ty` is the type, if provided.
-  Out(bool, u32, Symbol, VarId, Option<Box<Type>>),
+  Out(u32, Symbol, VarId, Option<Box<Type>>),
 }
 
 bitflags! {

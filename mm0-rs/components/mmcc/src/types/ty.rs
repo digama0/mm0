@@ -1100,7 +1100,7 @@ impl std::fmt::Debug for ExprKind<'_> {
       ExprKind::Const(c) => write!(f, "{}", c),
       ExprKind::Bool(b) => write!(f, "{}", b),
       ExprKind::Int(n) => write!(f, "{}", n),
-      ExprKind::Unop(op, e) => { write!(f, "{} {:?}", op, e) }
+      ExprKind::Unop(op, e) => write!(f, "{} {:?}", op, e),
       ExprKind::Binop(op, e1, e2) => write!(f, "({:?} {} {:?})", e1, op, e2),
       ExprKind::Index(arr, idx) => write!(f, "{:?}[{:?}]", arr, idx),
       ExprKind::Slice([arr, idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),

@@ -259,7 +259,7 @@ impl<'a> Translator<'a, '_> {
   }
 
   fn location(&mut self, var: HVarId) -> VarId {
-    dbg!(var, *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())).1
+    *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())
   }
 
   fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
@@ -1482,7 +1482,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.extend_ctx(v, false, (None, Rc::new(TyKind::False)));
         let bl = self.new_block();
         self.cur_block().terminate(Terminator::Call {
-          f: f.k, se, tys, args, reach: false, tgt: bl, rets: Box::new([v])
+          f: f.k, se, tys, args, reach: false, tgt: bl, rets: Box::new([(false, v)])
         });
         let bl = &mut self.cfg[bl];
         bl.reachable = false;
@@ -1495,7 +1495,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let vr = !tgt.ghostly();
         let tgt = self.tr(tgt);
         self.extend_ctx(v, vr, (None, tgt));
-        Box::new([v])
+        Box::new([(vr, v)])
       }
       hir::ReturnKind::Struct(_) => {
         let tgt = self.tr(tgt);
@@ -1504,9 +1504,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         dest.iter().zip(argtys).map(|(&dest, &Arg {attr, var, ref ty})| {
           let v = self.tr(dest);
           let ty = alph.alpha(ty);
-          self.extend_ctx(v, !attr.contains(ArgAttr::GHOST), (None, ty));
+          let vr = !attr.contains(ArgAttr::GHOST);
+          self.extend_ctx(v, vr, (None, ty));
           if !attr.contains(ArgAttr::NONDEP) { alph.push(var, v) }
-          v
+          (vr, v)
         }).collect()
       }
     };
@@ -1539,7 +1540,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     match it.k {
       hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
-          if attr.contains(ty::ArgAttr::NONDEP) { ArgAttr::NONDEP } else { ArgAttr::empty() }
+          let mut out = ArgAttr::empty();
+          if attr.contains(ty::ArgAttr::NONDEP) { out |= ArgAttr::NONDEP }
+          if attr.contains(ty::ArgAttr::GHOST) { out |= ArgAttr::GHOST }
+          out
         }
         if variant.is_some() {
           unimplemented!("recursive functions not supported")
@@ -1608,7 +1612,7 @@ impl Initializer {
           [ref ret] => {
             let v = build.fresh_var();
             build.extend_ctx(v, false, (None, ret.ty.clone()));
-            (Box::new([v]), v.into())
+            (Box::new([(false, v)]), v.into())
           }
           [] => (Box::new([]), Constant::unit().into()),
           _ => panic!("main should have at most one return")

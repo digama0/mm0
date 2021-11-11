@@ -877,7 +877,6 @@ impl<'a, C> Parser<'a, C> {
     intrinsic: bool,
   ) -> Result<Item> {
     struct OutVal {
-      ghost: bool,
       index: u32,
       name: Symbol,
       used: bool,
@@ -921,12 +920,12 @@ impl<'a, C> Parser<'a, C> {
             return Err(ElabError::new_e(&span, "'out' not permitted on function arguments"))
           }
           if attr.mut_ {
-            if let Some((ghost, name, _)) = pat.var().as_single_name() {
+            if let Some((_, name, _)) = pat.var().as_single_name() {
               if outmap.iter().any(|p| p.name == name) {
                 return Err(ElabError::new_e(&span, "'mut' variables cannot shadow"))
               }
               outmap.push(OutVal {
-                ghost, name, used: false,
+                name, used: false,
                 index: args.len().try_into().expect("too many arguments"),
               });
             } else { return Err(ElabError::new_e(&span, "cannot use tuple pattern with 'mut'")) }
@@ -957,8 +956,8 @@ impl<'a, C> Parser<'a, C> {
           })?
         }
         rets.extend(outmap.iter().filter(|val| !val.used)
-          .map(|&OutVal {ghost, index, name, ..}|
-            Ret::Out(ghost, index, name, this.ba.push_fresh(name), None)));
+          .map(|&OutVal {index, name, ..}|
+            Ret::Out(index, name, this.ba.push_fresh(name), None)));
         for (span, attr, pat) in rets1 {
           if attr.mut_ {
             return Err(ElabError::new_e(&span, "'mut' not permitted on function returns"))
@@ -972,9 +971,9 @@ impl<'a, C> Parser<'a, C> {
                 let mut sp = span.clone();
                 loop {
                   match pat {
-                    TuplePatternKind::Name(g, name2, v) => {
-                      let &OutVal {ghost, index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
-                      break Ret::Out(ghost || g, index, name2, v, oty)
+                    TuplePatternKind::Name(_, name2, v) => {
+                      let &OutVal {index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
+                      break Ret::Out(index, name2, v, oty)
                     }
                     TuplePatternKind::Typed(pat2, ty) => {
                       if oty.replace(ty).is_some() {

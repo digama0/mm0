@@ -178,7 +178,7 @@ impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<T=Expr> {
   /// The mapping from indexes in the `expr` to internal names.
@@ -186,6 +186,15 @@ pub struct Mm0Expr<T=Expr> {
   pub subst: Box<[T]>,
   /// The root node of the expression.
   pub expr: LambdaId,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Mm0Expr<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    write!(f, "{:?}", self.expr)?;
+    if !self.subst.is_empty() { write!(f, "[{:?}]", self.subst.iter().format(", "))? }
+    Ok(())
+  }
 }
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {

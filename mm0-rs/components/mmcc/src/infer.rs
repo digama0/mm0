@@ -4261,7 +4261,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let gen = self.new_generation();
         let rets = rets.iter().map(|ret| (ArgAttr::empty(), UnelabArgKind::Lam(match ret {
           ast::Ret::Reg(pat) => self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0,
-          &ast::Ret::Out(g, i, n, v, ref ty) => {
+          &ast::Ret::Out(i, n, v, ref ty) => {
             let i = u32_as_usize(i);
             let span = &args[i].span;
             let ty = if let Some(ty) = ty {
@@ -4271,7 +4271,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             };
             let ctx = self.new_context_next(v, None, ty);
             self.dc.context = ctx.into();
-            UnelabTupPat { span, k: UnelabTupPatKind::Name(g, n, ctx) }
+            UnelabTupPat { span, k: UnelabTupPatKind::Name(false, n, ctx) }
           }
         }))).collect();
         let rets = self.finish_args(rets);
@@ -4302,15 +4302,15 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }
         if intrinsic.is_some() { return None }
         self.dc.context = ctx;
-        let sigma = match *t_args {
+        let sigma = match *t_rets {
           [] => self.common.t_unit,
           [arg] => arg.k.1.var().k.ty(),
-          _ => intern!(self, TyKind::Struct(t_args)),
+          _ => intern!(self, TyKind::Struct(t_rets)),
         };
         let mut body = self.check_block(span, body, sigma).0;
         let e = body.expr.take().map_or_else(|| hir::Spanned {span, k:
           (hir::ExprKind::Unit, (Some(self.common.e_unit), self.common.t_unit))}, |e| *e);
-        let (span, k) = match t_args.len() {
+        let (span, k) = match t_rets.len() {
           0 => {
             body.stmts.push(e.map_into(hir::StmtKind::Expr));
             (span, hir::ExprKind::Return(vec![]))

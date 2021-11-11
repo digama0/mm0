@@ -260,6 +260,11 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
       }
     }
   }
+  if let Some(rets) = &vcode.abi.rets {
+    for abi in &**rets {
+      if let vcode::ArgAbi::Reg(r, _) = *abi { result.remove(r) }
+    }
+  }
   result
 }
 
@@ -275,9 +280,9 @@ pub(crate) fn regalloc_vcode(
 ) -> (ProcAbi, Box<PCode>) {
   // simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default());
   let mut vcode = build_vcode(names, func_mono, funcs, consts, cfg, allocs, ctx);
-  // println!("{:#?}", vcode);
+  // eprintln!("{:#?}", vcode);
   let out = vcode.regalloc();
-  // println!("{:#?}", out);
+  // eprintln!("{:#?}", out);
   let clobbers = get_clobbers(&vcode, &out);
   let saved_regs = callee_saved().filter(move |&r| clobbers.get(r));
   vcode.abi.clobbers = non_callee_saved().filter(|&r| clobbers.get(r)).collect();
@@ -326,16 +331,17 @@ pub(crate) fn regalloc_vcode(
         code.push(PInst::Unop { op, sz, dst });
       }
       Inst::DivRem { sz, ref src2, .. } => {
-        let (_, src, _, _) = (ar.reg(), ar.rm(src2), ar.reg(), ar.reg());
+        let (_, src, _, _) = (ar.next(), ar.rm(src2), ar.next(), ar.next());
         code.push(PInst::Cdx { sz });
         code.push(PInst::DivRem { sz, src });
       }
       Inst::Mul { sz, ref src2, .. } => {
-        let (_, src, _, _) = (ar.reg(), ar.rm(src2), ar.reg(), ar.reg());
+        let (_, src, _, _) = (ar.next(), ar.rm(src2), ar.next(), ar.next());
         code.push(PInst::Mul { sz, src });
       }
       Inst::Imm { sz, src, .. } => code.push(PInst::Imm { sz, dst: ar.reg(), src }),
-      Inst::MovRR { .. } | Inst::MovRP { .. } | Inst::MovPR { .. } => {}
+      Inst::MovRR { .. } => {}
+      Inst::MovRP { .. } | Inst::MovPR { .. } => { ar.next(); }
       Inst::MovzxRmR { ext_mode, ref src, .. } =>
         code.push(PInst::MovzxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
       Inst::Load64 { ref src, .. } =>
@@ -347,11 +353,11 @@ pub(crate) fn regalloc_vcode(
       Inst::Store { sz, ref dst, .. } =>
         code.push(PInst::Store { sz, src: ar.reg(), dst: ar.mem(dst) }),
       Inst::ShiftImm { sz, kind, num_bits, .. } => {
-        let (_, dst) = (ar.reg(), ar.reg());
+        let (_, dst) = (ar.next(), ar.reg());
         code.push(PInst::Shift { sz, kind, num_bits: Some(num_bits), dst })
       }
       Inst::ShiftRR { sz, kind, .. } => {
-        let (_, _, dst) = (ar.reg(), ar.reg(), ar.reg());
+        let (_, _, dst) = (ar.next(), ar.next(), ar.reg());
         code.push(PInst::Shift { sz, kind, num_bits: None, dst })
       }
       Inst::Cmp { sz, op, ref src2, .. } => {
@@ -365,19 +371,19 @@ pub(crate) fn regalloc_vcode(
       Inst::Push64 { ref src } => code.push(PInst::Push64 { src: ar.rmi0(src) }),
       Inst::Pop64 { .. } => code.push(PInst::Pop64 { dst: ar.reg() }),
       Inst::CallKnown { f, ref operands, ref clobbers } => {
-        for _ in &**operands { ar.reg(); }
+        for _ in &**operands { ar.next(); }
         code.push(PInst::CallKnown { f })
       }
       Inst::SysCall { ref operands, .. } => {
-        for _ in &**operands { ar.reg(); }
+        for _ in &**operands { ar.next(); }
         code.push(PInst::SysCall)
       }
       Inst::Epilogue { ref params } => {
-        for _ in &**params { ar.reg(); }
+        for _ in &**params { ar.next(); }
         code.push_epilogue(stack_size_no_ret, saved_regs.clone())
       }
       Inst::JmpKnown { dst, ref params } => {
-        for _ in &**params { ar.reg(); }
+        for _ in &**params { ar.next(); }
         if vcode.blocks[dst].0 != i.next() {
           code.push(PInst::JmpKnown { dst, short: false });
         }

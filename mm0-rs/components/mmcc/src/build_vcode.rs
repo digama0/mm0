@@ -117,7 +117,7 @@ impl From<&VRetAbi> for ArgAbi {
 }
 
 /// The ABI expected by the caller.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum VCodeCtx<'a> {
   /// This is a regular procedure; the `&[Arg]` is the function returns.
   Proc(&'a [Arg]),
@@ -209,7 +209,7 @@ impl<'a> LowerCtx<'a> {
 
   fn get_var(&self, v: VarId) -> &(RegMem, Size) {
     let a = self.allocs.get(v);
-    assert!(a != AllocId::ZERO);
+    assert_ne!(a, AllocId::ZERO);
     &self.var_map[&a]
   }
 
@@ -496,7 +496,7 @@ impl<'a> LowerCtx<'a> {
         if let (Some(from), Some(to)) = (tyin.as_int_ty(), ty.as_int_ty()) {
           self.build_as(dst, from, to, o);
         } else {
-          unimplemented!("casting between non-integral types")
+          unimplemented!("casting between non-integral types: {:?} -> {:?}", tyin, ty)
         },
       RValue::List(os) => {
         let args = if let TyKind::Struct(args) = ty { args } else { unreachable!() };
@@ -615,7 +615,7 @@ impl<'a> LowerCtx<'a> {
     args: &[(bool, Operand)],
     reach: bool,
     tgt: BlockId,
-    rets: &[VarId],
+    rets: &[(bool, VarId)],
   ) {
     let fabi = &self.funcs[f];
     let outgoing = AMode::spill(SpillId::OUTGOING);
@@ -654,7 +654,8 @@ impl<'a> LowerCtx<'a> {
       assert!(reach);
       let mut boxes = vec![];
       let mut ret_regs = vec![];
-      for (arg, &v) in retabi.iter().zip(rets) {
+      for (arg, &(vr, v)) in retabi.iter().zip(rets) {
+        if !vr { continue }
         if let ArgAbi::Reg(reg, _) = *arg {
           let src = self.code.fresh_vreg();
           operands.push(ROperand::reg_fixed_def(src, reg));
@@ -689,7 +690,8 @@ impl<'a> LowerCtx<'a> {
         clobbers: Some(fabi.clobbers.clone()),
       });
       let mut ret_regs = ret_regs.into_iter();
-      for (arg, &v) in retabi.iter().zip(rets) {
+      for (arg, &(vr, v)) in retabi.iter().zip(rets) {
+        if !vr { continue }
         let a = self.allocs.get(v);
         if a == AllocId::ZERO { continue }
         let (&(dst, sz), size) = self.get_alloc(a);
@@ -718,31 +720,31 @@ impl<'a> LowerCtx<'a> {
     args: &[(bool, Operand)],
     reach: bool,
     tgt: BlockId,
-    rets: &[VarId],
+    rets: &[(bool, VarId)],
   ) {
     let mut rmis = ArrayVec::<RegMemImm<u64>, 6>::new();
     let (f, ret) = match (f, rets, args) {
-      (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
+      (IntrinsicProc::Open, &[(true, ret)], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), 0.into(), 0.into()]);
         (SysCall::Open, ret)
       }
-      (IntrinsicProc::Create, &[ret], [(true, fname)]) => {
+      (IntrinsicProc::Create, &[(true, ret)], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), (1 + (1<<6) + (1<<9)).into(), 0.into()]);
         (SysCall::Open, ret)
       }
-      (IntrinsicProc::Read, &[ret],  [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+      (IntrinsicProc::Read, &[(true, ret)], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
         rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
         (SysCall::Read, ret)
       }
-      (IntrinsicProc::Write, &[ret],  [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+      (IntrinsicProc::Write, &[(true, ret)], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
         rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
         (SysCall::Write, ret)
       }
-      (IntrinsicProc::FStat, &[_buf_new, ret], [(true, fd), (_, _buf_old), (true, p)]) => {
+      (IntrinsicProc::FStat, &[(_, _buf_new), (true, ret)], [(true, fd), (_, _buf_old), (true, p)]) => {
         rmis.extend([fd, p].map(|x| self.get_operand(x)));
         (SysCall::FStat, ret)
       }
-      (IntrinsicProc::MMap, &[ret], [(true, len), (true, prot), (true, fd)]) => {
+      (IntrinsicProc::MMap, &[(true, ret)], [(true, len), (true, prot), (true, fd)]) => {
         rmis.extend([
           0.into(),
           self.get_operand(len),
@@ -753,7 +755,7 @@ impl<'a> LowerCtx<'a> {
         ]);
         (SysCall::MMap, ret)
       }
-      (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
+      (IntrinsicProc::MMapAnon, &[(true, ret)], [(true, len), (true, prot)]) => {
           rmis.extend([
             0.into(),
             self.get_operand(len),
@@ -848,13 +850,16 @@ impl<'a> LowerCtx<'a> {
 
     let mut block_args: ChunkVec<BlockId, VReg> = cfg.blocks.enum_iter().map(|(i, bl)| {
       let mut out = vec![];
-      if i == BlockId::ENTRY {
-        for (v, b, _) in bl.ctx_iter(&cfg.ctxs) { if b { insert(&mut out, v) } }
-      } else if !bl.is_dead() {
+      if i != BlockId::ENTRY && !bl.is_dead() {
         for &(e, j) in &preds[i] {
-          if !matches!(e, Edge::Jump) { continue }
-          let_unchecked!(args as Terminator::Jump(_, args, _) = cfg[j].terminator());
-          for &(v, b, _) in args { if b { insert(&mut out, v) } }
+          if !matches!(e, Edge::Jump | Edge::Call) { continue }
+          match cfg[j].terminator() {
+            Terminator::Jump(_, args, _) =>
+              for &(v, r, _) in args { if r { insert(&mut out, v) } }
+            Terminator::Call {rets, ..} =>
+              for &(r, v) in &**rets { if r { insert(&mut out, v) } }
+            _ => unreachable!()
+          }
         }
       }
       out
@@ -884,7 +889,7 @@ impl<'a> LowerCtx<'a> {
           (false, Some(&r)) => VRetAbi::Reg(r, sz),
           (true, Some(&r)) => {
             let ptr = self.code.fresh_vreg();
-            self.code.emit(Inst::MovPR { sz, dst: ptr, src: (ptr, r) });
+            self.code.emit(Inst::MovPR { dst: ptr, src: r });
             VRetAbi::Boxed { reg: (ptr, r), sz: size.try_into().expect("overflow") }
           }
           (_, None) if size <= 8 => {
@@ -904,12 +909,13 @@ impl<'a> LowerCtx<'a> {
       match (dst, arg_regs.next()) {
         (RegMem::Reg(dst), Some(&r)) => {
           let src = self.code.fresh_vreg();
-          self.code.emit(Inst::MovPR { sz, dst, src: (src, r) });
+          self.code.emit(Inst::MovPR { dst: src, src: r });
+          self.code.emit(Inst::MovRR { sz, dst, src });
           ArgAbi::Reg(r, sz)
         },
         (RegMem::Mem(_), Some(&r)) => {
           let src = self.code.fresh_vreg();
-          self.code.emit(Inst::MovPR { sz, dst: src, src: (src, r) });
+          self.code.emit(Inst::MovPR { dst: src, src: r });
           let size32 = size.try_into().expect("overflow");
           self.build_memcpy(size, sz, dst, AMode::reg(src));
           ArgAbi::Boxed { reg: r, sz: size32 }

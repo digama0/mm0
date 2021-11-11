@@ -64,6 +64,7 @@ pub(crate) struct PRegSet(u16);
 impl PRegSet {
   #[inline] pub(crate) fn insert(&mut self, r: PReg) { self.0 |= 1 << r.hw_enc() }
   #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.hw_enc()) != 0 }
+  #[inline] pub(crate) fn remove(&mut self, r: PReg) { self.0 &= !(1 << r.hw_enc()) }
 }
 
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
@@ -677,15 +678,13 @@ pub(crate) enum Inst {
   },
   /// Move into a fixed reg: `preg <- mov (64|32) reg`.
   MovRP {
-    sz: Size, // 4 or 8
-    dst: (VReg, PReg),
+    dst: PReg,
     src: VReg,
   },
   /// Move from a fixed reg: `reg <- mov (64|32) preg`.
   MovPR {
-    sz: Size, // 4 or 8
     dst: VReg,
-    src: (VReg, PReg),
+    src: PReg,
   },
   /// Zero-extended loads, except for 64 bits: `reg <- movz (bl|bq|wl|wq|lq) r/m`.
   /// Note that the lq variant doesn't really exist since the default zero-extend rule makes it
@@ -812,14 +811,9 @@ impl VInst for Inst {
   fn branch_blockparam_arg_offset(&self) -> usize { 0 }
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
-    match *self {
-      Inst::MovRR { dst, src, .. } => Some((Operand::reg_use(src), Operand::reg_def(dst))),
-      Inst::MovRP { dst, src, .. } =>
-        Some((Operand::reg_use(src), Operand::reg_fixed_def(dst.0, dst.1))),
-      Inst::MovPR { dst, src, .. } =>
-        Some((Operand::reg_fixed_use(src.0, src.1), Operand::reg_def(dst))),
-      _ => None
-    }
+    if let Inst::MovRR { dst, src, .. } = *self {
+      Some((Operand::reg_use(src), Operand::reg_def(dst)))
+    } else { None }
   }
 
   fn collect_operands(&self, args: &mut Vec<Operand>) {
@@ -849,7 +843,8 @@ impl VInst for Inst {
         args.push(Operand::reg_fixed_def(dst_div, RAX));
         args.push(Operand::reg_fixed_def(dst_rem, RDX));
       },
-      // Inst::SignExtendData { sz, dst, src } => todo!(),
+      Inst::MovRP { dst, src } => args.push(Operand::reg_fixed_use(src, dst)),
+      Inst::MovPR { dst, src } => args.push(Operand::reg_fixed_def(dst, src)),
       Inst::MovzxRmR { dst, ref src, .. } |
       Inst::MovsxRmR { dst, ref src, .. } => {
         src.collect_operands(args);

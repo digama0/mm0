@@ -204,7 +204,6 @@ pub struct VCode<I> {
   pub(crate) operands: ChunkVec<InstId, Operand>,
   pub(crate) num_vregs: usize,
   pub(crate) spills: IdxVec<SpillId, u32>,
-  pub(crate) has_call: bool,
 }
 
 impl<I> Default for VCode<I> {
@@ -220,7 +219,6 @@ impl<I> Default for VCode<I> {
       operands: Default::default(),
       num_vregs: 0,
       spills: vec![0, 0].into(), // INCOMING, OUTGOING
-      has_call: false,
     }
   }
 }
@@ -251,7 +249,6 @@ impl<I> VCode<I> {
 
   /// Make space in the outgoing argument stack region.
   pub fn mk_outgoing_spill(&mut self, sz: u32) {
-    self.has_call = true;
     self.grow_spill(SpillId::OUTGOING, sz)
   }
 

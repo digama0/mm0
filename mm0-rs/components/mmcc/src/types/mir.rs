@@ -134,7 +134,7 @@ impl ArgAttr {
 }
 
 /// An argument in a struct (dependent tuple).
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Arg {
   /// Extra properties of the binding
@@ -143,6 +143,17 @@ pub struct Arg {
   pub var: VarId,
   /// The type of the variable
   pub ty: Ty,
+}
+
+impl std::fmt::Debug for Arg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if self.attr.contains(ArgAttr::EXISTENTIAL) {
+      if self.attr.contains(ArgAttr::SINGLETON) { write!(f, "sn ")? }
+      else { write!(f, "ex ")? }
+    }
+    if self.attr.contains(ArgAttr::GHOST) { write!(f, "ghost ")? }
+    write!(f, "{}: {:?}", self.var, self.ty)
+  }
 }
 
 /// The type of embedded MM0 expressions.
@@ -576,34 +587,31 @@ impl std::fmt::Debug for ExprKind {
     use itertools::Itertools;
     match self {
       ExprKind::Unit => write!(f, "()"),
-      ExprKind::Var(v) => v.fmt(f),
-      ExprKind::Const(c) => c.fmt(f),
-      ExprKind::Bool(b) => b.fmt(f),
-      ExprKind::Int(n) => n.fmt(f),
-      ExprKind::Unop(super::Unop::As(ity), e) => write!(f, "{{{:?} as {:?}}}", e, ity),
-      ExprKind::Unop(op, e) => write!(f, "({:?} {:?})", op, e),
-      ExprKind::Binop(op, e1, e2) => write!(f, "{{{:?} {:?} {:?}}}", e1, op, e2),
+      ExprKind::Var(v) => write!(f, "{:?}", v),
+      ExprKind::Const(c) => write!(f, "{}", c),
+      ExprKind::Bool(b) => write!(f, "{}", b),
+      ExprKind::Int(n) => write!(f, "{}", n),
+      ExprKind::Unop(op, e) => write!(f, "{} {:?}", op, e),
+      ExprKind::Binop(op, e1, e2) => write!(f, "({:?} {} {:?})", e1, op, e2),
       ExprKind::List(es) |
-      ExprKind::Array(es) => write!(f, "(list {:?})", es.iter().format(" ")),
-      ExprKind::Index(a, i) => write!(f, "(index {:?} {:?})", a, i),
-      ExprKind::Slice(a, i, n) => write!(f, "(slice {:?} {:?} {:?})", a, i, n),
-      ExprKind::Proj(a, i) => write!(f, "({:?} . {:?})", a, i),
-      ExprKind::UpdateIndex(a, i, val) => write!(f,
-        "(update-index {:?} {:?} {:?})", a, i, val),
-      ExprKind::UpdateSlice(a, i, l, val) => write!(f,
-        "(update-slice {:?} {:?} {:?} {:?})", a, i, l, val),
-      ExprKind::UpdateProj(a, n, val) => write!(f,
-        "(update-proj {:?} {:?} {:?})", a, n, val),
-      ExprKind::Ref(e) => write!(f, "(& {:?})", e),
-      ExprKind::Sizeof(ty) => write!(f, "(sizeof {:?})", ty),
-      ExprKind::Mm0(ref e) => e.fmt(f),
-      ExprKind::Call {f: x, tys, args} => {
-        write!(f, "({:?}", x)?;
-        for ty in &**tys { write!(f, " {:?}", ty)? }
-        for arg in &**args { write!(f, " {:?}", arg)? }
-        ")".fmt(f)
+      ExprKind::Array(es) => write!(f, "{:?}", es),
+      ExprKind::Index(a, i) => write!(f, "{:?}[{:?}]", a, i),
+      ExprKind::Slice(a, i, n) => write!(f, "{:?}[{:?}..+{:?}]", a, i, n),
+      ExprKind::Proj(a, i) => write!(f, "{:?}.{}", a, i),
+      ExprKind::UpdateIndex(a, i, val) => write!(f, "({:?}[{:?}] .= {:?})", a, i, val),
+      ExprKind::UpdateSlice(a, i, l, val) =>
+        write!(f, "({:?}[{:?}..+{:?}] .= {:?})", a, i, l, val),
+      ExprKind::UpdateProj(a, n, val) => write!(f, "({:?}.{:?} .= {:?})", a, n, val),
+      ExprKind::Ref(e) => write!(f, "&{:?}", e),
+      ExprKind::Sizeof(ty) => write!(f, "sizeof({:?})", ty),
+      ExprKind::Mm0(e) => write!(f, "{:?}", e),
+      ExprKind::Call {f: func, tys, args} => {
+        write!(f, "{}", func)?;
+        if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
+        write!(f, "({:?})", args.iter().format(", "))
       }
-      ExprKind::If {cond, then, els} => write!(f, "(if {:?} {:?} {:?})", cond, then, els),
+      ExprKind::If {cond, then, els} =>
+        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
     }
   }
 }
@@ -1646,7 +1654,7 @@ pub enum Terminator {
     tgt: BlockId,
     /// The list of variables returned from the call, which are introduced into the context of the
     /// target block.
-    rets: Box<[VarId]>
+    rets: Box<[(bool, VarId)]>
   },
   /// Successfully exit the program.
   /// The operand should be a proof of the postcondition of the program.
@@ -1680,9 +1688,17 @@ impl std::fmt::Debug for Terminator {
       Self::Assert(cond, v, true, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
       Self::Assert(cond, _, false, _) => write!(f, "assert {:?} -> !", cond),
       Self::Call { f: func, tys, args, reach, tgt, rets, .. } => {
-        write!(f, "call {}{:?}{:?} -> ", func, tys, args)?;
+        write!(f, "call {}", func)?;
+        if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
+        write!(f, "(")?;
+        let mut first = true;
+        for &(r, ref o) in &**args {
+          if first { first = false } else { write!(f, ", ")? }
+          write!(f, "{}{:?}", if r {""} else {"ghost "}, o)?
+        }
+        write!(f, ") -> ")?;
         if *reach {
-          for v in &**rets { write!(f, "{:?}.", v)? }
+          for &(r, v) in &**rets { write!(f, "{}{:?}.", if r {""} else {"ghost "}, v)? }
           write!(f, " {:?}", tgt)
         } else {
           write!(f, "!")

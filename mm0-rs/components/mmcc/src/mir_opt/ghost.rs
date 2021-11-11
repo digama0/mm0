@@ -310,7 +310,8 @@ impl Cfg {
             d.apply_operand(o)
           }
           &Terminator::Call {se: side_effect, ref args, reach, ref rets, ..} => {
-            let needed = !reach || side_effect || rets.iter().any(|v| d.vars.contains(v));
+            let needed = !reach || side_effect ||
+              rets.iter().any(|&(vr, v)| vr && d.vars.contains(&v));
             if needed {
               d.active = OptBlockId::new(id);
               for &(r, ref o) in &**args { if r { d.apply_operand(o) } }
