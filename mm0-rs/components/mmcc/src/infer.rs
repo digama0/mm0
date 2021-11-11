@@ -67,8 +67,6 @@ pub enum TypeError<'a> {
   MissingMuts(Vec<VarId>),
   /// A `(variant h)` clause was provided to a function or label that does not declare a variant
   UnexpectedVariant,
-  /// The `main` function cannot be called directly
-  ReentrantMain,
   /// More than one `main` function defined
   DoubleMain,
 }
@@ -119,8 +117,6 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TypeError<'a> {
         Try adding:\n  (mut {})", muts.iter().unique().map(|v| p!(v)).format(" ")),
       TypeError::UnexpectedVariant => write!(f, "A (variant h) clause was provided \
         to a function or label that does not declare a variant"),
-      TypeError::ReentrantMain => write!(f, "The `main` function cannot be called directly; \
-        it is implicitly called by the operating system"),
       TypeError::DoubleMain => write!(f, "The `main` function has been defined more than once"),
     }
   }
@@ -295,7 +291,7 @@ impl<'a> Interner<'a> {
 macro_rules! intern {($ctx:expr, $t:expr) => {{let t = $t; $ctx.intern(t)}}}
 
 #[derive(Debug)]
-struct MVarData<'a> {
+pub(crate) struct MVarData<'a> {
   span: &'a FileSpan,
 }
 
@@ -323,7 +319,7 @@ impl<'a, T: PartialEq + Copy> UnifyCtx<MVarValue<'a, T>> for () {
 }
 
 #[derive(Debug)]
-struct Assignments<'a, K, V> {
+pub(crate) struct Assignments<'a, K, V> {
   mvars: IdxVec<K, MVarData<'a>>,
   table: UnificationTable<K, MVarValue<'a, V>>,
 }
@@ -351,7 +347,7 @@ impl<'a, K: Idx, V> Assignments<'a, K, V> {
       .ok().expect("assigning to assigned variable");
   }
 
-  fn lookup(&mut self, k: K) -> Option<V> where V: Copy {
+  pub(crate) fn lookup(&mut self, k: K) -> Option<V> where V: Copy {
     match self.table.probe_value(k) {
       MVarValue::Assigned(v) => Some(*v),
       MVarValue::Unassigned(_) => None,
@@ -676,10 +672,10 @@ impl<'a> Subst<'a> {
       ExprKind::If {cond, then, els} =>
         subst!(|(cond, then, els)| ExprKind::If {cond, then, els}, cond, then, els),
       ExprKind::Infer(v) => {
-        if let Some(ty) = ctx.expr_mvars.lookup(v) { return self.subst_expr(ctx, sp, ty) }
-        let span = ctx.expr_mvars[v].span;
+        if let Some(ty) = ctx.mvars.expr.lookup(v) { return self.subst_expr(ctx, sp, ty) }
+        let span = ctx.mvars.expr[v].span;
         ctx.errors.push(hir::Spanned {span, k: TypeError::ExpectedType});
-        ctx.expr_mvars.assign(v, ctx.common.e_error);
+        ctx.mvars.expr.assign(v, ctx.common.e_error);
         ctx.common.e_error
       }
     }
@@ -710,8 +706,8 @@ impl<'a> Subst<'a> {
         }
       } else { lft },
       Lifetime::Infer(v) => {
-        if let Some(lft) = ctx.lft_mvars.lookup(v) { return self.subst_lft(ctx, span, lft) }
-        ctx.new_lft_mvar(ctx.lft_mvars[v].span)
+        if let Some(lft) = ctx.mvars.lft.lookup(v) { return self.subst_lft(ctx, span, lft) }
+        ctx.new_lft_mvar(ctx.mvars.lft[v].span)
       }
     })
   }
@@ -839,10 +835,10 @@ impl<'a> Subst<'a> {
       TyKind::HasTy(e1, t) => subst!(|t, e1| TyKind::HasTy(e1, t); t; e1),
       TyKind::Moved(t) => subst!(|t, _| TyKind::Moved(t); t;),
       TyKind::Infer(v) => {
-        if let Some(ty) = ctx.ty_mvars.lookup(v) { return self.subst_ty(ctx, sp, ty) }
-        let span = ctx.ty_mvars[v].span;
+        if let Some(ty) = ctx.mvars.ty.lookup(v) { return self.subst_ty(ctx, sp, ty) }
+        let span = ctx.mvars.ty[v].span;
         ctx.errors.push(hir::Spanned {span, k: TypeError::ExpectedType});
-        ctx.ty_mvars.assign(v, ctx.common.t_error);
+        ctx.mvars.ty.assign(v, ctx.common.t_error);
         ctx.common.t_error
       }
     }
@@ -1128,7 +1124,7 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
   fn fmt_lft_mvar(&self, v: LftMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let mut guard = self.inner.borrow_mut();
     let (ic, inner) = &mut *guard;
-    if let Some(lft) = ic.lft_mvars.lookup(v) {
+    if let Some(lft) = ic.mvars.lft.lookup(v) {
       drop(guard);
       return CtxDisplay::fmt(&lft, self, f)
     }
@@ -1138,7 +1134,7 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
   fn fmt_expr_mvar(&self, v: ExprMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let mut guard = self.inner.borrow_mut();
     let (ic, inner) = &mut *guard;
-    if let Some(e) = ic.expr_mvars.lookup(v) {
+    if let Some(e) = ic.mvars.expr.lookup(v) {
       drop(guard);
       return CtxDisplay::fmt(e, self, f)
     }
@@ -1148,7 +1144,7 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
   fn fmt_ty_mvar(&self, v: TyMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let mut guard = self.inner.borrow_mut();
     let (ic, inner) = &mut *guard;
-    if let Some(ty) = ic.ty_mvars.lookup(v) {
+    if let Some(ty) = ic.mvars.ty.lookup(v) {
       drop(guard);
       return CtxDisplay::fmt(ty, self, f)
     }
@@ -1186,6 +1182,46 @@ struct LabelData<'a> {
   dcs: Vec<DynContext<'a>>,
 }
 
+/// The assignments for metavariables.
+#[derive(Debug, Default)]
+pub(crate) struct MVars<'a> {
+  /// The assignments for type metavariables.
+  pub(crate) ty: Assignments<'a, TyMVarId, Ty<'a>>,
+  /// The assignments for pure expression metavariables.
+  pub(crate) expr: Assignments<'a, ExprMVarId, Expr<'a>>,
+  /// The assignments for lifetime metavariables.
+  pub(crate) lft: Assignments<'a, LftMVarId, Lifetime>,
+}
+
+impl<'a> MVars<'a> {
+  pub(crate) fn get_lft_or_assign_extern(&mut self, v: LftMVarId) -> Lifetime {
+    self.lft.lookup(v).unwrap_or_else(|| {
+      self.lft.assign(v, Lifetime::Extern);
+      Lifetime::Extern
+    })
+  }
+
+  pub(crate) fn err_if_not_assigned_ty(&mut self, v: TyMVarId,
+    errors: &mut Vec<hir::Spanned<'a, TypeError<'a>>>, t_error: Ty<'a>
+  ) -> Ty<'a> {
+    self.ty.lookup(v).unwrap_or_else(|| {
+      errors.push(hir::Spanned {span: self.ty[v].span, k: TypeError::UninferredType});
+      self.ty.assign(v, t_error);
+      t_error
+    })
+  }
+
+  pub(crate) fn err_if_not_assigned_expr(&mut self, v: ExprMVarId,
+    errors: &mut Vec<hir::Spanned<'a, TypeError<'a>>>, e_error: Expr<'a>
+  ) -> Expr<'a> {
+    self.expr.lookup(v).unwrap_or_else(|| {
+      errors.push(hir::Spanned {span: self.expr[v].span, k: TypeError::UninferredExpr});
+      self.expr.assign(v, e_error);
+      e_error
+    })
+  }
+}
+
 /// The main inference context for the type inference pass.
 #[derive(Debug)]
 pub struct InferCtx<'a, 'n> {
@@ -1197,13 +1233,8 @@ pub struct InferCtx<'a, 'n> {
   /// The interner, which is used to deduplicate types and terms that are
   /// constructed multiple times.
   interner: Interner<'a>,
-  // tasks: Vec<Task>,
-  /// The assignments for type metavariables.
-  ty_mvars: Assignments<'a, TyMVarId, Ty<'a>>,
-  /// The assignments for pure expression metavariables.
-  expr_mvars: Assignments<'a, ExprMVarId, Expr<'a>>,
-  /// The assignments for lifetime metavariables.
-  lft_mvars: Assignments<'a, LftMVarId, Lifetime>,
+  /// The metavariable assignments.
+  pub(crate) mvars: MVars<'a>,
   /// Some pre-interned types.
   common: Common<'a>,
   /// The dynamic context (including the logical context).
@@ -1221,9 +1252,6 @@ pub struct InferCtx<'a, 'n> {
   /// as well as waiting for all variables to be as unified as possible so that
   /// the error messages are as precise as possible.
   pub errors: Vec<hir::Spanned<'a, TypeError<'a>>>,
-  /// The to-global translator, which is responsible for copying the expressions and types
-  /// that will live in global memory out of the allocator.
-  pub(crate) gctx: ToGlobalCtx<'a>,
 }
 
 /// A relation between types, used as an argument to [`InferCtx::relate_ty`].
@@ -1541,9 +1569,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       interner,
       common,
       var_names,
-      ty_mvars: Default::default(),
-      expr_mvars: Default::default(),
-      lft_mvars: Default::default(),
+      mvars: Default::default(),
       dc: DynContext {
         gen_vars: Default::default(),
         generation: GenId::ROOT,
@@ -1554,7 +1580,6 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       labels: HashMap::new(),
       returns: None,
       errors: vec![],
-      gctx: Default::default(),
     }
   }
 
@@ -1568,47 +1593,51 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     self.interner.intern(self.alloc, t)
   }
 
+  pub(crate) fn to_global_ctx(&mut self) -> ToGlobalCtx<'a, '_> {
+    ToGlobalCtx::new(&mut self.mvars, &mut self.errors, self.common.t_error, self.common.e_error)
+  }
+
   fn var_name(&self, v: VarId) -> Symbol { self.var_names[v] }
 
   fn fresh_var(&mut self, name: Symbol) -> VarId { self.var_names.push(name) }
 
   fn new_ty_mvar(&mut self, span: &'a FileSpan) -> Ty<'a> {
-    let n = self.ty_mvars.new_mvar(span, self.dc.context);
+    let n = self.mvars.ty.new_mvar(span, self.dc.context);
     intern!(self, TyKind::Infer(n))
   }
 
   fn new_expr_mvar(&mut self, span: &'a FileSpan) -> Expr<'a> {
-    let n = self.expr_mvars.new_mvar(span, self.dc.context);
+    let n = self.mvars.expr.new_mvar(span, self.dc.context);
     intern!(self, ExprKind::Infer(n))
   }
 
   fn new_lft_mvar(&mut self, span: &'a FileSpan) -> Lifetime {
-    let n = self.lft_mvars.new_mvar(span, self.dc.context);
+    let n = self.mvars.lft.new_mvar(span, self.dc.context);
     Lifetime::Infer(n)
   }
 
   fn assign_ty(&mut self, v: TyMVarId, e: Ty<'a>) -> bool {
-    let root = self.ty_mvars.root(v);
+    let root = self.mvars.ty.root(v);
     if let TyKind::Infer(v2) = e.k {
-      self.ty_mvars.equate(v, v2);
+      self.mvars.ty.equate(v, v2);
     } else {
       let mut cycle = false;
-      e.on_mvars(|v2| cycle |= self.ty_mvars.root(v2) == root);
+      e.on_mvars(|v2| cycle |= self.mvars.ty.root(v2) == root);
       if cycle { return false }
-      self.ty_mvars.assign(v, e);
+      self.mvars.ty.assign(v, e);
     }
     true
   }
 
   fn assign_expr(&mut self, v: ExprMVarId, e: Expr<'a>) -> bool {
-    let root = self.expr_mvars.root(v);
+    let root = self.mvars.expr.root(v);
     if let ExprKind::Infer(v2) = e.k {
-      self.expr_mvars.equate(v, v2);
+      self.mvars.expr.equate(v, v2);
     } else {
       let mut cycle = false;
-      e.on_mvars(|v2| cycle |= self.expr_mvars.root(v2) == root);
+      e.on_mvars(|v2| cycle |= self.mvars.expr.root(v2) == root);
       if cycle { return false }
-      self.expr_mvars.assign(v, e);
+      self.mvars.expr.assign(v, e);
     }
     true
   }
@@ -1624,24 +1653,24 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   pub(crate) fn get_lft_or_assign_extern(&mut self, v: LftMVarId) -> Lifetime {
-    self.lft_mvars.lookup(v).unwrap_or_else(|| {
-      self.lft_mvars.assign(v, Lifetime::Extern);
+    self.mvars.lft.lookup(v).unwrap_or_else(|| {
+      self.mvars.lft.assign(v, Lifetime::Extern);
       Lifetime::Extern
     })
   }
 
   pub(crate) fn err_if_not_assigned_ty(&mut self, v: TyMVarId) -> Ty<'a> {
-    self.ty_mvars.lookup(v).unwrap_or_else(|| {
-      self.errors.push(hir::Spanned {span: self.ty_mvars[v].span, k: TypeError::UninferredType});
-      self.ty_mvars.assign(v, self.common.t_error);
+    self.mvars.ty.lookup(v).unwrap_or_else(|| {
+      self.errors.push(hir::Spanned {span: self.mvars.ty[v].span, k: TypeError::UninferredType});
+      self.mvars.ty.assign(v, self.common.t_error);
       self.common.t_error
     })
   }
 
   pub(crate) fn err_if_not_assigned_expr(&mut self, v: ExprMVarId) -> Expr<'a> {
-    self.expr_mvars.lookup(v).unwrap_or_else(|| {
-      self.errors.push(hir::Spanned {span: self.expr_mvars[v].span, k: TypeError::UninferredExpr});
-      self.expr_mvars.assign(v, self.common.e_error);
+    self.mvars.expr.lookup(v).unwrap_or_else(|| {
+      self.errors.push(hir::Spanned {span: self.mvars.expr[v].span, k: TypeError::UninferredExpr});
+      self.mvars.expr.assign(v, self.common.e_error);
       self.common.e_error
     })
   }
@@ -1847,7 +1876,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           self.whnf_expr(sp, if b {then} else {els})
         } else { e },
       ExprKind::Infer(v) =>
-        if let Some(e) = self.expr_mvars.lookup(v) { self.whnf_expr(sp, e) } else { e }
+        if let Some(e) = self.mvars.expr.lookup(v) { self.whnf_expr(sp, e) } else { e }
     }
   }
 
@@ -1945,7 +1974,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         TyKind::Pure(e2)
       }
       TyKind::Infer(v) => {
-        if let Some(ty) = self.ty_mvars.lookup(v) {
+        if let Some(ty) = self.mvars.ty.lookup(v) {
           return self.whnf_ty(sp, ty.into())
         }
         return wty
@@ -2046,12 +2075,12 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     if a == b { return Ok(()) }
     match (a, b) {
       (Lifetime::Infer(v), _) => {
-        if let Some(e) = self.lft_mvars.lookup(v) { return self.equate_lft(e, b) }
-        self.lft_mvars.assign(v, b)
+        if let Some(e) = self.mvars.lft.lookup(v) { return self.equate_lft(e, b) }
+        self.mvars.lft.assign(v, b)
       }
       (_, Lifetime::Infer(v)) => {
-        if let Some(e) = self.lft_mvars.lookup(v) { return self.equate_lft(a, e) }
-        self.lft_mvars.assign(v, a)
+        if let Some(e) = self.mvars.lft.lookup(v) { return self.equate_lft(a, e) }
+        self.mvars.lft.assign(v, a)
       }
       _ => return Err(())
     }
@@ -2081,11 +2110,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       (ExprKind::If {cond: a1, then: a2, els: a3}, ExprKind::If {cond: b1, then: b2, els: b3}) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
       (ExprKind::Infer(v), _) => {
-        if let Some(e) = self.expr_mvars.lookup(v) { return self.equate_expr(e, b) }
+        if let Some(e) = self.mvars.expr.lookup(v) { return self.equate_expr(e, b) }
         if !self.assign_expr(v, b) { return Err(()) }
       }
       (_, ExprKind::Infer(v)) => {
-        if let Some(e) = self.expr_mvars.lookup(v) { return self.equate_expr(a, e) }
+        if let Some(e) = self.mvars.expr.lookup(v) { return self.equate_expr(a, e) }
         if !self.assign_expr(v, a) { return Err(()) }
       }
       (ExprKind::Var(_), _) | (_, ExprKind::Var(_)) => {
@@ -2278,14 +2307,14 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         if !coes.is_empty() { unimplemented!() }
       }
       (TyKind::Infer(v), _) => {
-        if let Some(ty) = self.ty_mvars.lookup(v) {
+        if let Some(ty) = self.mvars.ty.lookup(v) {
           return self.relate_whnf_ty(ty.into(), to, rel)
         }
         let to = to.to_ty(self);
         if !self.assign_ty(v, to) { return Err(()) }
       }
       (_, TyKind::Infer(v)) => {
-        if let Some(ty) = self.ty_mvars.lookup(v) {
+        if let Some(ty) = self.mvars.ty.lookup(v) {
           return self.relate_whnf_ty(from, ty.into(), rel)
         }
         let from = from.to_ty(self);
@@ -2909,7 +2938,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     &Spanned {ref span, k: f}: &'a Spanned<Symbol>,
     tys: &'a [ast::Type],
     es: &'a [ast::Expr],
-    pf: &'a Option<Box<ast::Expr>>
+    pf: Option<&'a ast::Expr>
   ) -> Option<(hir::Call<'a>, RExprTy<'a>)> {
     let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
     let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -2917,14 +2946,18 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let ProcTy {kind, tyargs, args, rets, variant, ..} = ty.clone();
     assert_eq!(tys.len(), u32_as_usize(tyargs));
     let args = args.from_global(self, tys);
-    let (es, pes, subst) = self.check_args(span, es, args, |x| x.k.1);
+    let (es, pes, mut subst) = self.check_args(span, es, args, |x| x.k.1);
     let variant = variant.map(|v| v.from_global(self, tys));
-    let variant = self.check_variant_use(subst, pf.as_deref(), variant);
+    let variant = self.check_variant_use(&mut subst, pf, variant);
     if args.iter().any(|arg| arg.k.0.contains(ArgAttr::MUT)) {
       self.dc.generation = self.new_generation();
     }
     let gen = self.dc.generation;
-    let rets = rets.from_global(self, tys);
+    let rets = rets.iter().map(|arg| {
+      let arg = arg.from_global(self, tys);
+      subst.subst_arg(self, span, arg)
+    }).collect::<Vec<_>>();
+    let rets = &*self.alloc.alloc_slice_fill_iter(rets.into_iter());
     let (mut rk, ret) = match rets.len() {
       0 => (ReturnKind::Unit, self.common.t_unit),
       1 => match rets[0].k.1 {
@@ -2942,11 +2975,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let (side_effect, pe) = match kind {
       ProcKind::Func => (false, pes.map(|pes| intern!(self, ExprKind::Call {f, tys,
         args: self.alloc.alloc_slice_fill_iter(pes.into_iter())}))),
-      ProcKind::Proc => (true, Err(span)),
-      ProcKind::Main => {
-        self.errors.push(hir::Spanned {span, k: TypeError::ReentrantMain});
-        return None
-      }
+      ProcKind::Proc | ProcKind::Main => (true, Err(span)),
     };
     let call = hir::Call {
       f: hir::Spanned {span, k: f},
@@ -2983,9 +3012,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       TyKind::Pure(e) => e,
       TyKind::Infer(v) => {
-        let w = self.new_expr_mvar(self.ty_mvars[v].span);
+        let w = self.new_expr_mvar(self.mvars.ty[v].span);
         let p = intern!(self, TyKind::Pure(w));
-        self.ty_mvars.assign(v, p);
+        self.mvars.ty.assign(v, p);
         w
       }
       _ => return None,
@@ -3540,7 +3569,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           Some(b) => ExpectExpr::Sn(b, self.common.t_bool),
           None => ExpectExpr::HasTy(self.common.t_bool)
         });
-        let tgt = tgt.unwrap_or_else(|| intern!(self, pe.map_or(TyKind::True, TyKind::Pure)));
+        let tgt = intern!(self, pe.map_or(TyKind::True, TyKind::Pure));
         ret![Assert(Box::new(e)), Ok(unit!()), tgt]
       }
 
@@ -3604,7 +3633,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
 
       ast::ExprKind::Call {f, tys, args, variant} =>
-        match self.check_call(f, tys, args, variant) {
+        match self.check_call(f, tys, args, variant.as_deref()) {
           None => error!(),
           Some((call, (pe, mut ret))) => {
             if let ReturnKind::Unreachable = call.rk {
@@ -3763,8 +3792,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (tgt, variant) = label_data.labels[i as usize];
         let num_args = tgt.iter().filter(|&arg| matches!(arg.k.1, ArgKind::Lam(_))).count();
         if args.len() != num_args { error!(span, NumArgs(num_args, args.len())) }
-        let (args, _, subst) = self.check_args(span, args, tgt, |x| x.k.1);
-        let variant = self.check_variant_use(subst, pf.as_deref(), variant);
+        let (args, _, mut subst) = self.check_args(span, args, tgt, |x| x.k.1);
+        let variant = self.check_variant_use(&mut subst, pf.as_deref(), variant);
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         self.dc.diverged = true;
         ret![Jump(lab, i, args, variant), Ok(unit!()), tgt]
@@ -3971,7 +4000,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn check_variant_use(&mut self,
-    mut subst: Subst<'a>, variant: Option<&'a ast::Expr>, tgt: Option<hir::Variant<'a>>,
+    mut subst: &mut Subst<'a>, variant: Option<&'a ast::Expr>, tgt: Option<hir::Variant<'a>>,
   ) -> Option<Box<hir::Expr<'a>>> {
     let variant = variant?;
     if let Some(hir::Variant(e, vt)) = tgt {
@@ -4110,10 +4139,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     match stmt {
       ast::StmtKind::Let {lhs, rhs} => {
         let mut ctx = self.dc.context;
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
-        mem::swap(&mut ctx, &mut self.dc.context);
-        let rhs = self.check_expr(rhs, lhs.ty()).0;
+        let lhs1 = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
+        let rhs = self.check_expr(rhs, lhs1.ty()).0;
+        // lower the LHS again to unify the types better
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, rhs.k.1 .0, Some(rhs.k.1 .1)).0;
         UnelabStmt::Let {lhs, rhs}
       }
       ast::StmtKind::Expr(e) => UnelabStmt::Expr(
@@ -4251,13 +4281,14 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let variant = self.lower_variant(variant);
         let args = self.finish_args(args2);
         let t_args = self.args_to_ty_args(&args);
+        let mut gctx = self.to_global_ctx();
         let item = Entity::Proc(Spanned {
           span: span.clone(),
           k: ProcTc::Typed(ProcTy {
             kind, intrinsic, tyargs,
-            args: t_args.to_global(self),
-            rets: t_rets.to_global(self),
-            variant: variant.to_global(self),
+            args: t_args.to_global(&mut gctx),
+            rets: t_rets.to_global(&mut gctx),
+            variant: variant.to_global(&mut gctx),
           })
         });
         match self.names.entry(name.k) {
@@ -4302,9 +4333,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (rhs, _) = self.check_expr(rhs, lhs.ty());
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
         if let TuplePatternKind::Name(name, _, _) = lhs.k {
+          let mut gctx = self.to_global_ctx();
           let item = Entity::Global(Spanned {
             span: span.clone(),
-            k: GlobalTc::Checked(lhs.k.ty().to_global(self))
+            k: GlobalTc::Checked(lhs.k.ty().to_global(&mut gctx))
           });
           match self.names.entry(name) {
             Entry::Occupied(mut e) => {
@@ -4327,12 +4359,15 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let rhs = self.check_pure_expr(rhs, lhs.ty());
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
         if let TuplePatternKind::Name(name, _, _) = lhs.k {
+          let ty = self.whnf_ty(lhs_sp, lhs.k.ty().into()).to_ty(self);
+          let whnf = self.whnf_expr(rhs_sp, rhs);
+          let mut gctx = self.to_global_ctx();
           let item = Entity::Const(Spanned {
             span: span.clone(),
             k: ConstTc::Checked {
-              ty: self.whnf_ty(lhs_sp, lhs.k.ty().into()).to_ty(self).to_global(self),
-              e: rhs.to_global(self),
-              whnf: self.whnf_expr(rhs_sp, rhs).to_global(self),
+              ty: ty.to_global(&mut gctx),
+              e: rhs.to_global(&mut gctx),
+              whnf: whnf.to_global(&mut gctx),
             }
           });
           match self.names.entry(name) {
@@ -4354,8 +4389,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let val = self.lower_ty(val, ExpectTy::Any);
         let args = self.finish_args2(args2,
           |this, (attr, arg)| intern!(this, (attr, (&arg).into())));
-        let args = (&*args).to_global(self);
-        let val = val.to_global(self);
+        let mut gctx = self.to_global_ctx();
+        let args = (&*args).to_global(&mut gctx);
+        let val = val.to_global(&mut gctx);
         let item = Entity::Type(Spanned {
           span: span.clone(),
           k: TypeTc::Typed(TypeTy {tyargs, args, val})

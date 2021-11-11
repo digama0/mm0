@@ -21,7 +21,8 @@ struct GenMap {
 
 type TrMap<K, V> = HashMap<K, Result<V, HashMap<GenId, V>>>;
 #[derive(Debug, Default)]
-struct Translator<'a> {
+struct Translator<'a, 'n> {
+  mvars: Option<&'n mut crate::infer::MVars<'a>>,
   tys: TrMap<ty::Ty<'a>, Ty>,
   exprs: TrMap<ty::Expr<'a>, Expr>,
   places: TrMap<ty::Place<'a>, EPlace>,
@@ -35,20 +36,22 @@ struct Translator<'a> {
 
 trait Translate<'a> {
   type Output;
-  fn tr(self, _: &'_ mut Translator<'a>) -> Self::Output;
+  fn tr(self, _: &mut Translator<'a, '_>) -> Self::Output;
 }
 trait TranslateBase<'a>: Sized {
   type Output;
-  fn get_mut<'b>(_: &'b mut Translator<'a>) ->
+  fn get_mut<'b>(_: &'b mut Translator<'a, '_>) ->
     &'b mut TrMap<&'a ty::WithMeta<Self>, Rc<Self::Output>>;
-  fn make(&'a self, _: &mut Translator<'a>) -> Self::Output;
+  fn make(&'a self, _: &mut Translator<'a, '_>) -> Self::Output;
+  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Rc<Self::Output> { Rc::new(self.make(tr)) }
 }
 
 impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
   type Output = TyKind;
-  fn get_mut<'b>(t: &'b mut Translator<'a>) -> &'b mut TrMap<ty::Ty<'a>, Ty> { &mut t.tys }
-  fn make(&'a self, tr: &mut Translator<'a>) -> TyKind {
-    match *self {
+  fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Ty<'a>, Ty> { &mut t.tys }
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> TyKind { unreachable!() }
+  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Ty {
+    Rc::new(match *self {
       ty::TyKind::Unit => TyKind::Unit,
       ty::TyKind::True => TyKind::True,
       ty::TyKind::False => TyKind::False,
@@ -78,16 +81,19 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
       ty::TyKind::Input => TyKind::Input,
       ty::TyKind::Output => TyKind::Output,
       ty::TyKind::Moved(ty) => TyKind::Moved(ty.tr(tr)),
-      ty::TyKind::Infer(_) |
-      ty::TyKind::Error => unreachable!(),
-    }
+      ty::TyKind::Infer(v) => match tr.mvars.as_mut().expect("no inference context").ty.lookup(v) {
+        Some(ty) => return ty.tr(tr),
+        None => panic!("uninferred type variable {:?}", v),
+      }
+      ty::TyKind::Error => panic!("unreachable: {:?}", self),
+    })
   }
 }
 
 impl<'a> TranslateBase<'a> for ty::PlaceKind<'a> {
   type Output = EPlaceKind;
-  fn get_mut<'b>(t: &'b mut Translator<'a>) -> &'b mut TrMap<ty::Place<'a>, EPlace> { &mut t.places }
-  fn make(&'a self, tr: &mut Translator<'a>) -> EPlaceKind {
+  fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Place<'a>, EPlace> { &mut t.places }
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> EPlaceKind {
     match *self {
       ty::PlaceKind::Var(v) => EPlaceKind::Var(tr.location(v)),
       ty::PlaceKind::Index(a, ty, i) => EPlaceKind::Index(a.tr(tr), ty.tr(tr), i.tr(tr)),
@@ -101,9 +107,10 @@ impl<'a> TranslateBase<'a> for ty::PlaceKind<'a> {
 
 impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
   type Output = ExprKind;
-  fn get_mut<'b>(t: &'b mut Translator<'a>) -> &'b mut TrMap<ty::Expr<'a>, Expr> { &mut t.exprs }
-  fn make(&'a self, tr: &mut Translator<'a>) -> ExprKind {
-    match *self {
+  fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Expr<'a>, Expr> { &mut t.exprs }
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> ExprKind { unreachable!() }
+  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Expr {
+    Rc::new(match *self {
       ty::ExprKind::Unit => ExprKind::Unit,
       ty::ExprKind::Var(v) => ExprKind::Var(v.tr(tr)),
       ty::ExprKind::Const(c) => ExprKind::Const(c),
@@ -126,15 +133,18 @@ impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
       ty::ExprKind::Call {f, tys, args} => ExprKind::Call {f, tys: tys.tr(tr), args: args.tr(tr)},
       ty::ExprKind::If {cond, then, els} =>
         ExprKind::If {cond: cond.tr(tr), then: then.tr(tr), els: els.tr(tr)},
-      ty::ExprKind::Infer(_) |
+      ty::ExprKind::Infer(v) => match tr.mvars.as_mut().expect("no inference context").expr.lookup(v) {
+        Some(e) => return e.tr(tr),
+        None => panic!("uninferred expr variable {:?}", v),
+      }
       ty::ExprKind::Error => unreachable!(),
-    }
+    })
   }
 }
 
 impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
   type Output = Rc<T::Output>;
-  fn tr(self, tr: &mut Translator<'a>) -> Rc<T::Output> {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> Rc<T::Output> {
     if tr.subst.is_empty() {
       let gen = tr.cur_gen;
       if let Some(v) = T::get_mut(tr).get(self) {
@@ -143,7 +153,7 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
           Err(m) => if let Some(r) = m.get(&gen) { return r.clone() }
         }
       }
-      let r = Rc::new(T::make(&self.k, tr));
+      let r = T::make_rc(&self.k, tr);
       match T::get_mut(tr).entry(self) {
         Entry::Occupied(mut e) => match e.get_mut() {
           Ok(_) => unreachable!(),
@@ -161,42 +171,42 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
       }
       r
     } else {
-      Rc::new(T::make(&self.k, tr))
+      T::make_rc(&self.k, tr)
     }
   }
 }
 
 impl<'a, T: Translate<'a> + Copy> Translate<'a> for &'a [T] {
   type Output = Box<[T::Output]>;
-  fn tr(self, tr: &mut Translator<'a>) -> Box<[T::Output]> {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> Box<[T::Output]> {
     self.iter().map(|&e| e.tr(tr)).collect()
   }
 }
 
 impl<'a> Translate<'a> for ty::ExprTy<'a> {
   type Output = ExprTy;
-  fn tr(self, tr: &mut Translator<'a>) -> Self::Output {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> Self::Output {
     (self.0.map(|e| e.tr(tr)), self.1.tr(tr))
   }
 }
 
 impl<'a> Translate<'a> for &'a ty::Mm0Expr<'a> {
   type Output = Mm0Expr;
-  fn tr(self, tr: &mut Translator<'a>) -> Mm0Expr {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> Mm0Expr {
     Mm0Expr { subst: self.subst.tr(tr), expr: self.expr }
   }
 }
 
 impl<'a> Translate<'a> for HVarId {
   type Output = VarId;
-  fn tr(self, tr: &mut Translator<'a>) -> VarId {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> VarId {
     tr.tr_var(self, tr.cur_gen)
   }
 }
 
 impl<'a> Translate<'a> for PreVar {
   type Output = VarId;
-  fn tr(self, tr: &mut Translator<'a>) -> VarId {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> VarId {
     match self {
       PreVar::Ok(v) => v,
       PreVar::Pre(v) => v.tr(tr),
@@ -207,7 +217,7 @@ impl<'a> Translate<'a> for PreVar {
 
 impl<'a> Translate<'a> for ty::Lifetime {
   type Output = Lifetime;
-  fn tr(self, tr: &mut Translator<'a>) -> Lifetime {
+  fn tr(self, tr: &mut Translator<'a, '_>) -> Lifetime {
     match self {
       ty::Lifetime::Extern => Lifetime::Extern,
       ty::Lifetime::Place(v) => Lifetime::Place(v.tr(tr)),
@@ -226,7 +236,7 @@ impl ty::TyS<'_> {
   }
 }
 
-impl<'a> Translator<'a> {
+impl<'a> Translator<'a, '_> {
   #[must_use] fn fresh_var(&mut self) -> VarId { self.next_var.fresh() }
 
   fn tr_var(&mut self, v: HVarId, gen: GenId) -> VarId {
@@ -460,12 +470,12 @@ impl Default for Initializer {
 
 /// The main context struct for the MIR builder.
 #[derive(Debug)]
-pub(crate) struct BuildMir<'a> {
+pub(crate) struct BuildMir<'a, 'n> {
   /// The main data structure, the MIR control flow graph
   cfg: Cfg,
   /// Contains the current generation and other information relevant to the [`tr`](Self::tr)
   /// function
-  tr: Translator<'a>,
+  tr: Translator<'a, 'n>,
   /// The stack of labels in scope
   labels: Vec<(HVarId, LabelGroupData)>,
   /// The in-progress parts of the `BlockTree`
@@ -494,9 +504,10 @@ pub(crate) struct Diverged;
 /// terminated.
 pub(crate) type Block<T> = Result<T, Diverged>;
 
-impl Default for BuildMir<'_> {
-  fn default() -> Self {
+impl<'a, 'n> BuildMir<'a, 'n> {
+  pub(crate) fn new(mvars: Option<&'n mut crate::infer::MVars<'a>>) -> Self {
     let mut tr = Translator {
+      mvars,
       next_var: VarId::default(),
       cur_gen: GenId::ROOT,
       ..Default::default()
@@ -514,9 +525,7 @@ impl Default for BuildMir<'_> {
       cur_ctx: CtxId::ROOT,
     }
   }
-}
 
-impl<'a> BuildMir<'a> {
   fn fresh_var(&mut self) -> VarId { self.tr.fresh_var() }
 
   #[inline] fn cur(&self) -> (BlockId, CtxId, GenId) {
@@ -1587,7 +1596,7 @@ impl Initializer {
   pub(crate) fn finish(&mut self,
     mir: &HashMap<Symbol, Proc>, main: Option<Symbol>
   ) -> (Cfg, Vec<(Symbol, VarId, Ty)>) {
-    let mut build = BuildMir::default();
+    let mut build = BuildMir::new(None);
     mem::swap(&mut self.cfg, &mut build.cfg);
     mem::swap(&mut self.globals, &mut build.globals);
     build.tr.next_var = build.cfg.max_var;

@@ -250,7 +250,7 @@ impl<C: Config> Compiler<C> {
       if !ic.emit_type_errors(&mut self.config, errs, &pr)? { return Ok(()) }
     }
     if let Some(item) = item {
-      if let Some(n) = build_mir::BuildMir::default().build_item(mir, init, item) {
+      if let Some(n) = build_mir::BuildMir::new(Some(&mut ctx.mvars)).build_item(mir, init, item) {
         mir.get_mut(&n).expect("missing").optimize(names);
       }
     }

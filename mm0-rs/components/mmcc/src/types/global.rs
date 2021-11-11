@@ -4,7 +4,7 @@ use std::{collections::HashMap, rc::Rc};
 use num::BigInt;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::Symbol;
-use super::{ty, super::infer::InferCtx};
+use super::{ty, super::infer::{InferCtx, MVars}};
 pub use ty::{WithMeta, TupleMatchKind, Lifetime, ArgAttr};
 use super::{Binop, IntTy, LambdaId, Unop, VarId, ast::TyVarId, hir};
 
@@ -12,71 +12,97 @@ type Mapper<'a, T> = HashMap<&'a WithMeta<T>, <&'a WithMeta<T> as ToGlobal<'a>>:
 
 pub(crate) trait Internable<'a>: Sized + 'a where &'a WithMeta<Self>: ToGlobal<'a> {
   type Inner;
-  fn interner<'s>(_: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self>;
+  fn interner<'s>(_: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self>;
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct ToGlobalCtx<'a> {
+#[derive(Debug)]
+pub(crate) struct ToGlobalCtx<'a, 'n> {
+  mvars: &'n mut MVars<'a>,
   tpat: Mapper<'a, ty::TuplePatternKind<'a>>,
   arg: Mapper<'a, ty::ArgS<'a>>,
   expr: Mapper<'a, ty::ExprKind<'a>>,
   place: Mapper<'a, ty::PlaceKind<'a>>,
   ty: Mapper<'a, ty::TyKind<'a>>,
+  errors: &'n mut Vec<hir::Spanned<'a, crate::infer::TypeError<'a>>>,
+  t_error: ty::Ty<'a>,
+  e_error: ty::Expr<'a>,
+}
+
+impl<'a, 'n> ToGlobalCtx<'a, 'n> {
+  pub(crate) fn new(
+    mvars: &'n mut MVars<'a>,
+    errors: &'n mut Vec<hir::Spanned<'a, crate::infer::TypeError<'a>>>,
+    t_error: ty::Ty<'a>,
+    e_error: ty::Expr<'a>
+  ) -> Self {
+    Self {
+      mvars,
+      errors,
+      t_error,
+      e_error,
+      tpat: Default::default(),
+      arg: Default::default(),
+      expr: Default::default(),
+      place: Default::default(),
+      ty: Default::default(),
+    }
+  }
 }
 
 impl<'a> Internable<'a> for ty::TuplePatternKind<'a> {
   type Inner = TuplePatternKind;
-  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.tpat }
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.tpat }
 }
 impl<'a> Internable<'a> for ty::ArgS<'a> {
   type Inner = ArgS;
-  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.arg }
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.arg }
 }
 impl<'a> Internable<'a> for ty::ExprKind<'a> {
   type Inner = ExprKind;
-  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.expr }
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.expr }
 }
 impl<'a> Internable<'a> for ty::PlaceKind<'a> {
   type Inner = PlaceKind;
-  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.place }
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.place }
 }
 impl<'a> Internable<'a> for ty::TyKind<'a> {
   type Inner = TyKind;
-  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.ty }
+  fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.ty }
 }
 
 pub(crate) trait ToGlobal<'a> {
   type Output;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output;
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output;
 }
 
-impl<'a, T: Internable<'a> + ToGlobal<'a, Output=Rc<<T as Internable<'a>>::Inner>>> ToGlobal<'a> for &'a WithMeta<T> {
+impl<'a, T> ToGlobal<'a> for &'a WithMeta<T>
+where T: Internable<'a> + ToGlobal<'a, Output=Rc<<T as Internable<'a>>::Inner>> {
   type Output = Rc<T::Inner>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Rc<T::Inner> {
-    if let Some(e) = T::interner(&mut ctx.gctx).get(self) { return e.clone() }
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Rc<T::Inner> {
+    if let Some(e) = T::interner(ctx).get(self) { return e.clone() }
     let rc = self.k.to_global(ctx);
-    T::interner(&mut ctx.gctx).insert(self, rc.clone());
+    T::interner(ctx).insert(self, rc.clone());
     rc
   }
 }
 
 impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for &[T] {
   type Output = Box<[T::Output]>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Box<[T::Output]> {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Box<[T::Output]> {
     self.iter().map(|t| t.to_global(ctx)).collect()
   }
 }
 
 impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for [T; 2] {
   type Output = [T::Output; 2];
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> [T::Output; 2] {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> [T::Output; 2] {
     [self[0].to_global(ctx), self[1].to_global(ctx)]
   }
 }
 
 impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
   type Output = Option<T::Output>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Option<T::Output> {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Option<T::Output> {
     self.as_ref().map(|t| t.to_global(ctx))
   }
 }
@@ -106,7 +132,7 @@ impl TuplePatternKind {
 
 impl<'a> ToGlobal<'a> for ty::TuplePatternKind<'a> {
   type Output = Rc<TuplePatternKind>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::TuplePatternKind::Name(a, v, ty) => TuplePatternKind::Name(a, v, ty.to_global(ctx)),
       ty::TuplePatternKind::Tuple(pats, mk, ty) =>
@@ -142,7 +168,7 @@ impl ArgKind {
 
 impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
   type Output = Rc<ArgS>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Rc::new((self.0, match self.1 {
       ty::ArgKind::Lam(arg) => ArgKind::Lam(arg.to_global(ctx)),
       ty::ArgKind::Let(arg, e) => ArgKind::Let(arg.to_global(ctx), e.to_global(ctx)),
@@ -164,16 +190,16 @@ pub struct Mm0Expr<T=Expr> {
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {
   type Output = Mm0Expr<Expr>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Mm0Expr { subst: self.subst.to_global(ctx), expr: self.expr }
   }
 }
 
-impl ToGlobal<'_> for Lifetime {
+impl<'a> ToGlobal<'a> for Lifetime {
   type Output = Lifetime;
-  fn to_global(&self, ctx: &mut InferCtx<'_, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     match *self {
-      Lifetime::Infer(v) => ctx.get_lft_or_assign_extern(v),
+      Lifetime::Infer(v) => ctx.mvars.get_lft_or_assign_extern(v),
       lft => lft
     }
   }
@@ -279,7 +305,7 @@ pub enum TyKind {
 
 impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
   type Output = Rc<TyKind>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Rc<TyKind> {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Rc<TyKind> {
     Rc::new(match *self {
       ty::TyKind::Unit => TyKind::Unit,
       ty::TyKind::True => TyKind::True,
@@ -311,7 +337,8 @@ impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
       ty::TyKind::Input => TyKind::Input,
       ty::TyKind::Output => TyKind::Output,
       ty::TyKind::Moved(ty) => TyKind::Moved(ty.to_global(ctx)),
-      ty::TyKind::Infer(v) => return ctx.err_if_not_assigned_ty(v).to_global(ctx),
+      ty::TyKind::Infer(v) =>
+        return ctx.mvars.err_if_not_assigned_ty(v, ctx.errors, ctx.t_error).to_global(ctx),
       ty::TyKind::Error => TyKind::Error,
     })
   }
@@ -333,7 +360,7 @@ pub enum VariantType {
 
 impl<'a> ToGlobal<'a> for hir::VariantType<'a> {
   type Output = VariantType;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     match self {
       hir::VariantType::Down => VariantType::Down,
       hir::VariantType::UpLt(e) => VariantType::UpLt(e.to_global(ctx)),
@@ -350,7 +377,7 @@ pub struct Variant(pub Expr, pub VariantType);
 
 impl<'a> ToGlobal<'a> for hir::Variant<'a> {
   type Output = Variant;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Variant(self.0.to_global(ctx), self.1.to_global(ctx))
   }
 }
@@ -379,7 +406,7 @@ pub enum PlaceKind {
 
 impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
   type Output = Rc<PlaceKind>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::PlaceKind::Var(v) => PlaceKind::Var(v),
       ty::PlaceKind::Index(a, ty, i) =>
@@ -464,7 +491,7 @@ pub enum ExprKind {
 
 impl<'a> ToGlobal<'a> for ty::ExprKind<'a> {
   type Output = Rc<ExprKind>;
-  fn to_global(&self, ctx: &mut InferCtx<'a, '_>) -> Self::Output {
+  fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
     Rc::new(match *self {
       ty::ExprKind::Unit => ExprKind::Unit,
       ty::ExprKind::Var(v) => ExprKind::Var(v),
@@ -492,7 +519,8 @@ impl<'a> ToGlobal<'a> for ty::ExprKind<'a> {
         ExprKind::Call {f, tys: tys.to_global(ctx), args: args.to_global(ctx)},
       ty::ExprKind::If {cond, then, els} => ExprKind::If {
         cond: cond.to_global(ctx), then: then.to_global(ctx), els: els.to_global(ctx)},
-      ty::ExprKind::Infer(v) => return ctx.err_if_not_assigned_expr(v).to_global(ctx),
+      ty::ExprKind::Infer(v) =>
+        return ctx.mvars.err_if_not_assigned_expr(v, ctx.errors, ctx.e_error).to_global(ctx),
       ty::ExprKind::Error => ExprKind::Error,
     })
   }

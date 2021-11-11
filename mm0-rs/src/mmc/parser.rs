@@ -907,7 +907,9 @@ impl<'a, C> Parser<'a, C> {
     self.compiler.forward_declare_proc(&name.span, name.k)?;
     if let Some(u) = header {
       let mut u = u.peekable();
-      while let Some((e, a)) = u.peek().and_then(|e| e.as_atom().map(|a| (e, a))) {
+      while let Some((e, a)) =
+        u.peek().and_then(|e| e.as_atom().filter(|&a| a != AtomId::COLON).map(|a| (e, a)))
+      {
         let name = self.as_symbol(a);
         self.ba.push_tyvar(&spanned(&span, e, name));
         u.next();

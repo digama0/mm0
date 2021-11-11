@@ -1,0 +1,15 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (adder {x : u32} {y : u32} : {ret : (sn {(cast {x + y}) : u64})})
+      (cast {(cast {x + y}) : u64}))
+
+    (proc (main : (pure $ 2 + 2 = 4 $))
+      {(four h) := (adder 2 2)}
+      -- h: $ 2 + 2 = four $
+      {h2 := (assert {four = 4})}
+      -- h: $ 2 + 2 = four $, h2: $ four = 4 $
+      (return (entail h h2 eqtr)))
+  ))
+};
