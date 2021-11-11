@@ -172,9 +172,9 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
             content: self.padded_content(self.code.init.1.len),
           }))
         }
-        AssemblyItemState::Proc(mut n) => {
+        AssemblyItemState::Proc(n) => {
           if let Some((_, proc)) = self.code.funcs.get(n) {
-            n.0 += 1;
+            self.state = AssemblyItemState::Proc(ProcId(n.0 + 1));
             return Some(AssemblyItem::Proc(Proc {
               code: self.code,
               cfg: &self.code.mir[&self.code.func_names[n]].body,
@@ -189,10 +189,11 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
         AssemblyItemState::Const(ref mut iter) => {
           let name = *iter.next()?;
           if let (size, ConstRef::Ptr(addr)) = self.code.consts.map[&name] {
+            assert_eq!(TEXT_START + self.code.text_size + addr, self.pos);
             return Some(AssemblyItem::Const(Const {
               name,
-              start: TEXT_START + self.code.text_size + addr,
-              content: &self.content[(self.code.text_size + addr) as usize..][..size as usize]
+              start,
+              content: self.advance(size)
             }))
           }
           unreachable!()

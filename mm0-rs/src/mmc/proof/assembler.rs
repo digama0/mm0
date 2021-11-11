@@ -1,13 +1,16 @@
 #![warn(unused)]
 use std::collections::HashMap;
 
-use mmcc::{Symbol, TEXT_START, arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop}, proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc}, types::Size};
-use crate::{FileSpan, Modifiers, Span, TermId, ThmId, Environment, elab::Result, mmc::proof::Name};
+use mmcc::{Symbol, TEXT_START, types::Size};
+use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
+use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc};
+use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, mmc::proof::Name};
 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
 struct BuildAssemblyProc<'a> {
+  // elab: &'a mut Elaborator,
   thm: ProofDedup<'a>,
   hex: HexCache,
   start: Num,
@@ -41,6 +44,12 @@ fn parse_i32_64(p: &mut &[u8]) -> i64 { i64::from(parse_u32(p) as i32) }
 type P<A> = (A, ProofId);
 
 impl BuildAssemblyProc<'_> {
+  // fn pp(&mut self, i: ProofId) -> String {
+  //   let mut s = String::new();
+  //   self.thm.pp(self.elab, i, &mut s).expect("impossible");
+  //   s
+  // }
+
   fn bool(&mut self, b: bool) -> P<bool> {
     (b, if b { app!(self, (tru)) } else { app!(self, (fal)) })
   }
@@ -259,7 +268,7 @@ impl BuildAssemblyProc<'_> {
         [imm, s, thm!(self.thm, parseImm_32(imm, s, th): (parseImm sz imm s))]
       }
       (wSz64) => {
-        let [imm, s, th] = self.parse_imm_64(p);
+        let [imm, s, th] = self.parse_imm_32(p);
         [imm, s, thm!(self.thm, parseImm_64(imm, s, th): (parseImm sz imm s))]
       }
       !
@@ -915,12 +924,12 @@ impl BuildAssemblyProc<'_> {
         let s2 = app!(self, (scons (ch {self.hex[4]} hrex) (s1 opc)));
         let th = thm!(self, parseInst10(inst, *ip, opc, *self.start, hrex, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, th]
+        [s2, inst, th]
       } else {
         let s2 = app!(self, (scons (ch {self.hex[4]} hrex) (scons opc s)));
         let th = thm!(self, parseInst11(inst, *ip, opc, *self.start, hrex, s, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, th]
+        [s2, inst, th]
       }
     } else {
       let rex = app!(self, (d0));
@@ -929,12 +938,12 @@ impl BuildAssemblyProc<'_> {
         let s2 = app!(self, (s1 opc));
         let th = thm!(self, parseInst00(inst, *ip, opc, *self.start, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, th]
+        [s2, inst, th]
       } else {
         let s2 = app!(self, (scons opc s));
         let th = thm!(self, parseInst01(inst, *ip, opc, *self.start, s, th):
           parseInst[*self.start, *ip, s2, inst]);
-        [inst, s2, th]
+        [s2, inst, th]
       }
     }
   }
@@ -1015,7 +1024,7 @@ impl BuildAssemblyProc<'_> {
 struct BuildAssembly<'a> {
   proc_asm: &'a mut HashMap<Option<Symbol>, (TermId, ThmId)>,
   mangler: &'a Mangler,
-  env: &'a mut Environment,
+  elab: &'a mut Elaborator,
   pd: &'a Predefs,
   span: &'a FileSpan,
   asmd_lemmas: u32,
@@ -1072,15 +1081,15 @@ impl<'a> BuildAssembly<'a> {
       (st, z, th)
     };
 
-    let code = self.mangler.mangle(self.env, Name::ProcContent(proc.name()));
-    let code = self.env.add_term({
+    let code = self.mangler.mangle(self.elab, Name::ProcContent(proc.name()));
+    let code = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, s);
       de.build_def0(code, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.string)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
-    let asm = self.mangler.mangle(self.env, Name::ProcAsm(proc.name()));
-    let asm = self.env.add_term({
+    let asm = self.mangler.mangle(self.elab, Name::ProcAsm(proc.name()));
+    let asm = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, a);
       de.build_def0(asm, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.set)
@@ -1088,8 +1097,8 @@ impl<'a> BuildAssembly<'a> {
 
     let th = thm!(build.thm, ((assemble ({code}) start end (asmProc start ({asm})))) =>
       CONV({th} => (assemble (UNFOLD({code}); s) start end (asmProc start (UNFOLD({asm}); a)))));
-    let asm_thm = self.mangler.mangle(self.env, Name::ProcAsmThm(proc.name()));
-    let asm_thm = self.env
+    let asm_thm = self.mangler.mangle(self.elab, Name::ProcAsmThm(proc.name()));
+    let asm_thm = self.elab.env
       .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))?;
     self.proc_asm.insert(proc.name(), (asm, ThmId(0)));
@@ -1114,8 +1123,8 @@ impl<'a> BuildAssembly<'a> {
     let h2 = HexCache::is_u64(&mut self.thm, *y);
     let th = thm!(self.thm, assembledI(a, c, *y, h1, h2): (assembled c a));
 
-    let content = self.mangler.mangle(self.env, Name::Content);
-    let content = self.env.add_term({
+    let content = self.mangler.mangle(self.elab, Name::Content);
+    let content = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = self.thm.to_expr(&mut de, c);
       de.build_def0(content, Modifiers::empty(), self.span.clone(), self.full, e, self.pd.string)
@@ -1123,13 +1132,13 @@ impl<'a> BuildAssembly<'a> {
 
     let th = thm!(self.thm, ((assembled ({content}) a)) =>
       CONV({th} => (assembled (UNFOLD({content}); c) a)));
-    let asmd_thm = self.mangler.mangle(self.env, Name::AsmdThm);
-    let asmd_thm = self.env
+    let asmd_thm = self.mangler.mangle(self.elab, Name::AsmdThm);
+    let asmd_thm = self.elab.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))?;
 
     let mut iter = proof.assembly();
-    self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.env, asmd_thm))
+    self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.elab, asmd_thm))
   }
 
   fn mk_lemma(&mut self,
@@ -1137,9 +1146,9 @@ impl<'a> BuildAssembly<'a> {
   ) -> Result<ThmId> {
     let mut de = ProofDedup::new(self.pd, &[]);
     let th = mk_proof(self, &mut de);
-    let lem = self.mangler.mangle(self.env, Name::AsmdThmLemma(self.asmd_lemmas));
+    let lem = self.mangler.mangle(self.elab, Name::AsmdThmLemma(self.asmd_lemmas));
     self.asmd_lemmas += 1;
-    self.env
+    self.elab.env
       .add_thm(de.build_thm0(lem, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))
   }
@@ -1155,8 +1164,8 @@ impl<'a> BuildAssembly<'a> {
       let th = mk_proof(self, &mut de);
       match item {
         AssemblyItem::Proc(proc) => {
-          let asmd_thm = self.mangler.mangle(self.env, Name::ProcAsmdThm(proc.name()));
-          let asmd_thm = self.env
+          let asmd_thm = self.mangler.mangle(self.elab, Name::ProcAsmdThm(proc.name()));
+          let asmd_thm = self.elab.env
             .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
             .map_err(|e| e.into_elab_error(self.full))?;
           self.proc_asm.get_mut(&proc.name()).expect("impossible").1 = asmd_thm;
@@ -1168,7 +1177,7 @@ impl<'a> BuildAssembly<'a> {
       let m = n >> 1;
       let left = |this: &Self, de: &mut ProofDedup<'a>| {
         let th = mk_proof(this, de);
-        let (c, a, b) = app_match!(this.thm, de.concl(th) => {
+        let (c, a, b) = app_match!(de, de.concl(th) => {
           (assembled c (assembleA a b)) => (c, a, b),
           !
         });
@@ -1176,7 +1185,7 @@ impl<'a> BuildAssembly<'a> {
       };
       let right = |this: &Self, de: &mut ProofDedup<'a>| {
         let th = mk_proof(this, de);
-        let (c, a, b) = app_match!(this.thm, de.concl(th) => {
+        let (c, a, b) = app_match!(de, de.concl(th) => {
           (assembled c (assembleA a b)) => (c, a, b),
           !
         });
@@ -1184,9 +1193,9 @@ impl<'a> BuildAssembly<'a> {
       };
       if n > 16 {
         let lem1 = self.mk_lemma(&left)?;
-        self.prove_conjuncts(m, iter, &|this, de| de.thm0(this.env, lem1))?;
+        self.prove_conjuncts(m, iter, &|this, de| de.thm0(this.elab, lem1))?;
         let lem2 = self.mk_lemma(&right)?;
-        self.prove_conjuncts(n - m, iter, &|this, de| de.thm0(this.env, lem2))
+        self.prove_conjuncts(n - m, iter, &|this, de| de.thm0(this.elab, lem2))
       } else {
         self.prove_conjuncts(m, iter, &left)?;
         self.prove_conjuncts(n - m, iter, &right)
@@ -1196,7 +1205,7 @@ impl<'a> BuildAssembly<'a> {
 }
 
 pub(super) fn assemble_proof(
-  env: &mut Environment,
+  elab: &mut Elaborator,
   pd: &Predefs,
   proc_asm: &mut HashMap<Option<Symbol>, (TermId, ThmId)>,
   mangler: &Mangler,
@@ -1208,7 +1217,7 @@ pub(super) fn assemble_proof(
   let mut build = BuildAssembly {
     proc_asm,
     mangler,
-    env,
+    elab,
     pd,
     span,
     full,

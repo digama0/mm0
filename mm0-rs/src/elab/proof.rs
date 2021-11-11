@@ -79,6 +79,37 @@ impl<T> ProofKindMap<T> {
   }
 }
 
+/// A builder for constructing lisp objects from a [`Dedup`].
+#[derive(Debug)]
+pub struct ToLisp {
+  cache: Vec<Option<LispVal>>,
+  hyps: Vec<Option<LispVal>>,
+}
+
+impl ToLisp {
+  /// Get the lisp value of a given index in the [`Dedup`].
+  pub fn get<H: NodeHash>(&mut self, env: &mut Environment, de: &Dedup<H>, i: usize) -> LispVal {
+    if let Some(x) = &self.cache[i] { return x.clone() }
+    let ret = de[i].to_lisp(self, env, de);
+    self.cache[i] = Some(ret.clone());
+    ret
+  }
+
+  /// Insert the argument names, which are not stored in the [`Dedup`].
+  pub fn add_arg_names(&mut self, args: impl Iterator<Item=Option<AtomId>>) {
+    for (a, val) in args.zip(&mut self.cache) {
+      if let Some(a) = a {
+        if val.is_some() { *val = Some(LispVal::atom(a)) }
+      }
+    }
+  }
+
+  /// Insert the argument names, which are not stored in the [`Dedup`].
+  pub fn add_hyp_names(&mut self, args: impl Iterator<Item=Option<AtomId>>) {
+    self.hyps = args.map(|a| a.map(LispVal::atom)).collect()
+  }
+}
+
 /// A "hashable" type. We use this to abstract the difference between
 /// [`ExprHash`] and [`ProofHash`]. The definition of [`NodeHash`] is mutually recursive
 /// with the [`Dedup`] struct. A [`NodeHash`] type represents a nonrecursive shadow
@@ -100,6 +131,10 @@ pub trait NodeHash: Hash + Eq + Sized {
   /// `deps` that will provide the dependencies of elements. Bump `bv` if this object
   /// is a dummy variable.
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64;
+
+  /// Convert this value back into a [`LispVal`]. This function is normally not called directly;
+  /// instead use [`ToLisp::get`].
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal;
 }
 
 /// The main hash-consing state object. This tracks previously hash-consed elements
@@ -190,6 +225,11 @@ impl<H: NodeHash> Dedup<H> {
       (t, b, v)
     }).collect();
     Dedup { map, prev: self.prev.clone(), vec, bv: self.bv }
+  }
+
+  /// Construct a new [`ToLisp`] for converting elements in this [`Dedup`] into lisp values.
+  #[must_use] pub fn to_lisp_builder(&self) -> ToLisp {
+    ToLisp { cache: vec![None; self.vec.len()], hyps: vec![] }
   }
 }
 
@@ -396,6 +436,18 @@ impl NodeHash for ExprHash {
       &Self::Ref(_, n) => deps(n),
       &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
       Self::App(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
+    }
+  }
+
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
+    match *self {
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{}", i).as_bytes())),
+      Self::Dummy(a, _) => LispVal::atom(a),
+      Self::App(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
     }
   }
 }
@@ -720,6 +772,46 @@ impl NodeHash for ProofHash {
       &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
       Self::Term(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
       _ => 0,
+    }
+  }
+
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
+    match *self {
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{}", i).as_bytes())),
+      Self::Dummy(a, _) => LispVal::atom(a),
+      Self::Term(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Hyp(i, _) => match builder.hyps.get(i) {
+        Some(Some(e)) => e.clone(),
+        _ => LispVal::atom(env.get_atom(format!("h{}", i).as_bytes()))
+      },
+      Self::Thm(t, ref es, _) => {
+        let mut args = vec![LispVal::atom(env.thms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Conv(tgt, conv, prf) => LispVal::list([
+        LispVal::atom(AtomId::CONV),
+        builder.get(env, de, tgt),
+        builder.get(env, de, conv),
+        builder.get(env, de, prf),
+      ]),
+      Self::Refl(e) => builder.get(env, de, e),
+      Self::Sym(e) => LispVal::list([LispVal::atom(AtomId::SYM), builder.get(env, de, e)]),
+      Self::Cong(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Unfold(t, ref es, _, _, c) => LispVal::list([
+        LispVal::atom(AtomId::UNFOLD),
+        LispVal::atom(env.terms[t].atom),
+        LispVal::list(es.iter().map(|&i| builder.get(env, de, i)).collect::<Box<[_]>>()),
+        builder.get(env, de, c),
+      ])
     }
   }
 }

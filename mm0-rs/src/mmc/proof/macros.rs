@@ -79,7 +79,7 @@ macro_rules! thm {
     let th = thm!($de, $th);
     let conv = conv!($de, $($conv)*);
     let res = app!($de, $($e)*);
-    $de.conv(th, conv, res)
+    $de.conv(res, conv, th)
   }};
   ($de:expr, $thm:ident$([$ix:expr])*($($es:expr),*)($(($($args:tt)*))*): $($e:tt)*) => {{
     let th = $de.$thm$([usize::from($ix)])*;

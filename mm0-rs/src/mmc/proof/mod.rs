@@ -16,13 +16,14 @@ mod assembler;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, SortId, Span, TermId, ThmId};
+use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, Prec, SortId, Span, TermId, ThmId};
 use mmcc::{Idx, Symbol, intern};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, ElfProof, Inst, Proc};
 
 use crate::elab::Result;
-use crate::{DeclKey, ElabError, Elaborator, Environment, Expr, ExprNode, Proof, ProofNode, Remap, Remapper, Term, TermKind, Thm, ThmKind, Type};
-use crate::elab::proof::{self, IDedup, ProofKind};
+use crate::{DeclKey, ElabError, Elaborator, Environment, Expr, ExprNode,
+  LispVal, Proof, ProofNode, Remap, Remapper, Term, TermKind, Thm, ThmKind, Type};
+use crate::elab::proof::{self, IDedup, ToLisp, ProofKind};
 use self::norm_num::{HexCache, Num};
 
 pub(crate) use predefs::Predefs;
@@ -78,6 +79,13 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
     let refs = self.from_expr_nodes(&e.heap);
     self.from_expr_node(&e.head, &refs)
   }
+  fn to_lisp(&self, env: &mut Environment, i: Self::Id) -> LispVal;
+  fn pp(&self,
+    elab: &mut Elaborator, i: Self::Id, f: &mut impl std::fmt::Write
+  ) -> std::fmt::Result {
+    let val = self.to_lisp(elab, i);
+    elab.format_env().pretty(|p| p.expr(&val).render_fmt(80, f))
+  }
 }
 
 macro_rules! make_dedup {
@@ -123,6 +131,10 @@ macro_rules! make_dedup {
           if *t2 == t { return Some(&args) }
         }
         None
+      }
+      fn to_lisp(&self, env: &mut Environment, i: Self::Id) -> LispVal {
+        let mut builder = self.de.to_lisp_builder();
+        builder.get(env, &self.de, i.into_usize())
       }
     }
   )*}
@@ -299,7 +311,7 @@ pub(crate) fn render_proof(
   };
   let fsp = elab.fspan(sp);
   let mut proc_asm = HashMap::new();
-  assembler::assemble_proof(&mut elab.env, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
-  elab.report(ElabError::info(sp, format!("{:#?}", proof)));
+  assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
+  // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
   Ok(())
 }

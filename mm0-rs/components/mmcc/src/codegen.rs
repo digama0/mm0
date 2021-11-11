@@ -119,7 +119,7 @@ impl InstSink<'_> {
     self.local_rip = 0;
     self.proc.insts.0.iter().try_for_each(|inst| {
       inst.write(self);
-      println!("{:?} (layout {:?})\n  = {:x?}", inst, inst.layout_inst(), self.buf);
+      // println!("{:?} (layout {:?})\n  = {:x?}", inst, inst.layout_inst(), self.buf);
       w.write_all(&self.buf);
       self.buf.clear();
       Ok(())
