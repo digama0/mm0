@@ -1,1 +1,91 @@
 import "compiler-old.mm1";
+
+local def procOkGCtx (gctx: set) (A: set): set = $ 0 $; -- TODO
+local def procOkCtx (gctx: set) (fr: nat): set = $ 0 $; -- TODO
+
+local def ioContent (C: set): nat = $ 0 $; -- TODO
+@mmc-th local def ioGetContent (C: set) (c: string): wff = $ F. $; -- TODO
+
+local def ioResult (C: set): set = $ 0 $; -- TODO
+local def ioSP (C S: set): nat = $ 0 $; -- TODO
+local def ioFreeBytes (C S: set): nat = $ 0 $; -- TODO
+local def soLayout (S: set): set = $ 0 $; -- TODO
+local def soType (S: set): set = $ 0 $; -- TODO
+
+local def ioJump (C S: set) (fr ip) =
+$ s_ok
+  (sn fr *s (
+    main_layout (ioContent C) (ioSP C S) ip (ioFreeBytes C S) (soLayout S) *s
+    soType S))
+  (ioResult C) $;
+
+local def scopeLabelsOk (C: set) (fr: nat): wff = $ F. $; -- TODO
+
+local def ioAsmd (C A: set) (x y: nat): wff =
+$ E. p E. s (y = x + len s /\ p + y e. u64 /\ sublistAt x (ioContent C) s /\ p <> s <> x e. A) $;
+
+local def instOk (C P A: set): wff =
+$ E. x E. y (ioAsmd C A x y /\ A. fr (scopeLabelsOk C fr -> ioJump C P fr x)) $;
+
+local def instsOk (C P A Q: set): wff =
+$ E. x E. y (ioAsmd C A x y /\ A. fr (scopeLabelsOk C fr -> ioJump C Q fr y -> ioJump C P fr x)) $;
+
+theorem instOk_A (C P A Q B)
+  (h1: $ instsOk C P A Q $) (h2: $ instOk C Q B $): $ instOk C P (A +asm B) $ = 'sorry;
+
+theorem instsOk_A (C P A Q B R)
+  (h1: $ instsOk C P A Q $) (h2: $ instsOk C Q B R $): $ instsOk C P (A +asm B) R $ = 'sorry;
+
+local def procOk (c: string) (start: nat) (P: set) (E: set): wff = $ F. $; -- TODO
+
+local def ssLeaf: nat = $ 0 $; -- TODO
+local def ssx: nat = $ 0 $; -- TODO
+
+local def ioPrologue (E: set) (sp: nat) (P: set): set = $ 0 $; -- TODO
+
+@mmc-th local def ioGetEpi (C: set) (E: set) (sp: nat): wff = $ F. $; -- TODO
+
+local def epiFree (n: nat) (E: set): set = $ 0 $; -- TODO
+local def epiPop (reg: hex) (E: set): set = $ 0 $; -- TODO
+local def epiRet: set = $ 0 $; -- TODO
+
+local def ioGCtx (c: string) (E: set): set = $ 0 $; -- TODO
+
+@mmc-th local def ioAssembled (C: set) (P: set): wff =
+$ E. p assembledN (ioContent C) (P @' p) $;
+
+@mmc-th theorem ioAssembledI
+  (h1: $ ioGetContent C c $) (h2: $ assembled c (asmProc p A) $):
+  $ ioAssembled C A $ = 'sorry;
+
+@mmc-th theorem ioAssembled_l
+  (h1: $ ioAssembled C (A +asm B) $): $ ioAssembled C A $ = 'sorry;
+
+@mmc-th theorem ioAssembled_r
+  (h1: $ ioAssembled C (A +asm B) $): $ ioAssembled C B $ = 'sorry;
+
+theorem instOk_entry
+  (h1: $ ioAssembled C (asmEntry start A) $)
+  (h2: $ instOk C (ioPrologue E x0 P) A $): $ procOk c start P E $ = 'sorry;
+
+theorem ioPrologue_push (h: $ sp + x8 = sp2 $):
+  $ instsOk C
+    (ioPrologue E sp P) (instPush (IRM_reg r)) (ioPrologue (epiPop r E) sp2 P) $ = 'sorry;
+
+theorem ioPrologue_alloc
+  (h1: $ ioGetEpi C (epiFree n E) sp $)
+  (h2: $ sp + n = m $) (h3: $ m < ,{2 ^ 12} $):
+  $ instsOk C (ioPrologue E sp P) (instBinop x5 wSz64 x4 (IRM_imm32 n)) P $ = 'sorry;
+
+theorem ioPrologue_alloc0
+  (h1: $ ioGetEpi C E x0 $)
+  (h2: $ instOk C (ioPrologue E sp P) A $): $ instOk C P A $ = 'sorry;
+
+theorem ioEpilogue_free:
+  $ instsOk C (epiFree n E) (instBinop x0 wSz64 x4 (IRM_imm32 n)) E $ = 'sorry;
+
+theorem ioEpilogue_pop:
+  $ instsOk C (epiPop r E) (instPop r) E $ = 'sorry;
+
+theorem ioEpilogue_ret:
+  $ instOk C epiRet instRet $ = 'sorry;

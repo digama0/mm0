@@ -94,6 +94,12 @@ $ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
 @mmc-th theorem asmAtI (p s x y A)
   (h1: $ localAssemble p s x y A $): $ localAssemble p s x y (asmAt x A) $ = 'sorry;
 
+@mmc-th local def asmEntry (n: nat) (A: set): set =
+$ S\ p, S\ s, {x | p = n /\ x = 0 /\ p <> s <> x e. A} $;
+
+@mmc-th theorem asmEntryI (p s y A)
+  (h1: $ localAssemble p s x0 y A $): $ localAssemble p s x0 y (asmEntry p A) $ = 'sorry;
+
 --| See `parseInst`. (The `*N` functions are proof-internal, used for proving compiler lemmas.)
 @_ local def parseInstN (p ip s: nat) (I: set): wff =
 $ ip e. u64 -> A. x (ip = x + len s -> p <> s <> x e. I) $;
@@ -769,15 +775,3 @@ do (ignore @ on-hexstrings @ fn (n)
 @mmc-th theorem assembled_l (h1: $ assembled c (A ++asm B) $): $ assembled c A $ = 'sorry;
 
 @mmc-th theorem assembled_r (h1: $ assembled c (A ++asm B) $): $ assembled c B $ = 'sorry;
-
-@mmc-th local def localAssembled (ctx: nat) (P: set): wff =
-$ assembledN (fst ctx) (P @' snd ctx) $;
-
-@mmc-th theorem localAssembledI (h1: $ assembled c (asmProc p A) $):
-  $ localAssembled (c <> p) A $ = 'sorry;
-
-@mmc-th theorem localAssembled_l
-  (h1: $ localAssembled ctx (A +asm B) $): $ localAssembled ctx A $ = 'sorry;
-
-@mmc-th theorem localAssembled_r
-  (h1: $ localAssembled ctx (A +asm B) $): $ localAssembled ctx B $ = 'sorry;

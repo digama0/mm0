@@ -144,6 +144,9 @@ impl PCodeBuilder {
   }
 
   fn push_prologue(&mut self, stack_size: u32, saved_regs: impl Iterator<Item=PReg>) {
+    for reg in saved_regs {
+      self.push(PInst::Push64 { src: PRegMemImm::Reg(reg) });
+    }
     if stack_size != 0 {
       self.push(PInst::Binop {
         op: crate::arch::Binop::Sub,
@@ -152,15 +155,9 @@ impl PCodeBuilder {
         src: PRegMemImm::Imm(stack_size)
       });
     }
-    for reg in saved_regs {
-      self.push(PInst::Push64 { src: PRegMemImm::Reg(reg) });
-    }
   }
 
   fn push_epilogue(&mut self, stack_size: u32, saved_regs: impl DoubleEndedIterator<Item=PReg>) {
-    for dst in saved_regs.rev() {
-      self.push(PInst::Pop64 { dst });
-    }
     if stack_size != 0 {
       self.push(PInst::Binop {
         op: crate::arch::Binop::Add,
@@ -168,6 +165,9 @@ impl PCodeBuilder {
         dst: RSP,
         src: PRegMemImm::Imm(stack_size)
       });
+    }
+    for dst in saved_regs.rev() {
+      self.push(PInst::Pop64 { dst });
     }
     self.push(PInst::Ret)
   }

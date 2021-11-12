@@ -1017,10 +1017,17 @@ impl BuildAssemblyProc<'_> {
         (s, y, inst, th)
       });
 
-      let a2 = app!(this.thm, (asmAt {*x} a));
-      let th = thm!(this.thm, asmAtI(*this.start, s, *x, *y, a, th):
-        localAssemble[*this.start, s, *x, *y, a2]);
-      (s, y, a2, th)
+      if x.val == 0 {
+        let a2 = app!(this.thm, (asmEntry {*this.start} a));
+        let th = thm!(this.thm, asmEntryI(*this.start, s, *y, a, th):
+          localAssemble[*this.start, s, *x, *y, a2]);
+        (s, y, a2, th)
+      } else {
+        let a2 = app!(this.thm, (asmAt {*x} a));
+        let th = thm!(this.thm, asmAtI(*this.start, s, *x, *y, a, th):
+          localAssemble[*this.start, s, *x, *y, a2]);
+        (s, y, a2, th)
+      }
     })
   }
 }

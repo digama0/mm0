@@ -236,6 +236,10 @@ make_predefs! {
   asmAt: TermId => "asmAt";
   asmAtI: ThmId => "asmAtI";
 
+  /// `asmEntry (p: nat) (A: set): set`
+  asmEntry: TermId => "asmEntry";
+  asmEntryI: ThmId => "asmEntryI";
+
   /// `asmProc (n: nat) (A: set): set`
   asmProc: TermId => "asmProc";
   asmProcI: ThmId => "asmProcI";
@@ -246,12 +250,6 @@ make_predefs! {
   assembledI: ThmId => "assembledI";
   assembled_l: ThmId => "assembled_l";
   assembled_r: ThmId => "assembled_r";
-
-  /// `localAssembled (ctx: nat) (P: set): wff`
-  localAssembled: TermId => "localAssembled";
-  localAssembledI: ThmId => "localAssembledI";
-  localAssembled_l: ThmId => "localAssembled_l";
-  localAssembled_r: ThmId => "localAssembled_r";
 
   /// `strlen (s: string) (n: nat): wff`
   strlen: TermId => "strlen";
