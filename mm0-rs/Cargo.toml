@@ -28,6 +28,9 @@ mmc = ["mmcc"]
 [profile.release]
 debug = true
 
+[profile.dev]
+opt-level = 1
+
 [dependencies]
 either = "1.6"
 owning_ref = "0.4"

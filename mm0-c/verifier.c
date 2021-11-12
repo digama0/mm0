@@ -220,10 +220,12 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
-    // debug_print_ustack();
-    // debug_print_uheap();
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // if (g_cmd - g_file == 0x123456) {
+    //   debug_print_ustack();
+    //   debug_print_uheap();
+    //   fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // }
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -349,9 +351,11 @@ u8* run_proof(proof_mode mode, u8* cmd) {
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
-    // debug_print_stack();
-    // debug_print_heap();
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // if (g_cmd - g_file >= 0x123456 - 20) {
+    //   debug_print_stack();
+    //   debug_print_heap();
+    //   fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // }
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -687,11 +691,10 @@ void verify(u8* file, u64 len) {
     u32 data = r.data;
     g_stmt = stmt;
     u8* next_stmt = stmt + data;
-    if (!(next_stmt + CMD_MAX_SIZE <= g_end)) {
-      // fprintf(stderr, "stmt: %lX, data: %X, len: %lX\n",
-      //   stmt - g_file, data, g_end - g_file);
-      ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
-    }
+    // if (!(next_stmt + CMD_MAX_SIZE <= g_end))
+    //   fprintf(stderr, "stmt: %lX, data: %X, len: %lX\n",
+    //     stmt - g_file, data, g_end - g_file);
+    ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
     u8 stmt_type = *stmt & 0x3F;
     switch (stmt_type) {
       // A sort command has no data in the proof stream. It simply bumps the

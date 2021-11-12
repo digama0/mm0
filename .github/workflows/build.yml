@@ -139,3 +139,9 @@ jobs:
       working-directory: examples
       # run: mm0-c compiler.mmb < x86_join.mm0
       run: mm0-c compiler.mmb < compiler_join.mm0
+    - name: hello_mmc.mm1
+      working-directory: examples
+      run: mm0-rs compile hello_mmc.mm1 hello_mmc.mmb
+    - name: hello_mmc.mmb
+      working-directory: examples
+      run: mm0-c hello_mmc.mmb < compiler_join.mm0

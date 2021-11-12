@@ -122,7 +122,7 @@ impl HexCache {
       NumKind::Hex(a, i) => {
         let (b, c) = (self[i], self[i+1]);
         let r = self.hex(de, a, i+1);
-        let pr = thm!(de, decsucn[i](): (suc b) = c);
+        let pr = thm!(de, decsucn[i](): (suc (h2n b)) = (h2n c));
         (r, thm!(de, decsucx(*a, b, c, pr): (suc {*n}) = {*r}))
       }
       NumKind::H2n(i) => {
@@ -184,10 +184,8 @@ impl HexCache {
       let carryout = f >= 16;
       let f = f & 15;
       let (eb, ed, ef) = (hex[b], hex[d], hex[f]);
-      let r = if carryout { hex.h2n(de, f) } else {
-        let one = hex.h2n(de, 1); hex.hex(de, one, f)
-      };
-      let p = thm_carry!(de, decaddn/decadcn[b][d](): (eb + ed) + carry = {*r});
+      let r = if carryout { let one = hex.h2n(de, 1); hex.hex(de, one, f) } else { hex.h2n(de, f) };
+      let p = thm_carry!(de, decaddn/decadcn[b][d](): ((h2n eb) + (h2n ed)) + carry = {*r});
       (carryout, f, eb, ed, ef, (r, p))
     }
     match (x.cases(de), y.cases(de)) {
@@ -201,7 +199,7 @@ impl HexCache {
         (false, f, eb, ed, ef, (_, p2)) => {
           let (e, p1) = self.adc(de, false, a, c);
           let r = self.hex(de, e, f);
-          (r, thm_carry!(de, adc_xx0/add_xx0(*a, eb, *c, ed, *e, ef, p1, p2):
+          (r, thm_carry!(de, add_xx0/adc_xx0(*a, eb, *c, ed, *e, ef, p1, p2):
             ({*x} + {*y}) + carry = {*r}))
         }
       }
@@ -209,12 +207,12 @@ impl HexCache {
         (true, f, eb, ed, ef, (_, p2)) => {
           let (e, p1) = self.suc(de, c);
           let r = self.hex(de, e, f);
-          (r, thm_carry!(de, adc_0x1/add_0x1(eb, *c, ed, *e, ef, p1, p2):
+          (r, thm_carry!(de, add_0x1/adc_0x1(eb, *c, ed, *e, ef, p1, p2):
             ({*x} + {*y}) + carry = {*r}))
         }
         (false, f, eb, ed, ef, (_, p2)) => {
           let r = self.hex(de, c, f);
-          (r, thm_carry!(de, adc_0x0/add_0x0(eb, *c, ed, ef, p2):
+          (r, thm_carry!(de, add_0x0/adc_0x0(eb, *c, ed, ef, p2):
             ({*x} + {*y}) + carry = {*r}))
         }
       }
@@ -222,12 +220,12 @@ impl HexCache {
         (true, f, eb, ed, ef, (_, p2)) => {
           let (e, p1) = self.suc(de, a);
           let r = self.hex(de, e, f);
-          (r, thm_carry!(de, adc_x01/add_x01(*a, eb, ed, *e, ef, p1, p2):
+          (r, thm_carry!(de, add_x01/adc_x01(*a, eb, ed, *e, ef, p1, p2):
             ({*x} + {*y}) + carry = {*r}))
         }
         (false, f, eb, ed, ef, (_, p2)) => {
           let r = self.hex(de, a, f);
-          (r, thm_carry!(de, adc_x00/add_x00(*a, eb, ed, ef, p2):
+          (r, thm_carry!(de, add_x00/adc_x00(*a, eb, ed, ef, p2):
             ({*x} + {*y}) + carry = {*r}))
         }
       }
@@ -244,7 +242,7 @@ impl HexCache {
         (h2n c) => {
           let i = args.len();
           args.push(c);
-          let res = app!(de, (isU64 x));
+          let res = app!(de, (isU64 a));
           return de.thm(de.isU64n[i], &args, res)
         }
         v => panic!("not a number"),

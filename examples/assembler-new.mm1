@@ -385,14 +385,14 @@ $ src != 0 -> instBinop op sz dst src C_ I $;
 @mmc-th theorem parseBinopImm
   (h1: $ splitBits13 v 0 y $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ parseModRM rex opc dst l1 l2 $)
+  (h3: $ parseModRM rex opc (IRM_reg dst) l1 l2 $)
   (h4: $ parseImm sz src l2 $)
   (h5: $ parseBinop opc sz dst (IRM_imm32 src) I $):
   $ parseOpc p ip l1 rex (ch x8 y) I $ = 'sorry;
 
 @mmc-th theorem parseBinopImm8
   (h1: $ opSizeW rex 1 = sz $)
-  (h2: $ parseModRM rex opc dst l1 l2 $)
+  (h2: $ parseModRM rex opc (IRM_reg dst) l1 l2 $)
   (h3: $ parseImm8 src l2 $)
   (h4: $ parseBinop opc sz dst (IRM_imm32 src) I $):
   $ parseOpc p ip l1 rex (ch x8 x3) I $ = 'sorry;
@@ -462,7 +462,7 @@ $ S\ p, S\ s, {x | wsizeBytes src_sz < wsizeBytes dst_sz /\
 
 @mmc-th local def hasREX (rex: nat) (b: wff): wff = $ rex != 0 <-> b $;
 @mmc-th theorem hasREX0: $ hasREX 0 F. $ = '(mpbir neqfal eqid);
-@mmc-th theorem hasREXS: $ hasREX (suc rex) T. $ = '(mpbir eqtru peano1);
+@mmc-th theorem hasREXS (rex: hex): $ hasREX (suc rex) T. $ = '(mpbir eqtru peano1);
 
 @mmc-th theorem parseMovSB
   (h1: $ hasREX rex b $)
@@ -506,7 +506,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastMov sz ds) s)} $;
   (h3: $ splitBits31 r rb dst $)
   (h4: $ REX_W rex = 0 $)
   (h5: $ parseImm32 src l $):
-  $ parseOpc p ip l rex (ch xb y) (instMov wSz32 dst (IRM_imm32 src)) $ = 'sorry;
+  $ parseOpc p ip l rex (ch xb y) (instMov wSz32 (IRM_reg dst) (IRM_imm32 src)) $ = 'sorry;
 
 @mmc-th theorem parseMov64
   (h1: $ splitBits31 r 1 y $)
@@ -514,7 +514,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastMov sz ds) s)} $;
   (h3: $ splitBits31 r rb dst $)
   (h4: $ REX_W rex = 1 $)
   (h5: $ parseImm64 src l $):
-  $ parseOpc p ip l rex (ch xb y) (instMov wSz64 dst (IRM_imm64 src)) $ = 'sorry;
+  $ parseOpc p ip l rex (ch xb y) (instMov wSz64 (IRM_reg dst) (IRM_imm64 src)) $ = 'sorry;
 
 @mmc-th theorem parseMovImm
   (h1: $ splitBits13 v 3 y $)
