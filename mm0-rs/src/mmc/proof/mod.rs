@@ -34,21 +34,13 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
   type Id: Idx;
   fn new(pd: &'a Predefs, args: &[(Option<AtomId>, Type)]) -> Self;
   fn add(&mut self, h: Self::Hash) -> Self::Id;
-  fn reuse(&mut self, i: Self::Id) -> Self::Id;
-  fn add_r(&mut self, h: Self::Hash) -> Self::Id {
-    let i = self.add(h);
-    self.reuse(i)
-  }
   fn get(&self, i: Self::Id) -> &Self::Hash;
-  fn build0(&self, i: Self::Id) -> (Box<[Self::Node]>, Self::Node);
+  fn build0(&mut self, i: Self::Id) -> (Box<[Self::Node]>, Self::Node);
   const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash;
   fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id;
   fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id;
-  fn app1(&mut self, t: TermId, args: &[Self::Id]) -> Self::Id {
-    self.add(Self::APP(t, args.iter().map(|x| x.into_usize()).collect()))
-  }
   fn app(&mut self, t: TermId, args: &[Self::Id]) -> Self::Id {
-    self.add_r(Self::APP(t, args.iter().map(|x| x.into_usize()).collect()))
+    self.add(Self::APP(t, args.iter().map(|x| x.into_usize()).collect()))
   }
   fn is_app_of(&self, i: Self::Id, t: TermId) -> Option<&[usize]>;
   #[inline] fn mk_eq(&mut self, a: Self::Id, b: Self::Id) -> Self::Id {
@@ -113,14 +105,14 @@ macro_rules! make_dedup {
         Self { pd, de: proof::Dedup::new(args), cache: Default::default() }
       }
       fn add(&mut self, h: proof::$hash) -> $id { $id::from_usize(self.de.add_direct(h)) }
-      fn reuse(&mut self, i: $id) -> $id { $id::from_usize(self.de.reuse(i.into_usize())) }
       fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id {
         self.add(proof::$hash::Ref(k, i))
       }
       fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id {
         self.add(proof::$hash::Dummy(s, sort))
       }
-      fn build0(&self, i: $id) -> (Box<[$node]>, $node) {
+      fn build0(&mut self, i: $id) -> (Box<[$node]>, $node) {
+        self.de.calc_use([i.into_usize()]);
         let (mut ids, heap) = proof::build(&self.de);
         (heap, ids[i.into_usize()].take())
       }
@@ -148,16 +140,6 @@ impl ProofDedup<'_> {
   fn thm(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
     self.add(proof::ProofHash::Thm(t,
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
-  }
-
-  fn thm_r(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
-    self.add_r(proof::ProofHash::Thm(t,
-      args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
-  }
-
-  fn thm_app(&mut self, th: ThmId, args: &[ProofId], t: TermId, es: &[ProofId]) -> ProofId {
-    let res = self.app1(t, es);
-    self.thm(th, args, res)
   }
 
   fn thm0(&mut self, env: &Environment, name: ThmId) -> ProofId {
@@ -225,7 +207,7 @@ impl ProofDedup<'_> {
   }
 
   /// Constructs a theorem with no free variables or hypotheses.
-  fn build_thm0(&self,
+  fn build_thm0(&mut self,
     atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, thm: ProofId,
   ) -> Thm {
     let mut de = ExprDedup::new(self.pd, &[]);
@@ -242,7 +224,7 @@ impl ProofDedup<'_> {
 
 impl ExprDedup<'_> {
   /// Constructs a definition with no parameters or dummy variables.
-  fn build_def0(&self,
+  fn build_def0(&mut self,
     atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, e: ExprId, ret: SortId,
   ) -> Term {
     let (heap, head) = self.build0(e);

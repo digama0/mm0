@@ -1187,19 +1187,17 @@ impl<'a> BuildAssembly<'a> {
       let m = n >> 1;
       let left = |this: &Self, de: &mut ProofDedup<'a>| {
         let th = mk_proof(this, de);
-        let (c, a, b) = app_match!(de, de.concl(th) => {
-          (assembled c (assembleA a b)) => (c, a, b),
+        app_match!(de, de.concl(th) => {
+          (assembled c (assembleA a b)) => thm!(de, assembled_l(a, b, c, th): (assembled c a)),
           !
-        });
-        thm!(de, assembled_l(a, b, c, th): (assembled c a))
+        })
       };
       let right = |this: &Self, de: &mut ProofDedup<'a>| {
         let th = mk_proof(this, de);
-        let (c, a, b) = app_match!(de, de.concl(th) => {
-          (assembled c (assembleA a b)) => (c, a, b),
+        app_match!(de, de.concl(th) => {
+          (assembled c (assembleA a b)) => thm!(de, assembled_r(a, b, c, th): (assembled c b)),
           !
-        });
-        thm!(de, assembled_r(a, b, c, th): (assembled c b))
+        })
       };
       if n > 16 {
         let lem1 = self.mk_lemma(&left)?;
