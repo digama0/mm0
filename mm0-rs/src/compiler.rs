@@ -504,7 +504,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
       }
       let mut report = report;
       let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
-      ex.run(true)?;
+      ex.run(!args.is_present("strip"))?;
       ex.finish()?;
     }
   }
