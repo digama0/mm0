@@ -66,12 +66,14 @@ do {
     (mmc-th name))
 };
 
+local def assembleN (s x y: nat) (P: set): wff =
+$ y = x + len s /\ (y e. u64 -> s <> x e. P) $;
+
 @mmc-th local def assemble (s: string) (x y: nat) (P: set): wff =
-$ s != 0 /\ y = x + len s /\ (y e. u64 -> s <> x e. P) $;
+$ s != 0 /\ assembleN s x y P $;
 
 @mmc-th local def assembleA (A B: set): set =
-$ S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ t2 != 0 /\
-  t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
+$ S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
 infixr assembleA: $++asm$ prec 120;
 
 @mmc-th theorem assembleA_I (s t x y z A B)
@@ -79,26 +81,47 @@ infixr assembleA: $++asm$ prec 120;
   $ assemble (s '+ t) x z (A ++asm B) $ = 'sorry;
 
 @mmc-th local def localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff =
-$ assemble s x y (P @' p) $;
+$ assembleN s x y (P @' p) $;
 
 @mmc-th local def localAssembleA (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
 infixr localAssembleA: $+asm$ prec 122;
 
-@mmc-th theorem localAssembleA_I (p s t x y z A B)
+@mmc-th theorem localAssembleA_I
   (h1: $ localAssemble p s x y A $) (h2: $ localAssemble p t y z B $):
   $ localAssemble p (s '+ t) x z (A +asm B) $ = 'sorry;
+
+@mmc-th local def localAssemble0 (p: nat) (x: nat) (P: set): wff =
+$ x e. u64 -> p <> 0 <> x e. P $;
+
+@mmc-th theorem localAssemble0_l
+  (h1: $ localAssemble0 p x A $) (h2: $ localAssemble p s x y B $):
+  $ localAssemble p s x y (A +asm B) $ = 'sorry;
+
+@mmc-th theorem localAssemble0_r
+  (h1: $ localAssemble p s x y A $) (h2: $ localAssemble0 p y B $):
+  $ localAssemble p s x y (A +asm B) $ = 'sorry;
+
+@mmc-th theorem localAssemble0_A
+  (h1: $ localAssemble0 p x A $) (h2: $ localAssemble0 p x B $):
+  $ localAssemble0 p x (A +asm B) $ = 'sorry;
 
 @mmc-th local def asmAt (n: nat) (A: set): set =
 $ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
 
-@mmc-th theorem asmAtI (p s x y A)
+@mmc-th theorem asmAtI
   (h1: $ localAssemble p s x y A $): $ localAssemble p s x y (asmAt x A) $ = 'sorry;
+
+@mmc-th theorem asmAt0
+  (h1: $ localAssemble0 p x A $): $ localAssemble0 p x (asmAt x A) $ = 'sorry;
 
 @mmc-th local def asmEntry (n: nat) (A: set): set =
 $ S\ p, S\ s, {x | p = n /\ x = 0 /\ p <> s <> x e. A} $;
 
-@mmc-th theorem asmEntryI (p s y A)
+@mmc-th theorem asmEntryI
   (h1: $ localAssemble p s x0 y A $): $ localAssemble p s x0 y (asmEntry p A) $ = 'sorry;
+
+@mmc-th theorem asmEntry0
+  (h1: $ localAssemble0 p x0 A $): $ localAssemble0 p x0 (asmEntry p A) $ = 'sorry;
 
 --| See `parseInst`. (The `*N` functions are proof-internal, used for proving compiler lemmas.)
 @_ local def parseInstN (p ip s: nat) (I: set): wff =
@@ -561,7 +584,12 @@ local def instSimple (ast: nat): set = $ S\ p, S\ s, {x | decode ast s} $;
   $ parseOpc p ip s0 rex (ch x5 y) (instPop dst) $ = 'sorry;
 
 @mmc-th local def instJump (tgt: nat): set =
-$ S\ p, S\ s, {x | tgt e. u64 -> decode (xastJCC condAlways (tgt -_64 (x + len s))) s} $;
+$ S\ p, S\ s, {x | tgt e. u64 ->
+  s = 0 /\ tgt = x \/
+  decode (xastJCC condAlways (tgt -_64 (x + len s))) s} $;
+
+@mmc-th theorem parseFallthrough:
+  $ localAssemble0 p ip (instJump ip) $ = 'sorry;
 
 @mmc-th theorem parseJump8
   (h1: $ tgt -ZN ip = imm $)
@@ -715,12 +743,11 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastCMov (suc c) sz ds) s
 @mmc-th theorem parseUD2: $ parseOpc p ip (s1 (ch x0 xb)) rex (ch x0 xf) instUD2 $ = 'sorry;
 
 --| Assert pseudo-instruction
-@mmc-th local def instAssert (c: hex): set =
-$ S\ p, S\ s, {x | E. l1 E. l2 (s = l1 ++ l2 /\
-  decode (xastJCC (suc c) 2) l1 /\ len l2 = 2 /\ decode xastUD2 l2)} $;
+@mmc-th local def instAssert (c: hex) (tgt: nat): set = $ instJCC c tgt +asm xastUD2 $;
 
 @mmc-th theorem parseAssert:
-  $ parseOpc p ip (ch x0 x2 ': ch x0 xf ': s1 (ch x0 xb)) rex (ch x7 c) (instAssert c) $ = 'sorry;
+  $ parseOpc p ip (ch x0 x2 ': ch x0 xf ': s1 (ch x0 xb)) rex (ch x7 c) (instAssert c ip) $ =
+'sorry;
 
 --------------------------------------------
 -- Post-processing the result of assembly --

@@ -1,5 +1,4 @@
 //! x86-specific parts of the compiler.
-pub mod proof;
 
 use std::fmt::Debug;
 
@@ -790,7 +789,8 @@ pub(crate) enum Inst {
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: RegMem },
   /// Traps if the condition code is not set.
-  Assert { cc: CC },
+  /// Followed by a fallthrough instruction to the target block.
+  Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
 }
@@ -929,8 +929,8 @@ impl Flags<'_> {
     dst
   }
 
-  pub(crate) fn assert(self) -> InstId {
-    self.0.emit(Inst::Assert { cc: self.1 })
+  pub(crate) fn assert(self, dst: BlockId) -> InstId {
+    self.0.emit(Inst::Assert { cc: self.1, dst })
   }
 
   pub(crate) fn branch(self, tru: BlockId, fal: BlockId) -> InstId {
@@ -1053,6 +1053,9 @@ impl Debug for PRegMemImm {
 pub enum PInst {
   // /// A length 0 no-op instruction.
   // Nop,
+  /// Jump to the given block ID. This is required to be the immediately following instruction,
+  /// so no code need be emitted.
+  Fallthrough { dst: BlockId },
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
@@ -1118,6 +1121,8 @@ pub enum PInst {
   },
   /// A plain 64-bit integer load, since `MovzxRmR` can't represent that.
   Load64 {
+    /// True if this is a spill instruction
+    spill: bool,
     dst: PReg,
     src: PAMode,
   },
@@ -1135,6 +1140,8 @@ pub enum PInst {
   },
   /// Integer stores: `[addr] <- mov (b|w|l|q) reg`.
   Store {
+    /// True if this is a spill instruction
+    spill: bool,
     sz: Size, // 1, 2, 4 or 8.
     dst: PAMode,
     src: PReg,
@@ -1199,7 +1206,8 @@ pub enum PInst {
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: PRegMem },
   /// Traps if the condition code is not set.
-  Assert { cc: CC },
+  /// Followed by a fallthrough instruction to the target block.
+  Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
 }
@@ -1261,6 +1269,8 @@ impl ModRMLayout {
 /// The layout of the opcode byte and everything after it.
 #[derive(Clone, Copy, Debug)]
 pub enum OpcodeLayout {
+  /// No instruction.
+  Ghost,
   /// `decodeBinopRAX` layout: `00ooo01v + imm8/32`
   BinopRAX(bool),
   /// `decodeBinopImm` layout: `1000000v + modrm + imm8/32`
@@ -1331,6 +1341,7 @@ impl OpcodeLayout {
   #[must_use] pub fn len(self) -> u8 {
     #[inline] fn sz32(sz32: bool) -> u8 { if sz32 { 4 } else { 1 } }
     match self {
+      Self::Ghost => 0,
       Self::Ret | Self::Cdx | Self::PushReg | Self::PopReg => 1, // opcode
       Self::BinopRAX(b) | Self::PushImm(b) |
       Self::Jump(b) | Self::TestRAX(b) => 1 + sz32(b), // opcode + imm8/32
@@ -1496,6 +1507,7 @@ impl PInst {
   #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
   pub(crate) fn layout_inst(&self) -> InstLayout {
     match *self {
+      PInst::Fallthrough { .. } => InstLayout { rex: false, opc: OpcodeLayout::Ghost },
       PInst::Binop { sz, dst, ref src, .. } => layout_binop_lo(sz, dst, src),
       PInst::Unop { sz, dst, .. } => {
         let mut rex = sz == Size::S64;
@@ -1534,13 +1546,13 @@ impl PInst {
         let mut rex = ext_mode.dst() == Size::S64;
         InstLayout { opc: OpcodeLayout::MovX(layout_rm(&mut rex, dst, src)), rex }
       }
-      PInst::Load64 { dst, ref src } =>
+      PInst::Load64 { spill: _, dst, ref src } =>
         InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut true, dst, src)), rex: true },
       PInst::Lea { sz, dst, ref addr } => {
         let mut rex = sz == Size::S64;
         InstLayout { opc: OpcodeLayout::Lea(layout_mem(&mut rex, dst, addr)), rex }
       }
-      PInst::Store { sz, ref dst, src } => {
+      PInst::Store { spill: _, sz, ref dst, src } => {
         let mut rex = sz == Size::S64;
         if sz == Size::S8 { high_amode(&mut rex, dst); high_reg(&mut rex, src) }
         InstLayout { opc: OpcodeLayout::MovReg(layout_mem(&mut rex, src, dst)), rex }
@@ -1736,6 +1748,7 @@ impl PInst {
     if layout.rex { buf.push_u8(0) }
     let mut rex = 0;
     match (layout.opc, self) {
+      (OpcodeLayout::Ghost, _) => {}
       (OpcodeLayout::BinopRAX(b), _) =>
         if let (sz, RAX, PRegMemImm::Imm(src), op) = get_binop(self) {
           buf.push_u8(0x04 + (op << 3) + op_size_w(&mut rex, sz));
@@ -1780,8 +1793,10 @@ impl PInst {
         let (op, r, rm) = match *self {
           PInst::MovRR { sz, dst, src } => (0x8a + op_size_w(&mut rex, sz), dst, src.into()),
           PInst::MovzxRmR { ext_mode: ExtMode::LQ, dst, src } => (0x8b, dst, src),
-          PInst::Load64 { dst, src } => (0x8a + op_size_w(&mut rex, Size::S64), dst, src.into()),
-          PInst::Store { sz, dst, src } => (0x88 + op_size_w(&mut rex, sz), src, dst.into()),
+          PInst::Load64 { spill: _, dst, src } =>
+            (0x8a + op_size_w(&mut rex, Size::S64), dst, src.into()),
+          PInst::Store { spill: _, sz, dst, src } =>
+            (0x88 + op_size_w(&mut rex, sz), src, dst.into()),
           _ => unreachable!(),
         };
         buf.push_u8(op);
@@ -1890,7 +1905,7 @@ impl PInst {
         buf.push_u32(dst as u32);
       }
       (OpcodeLayout::SysCall, PInst::SysCall) => { buf.push_u8(0x0f); buf.push_u8(0x05); }
-      (OpcodeLayout::Assert, &PInst::Assert { cc }) => {
+      (OpcodeLayout::Assert, &PInst::Assert { cc, .. }) => {
         buf.push_u8(0x70 + cc as u8); buf.push_u8(2); // jcc cond +2
         buf.push_u8(0x0f); buf.push_u8(0x0b); // ud2
       }

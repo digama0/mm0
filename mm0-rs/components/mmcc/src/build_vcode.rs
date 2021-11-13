@@ -812,9 +812,10 @@ impl<'a> LowerCtx<'a> {
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));
       }
-      Terminator::Assert(ref o, _, true, _) => {
+      Terminator::Assert(ref o, _, true, bl) => {
         let src = self.get_operand_reg(o, Size::S8);
-        self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32).assert();
+        let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
+        self.unpatched.push((vbl, cond.assert(VBlockId(bl.0))));
       }
       Terminator::Assert(_, _, false, _) => { self.code.emit(Inst::Ud2); }
       Terminator::Call { f, se, ref tys, ref args, reach, tgt, ref rets } => {
@@ -983,6 +984,7 @@ impl<'a> LowerCtx<'a> {
     for (vbl, inst) in unpatched {
       match &mut code.insts[inst] {
         Inst::Fallthrough { dst } |
+        Inst::Assert { dst, .. } |
         Inst::JmpKnown { dst, .. } => {
           let dst = patch!(dst);
           code.add_edge(vbl, dst)

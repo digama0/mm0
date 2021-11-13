@@ -498,6 +498,7 @@ impl BuildAssemblyProc<'_> {
     let (x, y) = (opc >> 4, opc & 15);
     let opch = self.hex.ch(&mut self.thm, opc);
     match layout {
+      OpcodeLayout::Ghost => unreachable!(),
       OpcodeLayout::BinopRAX(_) => {
         let ([v, _, o], h1) = self.hex.split_bits_121(&mut self.thm, y);
         let ([pc, _], h2) = self.hex.split_bits_22(&mut self.thm, x);
@@ -899,7 +900,7 @@ impl BuildAssemblyProc<'_> {
       OpcodeLayout::Assert => {
         let [c1, c2, c3] = [0x02, 0x0f, 0x0b].map(|c| self.hex.ch(&mut self.thm, c));
         let l = app!(self, (scons c1 (scons c2 (s1 c3))));
-        let inst = app!(self, (instAssert {self.hex[y]}));
+        let inst = app!(self, instAssert[self.hex[y], *ip]);
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
           parseAssert(self.hex[y], *ip, *self.start, rex.1));
         [l, opch, inst, th]
@@ -952,26 +953,60 @@ impl BuildAssemblyProc<'_> {
     }
   }
 
-  /// Given `x`, proves `(s, y, A, |- assemble start s x y A)`, using elements of the iterator
-  /// `iter` in a balanced binary tree of `localAssembleA` nodes.
+  /// Proves `[inst, |- localAssemble0 start ip inst]` for a ghost instruction.
+  fn parse_ghost_inst(&mut self, inst: &Inst<'_>, ip: Num) -> [ProofId; 2] {
+    match inst.inst {
+      PInst::Fallthrough { .. } => {
+        let inst = app!(self, (instJump {*ip}));
+        let th = thm!(self, parseFallthrough(*ip, *self.start):
+          localAssemble0[*self.start, *ip, inst]);
+        [inst, th]
+      },
+      _ => unreachable!()
+    }
+  }
+
+  /// Given `x`, proves `(y, A, Ok((s, |- localAssemble start s x y A)))`, using elements of the
+  /// iterator `iter` in a balanced binary tree of `localAssembleA` nodes.
   /// The function `f` handles the base case of an individual item in the iterator.
+  ///
+  /// If `s` is empty, the proof is instead `Err(|- localAssemble0 start x A)`.
   fn bisect<T>(&mut self,
     n: usize, iter: &mut impl Iterator<Item=T>, x: Num,
-    f: &mut impl FnMut(&mut Self, T, Num) -> (ProofId, Num, ProofId, ProofId),
-  ) -> (ProofId, Num, ProofId, ProofId) {
+    f: &mut impl FnMut(&mut Self, T, Num) -> (Num, ProofId, Result<(ProofId, ProofId), ProofId>),
+  ) -> (Num, ProofId, Result<(ProofId, ProofId), ProofId>) {
     if n <= 1 {
       assert!(n != 0);
       let item = iter.next().expect("iterator size lied");
       f(self, item, x)
     } else {
       let m = n >> 1;
-      let (s, y, a, th1) = self.bisect(m, iter, x, f);
-      let (t, z, b, th2) = self.bisect(n - m, iter, y, f);
-      let st = app!(self, (sadd s t));
+      let (y, a, th1) = self.bisect(m, iter, x, f);
+      let (z, b, th2) = self.bisect(n - m, iter, y, f);
       let ab = app!(self, (localAssembleA a b));
-      let th = thm!(self, localAssembleA_I(*self.start, s, t, *x, *y, *z, a, b, th1, th2):
-        localAssemble[*self.start, st, *x, *z, ab]);
-      (st, z, ab, th)
+      match (th1, th2) {
+        (Ok((s, th1)), Ok((t, th2))) => {
+          let st = app!(self, (sadd s t));
+          let th = thm!(self, localAssembleA_I(a, b, *self.start, s, t, *x, *y, *z, th1, th2):
+            localAssemble[*self.start, st, *x, *z, ab]);
+          (z, ab, Ok((st, th)))
+        }
+        (Ok((s, th1)), Err(th2)) => {
+          let th = thm!(self, localAssemble0_r(a, b, *self.start, s, *x, *z, th1, th2):
+            localAssemble[*self.start, s, *x, *z, ab]);
+          (z, ab, Ok((s, th)))
+        }
+        (Err(th1), Ok((s, th2))) => {
+          let th = thm!(self, localAssemble0_l(a, b, *self.start, s, *x, *z, th1, th2):
+            localAssemble[*self.start, s, *x, *z, ab]);
+          (z, ab, Ok((s, th)))
+        }
+        (Err(th1), Err(th2)) => {
+          let th = thm!(self, localAssemble0_A(a, b, *self.start, *z, th1, th2):
+            localAssemble0[*self.start, *z, ab]);
+          (z, ab, Err(th))
+        }
+      }
     }
   }
 
@@ -1005,30 +1040,44 @@ impl BuildAssemblyProc<'_> {
   pub(super) fn blocks(&mut self, proc: &Proc<'_>) -> (ProofId, Num, ProofId, ProofId) {
     let mut iter = proc.assembly_blocks();
     let x = self.hex.h2n(&mut self.thm, 0);
-    self.bisect(iter.len(), &mut iter, x, &mut |this, block, x| {
+    let mut entry = true;
+    let (y, a, th) = self.bisect(iter.len(), &mut iter, x, &mut |this, block, x| {
       let mut iter = block.insts();
-      let (s, y, a, th) = this.bisect(iter.len(), &mut iter, x, &mut |this, inst, x| {
-        let n = this.hex.from_u8(&mut this.thm, inst.layout.len());
-        let (y, h2) = this.hex.add(&mut this.thm, x, n);
-        let [s, inst, h3] = this.parse_inst(&inst, y);
-        let (n2, h1) = this.strlen(s); assert!(n == n2);
-        let th = thm!(this, parseInstE(*this.start, s, *x, *y, *n, inst, h1, h2, h3):
-          localAssemble[*this.start, s, *x, *y, inst]);
-        (s, y, inst, th)
+      let (y, a, th) = this.bisect(iter.len(), &mut iter, x, &mut |this, inst, x| {
+        let n = inst.layout.len();
+        if n == 0 {
+          let [inst, th] = this.parse_ghost_inst(&inst, x);
+          (x, inst, Err(th))
+        } else {
+          let n = this.hex.from_u8(&mut this.thm, n);
+          let (y, h2) = this.hex.add(&mut this.thm, x, n);
+          let [s, inst, h3] = this.parse_inst(&inst, y);
+          let (n2, h1) = this.strlen(s); assert!(n == n2);
+          let th = thm!(this, parseInstE(*this.start, s, *x, *y, *n, inst, h1, h2, h3):
+            localAssemble[*this.start, s, *x, *y, inst]);
+          (y, inst, Ok((s, th)))
+        }
       });
-
-      if x.val == 0 {
+      if std::mem::take(&mut entry) {
         let a2 = app!(this.thm, (asmEntry {*this.start} a));
-        let th = thm!(this.thm, asmEntryI(*this.start, s, *y, a, th):
-          localAssemble[*this.start, s, *x, *y, a2]);
-        (s, y, a2, th)
+        (y, a2, match th {
+          Ok((s, th)) => Ok((s, thm!(this.thm, asmEntryI(a, *this.start, s, *y, th):
+            localAssemble[*this.start, s, *x, *y, a2]))),
+          Err(th) => Err(thm!(this.thm, asmEntry0(a, *this.start, th):
+            localAssemble0[*this.start, *y, a2])),
+        })
       } else {
         let a2 = app!(this.thm, (asmAt {*x} a));
-        let th = thm!(this.thm, asmAtI(*this.start, s, *x, *y, a, th):
-          localAssemble[*this.start, s, *x, *y, a2]);
-        (s, y, a2, th)
+        (y, a2, match th {
+          Ok((s, th)) => Ok((s, thm!(this.thm, asmAtI(a, *this.start, s, *x, *y, th):
+            localAssemble[*this.start, s, *x, *y, a2]))),
+          Err(th) => Err(thm!(this.thm, asmAt0(a, *this.start, *y, th):
+            localAssemble0[*this.start, *y, a2])),
+        })
       }
-    })
+    });
+    let (s, th) = th.ok().expect("empty procedure");
+    (s, y, a, th)
   }
 }
 

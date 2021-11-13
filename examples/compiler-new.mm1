@@ -1,91 +1,242 @@
 import "compiler-old.mm1";
 
-local def procOkGCtx (gctx: set) (A: set): set = $ 0 $; -- TODO
-local def procOkCtx (gctx: set) (fr: nat): set = $ 0 $; -- TODO
+--| Global context. In lean:
+--| ```lean
+--| structure gctx := (content : string) (result : prop)
+--| ```
+@mmc-th local def mkGCtx (content: string) (result: set): set =
+$ Sum (Sum content result) 0 $;
 
-local def ioContent (C: set): nat = $ 0 $; -- TODO
-@mmc-th local def ioGetContent (C: set) (c: string): wff = $ F. $; -- TODO
+local def okContentN (G: set): nat = $ lower (Fst (Fst G)) $;
+@mmc-th local def okContent (G: set) (c: string): wff = $ okContentN G = c $;
+@mmc-th theorem okContentGI: $ okContent (mkGCtx c T) c $ = 'sorry;
 
-local def ioResult (C: set): set = $ 0 $; -- TODO
-local def ioSP (C S: set): nat = $ 0 $; -- TODO
-local def ioFreeBytes (C S: set): nat = $ 0 $; -- TODO
+local def okResultN (G: set): set = $ Snd (Fst G) $;
+@mmc-th local def okResult (G: set) (T: set): wff = $ okResultN G == T $;
+@mmc-th theorem okResultGI: $ okResult (mkGCtx c T) T $ = 'sorry;
+
+-- inductive epilogue
+-- | free : nat → epilogue → epilogue
+-- | pop : regnum → epilogue → epilogue
+-- | ret : epilogue
+@mmc-th local def epiFree (n: nat) (epi: nat): nat = $ 0 $; -- TODO
+@mmc-th local def epiPop (reg: hex) (epi: nat): nat = $ 0 $; -- TODO
+@mmc-th local def epiRet: nat = $ 0 $; -- TODO
+
+--| Procedure-global context. In lean:
+--| ```lean
+--| structure pctx1 := (start : nat) (ret : ret_abi) (sp_max : nat)
+--| ```
+--| We write it in such a way that `pctx` extends `gctx`,
+--| so `gctx` extraction functions also work on `pctx`.
+@mmc-th local def mkPCtx1 (start: nat) (ret: set) (sp_max: nat): set =
+$ Sum ret (start <> sp_max) $;
+
+--| Procedure-global context. In lean:
+--| ```lean
+--| structure pctx := (G : gctx) (P : pctx1)
+--| ```
+--| We write it in such a way that `pctx` extends `gctx`,
+--| so `gctx` extraction functions also work on `pctx`.
+@mmc-th local def mkPCtx (G P: set): set =
+$ Sum (Fst G) (Sum P 0) $;
+
+local def okStartN (G: set): nat = $ fst (lower (Snd (Fst (Snd G)))) $;
+
+--| Block-local context. In lean:
+--| ```lean
+--| structure bctx := (G : pctx) (labs : list label_group)
+--| ```
+--| We write it in such a way that `bctx` extends `pctx`,
+--| so `pctx` extraction functions also work on `bctx`.
+@mmc-th local def mkBCtx (G labs: set): set = $ Sum (Fst G) (Sum (Fst (Snd G)) labs) $;
+
+@mmc-th theorem okContentBI: $ okContent (mkBCtx (mkPCtx (mkGCtx c T) P) L) c $ = 'sorry;
+
+local def okLabelGroupsN (G: set): set = $ Snd (Snd G) $;
+@mmc-th local def okLabelGroups (G labs: set): wff = $ okLabelGroupsN G == labs $;
+@mmc-th theorem okLabelGroupsI: $ okLabelGroups (mkBCtx G labs) labs $ = 'sorry;
+
+@mmc-th local def labelGroup (var: nat) (ls labs: set): set = $ 0 $; -- TODO
+@mmc-th local def findLabels (labs: set) (var: nat) (ls: set): wff = $ F. $; -- TODO
+@mmc-th theorem findLabels1: $ findLabels (labelGroup var ls labs) var ls $ = 'sorry;
+@mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
+  $ findLabels (labelGroup var1 ls1 labs) var ls $ = 'sorry;
+
+-- inductive labels
+-- | and : labels → labels → labels
+-- | one : block_loc → tctx → labels
+@mmc-th local def labelA (A B: set): set = $ 0 $; -- TODO
+@mmc-th local def label1 (x: nat) (P: set): set = $ 0 $; -- TODO
+
+@mmc-th local def findLabel (ls: set) (x: nat) (A: set): wff = $ F. $; -- TODO
+@mmc-th theorem findLabel_l (h: $ findLabel A x P $): $ findLabel (labelA A B) x P $ = 'sorry;
+@mmc-th theorem findLabel_r (h: $ findLabel B x P $): $ findLabel (labelA A B) x P $ = 'sorry;
+@mmc-th theorem findLabel1: $ findLabel (label1 x P) x P $ = 'sorry;
+
+local def okSP (G S: set): nat = $ 0 $; -- TODO
+local def okFreeBytes (G S: set): nat = $ 0 $; -- TODO
 local def soLayout (S: set): set = $ 0 $; -- TODO
 local def soType (S: set): set = $ 0 $; -- TODO
 
-local def ioJump (C S: set) (fr ip) =
+local def okInstN (G S: set) (fr ip) =
 $ s_ok
   (sn fr *s (
-    main_layout (ioContent C) (ioSP C S) ip (ioFreeBytes C S) (soLayout S) *s
+    main_layout (okContentN G) (okSP G S) ip (okFreeBytes G S) (soLayout S) *s
     soType S))
-  (ioResult C) $;
+  (okResultN G) $;
 
-local def scopeLabelsOk (C: set) (fr: nat): wff = $ F. $; -- TODO
+local def okScopeN (G: set) (fr: nat): wff = $ F. $; -- TODO
 
-local def ioAsmd (C A: set) (x y: nat): wff =
-$ E. p E. s (y = x + len s /\ p + y e. u64 /\ sublistAt x (ioContent C) s /\ p <> s <> x e. A) $;
+local def contentAt (x l1 l2: nat): wff =
+$ E. p (x = text_start + p /\ sublistAt p l1 l2) $;
 
-local def instOk (C P A: set): wff =
-$ E. x E. y (ioAsmd C A x y /\ A. fr (scopeLabelsOk C fr -> ioJump C P fr x)) $;
+local def okAsmd (G A: set) (x y: nat): wff =
+$ E. s (y = x + len s /\ okStartN G + y e. u64 /\
+  contentAt (okStartN G + x) (okContentN G) s /\ okStartN G <> s <> x e. A) $;
 
-local def instsOk (C P A Q: set): wff =
-$ E. x E. y (ioAsmd C A x y /\ A. fr (scopeLabelsOk C fr -> ioJump C Q fr y -> ioJump C P fr x)) $;
+@mmc-th local def okInst (G P A: set): wff =
+$ A. x A. y A. fr (okAsmd G A x y -> okScopeN G fr -> okInstN G P fr x) $;
 
-theorem instOk_A (C P A Q B)
-  (h1: $ instsOk C P A Q $) (h2: $ instOk C Q B $): $ instOk C P (A +asm B) $ = 'sorry;
+@mmc-th local def okInsts (G P A Q: set): wff =
+$ A. x A. y A. fr (okAsmd G A x y -> okScopeN G fr -> okInstN G Q fr y -> okInstN G P fr x) $;
 
-theorem instsOk_A (C P A Q B R)
-  (h1: $ instsOk C P A Q $) (h2: $ instsOk C Q B R $): $ instsOk C P (A +asm B) R $ = 'sorry;
+@mmc-th theorem okInst_A
+  (h1: $ okInsts G P A Q $) (h2: $ okInst G Q B $): $ okInst G P (A +asm B) $ = 'sorry;
 
-local def procOk (c: string) (start: nat) (P: set) (E: set): wff = $ F. $; -- TODO
+@mmc-th theorem okInsts_A
+  (h1: $ okInsts G P A Q $) (h2: $ okInsts G Q B R $): $ okInsts G P (A +asm B) R $ = 'sorry;
 
-local def ssLeaf: nat = $ 0 $; -- TODO
-local def ssx: nat = $ 0 $; -- TODO
+@mmc-th local def okProc (G: set) (start: nat) (P: set) (epi: nat): wff = $ F. $; -- TODO
 
-local def ioPrologue (E: set) (sp: nat) (P: set): set = $ 0 $; -- TODO
+@mmc-th local def okPrologue (epi sp: nat) (P: set): set =
+$ Sum (suc (epi <> sp)) (Snd P) $;
 
-@mmc-th local def ioGetEpi (C: set) (E: set) (sp: nat): wff = $ F. $; -- TODO
+@mmc-th local def okAssembled (G: set) (P: set): wff =
+$ E. p assembledN (okContentN G) (P @' p) $;
 
-local def epiFree (n: nat) (E: set): set = $ 0 $; -- TODO
-local def epiPop (reg: hex) (E: set): set = $ 0 $; -- TODO
-local def epiRet: set = $ 0 $; -- TODO
+@mmc-th theorem okAssembledI
+  (h1: $ okContent G c $) (h2: $ assembled c (asmProc p A) $):
+  $ okAssembled G A $ = 'sorry;
 
-local def ioGCtx (c: string) (E: set): set = $ 0 $; -- TODO
+@mmc-th theorem okAssembled_l
+  (h1: $ okAssembled G (A +asm B) $): $ okAssembled G A $ = 'sorry;
 
-@mmc-th local def ioAssembled (C: set) (P: set): wff =
-$ E. p assembledN (ioContent C) (P @' p) $;
+@mmc-th theorem okAssembled_r
+  (h1: $ okAssembled G (A +asm B) $): $ okAssembled G B $ = 'sorry;
 
-@mmc-th theorem ioAssembledI
-  (h1: $ ioGetContent C c $) (h2: $ assembled c (asmProc p A) $):
-  $ ioAssembled C A $ = 'sorry;
+@mmc-th theorem okProcI
+  (h1: $ okAssembled G (asmEntry start A) $)
+  (h2: $ okInst (mkBCtx G L) (okPrologue E x0 P) A $):
+  $ okProc c start P E $ = 'sorry;
 
-@mmc-th theorem ioAssembled_l
-  (h1: $ ioAssembled C (A +asm B) $): $ ioAssembled C A $ = 'sorry;
+@mmc-th local def okWeak (G P Q: set): wff = $ F. $; -- TODO
 
-@mmc-th theorem ioAssembled_r
-  (h1: $ ioAssembled C (A +asm B) $): $ ioAssembled C B $ = 'sorry;
+@mmc-th local def okBlock (G: set) (ip: nat) (P: set): wff = $ F. $; -- TODO
 
-theorem instOk_entry
-  (h1: $ ioAssembled C (asmEntry start A) $)
-  (h2: $ instOk C (ioPrologue E x0 P) A $): $ procOk c start P E $ = 'sorry;
+@mmc-th theorem okBlock_weak
+  (h1: $ okWeak G P Q $) (h2: $ okBlock G ip Q $): $ okBlock G ip P $ = 'sorry;
 
-theorem ioPrologue_push (h: $ sp + x8 = sp2 $):
-  $ instsOk C
-    (ioPrologue E sp P) (instPush (IRM_reg r)) (ioPrologue (epiPop r E) sp2 P) $ = 'sorry;
+@mmc-th theorem okBlockI
+  (h1: $ okAssembled G (asmAt ip A) $)
+  (h2: $ okInst (mkBCtx G L) P A $): $ okBlock (mkBCtx G L) ip P $ = 'sorry;
 
-theorem ioPrologue_alloc
-  (h1: $ ioGetEpi C (epiFree n E) sp $)
+@mmc-th theorem okInst_loop
+  (h: $ okInst (mkBCtx G (labelGroup var ls L)) P A $):
+  $ okInst (mkBCtx G L) P A $ = 'sorry;
+
+@mmc-th local def okPushVariant (v: nat) (P Q: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okBlock_label
+  (h1: $ findLabels L var ls $)
+  (h2: $ findLabel ls ip A $)
+  (h3: $ okPushVariant var A B $):
+  $ okBlock (mkBCtx G L) ip B $ = 'sorry;
+
+@mmc-th local def okEpi (G P: set) (epi sp_max: nat): wff = $ F. $; -- TODO
+
+@mmc-th theorem okPrologue_push (h: $ sp + x8 = sp2 $):
+  $ okInsts G (okPrologue E sp P) (instPush (IRM_reg r)) (okPrologue (epiPop r E) sp2 P) $ =
+'sorry;
+
+@mmc-th theorem okPrologue_alloc
+  (h1: $ okEpi G P (epiFree n E) sp $)
   (h2: $ sp + n = m $) (h3: $ m < ,{2 ^ 12} $):
-  $ instsOk C (ioPrologue E sp P) (instBinop x5 wSz64 x4 (IRM_imm32 n)) P $ = 'sorry;
+  $ okInsts G (okPrologue E sp P) (instBinop x5 wSz64 x4 (IRM_imm32 n)) P $ = 'sorry;
 
-theorem ioPrologue_alloc0
-  (h1: $ ioGetEpi C E x0 $)
-  (h2: $ instOk C (ioPrologue E sp P) A $): $ instOk C P A $ = 'sorry;
+@mmc-th theorem okPrologue_alloc0
+  (h1: $ okEpi G P E x0 $)
+  (h2: $ okInst G (okPrologue E sp P) A $): $ okInst G P A $ = 'sorry;
 
-theorem ioEpilogue_free:
-  $ instsOk C (epiFree n E) (instBinop x0 wSz64 x4 (IRM_imm32 n)) E $ = 'sorry;
+@mmc-th local def okEpilogue (epi: nat): set = $ 0 $; -- TODO
 
-theorem ioEpilogue_pop:
-  $ instsOk C (epiPop r E) (instPop r) E $ = 'sorry;
+@mmc-th theorem okEpilogue_free:
+  $ okInsts G (okEpilogue (epiFree n E)) (instBinop x0 wSz64 x4 (IRM_imm32 n)) (okEpilogue E) $ =
+'sorry;
 
-theorem ioEpilogue_ret:
-  $ instOk C epiRet instRet $ = 'sorry;
+@mmc-th theorem okEpilogue_pop:
+  $ okInsts G (okEpilogue (epiPop r E)) (instPop r) (okEpilogue E) $ = 'sorry;
+
+@mmc-th theorem okEpilogue_ret:
+  $ okInst G (okEpilogue epiRet) instRet $ = 'sorry;
+
+@mmc-th local def Loc_reg (r: hex): nat = $ 0 $; -- TODO
+@mmc-th local def Loc_local (off: nat): nat = $ 0 $; -- TODO
+
+@mmc-th local def spillslot (v: nat): nat = $ 0 $; -- TODO
+
+@mmc-th local def okRead (P: set) (src v: nat): wff = $ F. $; -- TODO
+@mmc-th local def okWrite (P: set) (dst v: nat) (Q: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem ok_movRR
+  (h1: $ okRead P (Loc_reg src) v $)
+  (h2: $ okWrite P (Loc_reg dst) v Q $):
+  $ okInsts G P (instMov wSz64 (IRM_reg dst) (IRM_reg src)) Q $ = 'sorry;
+
+@mmc-th theorem ok_spill
+  (h1: $ okRead P (Loc_reg src) v $)
+  (h2: $ okWrite P (Loc_local off) (spillslot v) Q $):
+  $ okInsts G P (instMov wSz64 (IRM_mem 0 x4 (posZ off)) (IRM_reg src)) Q $ = 'sorry;
+
+@mmc-th theorem ok_unspill
+  (h1: $ okRead P (Loc_local off) (spillslot v) $)
+  (h2: $ okWrite P (Loc_reg dst) v Q $):
+  $ okInsts G P (instMov wSz64 (IRM_reg dst) (IRM_mem 0 x4 (posZ off))) Q $ = 'sorry;
+
+@mmc-th theorem ok_jump
+  (h: $ okBlock G tgt P $):
+  $ okInst G P (instJump tgt) $ = 'sorry;
+
+@mmc-th local def withFlags (f: nat) (P: set): set = $ 0 $; -- TODO
+@mmc-th local def invertCond (c d: hex): wff = $ F. $; -- TODO
+@mmc-th local def flagCond (f: nat) (c: hex) (A: set): wff = $ F. $; -- TODO
+@mmc-th local def okPushVar (P A Q: set): wff = $ F. $; -- TODO
+@mmc-th local def ty_not (A: set): set = $ 0 $; -- TODO
+
+@mmc-th theorem ok_jcc
+  (h1: $ flagCond f c A $)
+  (h2: $ okPushVar P A Q1 $)
+  (h3: $ okPushVar P (ty_not A) Q2 $)
+  (h4: $ okBlock G tgt Q1 $):
+  $ okInsts G (withFlags f P) (instJCC c tgt) Q2 $ = 'sorry;
+
+@mmc-th theorem ok_jcc_invert
+  (h0: $ invertCond notc c $)
+  (h1: $ flagCond f c A $)
+  (h2: $ okPushVar P A Q1 $)
+  (h3: $ okPushVar P (ty_not A) Q2 $)
+  (h4: $ okBlock G tgt Q2 $):
+  $ okInsts G (withFlags f P) (instJCC notc tgt) Q1 $ = 'sorry;
+
+@mmc-th theorem ok_ud2: $ okInst G P instUD2 $ = 'sorry;
+
+@mmc-th theorem ok_assert
+  (h1: $ flagCond f c A $)
+  (h2: $ okPushVar P A Q $)
+  (h4: $ okBlock G tgt Q $):
+  $ okInst G (withFlags f P) (instAssert c tgt) $ = 'sorry;
+
+@mmc-th local def okDefer (P A: set): set = $ 0 $; -- TODO
+
+@mmc-th theorem okDeferI:
+  $ okInsts G P A (okDefer P A) $ = 'sorry;

@@ -232,13 +232,21 @@ make_predefs! {
   localAssembleA: TermId => "localAssembleA";
   localAssembleA_I: ThmId => "localAssembleA_I";
 
+  /// `localAssemble0 (p: nat) (x: nat) (P: set): wff`
+  localAssemble0: TermId => "localAssemble0";
+  localAssemble0_l: ThmId => "localAssemble0_l";
+  localAssemble0_r: ThmId => "localAssemble0_r";
+  localAssemble0_A: ThmId => "localAssemble0_A";
+
   /// `asmAt (n: nat) (A: set): set`
   asmAt: TermId => "asmAt";
   asmAtI: ThmId => "asmAtI";
+  asmAt0: ThmId => "asmAt0";
 
   /// `asmEntry (p: nat) (A: set): set`
   asmEntry: TermId => "asmEntry";
   asmEntryI: ThmId => "asmEntryI";
+  asmEntry0: ThmId => "asmEntry0";
 
   /// `asmProc (n: nat) (A: set): set`
   asmProc: TermId => "asmProc";
@@ -425,11 +433,12 @@ make_predefs! {
   instSysCall: TermId => "instSysCall";
   /// `instUD2: set`
   instUD2: TermId => "instUD2";
-  /// `instAssert (c: hex): set`
+  /// `instAssert (c: hex) (tgt: nat): set`
   instAssert: TermId => "instAssert";
 
   /// `parseOpc (p ip: nat) (s: string) (rex: nat) (opc: char) (I: set): wff`
   parseOpc: TermId => "parseOpc";
+  parseFallthrough: ThmId => "parseFallthrough";
   parseBinopRAX: ThmId => "parseBinopRAX";
   parseBinopImm: ThmId => "parseBinopImm";
   parseBinopImm8: ThmId => "parseBinopImm8";

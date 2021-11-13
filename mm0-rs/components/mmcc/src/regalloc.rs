@@ -183,11 +183,11 @@ impl PCodeBuilder {
           (Some(src), Some(dst)) => self.push(PInst::MovRR { sz: Size::S64, dst, src }),
           (Some(src), _) => {
             let dst = ar.spill(to.as_stack().expect("bad regalloc"));
-            self.push(PInst::Store { sz: Size::S64, dst, src });
+            self.push(PInst::Store { spill: true, sz: Size::S64, dst, src });
           }
           (_, Some(dst)) => {
             let src = ar.spill(from.as_stack().expect("bad regalloc"));
-            self.push(PInst::Load64 { dst, src });
+            self.push(PInst::Load64 { spill: true, dst, src });
           }
           _ => panic!("bad regalloc")
         }
@@ -320,8 +320,10 @@ pub(crate) fn regalloc_vcode(
     };
     code.apply_edits(&mut edits, &mut ar, ProgPoint::before(i));
     match *inst {
-      Inst::Fallthrough { dst } =>
-        assert!(vcode.blocks[dst].0 == i.next()),
+      Inst::Fallthrough { dst } => {
+        assert!(vcode.blocks[dst].0 == i.next());
+        code.push(PInst::Fallthrough { dst })
+      }
       Inst::Binop { op, sz, ref src2, .. } => {
         let (_, src, dst) = (ar.reg(), ar.rmi0(src2), ar.reg());
         code.push(PInst::Binop { op, sz, dst, src });
@@ -345,13 +347,13 @@ pub(crate) fn regalloc_vcode(
       Inst::MovzxRmR { ext_mode, ref src, .. } =>
         code.push(PInst::MovzxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
       Inst::Load64 { ref src, .. } =>
-        code.push(PInst::Load64 { src: ar.mem(src), dst: ar.reg() }),
+        code.push(PInst::Load64 { spill: false, src: ar.mem(src), dst: ar.reg() }),
       Inst::Lea { sz, ref addr, .. } =>
         code.push(PInst::Lea { sz, addr: ar.mem(addr), dst: ar.reg() }),
       Inst::MovsxRmR { ext_mode, ref src, .. } =>
         code.push(PInst::MovsxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
       Inst::Store { sz, ref dst, .. } =>
-        code.push(PInst::Store { sz, src: ar.reg(), dst: ar.mem(dst) }),
+        code.push(PInst::Store { spill: false, sz, src: ar.reg(), dst: ar.mem(dst) }),
       Inst::ShiftImm { sz, kind, num_bits, .. } => {
         let (_, dst) = (ar.next(), ar.reg());
         code.push(PInst::Shift { sz, kind, num_bits: Some(num_bits), dst })
@@ -390,14 +392,19 @@ pub(crate) fn regalloc_vcode(
       }
       Inst::JmpCond { cc, taken, not_taken } =>
         if vcode.blocks[not_taken].0 == i.next() {
-          code.push(PInst::JmpCond { cc, dst: taken, short: false })
+          code.push(PInst::JmpCond { cc, dst: taken, short: false });
+          code.push(PInst::Fallthrough { dst: not_taken });
         } else if vcode.blocks[taken].0 == i.next() {
-          code.push(PInst::JmpCond { cc: cc.invert(), dst: not_taken, short: false })
+          code.push(PInst::JmpCond { cc: cc.invert(), dst: not_taken, short: false });
+          code.push(PInst::Fallthrough { dst: taken });
         } else {
           code.push(PInst::JmpCond { cc, dst: taken, short: false });
           code.push(PInst::JmpKnown { dst: not_taken, short: false });
         },
-      Inst::Assert { cc } => code.push(PInst::Assert { cc }),
+      Inst::Assert { cc, dst } => {
+        assert!(vcode.blocks[dst].0 == i.next());
+        code.push(PInst::Assert { cc, dst })
+      }
       Inst::Ud2 => code.push(PInst::Ud2),
     }
     code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
