@@ -8,9 +8,10 @@
 //!
 //! [`mm0_rs::server`]: crate::server
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}};
 use std::collections::{HashMap, hash_map::Entry};
 use std::{io, fs};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::{ThreadPool, block_on};
@@ -36,6 +37,7 @@ lazy_static! {
 }
 
 static QUIET: AtomicBool = AtomicBool::new(false);
+static ENABLE_CACHING: AtomicBool = AtomicBool::new(true);
 
 /// The cached [`Environment`](crate::elab::Environment) representing a
 /// completed parse, or an incomplete parse.
@@ -50,7 +52,7 @@ enum FileCache {
   /// [`Environment`]: crate::elab::Environment
   /// [`Sender`]: FSender
   /// [`Receiver`]: futures::channel::oneshot::Receiver
-  InProgress(Vec<FSender<ElabResult<()>>>),
+  InProgress(Vec<FSender<ElabResult<(FileRef, u64)>>>),
   /// The file has been elaborated and the result is ready.
   Ready(FrozenEnv),
 }
@@ -130,6 +132,8 @@ impl std::ops::Deref for FileContents {
 struct VirtualFile {
     /// The file's text as a [`LinedString`].
     text: FileContents,
+    /// The file content hash.
+    hash: u64,
     /// The file parse. This is protected behind a future-aware mutex,
     /// so that elaboration can block on accessing the result of another file's
     /// elaboration job to represent dependency relations. A result of `None`
@@ -140,7 +144,12 @@ struct VirtualFile {
 impl VirtualFile {
   /// Constructs a new [`VirtualFile`] from source text.
   fn new(text: FileContents) -> VirtualFile {
-    VirtualFile { text, parsed: FMutex::new(None) }
+    let hash = if let FileContents::Ascii(text) = &text {
+      let mut hasher = DefaultHasher::new();
+      text.hash(&mut hasher);
+      hasher.finish()
+    } else { 0 };
+    VirtualFile { text, hash, parsed: FMutex::new(None) }
   }
 }
 
@@ -326,6 +335,32 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
   println!("{}", s)
 }
 
+fn try_get_cache(path: &std::path::Path, hash1: u64) -> Option<(Vec<(FileRef, u64)>, FrozenEnv)> {
+  let mut file = std::fs::File::open(path).ok()?;
+  (hash1 == file.read_u64::<byteorder::LE>().ok()?).then(|| ())?;
+  let toks: Vec<(FileRef, u64)> = bincode::deserialize_from(&mut file).ok()?;
+  for (path, hash) in &toks {
+    (VFS.get_or_insert(path.clone()).ok()?.1.hash == *hash).then(|| ())?
+  }
+  let env = bincode::deserialize_from(&mut file);
+  Some((toks, FrozenEnv::new(env.expect("malformed cache"))))
+}
+
+fn try_cache(path: &std::path::Path, hash: u64, toks: &[(FileRef, u64)], env: &FrozenEnv) {
+  let mut created = false;
+  let result = (|| {
+    let mut file = std::fs::File::create(path)?;
+    created = true;
+    file.write_u64::<byteorder::LE>(hash)?;
+    bincode::serialize_into(&mut file, toks)?;
+    bincode::serialize_into(&mut file, env)
+  })();
+  if let Err(e) = result {
+    report(ErrorLevel::Warning, &format!("writing cache failed: {}", e));
+    if created { drop(std::fs::remove_file(path)) }
+  }
+}
+
 /// Elaborate a file for an [`Environment`](crate::elab::Environment) result.
 ///
 /// This is the main elaboration function, as an `async fn`. Given a `path`,
@@ -344,7 +379,7 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
 /// (**Note**: This can result in deadlock if the import graph has a cycle.)
 ///
 /// [`Ast`]: crate::parser::Ast
-async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
+async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<(FileRef, u64)>> {
   let (path, file) = VFS.get_or_insert(path)?;
   {
     let mut g = file.parsed.lock().await;
@@ -356,53 +391,67 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         drop(g);
         return Ok(recv.await.unwrap_or(ElabResult::Canceled))
       }
-      Some(FileCache::Ready(env)) => return Ok(ElabResult::Ok((), None, env.clone()))
+      Some(FileCache::Ready(env)) =>
+        return Ok(ElabResult::Ok((path.clone(), file.hash), None, env.clone()))
     }
   }
   let text = file.text.clone();
-  let (cyc, errors, env) = if path.has_extension("mmb") {
+  let mut cache = None;
+  let (cyc, toks, errors, env) = if path.has_extension("mmb") {
     let (error, env) = mmb_elab(&path, &text);
-    (None, if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
+    (None, vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else if path.has_extension("mmu") {
     let (error, env) = mmu_elab(&path, &text);
-    (None, if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
-  } else {
-    let (_, ast) = parse(text.ascii().clone(), None);
-    if !ast.errors.is_empty() {
-      for e in &ast.errors {
-        to_snippet(e, &path, &ast.source,
-          |s| println!("{}", DisplayList::from(s)))
-      }
+    (None, vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
+  } else if path.has_extension("mm1") {
+    if ENABLE_CACHING.load(Ordering::Relaxed) {
+      cache = Some(path.path().with_extension("mm1.o"))
     }
-    let ast = Arc::new(ast);
-    let mut deps = Vec::new();
-    if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {}", path)) }
-    let rd = rd.push(path.clone());
-    let fut =
-      ElaborateBuilder {
-        ast: &ast,
-        path: path.clone(),
-        mm0_mode: path.has_extension("mm0"),
-        check_proofs: crate::get_check_proofs(),
-        report_upstream_errors: false,
-        cancel: Arc::default(),
-        old: None,
-        recv_dep: |p| {
-          let p = VFS.get_or_insert(p)?.0;
-          let (send, recv) = channel();
-          if rd.contains(&p) {
-            send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
-          } else {
-            POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
-            deps.push(p);
-          }
-          Ok(recv)
-        },
-        recv_goal: None,
-      }.elab();
-    let (cyc, _, errors, env) = fut.await;
-    (cyc, errors, env)
+    if let Some((toks, env)) = cache.as_deref().and_then(|path| try_get_cache(path, file.hash)) {
+      (None, toks, vec![], env)
+    } else {
+      let (_, ast) = parse(text.ascii().clone(), None);
+      if !ast.errors.is_empty() {
+        for e in &ast.errors {
+          to_snippet(e, &path, &ast.source,
+            |s| println!("{}", DisplayList::from(s)))
+        }
+      }
+      let ast = Arc::new(ast);
+      let mut deps = Vec::new();
+      if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {}", path)) }
+      let rd = rd.push(path.clone());
+      let fut =
+        ElaborateBuilder {
+          ast: &ast,
+          path: path.clone(),
+          mm0_mode: path.has_extension("mm0"),
+          check_proofs: crate::get_check_proofs(),
+          report_upstream_errors: false,
+          cancel: Arc::default(),
+          old: None,
+          recv_dep: |p| {
+            let p = VFS.get_or_insert(p)?.0;
+            let (send, recv) = channel();
+            if rd.contains(&p) {
+              send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
+            } else {
+              POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
+              deps.push(p);
+            }
+            Ok(recv)
+          },
+          recv_goal: None,
+        }.elab();
+      fut.await
+    }
+  } else {
+    let err = ElabError::new_e(0..0, "unknown file extension");
+    (None, vec![], vec![err], FrozenEnv::new(Default::default()))
   };
+  if let Some(path) = &cache {
+    try_cache(path, file.hash, &toks, &env)
+  }
   if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {}", path)) }
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s)) }
@@ -415,7 +464,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     Some(errors.into())
   };
   let res = match cyc {
-    None => ElabResult::Ok((), errors, env.clone()),
+    None => ElabResult::Ok((path.clone(), file.hash), errors, env.clone()),
     Some(cyc) => ElabResult::ImportCycle(cyc),
   };
   {
@@ -436,7 +485,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
 /// See [`elaborate`] for details on elaboration. This function encapsulates
 /// the `async fn` into a [`BoxFuture`], in order to avoid a recursion between
 /// this function and [`elaborate`] resulting in infinite sized futures.
-fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<FileRef>) ->
+fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<(FileRef, u64)>>, rd: ArcList<FileRef>) ->
   BoxFuture<'static, ()> {
   async {
     if let Ok(env) = elaborate(path, rd).await {
@@ -456,6 +505,19 @@ pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option
   Ok((file.text.clone(), env))
 }
 
+fn report(lvl: ErrorLevel, err: &str) {
+  println!("{}\n", DisplayList::from(Snippet {
+    title: Some(Annotation {
+      label: Some(err),
+      id: None,
+      annotation_type: lvl.to_annotation_type(),
+    }),
+    footer: vec![],
+    slices: vec![],
+    opt: FormatOptions { color: true, ..Default::default() },
+  }))
+}
+
 /// Main entry point for `mm0-rs compile` subcommand.
 ///
 /// # Arguments
@@ -472,6 +534,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let (file, env) = elab_for_result(path.clone())?;
   let env = env.unwrap_or_else(|| std::process::exit(1));
   QUIET.store(args.is_present("quiet"), Ordering::Relaxed);
+  ENABLE_CACHING.store(!args.is_present("no_cache"), Ordering::Relaxed);
   if let Some(s) = args.value_of_os("output") {
     if let Err((fsp, e)) =
       if s == "-" { env.run_output(io::stdout()) }
@@ -490,18 +553,6 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
       env.export_mmu(w)?;
     } else {
-      fn report(lvl: ErrorLevel, err: &str) {
-        println!("{}\n", DisplayList::from(Snippet {
-          title: Some(Annotation {
-            label: Some(err),
-            id: None,
-            annotation_type: lvl.to_annotation_type(),
-          }),
-          footer: vec![],
-          slices: vec![],
-          opt: FormatOptions { color: true, ..Default::default() },
-        }))
-      }
       let mut report = report;
       let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
       ex.run(!args.is_present("strip"))?;

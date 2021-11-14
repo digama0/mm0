@@ -64,7 +64,7 @@ macro_rules! make_predefs {
       $ty:tt $(if $cond:expr)? => $e:expr;)*} => {
     /// A predef is a name of an external constant, defined in `compiler.mm1` and required
     /// for proof output.
-    #[derive(Copy, Clone, Debug, EnvDebug)]
+    #[derive(Copy, Clone, Debug, EnvDebug, Serialize, Deserialize)]
     pub(crate) struct Predefs {
       $(
         #[allow(non_snake_case)] $(#[$attr])*

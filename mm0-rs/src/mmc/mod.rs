@@ -93,8 +93,9 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
 
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
-#[derive(Clone, DeepSizeOf)]
+#[derive(Clone, DeepSizeOf, Serialize, Deserialize)]
 pub struct Compiler {
+  #[serde(skip)]
   inner: Rc<mmcc::Compiler<Config>>,
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.

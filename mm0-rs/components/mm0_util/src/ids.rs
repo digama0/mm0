@@ -2,6 +2,8 @@
 
 #[cfg(feature = "memory")]
 use mm0_deepsize_derive::DeepSizeOf;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
@@ -12,6 +14,7 @@ macro_rules! id_wrapper {
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct $id(pub $ty);
     #[cfg(feature = "memory")]
@@ -29,6 +32,7 @@ macro_rules! id_wrapper {
 
     /// A vector wrapper with a strongly typed index interface.
     #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Clone, Debug)]
     pub struct $vec<T>(pub Vec<T>);
 
@@ -100,6 +104,7 @@ id_wrapper!(AtomId: u32, AtomVec);
 
 bitflags! {
   /// Visibility and sort modifiers for Sort statements and Declarations.
+  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
   pub struct Modifiers: u8 {
     // Note: These particular values are important because they are used in the MMB format.
 
@@ -200,6 +205,7 @@ impl fmt::Display for Modifiers {
 
 /// A precedence literal, such as `123` or `max`. These are used in notations like
 /// `notation add = ($+$:23)` or `infix add: $+$ prec 23;`.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Prec {
   /// A finite precedence, an unsigned integer like `23`.

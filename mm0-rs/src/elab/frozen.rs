@@ -103,6 +103,18 @@ impl FrozenEnv {
   #[must_use] pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
 }
 
+impl serde::Serialize for FrozenEnv {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    unsafe { self.thaw() }.serialize(serializer)
+  }
+}
+
+impl<'de> serde::Deserialize<'de> for FrozenEnv {
+  fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    Ok(Self::new(Environment::deserialize(deserializer)?))
+  }
+}
+
 /// A wrapper around an [`AtomData`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]

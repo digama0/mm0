@@ -41,7 +41,7 @@ if_chain = "1.0"
 itertools = "0.10"
 pathdiff = "0.2"
 arrayvec = "0.7"
-num = "0.4"
+num = { version = "0.4", features = ["serde"] }
 pretty = "0.10"
 clap = "2.33"
 futures = { version = "0.3", features = ["thread-pool"] }
@@ -54,11 +54,12 @@ zerocopy = "0.6"
 memchr = "2.3"
 bit-set = "0.5"
 typed-arena = "2.0"
+bincode = "1.3"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [
   "num", "typed-arena", "futures", "owning_ref", "bit-set"] }
-mm0_util = { path = "components/mm0_util", default-features = false }
+mm0_util = { path = "components/mm0_util", default-features = false, features = ["serde"] }
 mm0b_parser = { path = "components/mm0b_parser" }
 mm1_parser = { path = "components/mm1_parser" }
 

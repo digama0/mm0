@@ -59,6 +59,8 @@ extern crate bitflags;
 
 #[cfg(feature = "memory")]
 use mm0_deepsize_derive::DeepSizeOf;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::collections::{
   hash_map::{Entry, OccupiedEntry},
   HashMap,
@@ -235,6 +237,7 @@ impl CondvarExt for std::sync::Condvar {
 
 /// Newtype for an `Arc<String>`, so that we can implement `From<&str>`.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct ArcString(pub Arc<[u8]>);
 
@@ -403,6 +406,7 @@ impl<T> SliceUninit<T> {
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Span {
   /// The byte index of the beginning of the span (inclusive).
@@ -507,6 +511,7 @@ fn make_relative(buf: &std::path::Path) -> String {
 }
 
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default)]
 struct FileRefInner {
   path: PathBuf,
@@ -522,6 +527,7 @@ struct FileRefInner {
 /// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
 /// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Default)]
 pub struct FileRef(Arc<FileRefInner>);
 
@@ -604,6 +610,7 @@ impl fmt::Debug for FileRef {
 
 /// A span paired with a [`FileRef`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FileSpan {
   /// The file in which this span occured.

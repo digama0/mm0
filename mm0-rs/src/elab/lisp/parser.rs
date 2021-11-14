@@ -22,7 +22,8 @@ pub type DefTarget = Option<(Span, Span, Option<DocComment>, AtomId)>;
 
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Ir {
   /// Access variable number `n` in the context
   Local(usize),
@@ -154,7 +155,7 @@ impl Ir {
 /// * `[pat (=> cont) eval]`: same thing, but `cont` is bound to a delimited continuation
 ///   that can be used to jump to the next case (essentially indicating that the branch fails to
 ///   apply even after the pattern succeeds).
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Branch {
   /// The number of variables in the pattern. The context for `eval` is extended by this many variables
   /// regardless of the input at runtime. For example the pattern `(or ('foo a _) ('bar _ b))` will
@@ -184,7 +185,7 @@ impl<'a> EnvDisplay for Branch {
 /// a compile-time known set of variables that can be referred to in the branch expression.
 /// Patterns are matched from left to right; later patterns will clobber the
 /// bindings of earlier patterns if variable names are reused.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Pattern {
   /// The `_` pattern. Matches anything, binds nothing.
   Skip,
@@ -233,7 +234,7 @@ pub enum Pattern {
 }
 
 /// The `(mvar)` patterns, which match a metavariable of different kinds.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum MVarPattern {
   /// The `(mvar)` pattern, which matches metavars with unknown type.
   Unknown,

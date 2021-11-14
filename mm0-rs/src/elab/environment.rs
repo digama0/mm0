@@ -5,6 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+
 use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
@@ -12,7 +14,7 @@ use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapEx
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 
 /// The information associated to a defined [`Sort`].
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomId,
@@ -36,7 +38,7 @@ pub struct Sort {
 /// The type of a variable in the binder list of an `axiom`/`term`/`def`/`theorem`.
 /// The variables themselves are not named because their names are derived from their
 /// positions in the binder list (i.e. `{v0 : s} (v1 : t v0) (v2 : t)`)
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[allow(variant_size_differences)]
 pub enum Type {
   /// A bound variable `{x : s}`, where `s` is the provided [`SortId`].
@@ -66,7 +68,7 @@ impl Type {
 
 /// An [`ExprNode`] is interpreted inside a context containing the `Vec<`[`Type`]`>`
 /// args and the `Vec<ExprNode>` heap.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum ExprNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(usize),
@@ -78,7 +80,7 @@ pub enum ExprNode {
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
 /// and a final expression. See [`ExprNode`] for explanation of the variants.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
@@ -88,7 +90,7 @@ pub struct Expr {
 }
 
 /// The value of a term or def.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum TermKind {
   /// This is a `term`, which has no definition
   Term,
@@ -99,7 +101,7 @@ pub enum TermKind {
 }
 
 /// The data associated to a `term` or `def` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Term {
   /// The name of the term, as an atom.
   pub atom: AtomId,
@@ -129,7 +131,7 @@ pub struct Term {
 /// more constructors, so a [`ProofNode`] can represent an expr, a proof, or a conversion,
 /// and the typing determines which. A [`ProofNode`] is interpreted in a context of
 /// variables `Vec<Type>`, and a heap `Vec<ProofNode>`.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum ProofNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
@@ -206,7 +208,7 @@ impl From<&ExprNode> for ProofNode {
 
 /// The [`Proof`] type stores proof term dags using a local context of proof nodes
 /// and a final proof. See [`ProofNode`] for explanation of the variants.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
@@ -224,7 +226,7 @@ pub struct Proof {
 }
 
 /// The proof of the axiom or theorem.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum ThmKind {
   /// This is an `axiom`, which has no proof.
   Axiom,
@@ -235,7 +237,7 @@ pub enum ThmKind {
 }
 
 /// The data associated to an `axiom` or `theorem` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Thm {
   /// The name of the theorem, as an atom.
   pub atom: AtomId,
@@ -271,7 +273,7 @@ pub struct Thm {
 
 /// An `output string` directive, which is anonymous and hence stored directly
 /// in the [`StmtTrace`] list.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct OutputString {
   /// The span of the full statement.
   pub span: FileSpan,
@@ -283,7 +285,7 @@ pub struct OutputString {
 
 /// A global order on sorts, declarations ([`Term`] and [`Thm`]), and lisp
 /// global definitions based on declaration order.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum StmtTrace {
   /// A `sort foo;` declaration
   Sort(AtomId),
@@ -298,7 +300,7 @@ pub enum StmtTrace {
 /// A declaration is either a [`Term`] or a [`Thm`]. This is done because in MM1
 /// Terms and Thms share a namespace (although they are put in separate number-spaces
 /// for compilation to MM0).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum DeclKey {
   /// A term or def, with its Id
   Term(TermId),
@@ -309,7 +311,7 @@ crate::deep_size_0!(DeclKey);
 
 /// A [`Literal`] is an element in a processed `notation` declaration. It is either a
 /// constant symbol, or a variable with associated parse precedence.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Literal {
   /// `Var(i, p)` means that we should parse at precedence `p` at this position,
   /// and the resulting expression should be inserted as the `i`th subexpression of
@@ -320,7 +322,7 @@ pub enum Literal {
 }
 
 /// The data associated to a `notation`, `infixl`, `infixr`, or `prefix` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct NotaInfo {
   /// The span around the name of the term. This is the `"foo"` in `notation foo ...;`
   pub span: FileSpan,
@@ -339,7 +341,7 @@ pub struct NotaInfo {
 
 /// A coercion between two sorts. These are interpreted in a context `c: s1 -> s2` where `s1` and
 /// `s2` are known.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Coe {
   /// This asserts `t` is a unary term constructor from `s1` to `s2`.
   One(FileSpan, TermId),
@@ -371,7 +373,7 @@ impl Coe {
 }
 
 /// The (non-logical) data used by the dynamic parser to interpret formulas.
-#[derive(Default, Clone, Debug, DeepSizeOf)]
+#[derive(Default, Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct ParserEnv {
   /// A bitset of all left delimiters.
   pub delims_l: Delims,
@@ -404,7 +406,8 @@ pub struct ParserEnv {
 /// with the results being merged according to this strategy.
 /// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
 /// which is to overwrite the original definition.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum MergeStrategyInner {
   /// The `atom-map` merge strategy, which assumes that both the stored value and
   /// the new value are atom maps, and overwrites or inserts all keys in the old map
@@ -423,7 +426,7 @@ pub enum MergeStrategyInner {
 pub type MergeStrategy = Option<Rc<MergeStrategyInner>>;
 
 /// A global lisp definition entry.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct LispData {
   /// A `(span, full)` pair where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
@@ -444,7 +447,7 @@ impl Deref for LispData {
 }
 
 /// The data associated to an atom.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct AtomData {
   /// The string form of the atom.
   pub name: ArcString,
@@ -517,7 +520,7 @@ impl ObjectKind {
 }
 
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, DeepSizeOf, Serialize, Deserialize)]
 pub struct Environment {
   /// The sort map, which is a vector because sort names are allocated in order.
   pub sorts: SortVec<Sort>,
@@ -534,6 +537,7 @@ pub struct Environment {
   /// The global statement order.
   pub stmts: Vec<StmtTrace>,
   /// The list of spans that have been collected in the current statement.
+  #[serde(skip)]
   pub spans: Vec<Spans<ObjectKind>>,
 }
 
@@ -562,7 +566,7 @@ impl Environment {
 }
 
 /// An implementation of a map `u8 -> bool` using a 32 byte array as a bitset.
-#[derive(Default, Copy, Clone, Debug)]
+#[derive(Default, Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Delims([u8; 32]);
 crate::deep_size_0!(Delims);
 

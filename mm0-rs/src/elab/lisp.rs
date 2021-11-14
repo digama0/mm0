@@ -32,9 +32,13 @@ macro_rules! str_enum {
       $(#[$doc])* enum $name $($rest)*}
   };
   (@inner $to_str:expr, $from_str:expr, $from_bytes:expr;
-      $(#[$doc:meta])* enum $name:ident {$($(#[doc=$doc2:expr])* $(#[cfg($($cfgs:tt)*)])* $e:ident: $s:expr,)*}) => {
+    $(#[$doc:meta])* enum $name:ident {
+      $($(#[doc=$doc2:expr])* $(#[cfg($($cfgs:tt)*)])* $e:ident: $s:expr,)*
+    }
+  ) => {
     $(#[$doc])*
-    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    #[allow(clippy::unsafe_derive_deserialize)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     pub enum $name { $($(#[doc=$doc2])* $(#[cfg($($cfgs)*)])* $e),* }
     crate::deep_size_0!($name);
 
@@ -192,7 +196,7 @@ str_enum! {
 
 /// The type of a metavariable. This encodes the different types of context
 /// in which a term is requested.
-#[derive(Copy, Clone, Debug, EnvDebug)]
+#[derive(Copy, Clone, Debug, EnvDebug, Serialize, Deserialize)]
 pub enum InferTarget {
   /// This is a term that has no context. This can be created by
   /// `(have 'h _)`, for example: the type of the proof term `_` is unconstrained.
@@ -228,7 +232,8 @@ impl InferTarget {
 /// A lisp value. These are the "values" that are passed around by lisp code.
 /// See [`LispKind`] for the list of different types of lisp object. This is
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
-#[derive(Default, Debug, EnvDebug, Clone, DeepSizeOf)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Default, Debug, EnvDebug, Clone, DeepSizeOf, Serialize, Deserialize)]
 pub struct LispVal(Rc<LispKind>);
 
 /// This macro is used to define the [`LispKind`] type, as well as the
@@ -291,7 +296,8 @@ macro_rules! mk_lisp_kind {
 }
 mk_lisp_kind! {
   /// The underlying enum of types of lisp data.
-  #[derive(EnvDebug)]
+  #[allow(clippy::unsafe_derive_deserialize)]
+  #[derive(EnvDebug, Serialize, Deserialize)]
   LispKind,
   LispVal,
   LispRef,
@@ -480,6 +486,21 @@ pub enum LispWeak {
   Weak(Weak<LispKind>),
 }
 
+impl serde::Serialize for LispWeak {
+  fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+    if let LispWeak::Strong(e) = self { Some(e) } else { None }.serialize(ser)
+  }
+}
+
+impl<'de> serde::Deserialize<'de> for LispWeak {
+  fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+    Ok(match Option::deserialize(de)? {
+      Some(e) => LispWeak::Strong(e),
+      None => LispWeak::Weak(Weak::new()),
+    })
+  }
+}
+
 impl LispWeak {
   fn get<T>(&self, f: impl FnOnce(&LispVal) -> T) -> T {
     match self {
@@ -521,7 +542,8 @@ impl LispWeak {
   }
 }
 /// A mutable reference to a [`LispVal`], the inner type used by `ref!` and related functions.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub struct LispRef(RefCell<LispWeak>);
 
 impl LispRef {
@@ -841,7 +863,7 @@ impl Eq for LispKind {}
 
 /// An annotation, which is a tag placed on lisp values that is ignored by all
 /// the basic functions.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Annot {
   /// A span annotation marks an expression with a span from the input file.
   /// The parser will place these on all expressions it produces, and they are
@@ -853,7 +875,7 @@ pub enum Annot {
 }
 
 /// The location information for a procedure.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum ProcPos {
   /// A named procedure is created by `(def (foo x) ...)` or
   /// `(def foo (fn (x) ...))`. The file span is the definition block
@@ -876,7 +898,8 @@ impl ProcPos {
 /// A callable procedure. There are several sources of procedures,
 /// all of which are interactable only via function calls `(f)` and
 /// printing (which shows only basic information about the procedure).
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Debug, EnvDebug, DeepSizeOf, Serialize, Deserialize)]
 pub enum Proc {
   /// A built-in procedure (see [`BuiltinProc`] for the full list).
   /// Initially, a reference to a lisp global with a builtin procedure's name
@@ -932,7 +955,7 @@ pub enum Proc {
 /// by the call. Individual procedures may have additional rules on top of
 /// this for validity, but every procedure must declare its specification
 /// in [`Proc::spec`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ProcSpec {
   /// This function must be called with exactly `n` arguments.
   Exact(usize),

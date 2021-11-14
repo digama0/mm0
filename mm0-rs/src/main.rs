@@ -13,6 +13,7 @@ fn main() -> std::io::Result<()> {
     (@subcommand compile =>
       (about: "Compile MM1 files into MMB")
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
+      (@arg no_cache: --("no-cache") "Do not use or create .mm1.o cache files")
       (@arg quiet: -q --quiet "Hide diagnostic messages")
       (@arg strip: -s --("strip") "Don't add debugging data to .mmb files")
       (@arg output: -o --output [FILE] "Print 'output' commands to a file (use '-' to print to stdout)")

@@ -23,6 +23,10 @@ pub struct LinedString {
   lines: Vec<usize>,
 }
 
+impl std::hash::Hash for LinedString {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.s.hash(state) }
+}
+
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.
 impl Index<Span> for LinedString {
   type Output = [u8];
