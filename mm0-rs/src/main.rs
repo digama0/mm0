@@ -29,6 +29,7 @@ fn main() -> std::io::Result<()> {
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output folder, or 'doc' if omitted")
       (@arg only: --only [THMS] "Show only declarations THMS (a comma separated list)")
+      (@arg open: --open <THM> "Open the generated documentation in a browser")
       (@arg order: --("order") <ORDER>
          possible_values(&["pre", "post"]) default_value("post")
          "Proof tree traversal order")

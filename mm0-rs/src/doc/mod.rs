@@ -497,12 +497,14 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
 }
 
 impl<'a, W: Write> BuildDoc<'a, W> {
-  fn thm_doc(&mut self, prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>) -> io::Result<()> {
-    let mut file = self.thm_folder.clone();
+  fn thm_doc(&mut self,
+    prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>
+  ) -> io::Result<std::path::PathBuf> {
+    let mut path = self.thm_folder.clone();
     #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
-    self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
-    let mut file = BufWriter::new(File::create(file)?);
+    self.mangler.mangle(&self.env, tid, |_, s| path.push(&format!("{}.html", s)));
+    let mut file = BufWriter::new(File::create(&path)?);
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
     let filename = td.span.file.rel();
@@ -566,10 +568,13 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       }
       writeln!(file)?
     }
-    writeln!(file, "{}", FOOTER)
+    writeln!(file, "{}", FOOTER)?;
+    Ok(path)
   }
 
-  fn write_all(&mut self, path: &FileRef, stmts: &[StmtTrace]) -> io::Result<()> {
+  fn write_all(&mut self,
+    path: &FileRef, to_open: Option<ThmId>, stmts: &[StmtTrace]
+  ) -> io::Result<Option<std::path::PathBuf>> {
     let file = self.index.as_mut().expect("index file missing");
     let nav: String;
     let nav = if let Some(base) = &self.base_url {
@@ -582,6 +587,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       &format!("{} - Index", path.rel()),
       "Index", nav, &[])?;
     let mut prev = None;
+    let mut open_path = None;
     for s in stmts {
       let mut file = self.index.as_mut().expect("index file missing");
       let fe = FormatEnv {source: self.source, env: &self.env};
@@ -624,7 +630,8 @@ impl<'a, W: Write> BuildDoc<'a, W> {
               writeln!(file, "</pre>\n    </div>")?;
               let next = tid.0.checked_add(1).map(ThmId)
                 .filter(|&tid| self.env.thms.get(tid).is_some());
-              self.thm_doc(prev, tid, next)?;
+              let path = self.thm_doc(prev, tid, next)?;
+              if to_open == Some(tid) { open_path = Some(path) }
               prev = Some(tid);
             }
           }
@@ -632,7 +639,8 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       }
     }
     let file = self.index.as_mut().expect("index file missing");
-    writeln!(file, "{}", FOOTER)
+    writeln!(file, "{}", FOOTER)?;
+    Ok(open_path)
   }
 }
 /// Main entry point for `mm0-rs doc` subcommand.
@@ -667,11 +675,14 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     Some("post") => ProofOrder::Post,
     _ => unreachable!(),
   };
+  let mut to_open = None;
   let only = args.value_of("only");
   let index = if only.is_some() {None} else {
-    let mut file = dir.clone();
-    file.push("index.html");
-    Some(BufWriter::new(File::create(file)?))
+    let mut path = dir.clone();
+    path.push("index.html");
+    let file = File::create(&path)?;
+    to_open = Some(path);
+    Some(BufWriter::new(file))
   };
   dir.push("thms");
   fs::create_dir_all(&dir)?;
@@ -687,22 +698,35 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     thm_folder: dir, env, index,
     mangler: Mangler::default(),
   };
-  if let Some(only) = only {
-    let thms = only.split(',')
-      .filter_map(|thm| {
-        let a = bd.env.get_atom(thm.as_bytes());
-        match bd.env.data[a].decl {
-          None => eprintln!("warning: unknown theorem '{}'", thm),
-          Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
-          Some(DeclKey::Thm(tid)) => return Some(tid),
-        }
-        None
-      }).collect::<Vec<_>>();
-    for (i, &tid) in thms.iter().enumerate() {
-      bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
+  let mut get_thm = |thm: &str| {
+    let a = bd.env.get_atom(thm.as_bytes());
+    match bd.env.data[a].decl {
+      None => eprintln!("warning: unknown theorem '{}'", thm),
+      Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
+      Some(DeclKey::Thm(tid)) => return Some(tid),
     }
-  } else {
-    bd.write_all(&path, old.stmts())?;
+    None
+  };
+  let target = args.value_of("open").and_then(&mut get_thm);
+  if let Some(only) = only {
+    let thms = only.split(',').filter_map(get_thm).collect::<Vec<_>>();
+    for (i, &tid) in thms.iter().enumerate() {
+      let path = bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
+      if to_open.is_none() || target == Some(tid) {
+        to_open = Some(path)
+      }
+    }
+  } else if let Some(path) = bd.write_all(&path, target, old.stmts())? {
+    to_open = Some(path)
+  }
+  if args.is_present("open") {
+    if let Some(path) = to_open {
+      let path = std::fs::canonicalize(path).expect("bad path");
+      let path = Url::from_file_path(path).expect("bad path");
+      drop(webbrowser::open(path.as_str()))
+    } else {
+      eprintln!("warning: --open specified but no pages generated")
+    }
   }
   Ok(())
 }

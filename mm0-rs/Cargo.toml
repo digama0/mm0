@@ -18,7 +18,7 @@ server = [
   "lsp-types", "mm0_deepsize/lsp-types",
   "lsp-server", "crossbeam", "simplelog", "log",
   "mm0_util/server", "mm1_parser/server"]
-doc = ["pulldown-cmark"]
+doc = ["pulldown-cmark", "webbrowser"]
 memory = [
   "mm0_deepsize", "mm0_deepsize_derive/nodummy",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
@@ -71,6 +71,7 @@ lsp-server = { version = "0.5", optional = true }
 
 # For "doc" feature
 pulldown-cmark = { version = "0.8", optional = true }
+webbrowser = { version = "0.5", optional = true }
 
 # For "wasm" feature
 console_error_panic_hook = { version = "0.1", optional = true }
