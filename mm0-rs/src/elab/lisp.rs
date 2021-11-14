@@ -70,7 +70,6 @@ macro_rules! str_enum {
       }
 
       /// The documentation comment on this item.
-      #[allow(unused)]
       #[must_use] pub fn doc(self) -> &'static str {
         match self {
           $($(#[cfg($($cfgs)*)])* $name::$e => concat!($($doc2,"\n"),*)),*

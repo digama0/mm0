@@ -7,7 +7,7 @@
   clippy::if_not_else, non_snake_case)]
 
 // Lints because the code is not finished
-#![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
+// #![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
 
 #[macro_use] mod macros;
 mod predefs;
@@ -15,16 +15,14 @@ mod norm_num;
 mod assembler;
 
 use std::collections::HashMap;
-use std::marker::PhantomData;
-use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, Prec, SortId, Span, TermId, ThmId};
-use mmcc::{Idx, Symbol, intern};
-use mmcc::proof::{AssemblyBlocks, AssemblyItem, ElfProof, Inst, Proc};
+use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, SortId, Span, TermId, ThmId};
+use mmcc::{Idx, Symbol};
+use mmcc::proof::ElfProof;
 
 use crate::elab::Result;
-use crate::{DeclKey, ElabError, Elaborator, Environment, Expr, ExprNode,
-  LispVal, Proof, ProofNode, Remap, Remapper, Term, TermKind, Thm, ThmKind, Type};
-use crate::elab::proof::{self, IDedup, ToLisp, ProofKind};
-use self::norm_num::{HexCache, Num};
+use crate::{Elaborator, Environment, Expr, ExprNode,
+  LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
+use crate::elab::proof::{self, IDedup, ProofKind};
 
 pub(crate) use predefs::Predefs;
 
@@ -67,7 +65,7 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
     }
     refs
   }
-  fn from_expr(&mut self, e: &Expr, refs: &[Self::Id]) -> Self::Id {
+  fn from_expr(&mut self, e: &Expr) -> Self::Id {
     let refs = self.from_expr_nodes(&e.heap);
     self.from_expr_node(&e.head, &refs)
   }
@@ -91,7 +89,6 @@ macro_rules! make_dedup {
     struct $dedup<'a> {
       pd: &'a Predefs,
       de: proof::Dedup<proof::$hash>,
-      cache: HashMap<ThmId, $id>,
     }
     impl<'a> std::ops::Deref for $dedup<'a> {
       type Target = &'a Predefs;
@@ -102,7 +99,7 @@ macro_rules! make_dedup {
       type Hash = proof::$hash;
       type Id = $id;
       fn new(pd: &'a Predefs, args: &[(Option<AtomId>, Type)]) -> Self {
-        Self { pd, de: proof::Dedup::new(args), cache: Default::default() }
+        Self { pd, de: proof::Dedup::new(args) }
       }
       fn add(&mut self, h: proof::$hash) -> $id { $id::from_usize(self.de.add_direct(h)) }
       fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id {
@@ -169,13 +166,6 @@ impl ProofDedup<'_> {
       args.iter().map(|x| x.into_usize()).collect(),
       lhs.into_usize(), sub_lhs.into_usize(), conv.into_usize()
     ))
-  }
-
-  fn cache(&mut self, t: ThmId, res: impl FnOnce(&mut Self) -> ProofId) -> ProofId {
-    if let Some(&id) = self.cache.get(&t) { return id }
-    let res = res(self);
-    let th = self.thm(t, &[], res);
-    *self.cache.entry(t).or_insert(th)
   }
 
   fn to_expr<'a, D: Dedup<'a>>(&self, de: &mut D, e: ProofId) -> D::Id {

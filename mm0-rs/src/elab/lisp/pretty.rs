@@ -481,8 +481,7 @@ impl<'a> Pretty<'a> {
 
   /// Pretty print a sort, with annotations.
   /// Basic form is just `<modifiers> sort <name>;`
-  #[allow(unused)]
-  pub(crate) fn sort(&'a self, sid: SortId) -> RefDoc<'a> {
+  pub fn sort(&'a self, sid: SortId) -> RefDoc<'a> {
     let s = &self.fe.env.sorts[sid];
     let mut doc = self.annot(Annot::SortModifiers(s.mods),
       self.alloc(Doc::text(s.mods.to_string())));

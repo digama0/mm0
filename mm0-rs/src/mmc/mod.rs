@@ -11,7 +11,6 @@ mod parser;
 mod proof;
 
 use std::{collections::HashMap, rc::Rc};
-// use bumpalo::Bump;
 use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,

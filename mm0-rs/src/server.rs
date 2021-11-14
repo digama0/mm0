@@ -512,7 +512,6 @@ fn show_message(typ: MessageType, message: String) -> Result<()> {
   })
 }
 
-#[allow(unused)]
 fn register_capability(id: String, registrations: Vec<Registration>) -> Result<()> {
   send_message(Request {
     id: id.into(),
@@ -521,7 +520,6 @@ fn register_capability(id: String, registrations: Vec<Registration>) -> Result<(
   })
 }
 
-#[allow(unused)]
 fn log_message(message: String) -> Result<()> {
   send_message(Notification {
     method: "window/logMessage".to_owned(),

@@ -26,9 +26,6 @@ impl<Id: Idx> HexCache<Id> {
   pub(super) fn ch<'a, D: Dedup<'a, Id=Id>>(&self, de: &mut D, c: u8) -> Id {
     app!(de, ch[self[c >> 4], self[c & 15]])
   }
-  pub(super) fn c2nch<'a, D: Dedup<'a, Id=Id>>(&self, de: &mut D, c: u8) -> Id {
-    app!(de, c2n[self.ch(de, c)])
-  }
 }
 
 macro_rules! mk_from_int {($($num:ident, $f:ident: $ty:ty,)*) => {
@@ -94,18 +91,13 @@ pub(super) enum NumKind<Id> {
 }
 impl<Id: Idx> Num<Id> {
   pub(super) fn new(val: u64, e: Id) -> Self { Self { val, e } }
-  #[inline] pub(super) fn len(&self) -> u32 { num_digits(self.val) }
-  #[allow(clippy::cast_possible_truncation)]
-  #[inline] pub(super) fn digit(&self, i: u32) -> u8 {
-    ((self.val >> (4 * i)) & 15) as u8
-  }
 
   #[allow(clippy::cast_possible_truncation)]
   pub(super) fn cases<'a, D: Dedup<'a, Id=Id>>(self, de: &D) -> NumKind<Id> {
     app_match!(de, self.e => {
       (hex a _) => NumKind::Hex(Num::new(self.val >> 4, a), (self.val & 15) as u8),
       (h2n _) => NumKind::H2n(self.val as u8),
-      v => panic!("not a number"),
+      _ => panic!("not a number"),
     })
   }
 }
@@ -133,6 +125,7 @@ impl HexCache {
   }
 
   /// Returns `|- a < b` assuming `a < b`
+  #[allow(unused)]
   pub(super) fn lt(&self, de: &mut ProofDedup<'_>, x: Num, y: Num) -> ProofId {
     match (x.cases(de), y.cases(de)) {
       (NumKind::Hex(a, b), NumKind::Hex(c, d)) if a < c => {
@@ -154,12 +147,14 @@ impl HexCache {
   }
 
   /// Returns `|- a <= b` assuming `a <= b`
+  #[allow(unused)]
   pub(super) fn le(&self, de: &mut ProofDedup<'_>, x: Num, y: Num) -> ProofId {
     if x == y { thm!(de, leid(*x): {*x} <= {*y}) }
     else { thm!(de, ltlei(*x, *y, self.lt(de, x, y)): {*x} <= {*y}) }
   }
 
   /// Returns `|- a != b` assuming `a != b`
+  #[allow(unused)]
   pub(super) fn ne(&self, de: &mut ProofDedup<'_>, x: Num, y: Num) -> ProofId {
     if x < y { thm!(de, ltnei(*x, *y, self.lt(de, x, y)): {*x} != {*y}) }
     else { thm!(de, ltneri(*y, *x, self.lt(de, y, x)): {*x} != {*y}) }
@@ -245,7 +240,7 @@ impl HexCache {
           let res = app!(de, (isU64 a));
           return de.thm(de.isU64n[i], &args, res)
         }
-        v => panic!("not a number"),
+        _ => panic!("not a number"),
       })
     }
   }
@@ -267,6 +262,7 @@ macro_rules! norm_split_bits {
     norm_split_bits!{@unsplit_push ($($params)* a) ((a $n) $($vals)*) $($rest)*}
   };
   (@unsplit_push ($f:ident $g:ident $($params:ident)*) ($($args:tt)*)) => {
+    #[allow(unused)]
     pub(super) fn $g(&self, de: &mut ProofDedup<'_>,
       $($params: u8,)*
     ) -> ((u8, ProofId), ProofId) {
@@ -280,7 +276,7 @@ macro_rules! norm_split_bits {
   };
   ($(fn $f:ident, fn $g:ident ($a:ident: $($n:literal),*);)*) => {
     impl HexCache {
-      $(pub(super) fn $f(&self,
+      $(#[allow(unused)] pub(super) fn $f(&self,
         de: &mut ProofDedup<'_>, x: u8
       ) -> ([(u8, ProofId); [$($n),*].len()], ProofId) {
         norm_split_bits! {@split de (SplitBits::$a as usize, x, self[x]) () (x) () $($n)* }
@@ -288,7 +284,8 @@ macro_rules! norm_split_bits {
 
       $(norm_split_bits! {@unsplit_push ($f $g) () $($n)* })*
 
-      pub(super) fn split_bits(&self, de: &mut ProofDedup<'_>, sb: SplitBits, x: u8
+      #[allow(unused)] pub(super) fn split_bits(&self,
+        de: &mut ProofDedup<'_>, sb: SplitBits, x: u8
       ) -> (ArrayVec<(u8, ProofId), 4>, ProofId) {
         match sb {
           $(SplitBits::$a => {

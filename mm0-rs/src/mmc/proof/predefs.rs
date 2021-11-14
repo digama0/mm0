@@ -76,6 +76,7 @@ macro_rules! make_predefs {
     impl crate::Remap for Predefs {
       type Target = Self;
       fn remap(&self, r: &mut crate::Remapper) -> Self {
+        #[allow(unused)]
         Self { $($x: make_predefs!(@remap $ty &self.$x, r, ($($i,)*) ($($cond)?))),* }
       }
     }
@@ -495,7 +496,6 @@ pub(crate) enum Rex {
   W = 3,
 }
 
-const SPLIT_BITS_PART: [&[u8]; 5] = [&[1, 3], &[2, 2], &[3, 1], &[1, 2, 1], &[1, 1, 1, 1]];
 const SPLIT_BITS_NAMES: [&str; 5] = ["13", "22", "31", "121", "1111"];
 #[derive(Copy, Clone)]
 pub(crate) enum SplitBits {
@@ -504,7 +504,4 @@ pub(crate) enum SplitBits {
   Sb31 = 2,
   Sb121 = 3,
   Sb1111 = 4,
-}
-impl SplitBits {
-  pub(crate) const fn part(self) -> &'static [u8] { SPLIT_BITS_PART[self as usize] }
 }

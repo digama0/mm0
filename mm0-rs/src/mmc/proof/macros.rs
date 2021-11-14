@@ -62,10 +62,6 @@ macro_rules! conv {
 macro_rules! thm {
   ($de:expr, {$($e:tt)*}) => { {$($e)*} };
   ($de:expr, ($($e:tt)*) => $($thm:tt)*) => {thm!($de, $($thm)*: $($e)*)};
-  ($de:expr, CACHE[$thm:ident$([$ix:expr])*]: $($e:tt)*) => {{
-    let th = $de.$thm$([usize::from($ix)])*;
-    $de.cache(th, |de| app!(de, $($e)*))
-  }};
   ($de:expr, $thm:ident$([$ix:expr])*($($args:expr),*): $($e:tt)*) => {{
     thm!($de, {$de.$thm$([usize::from($ix)])*}($($args),*): $($e)*)
   }};
@@ -130,7 +126,7 @@ macro_rules! app_match {
     app_match!(@gensyms ($args ($($es)*) $vars $stk ($e) $c $($rest)*) () $($pats)*)
   };
   (@gensyms $args:tt ($($out:tt)*) $pat:tt $($pats:tt)*) => {
-    app_match!(@gensyms $args ($($out)* (x $pat)) $($pats)*)
+    app_match!(@gensyms $args ($($out)* (_x $pat)) $($pats)*)
   };
   (@gensyms (((($de:expr, $e1:expr) $rhs1:expr) $($rest1:tt)+) ($($es:tt)*) $vars:tt
     ($($stk:tt)*) ($e:expr) $c:tt $($rest:tt)*) ($(($x:ident $pats:tt))*)) => {
@@ -155,5 +151,3 @@ macro_rules! app_match {
     app_match!(@arms ($de, e) $($args)*)
   }};
 }
-
-pub(crate) use {app, thm, conv, app_match};

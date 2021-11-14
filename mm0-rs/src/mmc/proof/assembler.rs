@@ -1,4 +1,3 @@
-#![warn(unused)]
 use std::collections::HashMap;
 
 use mmcc::{Symbol, TEXT_START, types::Size};
@@ -60,7 +59,7 @@ impl BuildAssemblyProc<'_> {
   /// Proves `(a, |- bit x[hex] d[i] = d[a])`
   fn xbit(&mut self, hex: u8, i: u8) -> (P<u8>, ProofId) {
     let a = self.dn((hex >> i) & 1);
-    (a, thm!(self.thm, CACHE[xbit[hex][i]]: (bit (h2n {self.hex[hex]}) (dn[i])) = {a.1}))
+    (a, thm!(self.thm, xbit[hex][i](): (bit (h2n {self.hex[hex]}) (dn[i])) = {a.1}))
   }
 
   /// Proves `(a, |- a -ZN b = c)` given `b` and `c`.
