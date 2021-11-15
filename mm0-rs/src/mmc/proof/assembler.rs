@@ -1179,7 +1179,8 @@ impl<'a> BuildAssembly<'a> {
       }
     })?;
     let h2 = HexCache::is_u64(&mut self.thm, *y);
-    let th = thm!(self.thm, assembledI(a, c, *y, h1, h2): (assembled c a));
+    let res = super::compiler::mk_result(&mut self.thm, proof);
+    let th = thm!(self.thm, assembledI(a, res, c, *y, h1, h2): (assembled (mkGCtx c res) a));
 
     let content = self.mangler.mangle(self.elab, Name::Content);
     let content = self.elab.env.add_term({
@@ -1188,8 +1189,16 @@ impl<'a> BuildAssembly<'a> {
       de.build_def0(content, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.string)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
-    let th = thm!(self.thm, ((assembled ({content}) a)) =>
-      CONV({th} => (assembled (UNFOLD({content}); c) a)));
+    let gctx = self.mangler.mangle(self.elab, Name::GCtx);
+    let gctx = self.elab.env.add_term({
+      let mut de = ExprDedup::new(self.pd, &[]);
+      let res = self.thm.to_expr(&mut de, res);
+      let e = app!(de, (mkGCtx ({content}) res));
+      de.build_def0(gctx, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.set)
+    }).map_err(|e| e.into_elab_error(self.full))?;
+
+    let th = thm!(self.thm, ((assembled ({gctx}) a)) =>
+      CONV({th} => (assembled (UNFOLD({gctx}); (mkGCtx (UNFOLD({content}); c) res)) a)));
     let asmd_thm = self.mangler.mangle(self.elab, Name::AsmdThm);
     let asmd_thm = self.elab.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
@@ -1200,10 +1209,10 @@ impl<'a> BuildAssembly<'a> {
   }
 
   fn mk_lemma(&mut self,
-    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> ProofId
+    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> (ProofId, ProofId)
   ) -> Result<ThmId> {
     let mut de = ProofDedup::new(self.pd, &[]);
-    let th = mk_proof(self, &mut de);
+    let th = mk_proof(self, &mut de).1;
     let lem = self.mangler.mangle(self.elab, Name::AsmdThmLemma(self.asmd_lemmas));
     self.asmd_lemmas += 1;
     self.elab.env
@@ -1213,13 +1222,13 @@ impl<'a> BuildAssembly<'a> {
 
   fn prove_conjuncts(&mut self,
     n: usize, iter: &mut AssemblyItemIter<'a>,
-    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> ProofId,
+    mk_proof: &dyn Fn(&Self, &mut ProofDedup<'a>) -> (ProofId, ProofId),
   ) -> Result<()> {
     if n <= 1 {
       assert!(n != 0);
       let item = iter.next().expect("iterator size lied");
       let mut de = ProofDedup::new(self.pd, &[]);
-      let th = mk_proof(self, &mut de);
+      let th = mk_proof(self, &mut de).1;
       match item {
         AssemblyItem::Proc(proc) => {
           let asmd_thm = self.mangler.mangle(self.elab, Name::ProcAsmdThm(proc.name()));
@@ -1234,16 +1243,22 @@ impl<'a> BuildAssembly<'a> {
     } else {
       let m = n >> 1;
       let left = |this: &Self, de: &mut ProofDedup<'a>| {
-        let th = mk_proof(this, de);
-        app_match!(de, de.concl(th) => {
-          (assembled c (assembleA a b)) => thm!(de, assembled_l(a, b, c, th): (assembled c a)),
+        let (x, th) = mk_proof(this, de);
+        app_match!(de, x => {
+          (assembled c (assembleA a b)) => {
+            let tgt = app!(de, (assembled c a));
+            (tgt, thm!(de, assembled_l(a, b, c, th): tgt))
+          }
           !
         })
       };
       let right = |this: &Self, de: &mut ProofDedup<'a>| {
-        let th = mk_proof(this, de);
-        app_match!(de, de.concl(th) => {
-          (assembled c (assembleA a b)) => thm!(de, assembled_r(a, b, c, th): (assembled c b)),
+        let (x, th) = mk_proof(this, de);
+        app_match!(de, x => {
+          (assembled c (assembleA a b)) => {
+            let tgt = app!(de, (assembled c b));
+            (tgt, thm!(de, assembled_r(a, b, c, th): tgt))
+          }
           !
         })
       };

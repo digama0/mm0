@@ -393,7 +393,7 @@ impl<'a> VBlock<'a> {
 }
 
 /// An iterator over the instructions in the block.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InstIter<'a> {
   ctx: &'a Proc<'a>,
   start: u32,

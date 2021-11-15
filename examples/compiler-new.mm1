@@ -1,20 +1,5 @@
 import "compiler-old.mm1";
 
---| Global context. In lean:
---| ```lean
---| structure gctx := (content : string) (result : prop)
---| ```
-@mmc-th local def mkGCtx (content: string) (result: set): set =
-$ Sum (Sum content result) 0 $;
-
-local def okContentN (G: set): nat = $ lower (Fst (Fst G)) $;
-@mmc-th local def okContent (G: set) (c: string): wff = $ okContentN G = c $;
-@mmc-th theorem okContentGI: $ okContent (mkGCtx c T) c $ = 'sorry;
-
-local def okResultN (G: set): set = $ Snd (Fst G) $;
-@mmc-th local def okResult (G: set) (T: set): wff = $ okResultN G == T $;
-@mmc-th theorem okResultGI: $ okResult (mkGCtx c T) T $ = 'sorry;
-
 -- inductive epilogue
 -- | free : nat → epilogue → epilogue
 -- | pop : regnum → epilogue → epilogue
@@ -23,25 +8,20 @@ local def okResultN (G: set): set = $ Snd (Fst G) $;
 @mmc-th local def epiPop (reg: hex) (epi: nat): nat = $ 0 $; -- TODO
 @mmc-th local def epiRet: nat = $ 0 $; -- TODO
 
---| Procedure-global context. In lean:
---| ```lean
---| structure pctx1 := (start : nat) (ret : ret_abi) (sp_max : nat)
---| ```
+--| Procedure-global context, constructor for `pctx1` type.
+--| * `start`: the address of the procedure entry point
+--| * `ret`: the return ABI
+--| * `epi: epilogue`: the epilogue sequence
+@mmc-th local def mkPCtx1 (start: nat) (ret: set) (epi: nat): set =
+$ Sum ret (start <> epi) $;
+
+--| Procedure-global context, constructor for `pctx := gctx * pctx1` type.
 --| We write it in such a way that `pctx` extends `gctx`,
 --| so `gctx` extraction functions also work on `pctx`.
-@mmc-th local def mkPCtx1 (start: nat) (ret: set) (sp_max: nat): set =
-$ Sum ret (start <> sp_max) $;
+@mmc-th local def mkPCtx (gctx pctx1: set): set =
+$ Sum (Fst gctx) (Sum pctx1 0) $;
 
---| Procedure-global context. In lean:
---| ```lean
---| structure pctx := (G : gctx) (P : pctx1)
---| ```
---| We write it in such a way that `pctx` extends `gctx`,
---| so `gctx` extraction functions also work on `pctx`.
-@mmc-th local def mkPCtx (G P: set): set =
-$ Sum (Fst G) (Sum P 0) $;
-
-local def okStartN (G: set): nat = $ fst (lower (Snd (Fst (Snd G)))) $;
+local def okStartN (pctx: set): nat = $ fst (lower (Snd (Fst (Snd pctx)))) $;
 
 --| Block-local context. In lean:
 --| ```lean
@@ -49,194 +29,210 @@ local def okStartN (G: set): nat = $ fst (lower (Snd (Fst (Snd G)))) $;
 --| ```
 --| We write it in such a way that `bctx` extends `pctx`,
 --| so `pctx` extraction functions also work on `bctx`.
-@mmc-th local def mkBCtx (G labs: set): set = $ Sum (Fst G) (Sum (Fst (Snd G)) labs) $;
+@mmc-th local def mkBCtx (pctx labs: set): set = $ Sum (Fst pctx) (Sum (Fst (Snd pctx)) labs) $;
 
 @mmc-th theorem okContentBI: $ okContent (mkBCtx (mkPCtx (mkGCtx c T) P) L) c $ = 'sorry;
 
-local def okLabelGroupsN (G: set): set = $ Snd (Snd G) $;
-@mmc-th local def okLabelGroups (G labs: set): wff = $ okLabelGroupsN G == labs $;
-@mmc-th theorem okLabelGroupsI: $ okLabelGroups (mkBCtx G labs) labs $ = 'sorry;
+local def okLabelGroupsN (pctx: set): set = $ Snd (Snd pctx) $;
+@mmc-th local def okLabelGroups (pctx labs: set): wff = $ okLabelGroupsN pctx == labs $;
+@mmc-th theorem okLabelGroupsI: $ okLabelGroups (mkBCtx pctx labs) labs $ = 'sorry;
 
+@mmc-th local def labelGroup0: set = $ 0 $; -- TODO
+prefix labelGroup0: $LG0$ prec max;
 @mmc-th local def labelGroup (var: nat) (ls labs: set): set = $ 0 $; -- TODO
+notation labelGroup (var: nat) (ls labs: set): set = ($LG($:max) var ($,$:0) ls ($);$:0) labs;
+
 @mmc-th local def findLabels (labs: set) (var: nat) (ls: set): wff = $ F. $; -- TODO
-@mmc-th theorem findLabels1: $ findLabels (labelGroup var ls labs) var ls $ = 'sorry;
+@mmc-th theorem findLabels1: $ findLabels (LG(var, ls); labs) var ls $ = 'sorry;
 @mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
-  $ findLabels (labelGroup var1 ls1 labs) var ls $ = 'sorry;
+  $ findLabels (LG(var1, ls1); labs) var ls $ = 'sorry;
 
 -- inductive labels
 -- | and : labels → labels → labels
 -- | one : block_loc → tctx → labels
 @mmc-th local def labelA (A B: set): set = $ 0 $; -- TODO
+infixl labelA: $+L$ prec 20;
 @mmc-th local def label1 (x: nat) (P: set): set = $ 0 $; -- TODO
 
 @mmc-th local def findLabel (ls: set) (x: nat) (A: set): wff = $ F. $; -- TODO
-@mmc-th theorem findLabel_l (h: $ findLabel A x P $): $ findLabel (labelA A B) x P $ = 'sorry;
-@mmc-th theorem findLabel_r (h: $ findLabel B x P $): $ findLabel (labelA A B) x P $ = 'sorry;
+@mmc-th theorem findLabel_l (h: $ findLabel A x P $): $ findLabel (A +L B) x P $ = 'sorry;
+@mmc-th theorem findLabel_r (h: $ findLabel B x P $): $ findLabel (A +L B) x P $ = 'sorry;
 @mmc-th theorem findLabel1: $ findLabel (label1 x P) x P $ = 'sorry;
 
-local def okSP (G S: set): nat = $ 0 $; -- TODO
-local def okFreeBytes (G S: set): nat = $ 0 $; -- TODO
-local def soLayout (S: set): set = $ 0 $; -- TODO
-local def soType (S: set): set = $ 0 $; -- TODO
+local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
+local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO
+local def soLayout (lctx: set): set = $ 0 $; -- TODO
+local def soType (lctx: set): set = $ 0 $; -- TODO
 
-local def okInstN (G S: set) (fr ip) =
+@mmc-th local def ok0: set = $ 0 $; -- TODO
+
+local def okCodeN (bctx lctx: set) (fr ip) =
 $ s_ok
   (sn fr *s (
-    main_layout (okContentN G) (okSP G S) ip (okFreeBytes G S) (soLayout S) *s
-    soType S))
-  (okResultN G) $;
+    main_layout (okContentN bctx) (okSP bctx lctx) ip (okFreeBytes bctx lctx) (soLayout lctx) *s
+    soType lctx))
+  (okResultN bctx) $;
 
-local def okScopeN (G: set) (fr: nat): wff = $ F. $; -- TODO
+local def okScopeN (bctx: set) (fr: nat): wff = $ F. $; -- TODO
 
 local def contentAt (x l1 l2: nat): wff =
 $ E. p (x = text_start + p /\ sublistAt p l1 l2) $;
 
-local def okAsmd (G A: set) (x y: nat): wff =
-$ E. s (y = x + len s /\ okStartN G + y e. u64 /\
-  contentAt (okStartN G + x) (okContentN G) s /\ okStartN G <> s <> x e. A) $;
+local def okAsmd (bctx code: set) (x y: nat): wff =
+$ E. s (y = x + len s /\ okStartN bctx + y e. u64 /\
+  contentAt (okStartN bctx + x) (okContentN bctx) s /\ okStartN bctx <> s <> x e. code) $;
 
-@mmc-th local def okInst (G P A: set): wff =
-$ A. x A. y A. fr (okAsmd G A x y -> okScopeN G fr -> okInstN G P fr x) $;
+@mmc-th local def okCode (bctx lctx1 code lctx2: set): wff =
+$ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
+  okCodeN bctx lctx2 fr y -> okCodeN bctx lctx1 fr x) $;
 
-@mmc-th local def okInsts (G P A Q: set): wff =
-$ A. x A. y A. fr (okAsmd G A x y -> okScopeN G fr -> okInstN G Q fr y -> okInstN G P fr x) $;
+@mmc-th theorem okCode_0: $ okCode bctx ok0 code ok0 $ = 'sorry;
 
-@mmc-th theorem okInst_A
-  (h1: $ okInsts G P A Q $) (h2: $ okInst G Q B $): $ okInst G P (A +asm B) $ = 'sorry;
+@mmc-th theorem okCode_A
+  (h1: $ okCode bctx lctx1 code1 lctx2 $)
+  (h2: $ okCode bctx lctx2 code2 lctx3 $):
+  $ okCode bctx lctx1 (code1 +asm code2) lctx3 $ = 'sorry;
 
-@mmc-th theorem okInsts_A
-  (h1: $ okInsts G P A Q $) (h2: $ okInsts G Q B R $): $ okInsts G P (A +asm B) R $ = 'sorry;
+@mmc-th local def okProc (gctx: set) (start: nat) (args ret: set): wff = $ F. $; -- TODO
 
-@mmc-th local def okProc (G: set) (start: nat) (P: set) (epi: nat): wff = $ F. $; -- TODO
+@mmc-th local def okPrologue (epi sp: nat) (lctx: set): set =
+$ Sum (suc (epi <> sp)) (Snd lctx) $;
 
-@mmc-th local def okPrologue (epi sp: nat) (P: set): set =
-$ Sum (suc (epi <> sp)) (Snd P) $;
-
-@mmc-th local def okAssembled (G: set) (P: set): wff =
-$ E. p assembledN (okContentN G) (P @' p) $;
+@mmc-th local def okAssembled (pctx: set) (code: set): wff =
+$ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th theorem okAssembledI
-  (h1: $ okContent G c $) (h2: $ assembled c (asmProc p A) $):
-  $ okAssembled G A $ = 'sorry;
+  (h: $ assembled gctx (asmProc start code) $):
+  $ okAssembled (mkPCtx gctx pctx1) code $ = 'sorry;
 
 @mmc-th theorem okAssembled_l
-  (h1: $ okAssembled G (A +asm B) $): $ okAssembled G A $ = 'sorry;
+  (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code1 $ = 'sorry;
 
 @mmc-th theorem okAssembled_r
-  (h1: $ okAssembled G (A +asm B) $): $ okAssembled G B $ = 'sorry;
+  (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code2 $ = 'sorry;
+
+@mmc-th local def buildProc (pctx args ret lctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okProcI
-  (h1: $ okAssembled G (asmEntry start A) $)
-  (h2: $ okInst (mkBCtx G L) (okPrologue E x0 P) A $):
-  $ okProc c start P E $ = 'sorry;
+  (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry start code) $)
+  (h2: $ buildProc (mkPCtx gctx pctx1) args ret tctx $)
+  (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) (okPrologue epiRet x0 tctx) code ok0 $):
+  $ okProc gctx start args ret $ = 'sorry;
 
-@mmc-th local def okWeak (G P Q: set): wff = $ F. $; -- TODO
+@mmc-th local def okWeak (bctx lctx1 lctx2: set): wff = $ F. $; -- TODO
 
-@mmc-th local def okBlock (G: set) (ip: nat) (P: set): wff = $ F. $; -- TODO
+@mmc-th local def okBlock (bctx: set) (ip: nat) (lctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okBlock_weak
-  (h1: $ okWeak G P Q $) (h2: $ okBlock G ip Q $): $ okBlock G ip P $ = 'sorry;
+  (h1: $ okWeak bctx lctx1 lctx2 $)
+  (h2: $ okBlock bctx ip lctx2 $):
+  $ okBlock bctx ip lctx1 $ = 'sorry;
 
 @mmc-th theorem okBlockI
-  (h1: $ okAssembled G (asmAt ip A) $)
-  (h2: $ okInst (mkBCtx G L) P A $): $ okBlock (mkBCtx G L) ip P $ = 'sorry;
+  (h1: $ okAssembled pctx (asmAt ip code) $)
+  (h2: $ okCode (mkBCtx pctx L) lctx code ok0 $):
+  $ okBlock (mkBCtx pctx L) ip lctx $ = 'sorry;
 
-@mmc-th theorem okInst_loop
-  (h: $ okInst (mkBCtx G (labelGroup var ls L)) P A $):
-  $ okInst (mkBCtx G L) P A $ = 'sorry;
+@mmc-th theorem okCode_loop
+  (h: $ okCode (mkBCtx pctx (labelGroup var ls L)) lctx code ok0 $):
+  $ okCode (mkBCtx pctx L) lctx code ok0 $ = 'sorry;
 
-@mmc-th local def okPushVariant (v: nat) (P Q: set): wff = $ F. $; -- TODO
+@mmc-th local def okPushVariant (v: nat) (lctx1 lctx2: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okBlock_label
   (h1: $ findLabels L var ls $)
-  (h2: $ findLabel ls ip A $)
-  (h3: $ okPushVariant var A B $):
-  $ okBlock (mkBCtx G L) ip B $ = 'sorry;
+  (h2: $ findLabel ls ip lctx1 $)
+  (h3: $ okPushVariant var lctx1 lctx2 $):
+  $ okBlock (mkBCtx pctx L) ip lctx2 $ = 'sorry;
 
-@mmc-th local def okEpi (G P: set) (epi sp_max: nat): wff = $ F. $; -- TODO
+@mmc-th local def okEpi (bctx: set) (epi sp_max: nat) (tctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okPrologue_push (h: $ sp + x8 = sp2 $):
-  $ okInsts G (okPrologue E sp P) (instPush (IRM_reg r)) (okPrologue (epiPop r E) sp2 P) $ =
+  $ okCode bctx
+    (okPrologue epi sp tctx)
+    (instPush (IRM_reg r))
+    (okPrologue (epiPop r epi) sp2 tctx) $ =
 'sorry;
 
 @mmc-th theorem okPrologue_alloc
-  (h1: $ okEpi G P (epiFree n E) sp $)
+  (h1: $ okEpi bctx (epiFree n epi) n tctx $)
   (h2: $ sp + n = m $) (h3: $ m < ,{2 ^ 12} $):
-  $ okInsts G (okPrologue E sp P) (instBinop x5 wSz64 x4 (IRM_imm32 n)) P $ = 'sorry;
+  $ okCode bctx (okPrologue epi sp tctx) ,(instSub 'wSz64 RSP '(IRM_imm32 n)) tctx $ = 'sorry;
 
 @mmc-th theorem okPrologue_alloc0
-  (h1: $ okEpi G P E x0 $)
-  (h2: $ okInst G (okPrologue E sp P) A $): $ okInst G P A $ = 'sorry;
+  (h1: $ okEpi bctx epi x0 tctx $)
+  (h2: $ okCode bctx (okPrologue epi sp tctx) code lctx2 $):
+  $ okCode bctx tctx code lctx2 $ = 'sorry;
 
 @mmc-th local def okEpilogue (epi: nat): set = $ 0 $; -- TODO
 
 @mmc-th theorem okEpilogue_free:
-  $ okInsts G (okEpilogue (epiFree n E)) (instBinop x0 wSz64 x4 (IRM_imm32 n)) (okEpilogue E) $ =
+  $ okCode bctx (okEpilogue (epiFree n E)) ,(instAdd 'wSz64 RSP '(IRM_imm32 n)) (okEpilogue E) $ =
 'sorry;
 
 @mmc-th theorem okEpilogue_pop:
-  $ okInsts G (okEpilogue (epiPop r E)) (instPop r) (okEpilogue E) $ = 'sorry;
+  $ okCode bctx (okEpilogue (epiPop r E)) (instPop r) (okEpilogue E) $ = 'sorry;
 
 @mmc-th theorem okEpilogue_ret:
-  $ okInst G (okEpilogue epiRet) instRet $ = 'sorry;
+  $ okCode bctx (okEpilogue epiRet) instRet ok0 $ = 'sorry;
 
 @mmc-th local def Loc_reg (r: hex): nat = $ 0 $; -- TODO
 @mmc-th local def Loc_local (off: nat): nat = $ 0 $; -- TODO
 
 @mmc-th local def spillslot (v: nat): nat = $ 0 $; -- TODO
 
-@mmc-th local def okRead (P: set) (src v: nat): wff = $ F. $; -- TODO
-@mmc-th local def okWrite (P: set) (dst v: nat) (Q: set): wff = $ F. $; -- TODO
+@mmc-th local def okRead (tctx1: set) (src v: nat): wff = $ F. $; -- TODO
+@mmc-th local def okWrite (tctx1: set) (dst v: nat) (tctx2: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem ok_movRR
-  (h1: $ okRead P (Loc_reg src) v $)
-  (h2: $ okWrite P (Loc_reg dst) v Q $):
-  $ okInsts G P (instMov wSz64 (IRM_reg dst) (IRM_reg src)) Q $ = 'sorry;
+  (h1: $ okRead tctx1 (Loc_reg src) v $)
+  (h2: $ okWrite tctx1 (Loc_reg dst) v tctx2 $):
+  $ okCode bctx tctx1 (instMov wSz64 (IRM_reg dst) (IRM_reg src)) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_spill
-  (h1: $ okRead P (Loc_reg src) v $)
-  (h2: $ okWrite P (Loc_local off) (spillslot v) Q $):
-  $ okInsts G P (instMov wSz64 (IRM_mem 0 x4 (posZ off)) (IRM_reg src)) Q $ = 'sorry;
+  (h1: $ okRead tctx1 (Loc_reg src) v $)
+  (h2: $ okWrite tctx1 (Loc_local off) (spillslot v) tctx2 $):
+  $ okCode bctx tctx1 (instMov wSz64 (IRM_mem 0 ,RSP (posZ off)) (IRM_reg src)) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_unspill
-  (h1: $ okRead P (Loc_local off) (spillslot v) $)
-  (h2: $ okWrite P (Loc_reg dst) v Q $):
-  $ okInsts G P (instMov wSz64 (IRM_reg dst) (IRM_mem 0 x4 (posZ off))) Q $ = 'sorry;
+  (h1: $ okRead tctx1 (Loc_local off) (spillslot v) $)
+  (h2: $ okWrite tctx1 (Loc_reg dst) v tctx2 $):
+  $ okCode bctx tctx1 (instMov wSz64 (IRM_reg dst) (IRM_mem 0 ,RSP (posZ off))) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_jump
-  (h: $ okBlock G tgt P $):
-  $ okInst G P (instJump tgt) $ = 'sorry;
+  (h: $ okBlock bctx tgt tctx $):
+  $ okCode bctx tctx (instJump tgt) ok0 $ = 'sorry;
 
-@mmc-th local def withFlags (f: nat) (P: set): set = $ 0 $; -- TODO
+@mmc-th local def withFlags (f: nat) (tctx: set): set = $ 0 $; -- TODO
 @mmc-th local def invertCond (c d: hex): wff = $ F. $; -- TODO
-@mmc-th local def flagCond (f: nat) (c: hex) (A: set): wff = $ F. $; -- TODO
-@mmc-th local def okPushVar (P A Q: set): wff = $ F. $; -- TODO
-@mmc-th local def ty_not (A: set): set = $ 0 $; -- TODO
+@mmc-th local def flagCond (f: nat) (c: hex) (ty: set): wff = $ F. $; -- TODO
+@mmc-th local def okPushVar (tctx1 code tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def ty_not (ty: set): set = $ 0 $; -- TODO
 
 @mmc-th theorem ok_jcc
-  (h1: $ flagCond f c A $)
-  (h2: $ okPushVar P A Q1 $)
-  (h3: $ okPushVar P (ty_not A) Q2 $)
-  (h4: $ okBlock G tgt Q1 $):
-  $ okInsts G (withFlags f P) (instJCC c tgt) Q2 $ = 'sorry;
+  (h1: $ flagCond f c ty $)
+  (h2: $ okPushVar tctx ty tctx1 $)
+  (h3: $ okPushVar tctx (ty_not ty) tctx2 $)
+  (h4: $ okBlock bctx tgt tctx1 $):
+  $ okCode bctx (withFlags f tctx) (instJCC c tgt) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_jcc_invert
   (h0: $ invertCond notc c $)
-  (h1: $ flagCond f c A $)
-  (h2: $ okPushVar P A Q1 $)
-  (h3: $ okPushVar P (ty_not A) Q2 $)
-  (h4: $ okBlock G tgt Q2 $):
-  $ okInsts G (withFlags f P) (instJCC notc tgt) Q1 $ = 'sorry;
+  (h1: $ flagCond f c ty $)
+  (h2: $ okPushVar tctx ty tctx1 $)
+  (h3: $ okPushVar tctx (ty_not ty) tctx2 $)
+  (h4: $ okBlock bctx tgt tctx2 $):
+  $ okCode bctx (withFlags f tctx) (instJCC notc tgt) tctx1 $ = 'sorry;
 
-@mmc-th theorem ok_ud2: $ okInst G P instUD2 $ = 'sorry;
+@mmc-th theorem ok_ud2: $ okCode bctx tctx1 instUD2 ok0 $ = 'sorry;
 
 @mmc-th theorem ok_assert
-  (h1: $ flagCond f c A $)
-  (h2: $ okPushVar P A Q $)
-  (h4: $ okBlock G tgt Q $):
-  $ okInst G (withFlags f P) (instAssert c tgt) $ = 'sorry;
+  (h1: $ flagCond f c ty $)
+  (h2: $ okPushVar tctx ty tctx2 $)
+  (h3: $ okBlock bctx tgt tctx2 $):
+  $ okCode bctx (withFlags f tctx) (instAssert c tgt) ok0 $ = 'sorry;
 
 @mmc-th local def okDefer (P A: set): set = $ 0 $; -- TODO
 
 @mmc-th theorem okDeferI:
-  $ okInsts G P A (okDefer P A) $ = 'sorry;
+  $ okCode G P A (okDefer P A) $ = 'sorry;

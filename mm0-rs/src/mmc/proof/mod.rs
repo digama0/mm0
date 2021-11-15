@@ -7,12 +7,13 @@
   clippy::if_not_else, non_snake_case)]
 
 // Lints because the code is not finished
-// #![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
+#![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
 
 #[macro_use] mod macros;
 mod predefs;
 mod norm_num;
 mod assembler;
+mod compiler;
 
 use std::collections::HashMap;
 use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, SortId, Span, TermId, ThmId};
@@ -109,7 +110,7 @@ macro_rules! make_dedup {
         self.add(proof::$hash::Dummy(s, sort))
       }
       fn build0(&mut self, i: $id) -> (Box<[$node]>, $node) {
-        self.de.calc_use([i.into_usize()]);
+        self.de.calc_use(0, [i.into_usize()]);
         let (mut ids, heap) = proof::build(&self.de);
         (heap, ids[i.into_usize()].take())
       }
@@ -139,12 +140,12 @@ impl ProofDedup<'_> {
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
 
-  fn thm0(&mut self, env: &Environment, name: ThmId) -> ProofId {
+  fn thm0(&mut self, env: &Environment, name: ThmId) -> (ProofId, ProofId) {
     let thd = &env.thms[name];
     assert!(thd.args.is_empty() && thd.hyps.is_empty());
     let refs = self.from_expr_nodes(&thd.heap);
     let concl = self.from_expr_node(&thd.ret, &refs);
-    self.thm(name, &[], concl)
+    (concl, self.thm(name, &[], concl))
   }
 
   fn refl_conv(&mut self, e: ProofId) -> ProofId {
@@ -234,15 +235,17 @@ enum Name {
   /// `foo_asms: assemble foo_content <foo_start> <foo_end> (asmProc <foo_start> foo_asm)`:
   /// the incomplete assembly proof
   ProcAsmThm(Option<Symbol>),
-  /// `content: string`: The full machine code string
+  /// `foo_content: string`: The full machine code string
   Content,
-  /// `asmd: assembled content <asm>`: A theorem that asserts that `content` assembles to a list of
+  /// `foo_gctx: set`: The global context, which includes `content` and the exit proposition
+  GCtx,
+  /// `foo_asmd: assembled gctx <asm>`: A theorem that asserts that `content` assembles to a list of
   /// procedures, referencing the `ProcAsm` definitions,
-  /// for example `assembled content (foo_asm +asm bar_asm +asm my_const_asm)`
+  /// for example `assembled foo_gctx (foo_asm +asm bar_asm +asm my_const_asm)`
   AsmdThm,
-  /// `asmd_lem{n}: assembled content <asm>`: A conjunct in `AsmdThm` extracted as a lemma
+  /// `asmd_lem{n}: assembled foo_gctx <asm>`: A conjunct in `AsmdThm` extracted as a lemma
   AsmdThmLemma(u32),
-  /// `foo_asmd: assembled foo_content (asmProc <foo_start> foo_asm)`: the completed assembly proof
+  /// `foo_asmd: assembled foo_gctx (asmProc <foo_start> foo_asm)`: the completed assembly proof
   ProcAsmdThm(Option<Symbol>),
 }
 
@@ -258,6 +261,7 @@ impl std::fmt::Display for Name {
       Name::ProcAsmdThm(None) => write!(f, "_start_asmd"),
       Name::ProcAsmdThm(Some(proc)) => write!(f, "{}_asmd", proc),
       Name::Content => write!(f, "content"),
+      Name::GCtx => write!(f, "gctx"),
       Name::AsmdThm => write!(f, "asmd"),
       Name::AsmdThmLemma(n) => write!(f, "asmd_lem{}", n),
     }

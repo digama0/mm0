@@ -486,6 +486,48 @@ make_predefs! {
   parseUD2: ThmId => "parseUD2";
   parseAssert: ThmId => "parseAssert";
 
+  mkGCtx: TermId => "mkGCtx";
+  mkPCtx1: TermId => "mkPCtx1";
+  mkPCtx: TermId => "mkPCtx";
+  mkBCtx: TermId => "mkBCtx";
+
+  ok0: TermId => "ok0";
+
+  labelGroup0: TermId => "labelGroup0";
+  labelGroup: TermId => "labelGroup";
+
+  okAssembled: TermId => "okAssembled";
+  okAssembledI: ThmId => "okAssembledI";
+  okAssembled_l: ThmId => "okAssembled_l";
+  okAssembled_r: ThmId => "okAssembled_r";
+
+  okCode: TermId => "okCode";
+  okCode_0: ThmId => "okCode_0";
+  okCode_A: ThmId => "okCode_A";
+
+  buildProc: TermId => "buildProc";
+
+  okProc: TermId => "okProc";
+  okProcI: ThmId => "okProcI";
+
+  okPrologue: TermId => "okPrologue";
+  okPrologue_push: ThmId => "okPrologue_push";
+  okPrologue_alloc: ThmId => "okPrologue_alloc";
+  okPrologue_alloc0: ThmId => "okPrologue_alloc0";
+
+  epiRet: TermId => "epiRet";
+  epiFree: TermId => "epiFree";
+  epiPop: TermId => "epiPop";
+
+  Loc_reg: TermId => "Loc_reg";
+  Loc_local: TermId => "Loc_local";
+
+  spillslot: TermId => "spillslot";
+
+  ok_movRR: ThmId => "ok_movRR";
+  ok_spill: ThmId => "ok_spill";
+  ok_unspill: ThmId => "ok_unspill";
+
   // basicElf_ok: ThmId => "basicElf_ok";
 }
 

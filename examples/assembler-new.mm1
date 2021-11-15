@@ -396,6 +396,15 @@ $ ds e. DestSrc /\ destRM ds = IRM_reg dst /\ src = suc (srcIRM ds) $;
 $ S\ p, S\ s, {x | E. ds (mkRegRMI dst src ds /\
   opc < x8 -> decode (xastBinop opc sz ds) s)} $;
 
+do {
+  --| A macro for `(instBinop x0 sz dst src)` which is a bit easier to read
+  (def (instAdd sz dst src) '(instBinop ,(hexdigit @ eval '(binopAdd)) ,sz ,dst ,src))
+  --| A macro for `(instBinop x5 sz dst src)` which is a bit easier to read
+  (def (instSub sz dst src) '(instBinop ,(hexdigit @ eval '(binopSub)) ,sz ,dst ,src))
+  --| A macro for `x4` when used as the stack pointer register
+  (def RSP (hexdigit @ eval '(RSP)))
+};
+
 @mmc-th local def parseBinop (op: hex) (sz: nat) (dst: hex) (src: nat) (I: set): wff =
 $ src != 0 -> instBinop op sz dst src C_ I $;
 
@@ -775,12 +784,6 @@ $ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p <> t1 <> 0 
 $ E. x E. s (s != 0 /\ sublistAt x c s /\
   text_start + x + len s e. u64 /\ s <> (text_start + x) e. P) $;
 
---| `assembled c P` (assembly output) asserts that if the full file content is `c`,
---| then `P` holds of some nonempty substring in `c`.
---| `P` will contain embedded assertions about the position or the
---| string where relevant (using `asmAt`), so that the existential is uniquely determined.
-@mmc-th local def assembled (c: string) (P: set): wff = $ assembledN c P $;
-
 @mmc-th local def isU64 (n: nat): wff = $ n e. u64 $;
 
 -- Proves, for digits i = 0, .., 15:
@@ -796,9 +799,30 @@ do (ignore @ on-hexstrings @ fn (n)
     '(isU64 ,(foldr (range 0 i) '(h2n ,(ai i)) @ fn (j x) '(hex ,x ,(ai j)))) () @ fn ()
     '(xelu64i ,(iterate {i // 2} (fn (x) '(xelBits8S ,x)) (atom-app 'xelBits8 {{i % 2} + 1})))));
 
+--| Global context. In lean:
+--| ```lean
+--| structure gctx := (content : string) (result : prop)
+--| ```
+@mmc-th local def mkGCtx (content: string) (result: set): set =
+$ Sum (Sum content result) 0 $;
+
+local def okContentN (G: set): nat = $ lower (Fst (Fst G)) $;
+@mmc-th local def okContent (G: set) (c: string): wff = $ okContentN G = c $;
+@mmc-th theorem okContentGI: $ okContent (mkGCtx c T) c $ = 'sorry;
+
+local def okResultN (G: set): set = $ Snd (Fst G) $;
+@mmc-th local def okResult (G: set) (T: set): wff = $ okResultN G == T $;
+@mmc-th theorem okResultGI: $ okResult (mkGCtx c T) T $ = 'sorry;
+
+--| `assembled (mkGCtx c _) P` (assembly output) asserts that if the full file content is `c`,
+--| then `P` holds of some nonempty substring in `c`.
+--| `P` will contain embedded assertions about the position or the
+--| string where relevant (using `asmAt`), so that the existential is uniquely determined.
+@mmc-th local def assembled (G P: set): wff = $ assembledN (okContentN G) P $;
+
 @mmc-th theorem assembledI
-  (h1: $ assemble c ,0x400078 y A $) (h2: $ isU64 y $): $ assembled c A $ = 'sorry;
+  (h1: $ assemble c ,0x400078 y A $) (h2: $ isU64 y $): $ assembled (mkGCtx c T) A $ = 'sorry;
 
-@mmc-th theorem assembled_l (h1: $ assembled c (A ++asm B) $): $ assembled c A $ = 'sorry;
+@mmc-th theorem assembled_l (h1: $ assembled G (A ++asm B) $): $ assembled G A $ = 'sorry;
 
-@mmc-th theorem assembled_r (h1: $ assembled c (A ++asm B) $): $ assembled c B $ = 'sorry;
+@mmc-th theorem assembled_r (h1: $ assembled G (A ++asm B) $): $ assembled G B $ = 'sorry;

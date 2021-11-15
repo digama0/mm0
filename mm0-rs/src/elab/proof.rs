@@ -241,7 +241,7 @@ impl<H: NodeHash> Dedup<H> {
   /// shared, and every unreachable node is marked as [`NodeHash::NONE`].
   /// This can be used instead of [`IDedup::reuse`] when reuse patterns are not
   /// easily determinable.
-  pub fn calc_use(&mut self, roots: impl IntoIterator<Item=usize>) {
+  pub fn calc_use(&mut self, num_args: usize, roots: impl IntoIterator<Item=usize>) {
     use bit_set::BitSet;
     fn check<H: NodeHash>(de: &mut Dedup<H>, used: &mut BitSet, n: usize) {
       let val = &mut de.vec[n];
@@ -252,6 +252,8 @@ impl<H: NodeHash> Dedup<H> {
       }
     }
     let mut used = BitSet::with_capacity(self.vec.len());
+    for i in 0..num_args { used.insert(i); }
+    for val in &mut self.vec[num_args..] { val.1 = false }
     for i in roots { check(self, &mut used, i) }
     for (n, val) in self.vec.iter_mut().enumerate() {
       if !used.contains(n) {
