@@ -334,7 +334,41 @@ pub struct NotaInfo {
   pub rassoc: Option<bool>,
   /// The literals of the notation declaration. For a `notation` these are declared directly,
   /// but for a `prefix` or `infix`, the equivalent notation literals are generated.
+  ///
+  /// For (generalized) infix notations, this list starts with `Var, Const` corresponding
+  /// to the first variable and then the main constant, while for prefix notations
+  /// the leading constant is omitted from the list.
   pub lits: Vec<Literal>,
+}
+
+impl NotaInfo {
+  /// Returns `Some(prec)` if this generalized infix notation is equivalent to a
+  /// plain infix declaration with the given `rassoc, tk, prec`.
+  #[must_use] pub fn is_infix(&self) -> Option<(bool, &ArcString, u32)> {
+    let rassoc = self.rassoc?;
+    if let [
+      Literal::Var(0, Prec::Prec(mut prec)),
+      Literal::Const(ref tk),
+      Literal::Var(1, Prec::Prec(mut prec2))
+    ] = *self.lits {
+      if rassoc { std::mem::swap(&mut prec, &mut prec2) }
+      if prec2 != prec + 1 { return None }
+      Some((rassoc, tk, prec))
+    } else { None }
+  }
+
+  /// Returns `Some(prec)` if this prefix notation is equivalent to a prefix declaration.
+  #[must_use] pub fn is_prefix(&self, lead_prec: Prec) -> bool {
+    if let Some((last, rest)) = self.lits.split_last() {
+      if self.rassoc != Some(true) { return false }
+      for (i, lit) in rest.iter().enumerate() {
+        if !matches!(*lit, Literal::Var(j, Prec::Max) if j == i) { return false }
+      }
+      matches!(*last, Literal::Var(j, prec) if j == rest.len() && prec == lead_prec)
+    } else {
+      true
+    }
+  }
 }
 
 /// A coercion between two sorts. These are interpreted in a context `c: s1 -> s2` where `s1` and

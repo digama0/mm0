@@ -434,6 +434,7 @@ impl Elaborator {
     let mut get_var = |sp: Span| -> Result<usize> {
       let v = vars.get_mut(ast.span(sp))
         .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
+      if v.1 { return Err(ElabError::new_e(sp, "variable used twice in notation")) }
       v.1 = true;
       Ok(v.0)
     };

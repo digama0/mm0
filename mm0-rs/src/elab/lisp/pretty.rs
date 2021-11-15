@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use std::{mem, fmt};
 use std::borrow::Cow;
+use mm0_util::ArcString;
 use pretty::DocAllocator;
 use itertools::Itertools;
 use crate::{LispVal, LispKind, Uncons, FormatEnv,
@@ -25,6 +26,8 @@ pub enum Annot {
   Visibility(Modifiers),
   /// This is a keyword, like `axiom` or `sort`.
   Keyword,
+  /// This is a precedence, like `23` or `max`.
+  Prec,
   /// This is a sort name, like `foo` in `sort foo;`.
   SortName(SortId),
   /// This is a term/def name, like `foo` in `term foo: nat;`.
@@ -127,7 +130,7 @@ fn covariant<'a>(from: RefDoc<'static>) -> RefDoc<'a> {
 impl<'a> Pretty<'a> {
   /// The empty string `""` as a [`RefDoc`](pretty::RefDoc).
   #[must_use] pub fn nil() -> RefDoc<'a> {covariant(NIL)}
-  // fn hardline() -> RefDoc<'a> {covariant(HARDLINE)}
+  fn hardline() -> RefDoc<'a> {covariant(HARDLINE)}
   fn space() -> RefDoc<'a> {covariant(SPACE)}
   fn line() -> RefDoc<'a> {covariant(LINE)}
   // fn line_() -> RefDoc<'a> {covariant(LINE_)}
@@ -246,10 +249,10 @@ impl<'a> Pretty<'a> {
     let env = self.fe.env;
     let a = u.next()?.as_atom()?;
     let ad = &env.data[a];
-    let t = if let Some(DeclKey::Term(t)) = ad.decl {t} else {None?};
+    let t = if let Some(DeclKey::Term(t)) = ad.decl { t } else { return None };
     let mut args = vec![];
     let nargs = env.terms[t].args.len();
-    if !u.exactly(nargs) {None?}
+    if !u.exactly(nargs) { return None }
     u.extend_into(nargs, &mut args);
     Some((ad, t, args))
   }
@@ -258,12 +261,12 @@ impl<'a> Pretty<'a> {
   /// for which this expression would not need brackets.
   pub(crate) fn pp_expr(&'a self, e: &LispVal) -> (Prec, Pp<'a>) {
     let p: *const LispKind = &**e;
-    if let Some(&(_, v1)) = self.hash.borrow().get(&p) {return v1}
+    if let Some(&(_, v1)) = self.hash.borrow().get(&p) { return v1 }
     let v = (|| Some({
       let env = self.fe.env;
       let (ad, t, args) = self.get_term_args(e)?;
       if let Some(&(coe, ref fix)) = env.pe.decl_nota.get(&t) {
-        if coe {return Some(self.pp_expr(&args[0]))}
+        if coe { return Some(self.pp_expr(&args[0])) }
         if let Some(&(ref tk, infix)) = fix.first() {
           let doc = if infix {
             let info = &env.pe.infixes[tk];
@@ -490,6 +493,136 @@ impl<'a> Pretty<'a> {
     doc = self.append_annot(doc, Annot::SortName(sid),
       self.alloc(Doc::text(s.name.as_str())));
     self.append_doc(doc, s!(";"))
+  }
+
+  /// Pretty print a coercion declaration, with annotations, that is:
+  ///`coercion <name>: <sort> > <sort>;`.
+  /// Panics if the term is not a coercion.
+  pub fn coercion(&'a self, tid: TermId) -> RefDoc<'a> {
+    let t = &self.fe.env.terms[tid];
+    let doc = self.annot(Annot::Keyword, s!("coercion"));
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::TermName(tid),
+      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+    let doc = self.append_doc(doc, s!(": "));
+    let ty = if let [(_, Type::Reg(ty, 0))] = *t.args { ty } else { panic!("not a coercion") };
+    let doc = self.append_annot(doc, Annot::SortName(ty),
+      self.alloc(Doc::text(self.fe.env.sorts[ty].name.to_string())));
+    let doc = self.append_doc(doc, s!(" > "));
+    let doc = self.append_annot(doc, Annot::SortName(t.ret.0),
+      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string())));
+    self.append_doc(doc, s!(";"))
+  }
+
+  /// Pretty print a simple notation declaration, with annotations, that is:
+  ///`infix <name>: $<const>$ prec <n>;`.
+  pub fn simple_nota(&'a self,
+    tid: TermId, kw: RefDoc<'a>, tk: &ArcString, prec: Prec
+  ) -> RefDoc<'a> {
+    let t = &self.fe.env.terms[tid];
+    let doc = self.annot(Annot::Keyword, kw);
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::TermName(tid),
+      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+    let doc = self.append_doc(doc, s!(": $"));
+    let doc = self.append_annot(doc, Annot::TermName(tid),
+      self.alloc(Doc::text(format!("{}", tk))));
+    let doc = self.append_doc(doc, s!("$ "));
+    let doc = self.append_annot(doc, Annot::Keyword, s!("prec"));
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::Prec,
+      self.alloc(Doc::text(format!("{}", prec))));
+    self.append_doc(doc, s!(";"))
+  }
+
+  /// Print a constant notation literal like `($e.$:23)`.
+  fn const_lit(&'a self, tk: &ArcString) -> RefDoc<'a> {
+    let doc = self.alloc(Doc::text(format!("${}$:", tk)));
+    let doc = self.append_annot(doc, Annot::Prec,
+      self.alloc(Doc::text(format!("{}", self.fe.env.pe.consts[tk].1))));
+    self.append_doc(self.append_doc(self.lparen, doc), self.rparen)
+  }
+
+  /// Pretty print a notation declaration, with annotations, e.g.
+  /// `notation foo (x y: nat): nat = ($FOO$:2) x ($,$:max) y: <n> rassoc;`.
+  pub fn notation(&'a self, nota: &NotaInfo, prefix: Option<&ArcString>) -> RefDoc<'a> {
+    if let Some(tk) = prefix {
+      let prec = self.fe.env.pe.consts[tk].1;
+      if nota.is_prefix(prec) {
+        return self.simple_nota(nota.term, s!("prefix"), tk, prec)
+      }
+    } else if let Some((rassoc, tk, prec)) = nota.is_infix() {
+      let kw = if rassoc {s!("infixr")} else {s!("infixl")};
+      return self.simple_nota(nota.term, kw, tk, Prec::Prec(prec))
+    }
+    let t = &self.fe.env.terms[nota.term];
+    let doc = self.annot(Annot::Keyword, s!("notation"));
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::TermName(nota.term),
+      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+    let mut bvars = vec![];
+    let doc = self.grouped_binders(doc, &t.args, &mut bvars);
+    let doc = self.append_doc(doc, s!(":"));
+    let doc = self.alloc(Doc::Group(doc));
+    let doc = self.append_doc(doc, Self::softline());
+    let doc = self.append_annot(doc, Annot::SortName(t.ret.0),
+      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string())));
+    let doc = self.dep_type(&bvars, t.ret.1, doc);
+    let doc = self.append_doc(doc, s!(" ="));
+    let doc = self.alloc(Doc::Group(doc));
+    let mut buf = None;
+    let mut push_doc = |doc| match buf {
+      Some(ref mut buf) => *buf = self.append_doc(*buf, self.append_doc(Self::softline(), doc)),
+      None => buf = Some(doc),
+    };
+    if let Some(tk) = prefix { push_doc(self.const_lit(tk)) }
+    for lit in &nota.lits {
+      push_doc(match lit {
+        &Literal::Var(i, _) => {
+          let a = t.args[i].0.unwrap_or(AtomId::UNDER);
+          self.alloc(Doc::text(self.fe.env.data[a].name.to_string()))
+        }
+        Literal::Const(tk) => self.const_lit(tk)
+      })
+    }
+    let mut buf = buf.expect("bad notation");
+    if_chain! {
+      if prefix.is_none();
+      if let Some(&Literal::Var(_, prec1)) = nota.lits.first();
+      if let Some(&Literal::Var(_, prec2)) = nota.lits.last();
+      if let Some(rassoc) = nota.rassoc;
+      then {
+        let doc = self.append_doc(doc, s!(":"));
+        let doc = self.alloc(Doc::Group(doc));
+        let doc = self.append_doc(doc, Self::line());
+        let doc = self.append_annot(doc, Annot::Prec,
+          self.alloc(Doc::text(format!("{}", if rassoc {prec2} else {prec1}))));
+        let doc = self.append_doc(doc, Self::space());
+        buf = self.append_annot(doc, Annot::Keyword, if rassoc {s!("rassoc")} else {s!("lassoc")});
+      }
+    }
+    let buf = self.alloc(Doc::Group(self.append_doc(buf, s!(";"))));
+    let doc = self.append_doc(doc, self.append_doc(Self::line(), buf));
+    self.alloc(Doc::Group(doc))
+  }
+
+  /// Pretty-prints a `term` or `def` declaration, followed by any applicable notations for it.
+  pub fn term_and_notations(&'a self, tid: TermId, show_def: bool) -> RefDoc<'a> {
+    let mut doc = self.term(tid, show_def);
+    if let Some(&(coe, ref fix)) = self.fe.env.pe.decl_nota.get(&tid) {
+      if coe {
+        doc = self.append_doc(doc, self.append_doc(Self::hardline(), self.coercion(tid)))
+      }
+      for &(ref tk, infix) in fix {
+        let (prefix, nota) = if infix {
+          (None, &self.fe.env.pe.infixes[tk])
+        } else {
+          (Some(tk), &self.fe.env.pe.prefixes[tk])
+        };
+        doc = self.append_doc(doc, self.append_doc(Self::hardline(), self.notation(nota, prefix)))
+      }
+    }
+    doc
   }
 
   /// Pretty-prints an `axiom` or `theorem` declaration, for example

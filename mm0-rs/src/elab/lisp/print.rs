@@ -244,7 +244,7 @@ impl Display for Sort {
 impl EnvDisplay for Term {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     if let Some(DeclKey::Term(tid)) = fe.env.data[self.atom].decl {
-      fe.pretty(|p| p.term(tid, true).render_fmt(80, f))
+      fe.pretty(|p| p.term_and_notations(tid, true).render_fmt(80, f))
     } else { panic!("undeclared term") }
   }
 }

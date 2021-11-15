@@ -58,6 +58,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
       Annot::SortModifiers(_) => tag!(span "sortmod"),
       Annot::Visibility(_) => tag!(span "vis"),
       Annot::Keyword => tag!(span "kw"),
+      Annot::Prec => tag!(span "prec"),
       Annot::SortName(sid) => {
         write!(self.w.0, "<a class=\"sortname\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.sorts[sid].atom];
@@ -618,7 +619,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
               render_doc(&mut file, &td.doc)?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
-              fe.pretty(|pr| pr.term(tid, true).render_raw(PP_WIDTH, w))?;
+              fe.pretty(|pr| pr.term_and_notations(tid, true).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?
             }
             DeclKey::Thm(tid) => {
