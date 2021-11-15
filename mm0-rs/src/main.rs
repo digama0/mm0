@@ -15,7 +15,8 @@ fn main() -> std::io::Result<()> {
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
       (@arg quiet: -q --quiet "Hide diagnostic messages")
       (@arg strip: -s --("strip") "Don't add debugging data to .mmb files")
-      (@arg output: -o --output [FILE] "Print 'output' commands to a file (use '-' to print to stdout)")
+      (@arg output: -o --output [FILE]
+        "Print 'output' commands to a file (use '-' to print to stdout)")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output file (.mmb or .mmu)"))
     (@subcommand join =>
@@ -28,9 +29,11 @@ fn main() -> std::io::Result<()> {
       (about: "Build documentation pages")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output folder, or 'doc' if omitted")
-      (@arg only: --only [THMS] "Show only declarations THMS (a comma separated list)")
-      (@arg open: --open <THM> "Open the generated documentation in a browser")
-      (@arg order: --("order") <ORDER>
+      (@arg only: --only [THMS] +use_delimiter
+        "Show only declarations THMS (a comma separated list)")
+      (@arg open: --open "Open the generated documentation in a browser")
+      (@arg open_to: --("open-to") [THM] "Open a particular generated page (implies --open)")
+      (@arg order: --("order") [ORDER]
          possible_values(&["pre", "post"]) default_value("post")
          "Proof tree traversal order")
       (@arg src: --src [URL] "Use URL as the base for source doc links (use - to disable)")));

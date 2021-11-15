@@ -677,7 +677,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     _ => unreachable!(),
   };
   let mut to_open = None;
-  let only = args.value_of("only");
+  let only = args.values_of("only");
   let index = if only.is_some() {None} else {
     let mut path = dir.clone();
     path.push("index.html");
@@ -710,7 +710,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   };
   let target = args.value_of("open").and_then(&mut get_thm);
   if let Some(only) = only {
-    let thms = only.split(',').filter_map(get_thm).collect::<Vec<_>>();
+    let thms = only.filter_map(get_thm).collect::<Vec<_>>();
     for (i, &tid) in thms.iter().enumerate() {
       let path = bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
       if to_open.is_none() || target == Some(tid) {
@@ -720,7 +720,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   } else if let Some(path) = bd.write_all(&path, target, old.stmts())? {
     to_open = Some(path)
   }
-  if args.is_present("open") {
+  if args.is_present("open") || args.is_present("open_to") {
     if let Some(path) = to_open {
       let path = std::fs::canonicalize(path).expect("bad path");
       let path = Url::from_file_path(path).expect("bad path");
