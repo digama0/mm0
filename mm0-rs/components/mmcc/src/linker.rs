@@ -1,20 +1,18 @@
 //! Handles layout of functions, globals, constants in the overall program.
 
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
-use std::ops::Index;
 
 use crate::build_vcode::VCodeCtx;
 use crate::codegen::FUNCTION_ALIGN;
-use crate::mir_opt::storage::{Allocations, AllocId};
+use crate::mir_opt::storage::Allocations;
 use crate::regalloc::{PCode, regalloc_vcode};
-use crate::types::global::{self, TyKind, ExprKind};
-use crate::types::entity::{ConstTc, Entity, ProcTc, ProcTy};
+use crate::types::global::{TyKind, ExprKind};
+use crate::types::entity::{ConstTc, Entity, ProcTc};
 use crate::types::mir::{
-  Cfg, ConstKind, Constant, Place, Proc, RValue, Terminator, Ty, VarId, Visitor};
+  Cfg, ConstKind, Constant, Place, Proc, Terminator, Ty, VarId, Visitor};
 use crate::types::vcode::{GlobalId, ProcId, ConstRef};
-use crate::types::{IdxVec, Size, Spanned};
-use crate::{Idx, Symbol};
+use crate::types::{IdxVec, Size};
+use crate::Symbol;
 
 type GenericCall = (Symbol, Box<[Ty]>);
 
@@ -79,7 +77,7 @@ impl<'a> Collector<'a> {
     }
   }
 
-  fn collect_generics(&mut self, f: Symbol, args: &[Ty], calls: &HashSet<GenericCall>) {
+  fn collect_generics(&mut self, args: &[Ty], calls: &HashSet<GenericCall>) {
     for &(g, ref tys) in calls {
       let args: Box<[_]> = tys.iter().map(|ty| ty.subst(args)).collect();
       self.collect_func(g, &args);
@@ -126,13 +124,13 @@ impl<'a> Collector<'a> {
     self.funcs.0.insert(f, id);
     if let Some(imps) = self.implications.get_mut(&f) {
       let calls = imps.take().expect("cycle in collector?");
-      self.collect_generics(f, args, &calls);
+      self.collect_generics(args, &calls);
       self.implications.insert(f, Some(calls));
     } else if let Some(proc) = self.mir.get(&f) {
       let calls = self.collect_cfg(&proc.body, args);
       if !calls.is_empty() {
         self.implications.insert(f, None);
-        self.collect_generics(f, args, &calls);
+        self.collect_generics(args, &calls);
       }
       self.implications.insert(f, Some(calls));
     }
@@ -222,7 +220,7 @@ pub const TEXT_START: u32 = 0x40_0078;
 pub struct LinkedCode {
   pub(crate) mir: HashMap<Symbol, Proc>,
   pub(crate) consts: ConstData,
-  pub(crate) globals: IdxVec<GlobalId, (u32, u32)>,
+  pub(crate) globals: IdxVec<GlobalId, (Symbol, u32, u32)>,
   pub(crate) global_size: u32,
   pub(crate) init: (Cfg, Box<PCode>),
   pub(crate) func_names: IdxVec<ProcId, Symbol>,
@@ -255,11 +253,11 @@ impl LinkedCode {
     }
 
     let mut global_size = 0;
-    let globals_out = globals.iter().map(|&(g, v, ref ty)| {
+    let globals_out = globals.iter().map(|&(g, v, _)| {
       let off = global_size;
       let size = allocs[allocs.get(v)].m.size.try_into().expect("overflow");
       global_size += size;
-      (off, size)
+      (g, off, size)
     }).collect();
     let init_code = regalloc_vcode(
       names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)).1;

@@ -750,7 +750,6 @@ impl std::fmt::Debug for TyKind<'_> {
       TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
       TyKind::Pure(e) => write!(f, "{:?}", e),
       TyKind::User(name, tys, es) => {
-        use itertools::Itertools;
         write!(f, "{}", name)?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", es.iter().format(", "))

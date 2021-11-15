@@ -58,8 +58,6 @@
   clippy::use_self
 )]
 
-#![allow(unused)]
-
 macro_rules! mk_id {
   (@ImplDebug $id:ident) => {
     impl std::fmt::Debug for $id {

@@ -6,8 +6,7 @@ use num::Zero;
 use regalloc2::{MachineEnv, PReg, VReg, Operand};
 
 use crate::codegen::InstSink;
-use crate::LinkedCode;
-use crate::types::{IdxVec, Size,
+use crate::types::{Size,
   vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
 
 const fn preg(i: usize) -> PReg { PReg::new(i, regalloc2::RegClass::Int) }
@@ -279,9 +278,6 @@ impl From<i32> for Offset {
 impl Offset {
   pub(crate) const ZERO: Self = Self::Real(0);
 }
-impl Offset<u64> {
-  pub(crate) const ZERO64: Self = Self::Real(0);
-}
 
 impl From<Offset> for Offset<u64> {
   fn from(imm: Offset) -> Self {
@@ -485,7 +481,6 @@ pub(crate) enum RegMemImm<N = u32> {
   Reg(VReg),
   Mem(AMode),
   Imm(N),
-  Uninit,
 }
 
 impl<N: Zero + Debug> Debug for RegMemImm<N> {
@@ -494,7 +489,6 @@ impl<N: Zero + Debug> Debug for RegMemImm<N> {
       RegMemImm::Reg(r) => r.fmt(f),
       RegMemImm::Mem(a) => a.fmt(f),
       RegMemImm::Imm(i) => i.fmt(f),
-      RegMemImm::Uninit => "uninit".fmt(f),
     }
   }
 }
@@ -519,7 +513,6 @@ impl From<RegMemImm> for RegMemImm<u64> {
       RegMemImm::Reg(r) => RegMemImm::Reg(r),
       RegMemImm::Mem(a) => RegMemImm::Mem(a),
       RegMemImm::Imm(i) => RegMemImm::Imm(i.into()),
-      RegMemImm::Uninit => RegMemImm::Uninit,
     }
   }
 }
@@ -535,8 +528,7 @@ impl<N> RegMemImm<N> {
     match *self {
       RegMemImm::Reg(reg) => args.push(Operand::reg_use(reg)),
       RegMemImm::Mem(ref addr) => addr.collect_operands(args),
-      RegMemImm::Imm(_) |
-      RegMemImm::Uninit => {}
+      RegMemImm::Imm(_) => {}
     }
   }
 
@@ -546,7 +538,6 @@ impl<N> RegMemImm<N> {
       RegMemImm::Reg(r) => RegMem::Reg(r),
       RegMemImm::Mem(a) => RegMem::Mem(a),
       RegMemImm::Imm(i) => RegMem::Reg(code.emit_imm(sz, i)),
-      RegMemImm::Uninit => RegMem::Reg(code.fresh_vreg()),
     }
   }
 
@@ -556,7 +547,6 @@ impl<N> RegMemImm<N> {
       RegMemImm::Reg(r) => r,
       RegMemImm::Mem(a) => a.emit_load(code, sz),
       RegMemImm::Imm(i) => code.emit_imm(sz, i),
-      RegMemImm::Uninit => code.fresh_vreg(),
     }
   }
 
@@ -575,7 +565,6 @@ impl RegMemImm<u64> {
         Ok(i) => RegMemImm::Imm(i),
         _ => RegMemImm::Reg(code.emit_imm(Size::S64, i))
       }
-      RegMemImm::Uninit => RegMemImm::Uninit,
     }
   }
 }
@@ -628,16 +617,16 @@ pub(crate) enum Inst {
     dst: VReg, // dst = src
     src: VReg,
   },
-  /// Unsigned integer quotient and remainder pseudo-operation:
-  // `RDX:RAX <- cdq RAX`
-  // `RAX,RDX <- divrem RDX:RAX r/m.`
-  DivRem {
-    sz: Size, // 2, 4 or 8
-    dst_div: VReg, // = RAX
-    dst_rem: VReg, // = RDX
-    src1: VReg, // = RAX
-    src2: RegMem,
-  },
+  // /// Unsigned integer quotient and remainder pseudo-operation:
+  // /// `RDX:RAX <- cdq RAX`
+  // /// `RAX,RDX <- divrem RDX:RAX r/m.`
+  // DivRem {
+  //   sz: Size, // 2, 4 or 8
+  //   dst_div: VReg, // = RAX
+  //   dst_rem: VReg, // = RDX
+  //   src1: VReg, // = RAX
+  //   src2: RegMem,
+  // },
   /// Unsigned integer quotient and remainder pseudo-operation:
   // `RDX:RAX <- cdq RAX`
   // `RAX,RDX <- divrem RDX:RAX r/m`.
@@ -675,11 +664,11 @@ pub(crate) enum Inst {
     dst: VReg,
     src: VReg,
   },
-  /// Move into a fixed reg: `preg <- mov (64|32) reg`.
-  MovRP {
-    dst: PReg,
-    src: VReg,
-  },
+  // /// Move into a fixed reg: `preg <- mov (64|32) reg`.
+  // MovRP {
+  //   dst: PReg,
+  //   src: VReg,
+  // },
   /// Move from a fixed reg: `reg <- mov (64|32) preg`.
   MovPR {
     dst: VReg,
@@ -752,10 +741,6 @@ pub(crate) enum Inst {
     src1: VReg,
     src2: RegMem,
   },
-  /// `pushq rmi`
-  Push64 { src: RegMemImm },
-  /// `popq reg`
-  Pop64 { dst: VReg },
   /// Direct call: `call f`.
   CallKnown {
     f: ProcId,
@@ -819,8 +804,7 @@ impl VInst for Inst {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
       Inst::Imm { dst, .. } |
-      Inst::SetCC { dst, .. } |
-      Inst::Pop64 { dst } => args.push(Operand::reg_def(dst)),
+      Inst::SetCC { dst, .. } => args.push(Operand::reg_def(dst)),
       Inst::Unop { dst, src, .. } |
       Inst::ShiftImm { dst, src, .. } => {
         args.push(Operand::reg_use(src));
@@ -831,19 +815,19 @@ impl VInst for Inst {
         src2.collect_operands(args);
         args.push(Operand::reg_reuse_def(dst, 0));
       }
-      Inst::Mul { sz, dst_lo, dst_hi, src1, ref src2 } => {
+      Inst::Mul { dst_lo, dst_hi, src1, ref src2, .. } => {
         args.push(Operand::reg_fixed_use(src1, RAX));
         src2.collect_operands(args);
         args.push(Operand::reg_fixed_def(dst_lo, RAX));
         args.push(Operand::reg_fixed_def(dst_hi, RDX));
       },
-      Inst::DivRem { sz, dst_div, dst_rem, src1, ref src2 } => {
-        args.push(Operand::reg_fixed_use(src1, RAX));
-        src2.collect_operands(args);
-        args.push(Operand::reg_fixed_def(dst_div, RAX));
-        args.push(Operand::reg_fixed_def(dst_rem, RDX));
-      },
-      Inst::MovRP { dst, src } => args.push(Operand::reg_fixed_use(src, dst)),
+      // Inst::DivRem { dst_div, dst_rem, src1, ref src2, .. } => {
+      //   args.push(Operand::reg_fixed_use(src1, RAX));
+      //   src2.collect_operands(args);
+      //   args.push(Operand::reg_fixed_def(dst_div, RAX));
+      //   args.push(Operand::reg_fixed_def(dst_rem, RDX));
+      // },
+      // Inst::MovRP { dst, src } => args.push(Operand::reg_fixed_use(src, dst)),
       Inst::MovPR { dst, src } => args.push(Operand::reg_fixed_def(dst, src)),
       Inst::MovzxRmR { dst, ref src, .. } |
       Inst::MovsxRmR { dst, ref src, .. } => {
@@ -876,14 +860,13 @@ impl VInst for Inst {
         src2.collect_operands(args);
         args.push(Operand::reg_reuse_def(dst, 0));
       }
-      Inst::Push64 { ref src } => src.collect_operands(args),
       Inst::CallKnown { operands: ref params, .. } |
       Inst::SysCall { operands: ref params, .. } |
       Inst::JmpKnown { ref params, .. } |
       Inst::Epilogue { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
       // moves are handled specially by regalloc, we don't need operands
-      Inst::MovRR { .. } | Inst::MovPR { .. } | Inst::MovRP { .. } |
+      Inst::MovRR { .. } |
       // Other instructions that have no operands
       Inst::Fallthrough { .. } |
       Inst::JmpCond { .. } |
@@ -990,7 +973,6 @@ impl VCode<Inst> {
   #[inline] pub(crate) fn emit_copy(&mut self, sz: Size, dst: RegMem, src: impl Into<RegMemImm<u64>>) {
     fn copy(code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>) {
       match (dst, src) {
-        (_, RegMemImm::Uninit) => {}
         (RegMem::Reg(dst), RegMemImm::Reg(src)) => { code.emit(Inst::MovRR { sz, dst, src }); }
         (RegMem::Reg(dst), RegMemImm::Mem(src)) => { code.emit(Inst::load_mem(sz, dst, src)); }
         (RegMem::Reg(dst), RegMemImm::Imm(src)) => {
@@ -1400,7 +1382,7 @@ fn layout_u32(n: u32) -> DispLayout {
 fn layout_offset(off: &Offset) -> DispLayout {
   match *off {
     Offset::Real(n) => layout_u32(n),
-    Offset::Spill(sp, off) => unreachable!(),
+    Offset::Spill(..) => unreachable!(),
     _ => DispLayout::S32,
   }
 }
@@ -1464,13 +1446,6 @@ fn high_reg(rex: &mut bool, r: PReg) { *rex |= r.index() & 4 != 0 }
 fn high_amode(rex: &mut bool, a: &PAMode) {
   if a.base.is_valid() { high_reg(rex, a.base) }
   if let Some(si) = &a.si { high_reg(rex, si.index) }
-}
-
-fn high_rm(rex: &mut bool, rm: &PRegMem) {
-  match rm {
-    &RegMem::Reg(r) => high_reg(rex, r),
-    RegMem::Mem(a) => high_amode(rex, a)
-  }
 }
 
 fn high_rmi(rex: &mut bool, rmi: &PRegMemImm) {
@@ -1572,7 +1547,7 @@ impl PInst {
         let mut rex = sz == Size::S64;
         if sz == Size::S8 { high_reg(&mut rex, src1); high_rmi(&mut rex, src2) }
         let opc = match *src2 {
-          PRegMemImm::Imm(i) => match src1 {
+          PRegMemImm::Imm(_) => match src1 {
             RAX => OpcodeLayout::TestRAX(sz != Size::S8),
             _ => OpcodeLayout::HiTest(sz != Size::S8, layout_opc_reg(&mut rex, src1)),
           }
@@ -1585,7 +1560,7 @@ impl PInst {
         high_reg(&mut rex, dst);
         InstLayout { opc: OpcodeLayout::SetCC(layout_opc_reg(&mut rex, dst)), rex }
       }
-      PInst::CMov { sz, cc, dst, ref src } => {
+      PInst::CMov { sz, dst, ref src, .. } => {
         let mut rex = sz == Size::S64;
         InstLayout { opc: OpcodeLayout::CMov(layout_rm(&mut rex, dst, src)), rex }
       }
@@ -1620,20 +1595,6 @@ impl PInst {
   pub(crate) fn shorten(&mut self) {
     if let PInst::JmpKnown { short, .. } | PInst::JmpCond { short, .. } = self {
       *short = true
-    }
-  }
-
-  pub(crate) fn len_bound(&self) -> (u8, u8) {
-    match *self {
-      PInst::JmpKnown { dst, short: false } => (
-        PInst::JmpKnown { dst, short: true }.len(),
-        PInst::JmpKnown { dst, short: false }.len()
-      ),
-      PInst::JmpCond { cc, dst, short: false } => (
-        PInst::JmpCond { cc, dst, short: true }.len(),
-        PInst::JmpCond { cc, dst, short: false }.len()
-      ),
-      _ => { let len = self.len(); (len, len) }
     }
   }
 

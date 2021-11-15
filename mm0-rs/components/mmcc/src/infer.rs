@@ -167,9 +167,6 @@ impl<'a> Context<'a> {
     if let Some(c) = &self.0 {c.len} else {0}
   }
 
-  /// Is this context root?
-  #[must_use] fn is_empty(self) -> bool { self.0.is_none() }
-
   /// The parent context, or `ROOT` if the context is already root.
   #[must_use] fn parent(self) -> Self {
     if let Some(c) = &self.0 {c.parent} else {Self::ROOT}
@@ -1652,29 +1649,6 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     })
   }
 
-  pub(crate) fn get_lft_or_assign_extern(&mut self, v: LftMVarId) -> Lifetime {
-    self.mvars.lft.lookup(v).unwrap_or_else(|| {
-      self.mvars.lft.assign(v, Lifetime::Extern);
-      Lifetime::Extern
-    })
-  }
-
-  pub(crate) fn err_if_not_assigned_ty(&mut self, v: TyMVarId) -> Ty<'a> {
-    self.mvars.ty.lookup(v).unwrap_or_else(|| {
-      self.errors.push(hir::Spanned {span: self.mvars.ty[v].span, k: TypeError::UninferredType});
-      self.mvars.ty.assign(v, self.common.t_error);
-      self.common.t_error
-    })
-  }
-
-  pub(crate) fn err_if_not_assigned_expr(&mut self, v: ExprMVarId) -> Expr<'a> {
-    self.mvars.expr.lookup(v).unwrap_or_else(|| {
-      self.errors.push(hir::Spanned {span: self.mvars.expr[v].span, k: TypeError::UninferredExpr});
-      self.mvars.expr.assign(v, self.common.e_error);
-      self.common.e_error
-    })
-  }
-
   fn new_context_next(&mut self, v: VarId, val: Option<Expr<'a>>, ty: Ty<'a>) -> &'a ContextNext<'a> {
     let val = val.unwrap_or_else(|| intern!(self, ExprKind::Var(v)));
     self.alloc.alloc(self.dc.new_context_next(v, val, ty))
@@ -1702,7 +1676,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let mut vars = HashSet::new();
     for c in self.dc.context.into_iter().filter(|c| c.gen == GenId::LATEST) {
       let v = c.var;
-      let (old_gen, old_e, old_ty) = self.dc.gen_vars.get(&v).copied().unwrap_or((c.gen, c.val, c.ty));
+      let (old_gen, old_e, old_ty) =
+        self.dc.gen_vars.get(&v).copied().unwrap_or((c.gen, c.val, c.ty));
       let mut new_e = Some(old_e);
       let mut modified = false;
       for dc in &*contexts {
@@ -1710,7 +1685,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           if let Some(&(gen, e, ty)) = dc.gen_vars.get(&v) {
             if gen != old_gen {
               new_e = new_e.filter(|new_e| self.equate_expr(new_e, e).is_ok());
-              self.relate_ty(span, Some(e), ty, old_ty, Relation::Subtype);
+              self.relate_ty(span, Some(e), ty, old_ty, Relation::Subtype).expect("todo");
               modified = true;
             }
           }
@@ -1913,7 +1888,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         match let_unchecked!(Some(Entity::Type(tc)) = self.names.get(&f), tc).k {
           TypeTc::ForwardDeclared => return self.common.t_error.into(),
           TypeTc::Typed(ref tyty) => {
-            let TypeTy {tyargs, args, val} = tyty.clone();
+            let TypeTy {tyargs, args, val, ..} = tyty.clone();
             assert_eq!(tys.len(), u32_as_usize(tyargs));
             let args = args.from_global(self, tys);
             debug_assert!(es.len() ==
@@ -2608,7 +2583,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   ) -> (TuplePattern<'a>, Expr<'a>) {
     let err = tgt.map_or(false, |tgt|
       self.relate_ty(pat.span, None, pat.ty(), tgt, Relation::Equal).is_err());
-    let (k, e) = match &pat.k {
+    let (mut k, e) = match &pat.k {
       &UnelabTupPatKind::Name(_, n, c) => {
         self.dc.context = c.into();
         (TuplePatternKind::Name(n, c.var, c.ty), intern!(self, ExprKind::Var(c.var)))
@@ -2651,6 +2626,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }
       }
     };
+    if err { k = TuplePatternKind::Error(intern!(self, k), tgt.expect("impossible")) }
     (intern!(self, k), e)
   }
 
@@ -4000,7 +3976,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn check_variant_use(&mut self,
-    mut subst: &mut Subst<'a>, variant: Option<&'a ast::Expr>, tgt: Option<hir::Variant<'a>>,
+    subst: &mut Subst<'a>, variant: Option<&'a ast::Expr>, tgt: Option<hir::Variant<'a>>,
   ) -> Option<Box<hir::Expr<'a>>> {
     let variant = variant?;
     if let Some(hir::Variant(e, vt)) = tgt {
@@ -4138,7 +4114,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   fn lower_stmt(&mut self, Spanned {span, k: stmt}: &'a ast::Stmt, tgt: Ty<'a>) -> UnelabStmt<'a> {
     match stmt {
       ast::StmtKind::Let {lhs, rhs} => {
-        let mut ctx = self.dc.context;
+        let ctx = self.dc.context;
         let lhs1 = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
         let rhs = self.check_expr(rhs, lhs1.ty()).0;
@@ -4327,6 +4303,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         hir::ItemKind::Proc {kind, name, tyargs, args, gen, rets, variant, body}
       }
       ast::ItemKind::Global(intrinsic, lhs, rhs) => {
+        if let Some(intrinsic) = intrinsic { match *intrinsic {} }
         let ctx = self.dc.context;
         let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         self.dc.context = ctx;
@@ -4351,6 +4328,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         hir::ItemKind::Global {lhs, rhs}
       }
       ast::ItemKind::Const(intrinsic, lhs, rhs) => {
+        if let Some(intrinsic) = intrinsic { match *intrinsic {} }
         let ctx = self.dc.context;
         let lhs_sp = &lhs.span;
         let lhs = self.lower_tuple_pattern(lhs_sp, &lhs.k, None, None).0;
@@ -4394,7 +4372,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let val = val.to_global(&mut gctx);
         let item = Entity::Type(Spanned {
           span: span.clone(),
-          k: TypeTc::Typed(TypeTy {tyargs, args, val})
+          k: TypeTc::Typed(TypeTy {intrinsic, tyargs, args, val})
         });
         match self.names.entry(name.k) {
           Entry::Occupied(mut e) => {

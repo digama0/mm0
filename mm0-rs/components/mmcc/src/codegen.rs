@@ -71,13 +71,13 @@ impl LinkedCode {
       buf: ArrayVec::new(),
     };
     ctx.write_to(w)?;
-    w.write_all(function_pad(u64::from(TEXT_START + self.init.1.len)));
+    w.write_all(function_pad(u64::from(TEXT_START + self.init.1.len)))?;
 
     for &(start, ref code) in &self.funcs.0 {
       ctx.proc = code;
       ctx.proc_start = start;
       ctx.write_to(w)?;
-      w.write_all(function_pad(u64::from(code.len)));
+      w.write_all(function_pad(u64::from(code.len)))?;
     }
 
     w.write_all(&self.consts.rodata)
@@ -120,7 +120,7 @@ impl InstSink<'_> {
     self.proc.insts.0.iter().try_for_each(|inst| {
       inst.write(self);
       // println!("{:?} (layout {:?})\n  = {:x?}", inst, inst.layout_inst(), self.buf);
-      w.write_all(&self.buf);
+      w.write_all(&self.buf)?;
       self.buf.clear();
       Ok(())
     })
@@ -129,5 +129,5 @@ impl InstSink<'_> {
 
 impl Index<GlobalId> for InstSink<'_> {
   type Output = u32;
-  fn index(&self, index: GlobalId) -> &Self::Output { &self.linked.globals[index].0 }
+  fn index(&self, index: GlobalId) -> &Self::Output { &self.linked.globals[index].1 }
 }

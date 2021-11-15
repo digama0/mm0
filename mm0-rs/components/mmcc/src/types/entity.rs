@@ -19,7 +19,7 @@ macro_rules! make_prims {
 
       impl $name {
         /// Evaluate a function on all elements of the type, with their names.
-        pub fn scan(mut f: impl FnMut(Self, &'static str)) {
+        pub fn scan(#[allow(unused)] mut f: impl FnMut(Self, &'static str)) {
           $(f($name::$x, $e);)*
         }
         /// Convert a string into this type.
@@ -307,7 +307,10 @@ make_prims! {
   enum IntrinsicGlobal {}
 
   /// Intrinsic constants.
-  enum IntrinsicConst {
+  enum IntrinsicConst {}
+
+  /// Intrinsic typedefs.
+  enum IntrinsicType {
     /// A C-style string: a zero-terminated array of characters with unknown length.
     /// ```text
     /// intrinsic struct CStr {
@@ -341,9 +344,6 @@ make_prims! {
     /// ```
     Stat: "Stat",
   }
-
-  /// Intrinsic typedefs.
-  enum IntrinsicType {}
 }
 
 /// The typechecking status of a typedef.
@@ -371,6 +371,8 @@ impl TypeTc {
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub struct TypeTy {
+  /// If this is an intrinsic, this gives the intrinsic identifier.
+  pub intrinsic: Option<IntrinsicType>,
   /// The number of type arguments (not included in `args`). There are no higher
   /// order types so this is essentially just `{A : *} {B : *} ...` with `tyargs`
   /// variables (named by their index).

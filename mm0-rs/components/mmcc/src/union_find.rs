@@ -115,22 +115,22 @@ impl<K: PartialEq + Copy, V> VarValue<K, V> {
   }
 }
 
-impl<K, V> UnificationTable<K, V> {
-  /// Returns the number of keys created so far.
-  #[must_use] pub(crate) fn len(&self) -> usize {
-    self.values.len()
-  }
-  /// Returns true if there are no keys.
-  #[must_use] pub(crate) fn is_empty(&self) -> bool {
-    self.values.is_empty()
-  }
+// impl<K, V> UnificationTable<K, V> {
+//   /// Returns the number of keys created so far.
+//   #[must_use] pub(crate) fn len(&self) -> usize {
+//     self.values.len()
+//   }
+//   /// Returns true if there are no keys.
+//   #[must_use] pub(crate) fn is_empty(&self) -> bool {
+//     self.values.is_empty()
+//   }
 
-  /// Reserve memory for `num_new_keys` to be created. Does not
-  /// actually create the new keys; you must then invoke `new_key`.
-  pub(crate) fn reserve(&mut self, num_new_keys: usize) {
-    self.values.0.reserve(num_new_keys);
-  }
-}
+//   /// Reserve memory for `num_new_keys` to be created. Does not
+//   /// actually create the new keys; you must then invoke `new_key`.
+//   pub(crate) fn reserve(&mut self, num_new_keys: usize) {
+//     self.values.0.reserve(num_new_keys);
+//   }
+// }
 
 impl<K: Idx, V> UnificationTable<K, V> {
   /// Creates a fresh key with the given value.
@@ -141,25 +141,15 @@ impl<K: Idx, V> UnificationTable<K, V> {
     key
   }
 
-  /// Initializes a unification table with a function that computes all
-  /// the values from all the keys up to some bound.
-  pub(crate) fn from_fn(sz: K, mut value: impl FnMut(K) -> V) -> Self {
-    let it = (0..sz.into_usize()).map(|i| {
-      let key = K::from_usize(i);
-      VarValue::new_var(key, value(key))
-    });
-    Self { values: it.collect::<Vec<_>>().into() }
-  }
-
-  /// Clears all unifications that have been performed, resetting to
-  /// the initial state. The values of each variable are given by
-  /// the closure.
-  pub(crate) fn reset_unifications(&mut self, mut value: impl FnMut(K) -> V) {
-    for (key, vv) in self.values.enum_iter_mut() {
-      let value = value(key);
-      *vv = VarValue::new_var(key, value)
-    }
-  }
+  // /// Initializes a unification table with a function that computes all
+  // /// the values from all the keys up to some bound.
+  // pub(crate) fn from_fn(sz: K, mut value: impl FnMut(K) -> V) -> Self {
+  //   let it = (0..sz.into_usize()).map(|i| {
+  //     let key = K::from_usize(i);
+  //     VarValue::new_var(key, value(key))
+  //   });
+  //   Self { values: it.collect::<Vec<_>>().into() }
+  // }
 
   /// Obtains the current value for a particular key.
   /// Not for end-users; they can use `probe_value`.
@@ -249,10 +239,10 @@ impl<K: Idx, V> UnificationTable<K, V> {
     });
   }
 
-  /// Given two keys, indicates whether they have been unioned together.
-  pub(crate) fn unioned(&mut self, a_id: impl Into<K>, b_id: impl Into<K>) -> bool {
-    self.find(a_id) == self.find(b_id)
-  }
+  // /// Given two keys, indicates whether they have been unioned together.
+  // pub(crate) fn unioned(&mut self, a_id: impl Into<K>, b_id: impl Into<K>) -> bool {
+  //   self.find(a_id) == self.find(b_id)
+  // }
 
   /// Given a key, returns the (current) root key.
   pub(crate) fn find(&mut self, id: impl Into<K>) -> K {

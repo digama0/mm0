@@ -60,6 +60,7 @@ impl<T> BitSet<T> {
   #[inline] #[must_use] pub(crate) fn len(&self) -> usize { self.0.len() }
 
   /// Returns whether there are no bits set in this set
+  #[allow(unused)]
   #[inline] #[must_use] pub(crate) fn is_empty(&self) -> bool { self.0.is_empty() }
 
   /// Returns `true` if this set contains the specified value.
@@ -102,6 +103,7 @@ impl<T> BitSet<T> {
   }
 
   /// Iterator over each value stored in the `BitSet`.
+  #[allow(unused)]
   pub(crate) fn iter(&self) -> impl Iterator<Item=T> + '_ where T: Idx {
     self.0.iter().map(Idx::from_usize)
   }

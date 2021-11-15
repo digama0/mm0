@@ -4,7 +4,7 @@ use std::{collections::HashMap, rc::Rc};
 use num::BigInt;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::Symbol;
-use super::{ty, super::infer::{InferCtx, MVars}};
+use super::{ty, super::infer::MVars};
 pub use ty::{WithMeta, TupleMatchKind, Lifetime, ArgAttr};
 use super::{Binop, IntTy, LambdaId, Unop, VarId, ast::TyVarId, hir};
 

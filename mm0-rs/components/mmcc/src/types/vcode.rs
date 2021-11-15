@@ -233,7 +233,7 @@ impl<I> VCode<I> {
 
   /// Create a new unused `SpillId`. (It is allowable to use size 0 here and grow it later with
   /// `grow_spill`.)
-  #[must_use] pub fn fresh_spill(&mut self, sz: u32) -> SpillId { self.spills.push(sz) }
+  pub fn fresh_spill(&mut self, sz: u32) -> SpillId { self.spills.push(sz) }
 
   /// Ensure that the given spill is at least the specified size.
   pub fn grow_spill(&mut self, n: SpillId, sz: u32) {

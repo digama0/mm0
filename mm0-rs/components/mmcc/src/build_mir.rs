@@ -49,7 +49,7 @@ trait TranslateBase<'a>: Sized {
 impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
   type Output = TyKind;
   fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Ty<'a>, Ty> { &mut t.tys }
-  fn make(&'a self, tr: &mut Translator<'a, '_>) -> TyKind { unreachable!() }
+  fn make(&'a self, _: &mut Translator<'a, '_>) -> TyKind { unreachable!() }
   fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Ty {
     Rc::new(match *self {
       ty::TyKind::Unit => TyKind::Unit,
@@ -108,7 +108,7 @@ impl<'a> TranslateBase<'a> for ty::PlaceKind<'a> {
 impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
   type Output = ExprKind;
   fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Expr<'a>, Expr> { &mut t.exprs }
-  fn make(&'a self, tr: &mut Translator<'a, '_>) -> ExprKind { unreachable!() }
+  fn make(&'a self, _: &mut Translator<'a, '_>) -> ExprKind { unreachable!() }
   fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Expr {
     Rc::new(match *self {
       ty::ExprKind::Unit => ExprKind::Unit,
@@ -787,7 +787,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           .collect::<Block<Box<[_]>>>()?),
       hir::ExprKind::Cast(e, _, hir::CastKind::Ptr) =>
         RValue::Pun(PunKind::Ptr, self.expr_place(*e)?),
-      hir::ExprKind::Cast(e, ty, ck) => {
+      hir::ExprKind::Cast(e, _, ck) => {
         let e_ty = e.k.1 .1;
         let e = self.operand(*e)?;
         let ck = match ck {
@@ -1305,7 +1305,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn rvalue_while(&mut self,
-    hir::While { label, hyp, cond, variant, body, gen, muts, trivial }: hir::While<'a>,
+    hir::While { label, hyp, cond, variant: _, body, gen, muts, trivial }: hir::While<'a>,
     ret: ty::ExprTy<'a>,
   ) -> Block<RValue> {
     // If `has_break` is true, then this looks like

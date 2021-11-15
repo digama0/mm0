@@ -8,16 +8,13 @@
 //! into sequences of x86 instructions.
 
 use std::collections::HashMap;
-use std::ops::Mul;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
-use num::BigInt;
 use regalloc2::{Operand as ROperand, PReg};
 
-use crate::build_mir::{Diverged, Initializer};
 use crate::linker::ConstData;
-use crate::types::entity::{IntrinsicProc, ConstTc, ProcTc, ProcTy};
+use crate::types::entity::{IntrinsicProc, ProcTc, ProcTy};
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
   Inst, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
@@ -25,7 +22,7 @@ use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{Idx, IdxVec, IntTy, Size, Spanned};
 use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
-  ChunkVec, ConstRef, InstId, GlobalId, ProcAbi, ProcId, RegClass, SpillId, VReg};
+  ChunkVec, ConstRef, InstId, GlobalId, ProcAbi, ProcId, SpillId, VReg};
 
 #[allow(clippy::wildcard_imports)]
 use crate::types::mir::*;
@@ -176,7 +173,7 @@ impl<'a> LowerCtx<'a> {
         VCodeCtx::Proc(_) => HashMap::new(),
         VCodeCtx::Start(ls) => {
           let mut map = HashMap::new();
-          for (id, &(s, v, _)) in ls.iter().enumerate() {
+          for (id, &(_, v, _)) in ls.iter().enumerate() {
             let a = allocs.get(v);
             if a != AllocId::ZERO {
               assert!(map.insert(a, GlobalId::from_usize(id)).is_none(),
@@ -392,7 +389,7 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_memcpy(&mut self, tysize: u64, sz: Size, dst: RegMem, src: AMode) {
+  fn build_memcpy(&mut self, _tysize: u64, sz: Size, dst: RegMem, src: AMode) {
     if sz == Size::Inf {
       unimplemented!("large copy");
     } else {
@@ -400,7 +397,7 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_move(&mut self, tysize: u64, sz: Size, dst: RegMem, o: &Operand) {
+  fn build_move(&mut self, _tysize: u64, sz: Size, dst: RegMem, o: &Operand) {
     if sz == Size::Inf {
       unimplemented!("large copy");
     } else {
@@ -694,7 +691,7 @@ impl<'a> LowerCtx<'a> {
         if !vr { continue }
         let a = self.allocs.get(v);
         if a == AllocId::ZERO { continue }
-        let (&(dst, sz), size) = self.get_alloc(a);
+        let dst = self.get_alloc(a).0 .0;
         match *arg {
           ArgAbi::Reg(_, sz) =>
             self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed")),
@@ -718,7 +715,6 @@ impl<'a> LowerCtx<'a> {
     vbl: VBlockId,
     f: IntrinsicProc,
     args: &[(bool, Operand)],
-    reach: bool,
     tgt: BlockId,
     rets: &[(bool, VarId)],
   ) {
@@ -818,14 +814,14 @@ impl<'a> LowerCtx<'a> {
         self.unpatched.push((vbl, cond.assert(VBlockId(bl.0))));
       }
       Terminator::Assert(_, _, false, _) => { self.code.emit(Inst::Ud2); }
-      Terminator::Call { f, se, ref tys, ref args, reach, tgt, ref rets } => {
+      Terminator::Call { f, ref tys, ref args, reach, tgt, ref rets, .. } => {
         if !tys.is_empty() { unimplemented!("monomorphization") }
         if let Some(&f) = self.func_mono.get(&f) {
           self.build_call(vbl, f, args, reach, tgt, rets)
         } else if let Some(&Entity::Proc(Spanned {
           k: ProcTc::Typed(ProcTy {intrinsic: Some(intrinsic), ..}), ..
         })) = self.names.get(&f) {
-          self.build_intrinsic(vbl, intrinsic, args, reach, tgt, rets)
+          self.build_intrinsic(vbl, intrinsic, args, tgt, rets)
         } else {
           panic!("function ABI not found");
         }
@@ -849,7 +845,7 @@ impl<'a> LowerCtx<'a> {
       }
     };
 
-    let mut block_args: ChunkVec<BlockId, VReg> = cfg.blocks.enum_iter().map(|(i, bl)| {
+    cfg.blocks.enum_iter().map(|(i, bl)| {
       let mut out = vec![];
       if i != BlockId::ENTRY && !bl.is_dead() {
         for &(e, j) in &preds[i] {
@@ -864,9 +860,7 @@ impl<'a> LowerCtx<'a> {
         }
       }
       out
-    }).collect();
-
-    block_args
+    }).collect()
   }
 
   fn build_prologue(&mut self, bl: &'a BasicBlock, ctx: VCodeCtx<'_>) {
@@ -902,7 +896,7 @@ impl<'a> LowerCtx<'a> {
       }).collect();
     }
 
-    self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, (_, ty))| {
+    self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, _)| {
       if !b { return ArgAbi::Ghost }
       let a = self.allocs.get(v);
       if a == AllocId::ZERO { return ArgAbi::Ghost }
@@ -946,7 +940,7 @@ impl<'a> LowerCtx<'a> {
       self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
-      for (i, stmt) in bl.stmts.iter().enumerate() {
+      for stmt in &bl.stmts {
         if stmt.relevant() {
           match stmt {
             Statement::Let(lk, ty, rv) => {

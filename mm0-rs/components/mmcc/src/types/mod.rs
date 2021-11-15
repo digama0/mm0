@@ -11,7 +11,7 @@ pub mod vcode;
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
-use std::ops::{Index, IndexMut, Range, RangeBounds};
+use std::ops::{Index, IndexMut, Range};
 use num::{BigInt, Signed};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{FileSpan, Symbol};

@@ -1,8 +1,6 @@
 //! The proof objects constructed by the compiler.
 
-use std::collections::{HashMap, VecDeque};
-
-use smallvec::SmallVec;
+use std::collections::HashMap;
 
 use crate::regalloc::PCode;
 use crate::types::mir::BlockTree;
@@ -13,6 +11,7 @@ use crate::types::{mir::{self, Cfg}, vcode::ConstRef};
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
 pub use crate::arch::{self, PInst as VInst};
+pub use regalloc2::PReg;
 
 /// If true, we are proving total correctness, so all recursions and loops
 /// must come with a variant that decreases on recursive calls.
@@ -92,7 +91,7 @@ impl<'a> ElfProof<'a> {
   }
 
   /// Construct a proof item directly for a given function, or the init function.
-  #[must_use] fn proof_item(&self, func: Option<ProcId>) -> Proc<'_> {
+  #[must_use] pub fn proof_item(&self, func: Option<ProcId>) -> Proc<'_> {
     self.code.proc_proof(self.content(), func)
   }
 }
@@ -299,6 +298,18 @@ impl<'a> Proc<'a> {
     &self.content[self.len_no_padding() as usize..]
   }
 
+  /// The list of callee-saved regs that were pushed in the function prologue,
+  /// and popped in the epilogue in reverse order.
+  #[must_use] pub fn saved_regs(&self) -> &'a [PReg] {
+    &self.proc.saved_regs
+  }
+
+  /// The stack size for the function, i.e. the number of bytes allocated for the local variables.
+  /// Does not include the stack space for the return or the callee-saved regs.
+  #[must_use] pub fn stack_size(&self) -> u32 {
+    self.proc.stack_size
+  }
+
   /// An iterator over the blocks of the procedure in assembly order.
   #[must_use] pub fn assembly_blocks(&self) -> AssemblyBlocks<'_> {
     AssemblyBlocks {
@@ -306,6 +317,11 @@ impl<'a> Proc<'a> {
       content: self.content,
       iter: 0..self.proc.blocks.len(),
     }
+  }
+
+  /// Get the physical block ID for a virtual block, or `None` for a pure virtual block.
+  #[must_use] pub fn vblock_id(&self, id: BlockId) -> Option<VBlockId> {
+    self.proc.block_map.get(&id).copied()
   }
 
   /// Get a (physical) block by block ID.
@@ -343,8 +359,12 @@ impl ExactSizeIterator for AssemblyBlocks<'_> {
 #[derive(Debug)]
 pub struct VBlock<'a> {
   ctx: &'a Proc<'a>,
-  start: u32,
-  content: &'a [u8],
+  /// The block ID of the block.
+  pub id: VBlockId,
+  /// The start of this block relative to the function start.
+  pub start: u32,
+  /// The byte data for this block.
+  pub content: &'a [u8],
   insts: &'a [VInst],
 }
 
@@ -355,17 +375,12 @@ impl<'a> VBlock<'a> {
     let (inst_start, inst_end) = ctx.proc.blocks.0[id];
     Self {
       ctx,
+      id: VBlockId::from_usize(id),
       start,
       content: &ctx.content[start as usize..end as usize],
       insts: &ctx.proc.insts[inst_start..inst_end],
     }
   }
-
-  /// The start of this block relative to the function start.
-  #[must_use] pub fn start(&self) -> u32 { self.start }
-
-  /// The byte data for this block.
-  #[must_use] pub fn content(&self) -> &'a [u8] { self.content }
 
   /// An iterator over the instructions in the block.
   #[must_use] pub fn insts(&self) -> InstIter<'a> {
@@ -526,16 +541,16 @@ impl<'a> BlockProofTree<'a> {
     }
   }
 
-  fn one(ctx: &'a Proc<'a>, id: BlockId) -> Self {
-    let mut stack = vec![];
-    let id = Self::develop(ctx, id, &mut stack);
-    if stack.is_empty() {
-      Self::One(BlockProof { ctx, id })
-    } else {
-      stack.push((true, id));
-      Self::Seq(BlockTreeIter { ctx, seq: [].iter(), stack })
-    }
-  }
+  // fn one(ctx: &'a Proc<'a>, id: BlockId) -> Self {
+  //   let mut stack = vec![];
+  //   let id = Self::develop(ctx, id, &mut stack);
+  //   if stack.is_empty() {
+  //     Self::One(BlockProof { ctx, id })
+  //   } else {
+  //     stack.push((true, id));
+  //     Self::Seq(BlockTreeIter { ctx, seq: [].iter(), stack })
+  //   }
+  // }
 }
 
 /// An induction step in a block tree proof.
@@ -589,19 +604,17 @@ impl<'a> Iterator for BlockTreeIter<'a> {
 #[derive(Copy, Clone, Debug)]
 pub struct BlockProof<'a> {
   ctx: &'a Proc<'a>,
-  id: BlockId,
+  /// The block ID.
+  pub id: BlockId,
 }
 
 impl<'a> BlockProof<'a> {
   /// The underlying MIR block object.
   #[must_use] pub fn block(&self) -> &'a mir::BasicBlock { &self.ctx.cfg.blocks[self.id] }
 
-  /// The block ID.
-  #[must_use] pub fn id(&self) -> BlockId { self.id }
-
   /// The physical block associated to this proof, or `None` if this is a virtual-only block.
   #[must_use] pub fn vblock(&self) -> Option<VBlock<'a>> {
-    Some(self.ctx.vblock(*self.ctx.proc.block_map.get(&self.id)?))
+    Some(self.ctx.vblock(self.ctx.vblock_id(self.id)?))
   }
 }
 
@@ -635,7 +648,7 @@ impl ElfProof<'_> {
       }
     }
     assert!(u64::from(pos) == self.p_filesz());
-    let init = init.unwrap();
+    let _init = init.unwrap();
 
     for item in self.proc_proofs() {
       item.proof_tree().validate(&mut Default::default());
@@ -655,7 +668,7 @@ impl BlockProofTree<'_> {
         'todo: for &tgt in ind.labels().iter().rev() {
           loop {
             let tr = iter.next().unwrap();
-            let ok = matches!(tr, BlockProofTree::One(bl) if bl.id() == tgt);
+            let ok = matches!(tr, BlockProofTree::One(bl) if bl.id == tgt);
             tr.validate(&mut ctx2);
             if ok { continue 'todo }
           }
@@ -666,7 +679,7 @@ impl BlockProofTree<'_> {
       BlockProofTree::Seq(iter) => for tr in iter { tr.validate(ctx) }
       BlockProofTree::One(bl) => {
         bl.validate(ctx);
-        assert!(ctx.insert(bl.id(), false).is_none());
+        assert!(ctx.insert(bl.id, false).is_none());
       }
     }
   }

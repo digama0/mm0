@@ -739,7 +739,7 @@ impl ExprKind<'_> {
         e.k.0.debug_indent(i, f)?;
         write!(f, ")")
       }
-      ExprKind::Assign { lhs, rhs, map, gen } => {
+      ExprKind::Assign { lhs, rhs, map, .. } => {
         lhs.k.0.debug_indent(i, f)?;
         write!(f, " <- ")?;
         rhs.k.0.debug_indent(i, f)?;
@@ -764,7 +764,7 @@ impl ExprKind<'_> {
         bl.debug_indent(i+1, f)?;
         indent(i, f)?; write!(f, "}}")
       }
-      ExprKind::If { hyp, cond, cases, gen, muts } => {
+      ExprKind::If { hyp, cond, cases, muts, .. } => {
         if !muts.is_empty() {
           write!(f, "#[muts")?;
           for &v in muts { write!(f, " {}", v)? }
@@ -900,7 +900,7 @@ impl Debug for ItemKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match self {
-      &Self::Proc { kind, ref name, tyargs, ref args, gen, ref rets, ref variant, ref body } => {
+      &Self::Proc { kind, ref name, tyargs, ref args, ref rets, ref variant, ref body, .. } => {
         write!(f, "{}", match kind {
           ProcKind::Func => "func",
           ProcKind::Proc => "proc",

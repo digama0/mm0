@@ -283,7 +283,6 @@ impl std::fmt::Debug for TyKind {
       TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
       TyKind::Pure(e) => write!(f, "{:?}", e),
       TyKind::User(name, tys, es) => {
-        use itertools::Itertools;
         write!(f, "{}", name)?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", es.iter().format(", "))
@@ -575,8 +574,8 @@ impl ExprKind {
       ExprKind::Array(es) |
       ExprKind::Mm0(Mm0Expr { subst: es, ..}) => es.iter().any(|e| e.has_tyvar()),
       ExprKind::Sizeof(ty) => ty.has_tyvar(),
-      ExprKind::Ref(p) => todo!(),
-      ExprKind::Call { f, tys, args } =>
+      ExprKind::Ref(p) => p.has_tyvar(),
+      ExprKind::Call { tys, args, .. } =>
         tys.iter().all(|e| e.has_tyvar()) || args.iter().any(|e| e.has_tyvar()),
     }
   }
@@ -1455,8 +1454,8 @@ impl std::fmt::Debug for RValue {
       Self::Unop(Unop::As(_, ity), o) => write!(f, "{:?} as {:?}", o, ity),
       Self::Unop(op, o) => write!(f, "{:?} {:?}", op, o),
       Self::Binop(op, o1, o2) => write!(f, "{:?} {:?} {:?}", o1, op, o2),
-      Self::Eq(e, false, o1, o2) => write!(f, "{:?} == {:?}", o1, o2),
-      Self::Eq(e, true, o1, o2) => write!(f, "{:?} != {:?}", o1, o2),
+      Self::Eq(_, false, o1, o2) => write!(f, "{:?} == {:?}", o1, o2),
+      Self::Eq(_, true, o1, o2) => write!(f, "{:?} != {:?}", o1, o2),
       Self::Pun(_, p) => write!(f, "pun {:?}", p),
       Self::Cast(_, o, ty) => write!(f, "cast ({:?}: {:?})", o, ty),
       Self::List(os) |
@@ -1551,7 +1550,6 @@ pub enum Statement {
 
 impl std::fmt::Debug for Statement {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    use itertools::Itertools;
     match self {
       Self::Let(lk, ty, rv) => write!(f, "let {:?}: {:?} := {:?}", lk, ty, rv),
       Self::Assign(lhs, ty, rhs, renames) =>
@@ -1564,8 +1562,8 @@ impl Statement {
   /// True if this statement is computationally relevant.
   #[must_use] pub fn relevant(&self) -> bool {
     match self {
-      Statement::Let(lk, _, rv) => lk.relevant(),
-      Statement::Assign(p, _, _, vars) => vars.iter().any(|v| v.rel),
+      Statement::Let(lk, _, _) => lk.relevant(),
+      Statement::Assign(_, _, _, vars) => vars.iter().any(|v| v.rel),
     }
   }
 
@@ -1713,13 +1711,13 @@ impl std::fmt::Debug for Terminator {
 impl Terminator {
   /// (Internal) iteration over the variables used by a terminator (in computationally relevant
   /// positions).
-  pub fn foreach_use(&self, mut f: impl FnMut(VarId)) {
+  pub fn foreach_use(&self, f: impl FnMut(VarId)) {
     UseVisitor(f).visit_terminator(self)
   }
 }
 
 pub(crate) trait Visitor {
-  fn visit_var(&mut self, v: VarId) {}
+  fn visit_var(&mut self, _: VarId) {}
 
   fn visit_place(&mut self, p: &Place) {
     self.visit_var(p.local);
@@ -1732,7 +1730,7 @@ pub(crate) trait Visitor {
     }
   }
 
-  fn visit_constant(&mut self, c: &Constant) {}
+  fn visit_constant(&mut self, _: &Constant) {}
 
   fn visit_operand(&mut self, o: &Operand) {
     match o.place() {

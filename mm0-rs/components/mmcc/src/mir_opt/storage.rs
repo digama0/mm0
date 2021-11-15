@@ -1,10 +1,8 @@
 //! The storage pass, which computes the stack and register allocations for a function.
 
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use crate::{Idx, Symbol};
-use crate::types::IntTy;
 use super::{VecPatch, Replace, types::{IdxVec, entity, mir, global}};
 use entity::{Entity, ConstTc};
 #[allow(clippy::wildcard_imports)] use mir::*;
@@ -212,36 +210,36 @@ impl TyKind {
   }
 }
 
-#[derive(Default)]
-struct Interference(HashSet<(AllocId, AllocId)>);
+// #[derive(Default)]
+// struct Interference(HashSet<(AllocId, AllocId)>);
 
-impl Interference {
-  fn insert(&mut self, a1: AllocId, a2: AllocId) {
-    let (a1, a2) = match a1.cmp(&a2) {
-      Ordering::Less => (a1, a2),
-      Ordering::Equal => return,
-      Ordering::Greater => (a2, a1),
-    };
-    if a1 != AllocId::ZERO { self.0.insert((a1, a2)); }
-  }
+// impl Interference {
+//   fn insert(&mut self, a1: AllocId, a2: AllocId) {
+//     let (a1, a2) = match a1.cmp(&a2) {
+//       Ordering::Less => (a1, a2),
+//       Ordering::Equal => return,
+//       Ordering::Greater => (a2, a1),
+//     };
+//     if a1 != AllocId::ZERO { self.0.insert((a1, a2)); }
+//   }
 
-  fn get(&self, a1: AllocId, a2: AllocId) -> bool {
-    let (a1, a2) = match a1.cmp(&a2) {
-      Ordering::Less => (a1, a2),
-      Ordering::Equal => return false,
-      Ordering::Greater => (a2, a1),
-    };
-    a1 != AllocId::ZERO && self.0.contains(&(a1, a2))
-  }
-}
+//   fn get(&self, a1: AllocId, a2: AllocId) -> bool {
+//     let (a1, a2) = match a1.cmp(&a2) {
+//       Ordering::Less => (a1, a2),
+//       Ordering::Equal => return false,
+//       Ordering::Greater => (a2, a1),
+//     };
+//     a1 != AllocId::ZERO && self.0.contains(&(a1, a2))
+//   }
+// }
 
 impl Cfg {
   #[must_use] fn build_allocations(&mut self,
     names: &HashMap<Symbol, Entity>
-  ) -> (Allocations, Interference) {
+  ) -> Allocations {
     let meta = |ty: &Ty| ty.meta(names).expect("can't get size of type");
 
-    let mut interference = Interference::default();
+    // let mut interference = Interference::default();
 
     let mut allocs = Allocations::default();
 
@@ -302,13 +300,13 @@ impl Cfg {
                   if x == r.from { copy = true } else { split = true }
                 }
               }
-              let mut interfere = |(old, new), allocs: &Allocations| {
-                interference.insert(old, new);
-                for u in live.keys() {
-                  if last_use.get(u).map_or(false, |&j| j > i) {
-                    interference.insert(new, allocs.vars[u]);
-                  }
-                }
+              let interfere = |(_old, new), _allocs: &Allocations| {
+                // interference.insert(old, new);
+                // for u in live.keys() {
+                //   if last_use.get(u).map_or(false, |&j| j > i) {
+                //     interference.insert(new, allocs.vars[u]);
+                //   }
+                // }
                 new
               };
               if copy {
@@ -347,9 +345,9 @@ impl Cfg {
                 allocs.insert(a, v, meta(ty));
               }
             } else {
-              let a = allocs.push(v, || meta(ty));
+              let _a = allocs.push(v, || meta(ty));
               live.retain(|u, _| last_use.get(u).map_or(false, |&j| j > i) && {
-                interference.insert(a, allocs.vars[u]);
+                // interference.insert(a, allocs.vars[u]);
                 true
               });
             }
@@ -361,7 +359,8 @@ impl Cfg {
       patch.apply(&mut bl.stmts);
     }
 
-    (allocs, interference)
+    // (allocs, interference)
+    allocs
   }
 
   /// Compute the storage requirements of the CFG. This is a partitioning of the `VarId`'s into
@@ -369,8 +368,7 @@ impl Cfg {
   /// a given point in time, and any variable whose storage is overwritten by a later variable in
   /// the same group is dead.
   #[must_use] pub fn storage(&mut self, names: &HashMap<Symbol, Entity>) -> Allocations {
-    let (allocs, _) = self.build_allocations(names);
-    allocs
+    self.build_allocations(names)
   }
 }
 

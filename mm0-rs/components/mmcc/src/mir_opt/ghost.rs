@@ -335,9 +335,7 @@ impl Cfg {
   }
 
   /// Modify the CFG in place to apply the result of ghost analysis.
-  pub fn apply_ghost_analysis(&mut self,
-    res: &GhostAnalysisResult, returns: &[Arg],
-  ) {
+  pub fn apply_ghost_analysis(&mut self, res: &GhostAnalysisResult) {
     self.ctxs.reset_ghost();
     for (id, res) in res.0.enum_iter() {
       let bl = &mut self.blocks[id];
@@ -372,6 +370,6 @@ impl Cfg {
     returns: &[Arg],
   ) {
     let ghost = self.ghost_analysis(reachable, returns);
-    self.apply_ghost_analysis(&ghost, returns);
+    self.apply_ghost_analysis(&ghost);
   }
 }
