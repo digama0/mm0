@@ -152,7 +152,7 @@ impl std::fmt::Debug for Arg {
       else { write!(f, "ex ")? }
     }
     if self.attr.contains(ArgAttr::GHOST) { write!(f, "ghost ")? }
-    write!(f, "{}: {:?}", self.var, self.ty)
+    write!(f, "{:?}: {:?}", self.var, self.ty)
   }
 }
 
@@ -467,7 +467,18 @@ impl EPlaceKind {
       EPlaceKind::Proj(p, ty, _) => p.has_tyvar() || ty.has_tyvar(),
     }
   }
+
+  /// Convert this place to an expression.
+  pub fn to_expr(&self) -> Expr {
+    Rc::new(match self {
+      EPlaceKind::Var(v) => ExprKind::Var(*v),
+      EPlaceKind::Index(p, _, e) => ExprKind::Index(p.to_expr(), e.clone()),
+      EPlaceKind::Slice(p, _, [e1, e2]) => ExprKind::Slice(p.to_expr(), e1.clone(), e2.clone()),
+      EPlaceKind::Proj(p, _, i) => ExprKind::Proj(p.to_expr(), *i),
+    })
+  }
 }
+
 impl HasAlpha for EPlaceKind {
   fn alpha(&self, a: &mut Alpha) -> Self {
     macro_rules! a {($e:expr) => {$e.alpha(a)}}
@@ -1496,7 +1507,11 @@ pub enum LetKind {
 impl std::fmt::Debug for LetKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
-      Self::Let(v, r, _) => write!(f, "{}{:?}", if r {""} else {"ghost "}, v),
+      Self::Let(v, r, ref e) => {
+        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
+        if let Some(e) = e { write!(f, " => {:?}", e)? }
+        Ok(())
+      },
       Self::Own([(v1, r1, _), (v2, r2, _)]) =>
         write!(f, "({}{:?}, {}{:?})",
           if r1 {""} else {"ghost "}, v1, if r2 {""} else {"ghost "}, v2),
@@ -1890,15 +1905,22 @@ impl BasicBlock {
     if let Some(n) = name { write!(f, "{:?}", n)? } else { write!(f, "bb?")? }
     if let Some(ctxs) = ctxs {
       write!(f, "(")?;
+      let long_layout = ctxs.rev_iter(self.ctx).len() > 3;
+      if long_layout { writeln!(f)? }
       let mut first = true;
-      let mut write = |v, r, ty| {
-        if !std::mem::take(&mut first) { write!(f, ", ")? }
-        write!(f, "{}{:?}: {:?}", if r {""} else {"ghost "}, v, ty)
+      let mut write = |v, r, e: &Option<_>, ty| {
+        if long_layout { write!(f, "    ")? }
+        else if !std::mem::take(&mut first) { write!(f, ", ")? }
+        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
+        if let Some(e) = e { write!(f, " => {:?}", e)? }
+        write!(f, ": {:?}", ty)?;
+        if long_layout { writeln!(f, ",")? }
+        Ok(())
       };
       if self.relevance.is_some() {
-        for (v, r, (_, ty)) in self.ctx_iter(ctxs) { write(v, r, ty)? }
+        for (v, r, (e, ty)) in self.ctx_iter(ctxs) { write(v, r, e, ty)? }
       } else {
-        for &(v, r, (_, ref ty)) in ctxs.iter(self.ctx) { write(v, r, ty)? }
+        for &(v, r, (ref e, ref ty)) in ctxs.iter(self.ctx) { write(v, r, e, ty)? }
       }
       write!(f, ")")?
     } else {

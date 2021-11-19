@@ -1095,7 +1095,7 @@ impl std::fmt::Debug for ExprKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ExprKind::Unit => write!(f, "()"),
-      ExprKind::Var(v) => write!(f, "{}", v),
+      ExprKind::Var(v) => write!(f, "{:?}", v),
       ExprKind::Const(c) => write!(f, "{}", c),
       ExprKind::Bool(b) => write!(f, "{}", b),
       ExprKind::Int(n) => write!(f, "{}", n),

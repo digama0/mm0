@@ -126,7 +126,7 @@ impl<I: Idx, T> Index<Range<I>> for IdxVec<I, T> {
 mk_id! {
   /// A variable ID. These are local to a given declaration (function, constant, global),
   /// but are not de Bruijn variables - they are unique identifiers within the declaration.
-  VarId(Debug("v")),
+  VarId(Debug("x")),
 
   /// An ID for an opaque "lambda", an expression modulo an ordered list of free variables.
   /// This is used to embed arbitrary term constructors in the expression language.

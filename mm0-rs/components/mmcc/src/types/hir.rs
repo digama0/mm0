@@ -930,7 +930,7 @@ impl Debug for ItemKind<'_> {
         }
         writeln!(f, ") = {{")?;
         body.debug_indent(1, f)?;
-        writeln!(f, "}}")
+        writeln!(f, "\n}}")
       }
       Self::Global { lhs, rhs } => {
         write!(f, "global {:?} = ", lhs)?;

@@ -28,6 +28,8 @@ struct Translator<'a, 'n> {
   places: TrMap<ty::Place<'a>, EPlace>,
   gen_vars: HashMap<GenId, GenMap>,
   locations: HashMap<HVarId, VarId>,
+  /// Some variables are replaced by places when referenced; this keeps track of them.
+  vars: HashMap<VarId, (EPlace, Place)>,
   located: HashMap<VarId, Vec<VarId>>,
   next_var: VarId,
   cur_gen: GenId,
@@ -42,15 +44,13 @@ trait TranslateBase<'a>: Sized {
   type Output;
   fn get_mut<'b>(_: &'b mut Translator<'a, '_>) ->
     &'b mut TrMap<&'a ty::WithMeta<Self>, Rc<Self::Output>>;
-  fn make(&'a self, _: &mut Translator<'a, '_>) -> Self::Output;
-  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Rc<Self::Output> { Rc::new(self.make(tr)) }
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> Rc<Self::Output>;
 }
 
 impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
   type Output = TyKind;
   fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Ty<'a>, Ty> { &mut t.tys }
-  fn make(&'a self, _: &mut Translator<'a, '_>) -> TyKind { unreachable!() }
-  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Ty {
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> Ty {
     Rc::new(match *self {
       ty::TyKind::Unit => TyKind::Unit,
       ty::TyKind::True => TyKind::True,
@@ -93,26 +93,37 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
 impl<'a> TranslateBase<'a> for ty::PlaceKind<'a> {
   type Output = EPlaceKind;
   fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Place<'a>, EPlace> { &mut t.places }
-  fn make(&'a self, tr: &mut Translator<'a, '_>) -> EPlaceKind {
-    match *self {
-      ty::PlaceKind::Var(v) => EPlaceKind::Var(tr.location(v)),
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> EPlace {
+    Rc::new(match *self {
+      ty::PlaceKind::Var(v) => {
+        let v = tr.location(v);
+        match tr.vars.get(&v) {
+          Some((p, _)) => return p.clone(),
+          None => EPlaceKind::Var(v)
+        }
+      }
       ty::PlaceKind::Index(a, ty, i) => EPlaceKind::Index(a.tr(tr), ty.tr(tr), i.tr(tr)),
       ty::PlaceKind::Slice(a, ty, [i, l]) =>
         EPlaceKind::Slice(a.tr(tr), ty.tr(tr), [i.tr(tr), l.tr(tr)]),
       ty::PlaceKind::Proj(a, ty, i) => EPlaceKind::Proj(a.tr(tr), ty.tr(tr), i),
       ty::PlaceKind::Error => unreachable!(),
-    }
+    })
   }
 }
 
 impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
   type Output = ExprKind;
   fn get_mut<'b>(t: &'b mut Translator<'a, '_>) -> &'b mut TrMap<ty::Expr<'a>, Expr> { &mut t.exprs }
-  fn make(&'a self, _: &mut Translator<'a, '_>) -> ExprKind { unreachable!() }
-  fn make_rc(&'a self, tr: &mut Translator<'a, '_>) -> Expr {
+  fn make(&'a self, tr: &mut Translator<'a, '_>) -> Expr {
     Rc::new(match *self {
       ty::ExprKind::Unit => ExprKind::Unit,
-      ty::ExprKind::Var(v) => ExprKind::Var(v.tr(tr)),
+      ty::ExprKind::Var(v) => {
+        let v = tr.location(v);
+        match tr.vars.get(&v) {
+          Some((p, _)) => return p.to_expr(),
+          None => ExprKind::Var(v),
+        }
+      }
       ty::ExprKind::Const(c) => ExprKind::Const(c),
       ty::ExprKind::Bool(b) => ExprKind::Bool(b),
       ty::ExprKind::Int(n) => ExprKind::Int(n.clone()),
@@ -153,7 +164,7 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
           Err(m) => if let Some(r) = m.get(&gen) { return r.clone() }
         }
       }
-      let r = T::make_rc(&self.k, tr);
+      let r = T::make(&self.k, tr);
       match T::get_mut(tr).entry(self) {
         Entry::Occupied(mut e) => match e.get_mut() {
           Ok(_) => unreachable!(),
@@ -171,7 +182,7 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
       }
       r
     } else {
-      T::make_rc(&self.k, tr)
+      T::make(&self.k, tr)
     }
   }
 }
@@ -483,8 +494,6 @@ pub(crate) struct BuildMir<'a, 'n> {
   /// If this is `Some(args)` then `args` are the names of the return places.
   /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
   returns: Option<Rc<[(VarId, bool)]>>,
-  /// Some variables are replaced by places when referenced; this keeps track of them.
-  vars: HashMap<VarId, Place>,
   /// A list of allocated globals and the variables they were assigned to.
   globals: Vec<(Symbol, VarId, Ty)>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -519,7 +528,6 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       tree: Default::default(),
       returns: None,
       tr,
-      vars: Default::default(),
       globals: vec![],
       cur_block: BlockId::ENTRY,
       cur_ctx: CtxId::ROOT,
@@ -635,7 +643,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     Ok(match e.k.0 {
       hir::PlaceKind::Var(v) => {
         let v2 = self.tr.location(v);
-        self.vars.get(&v2).cloned().unwrap_or_else(|| v2.into())
+        self.tr.vars.get(&v2).map_or_else(|| v2.into(), |p| p.1.clone())
       }
       hir::PlaceKind::Index(args) => {
         let (ty, arr, idx, hyp_or_n) = *args;
@@ -681,7 +689,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     Ok(match e.k.0 {
       hir::ExprKind::Var(v, gen) => {
         let v = self.tr_gen(v, gen);
-        self.vars.get(&v).cloned().unwrap_or_else(|| v.into())
+        self.tr.vars.get(&v).map_or_else(|| v.into(), |p| p.1.clone())
       }
       hir::ExprKind::Index(args) => {
         let (ty, [arr, idx], hyp_or_n) = *args;
@@ -1012,7 +1020,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })
   }
 
-  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, src: &mut Place) {
+  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, esrc: EPlace, src: &mut Place) {
     match pat.k {
       TuplePatternKind::Name(name, v, ty) => {
         let v = self.tr(v);
@@ -1021,11 +1029,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let lk = LetKind::Let(v, !ty.ghostly(), None);
           self.push_stmt(Statement::Let(lk, tgt.clone(), src.clone().into()));
           self.globals.push((name, v, tgt));
-          v.into()
+          (Rc::new(EPlaceKind::Var(v)), v.into())
         } else {
-          src.clone()
+          (esrc, src.clone())
         };
-        self.vars.insert(v, src);
+        self.tr.vars.insert(v, src);
       }
       TuplePatternKind::Tuple(pats, mk, ty) => {
         let pk = match mk {
@@ -1042,14 +1050,17 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             let lk = LetKind::Own([
               (v, !vty.ghostly(), self.tr(vty)), (h, true, self.tr(hpat.k.ty()))]);
             self.push_stmt(Statement::Let(lk, tgt, src.clone().into()));
-            self.tup_pat(global, vpat, &mut v.into());
-            self.tup_pat(global, hpat, &mut h.into());
+            self.tup_pat(global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+            self.tup_pat(global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
             return
           }),
         };
         for (i, &pat) in pats.iter().enumerate() {
-          src.proj.push((self.tr(ty), Projection::Proj(pk, i.try_into().expect("overflow"))));
-          self.tup_pat(global, pat, src);
+          let i = i.try_into().expect("overflow");
+          let ty = self.tr(ty);
+          src.proj.push((ty.clone(), Projection::Proj(pk, i)));
+          let esrc = Rc::new(EPlaceKind::Proj(esrc.clone(), ty, i));
+          self.tup_pat(global, pat, esrc, src);
           src.proj.pop();
         }
       }
@@ -1088,14 +1099,14 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ArgKind::Lam(pat) => {
             let v = unwrap_unchecked!(it.next()).0;
             self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
-            self.tup_pat(false, pat, &mut v.into());
+            self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
             pats.push(pat);
           }
           hir::ArgKind::Let(pat, pe, e) => {
             if let Some(e) = e {
               let v = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
               self.expr(*e, Some(PreVar::Ok(v)))?;
-              self.tup_pat(false, pat, &mut v.into());
+              self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
             }
             let pe = self.tr(pe);
             self.tr.tr_tup_pat(pat, pe);
@@ -1144,15 +1155,15 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.expr_call(call, rhs.k.1 .1, &dest)?;
         for (&pat, v) in pats.iter().zip(dest) {
           let v = self.tr(v);
-          self.tup_pat(global, pat, &mut v.into());
+          self.tup_pat(global, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
         }
-      } else {
-        let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
-        self.expr(rhs, Some(v))?;
-        let v = self.tr(v);
-        self.tup_pat(global, lhs, &mut v.into());
+        return Ok(())
       }
     }
+    let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
+    self.expr(rhs, Some(v))?;
+    let v = self.tr(v);
+    self.tup_pat(global, lhs, Rc::new(EPlaceKind::Var(v)), &mut v.into());
     Ok(())
   }
 

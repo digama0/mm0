@@ -242,11 +242,15 @@ impl LinkedCode {
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
     let mut func_code = IdxVec::from_default(coll.funcs.1.len());
     for &f in &coll.postorder {
-      if let Some(proc) = mir.get(&coll.funcs.1[f]) {
+      let sym = coll.funcs.1[f];
+      if let Some(proc) = mir.get(&sym) {
         let (abi, code) = regalloc_vcode(
           names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
           proc.allocs.as_deref().expect("optimized already"),
           VCodeCtx::Proc(&proc.rets));
+        // println!("mir {} = {:#?}", sym, proc);
+        // println!("abi {} = {:#?}", sym, abi);
+        // println!("code {} = {:#?}", sym, code);
         func_abi[f] = abi;
         func_code[f] = Some(code);
       }
