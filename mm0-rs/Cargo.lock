@@ -535,6 +535,7 @@ dependencies = [
  "either",
  "futures",
  "if_chain",
+ "im",
  "itertools",
  "lazy_static",
  "libc",

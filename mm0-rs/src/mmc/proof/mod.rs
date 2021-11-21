@@ -21,8 +21,7 @@ use mmcc::{Idx, Symbol};
 use mmcc::proof::ElfProof;
 
 use crate::elab::Result;
-use crate::{Elaborator, Environment, Expr, ExprNode,
-  LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
+use crate::{ElabError, Elaborator, Environment, Expr, ExprNode, LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
 use crate::elab::proof::{self, IDedup, ProofKind};
 
 pub(crate) use predefs::Predefs;
@@ -146,6 +145,13 @@ impl ProofDedup<'_> {
     let refs = self.from_expr_nodes(&thd.heap);
     let concl = self.from_expr_node(&thd.ret, &refs);
     (concl, self.thm(name, &[], concl))
+  }
+
+  fn get_def0(&mut self, env: &Environment, name: TermId) -> ProofId {
+    let td = &env.terms[name];
+    assert!(td.args.is_empty());
+    let e = if let TermKind::Def(Some(e)) = &td.kind { e } else { unreachable!("not a def") };
+    self.from_expr(e)
   }
 
   fn refl_conv(&mut self, e: ProofId) -> ProofId {
@@ -287,7 +293,10 @@ pub(crate) fn render_proof(
   };
   let fsp = elab.fspan(sp);
   let mut proc_asm = HashMap::new();
-  assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
+  let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+  })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))?;
   // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
   Ok(())
 }

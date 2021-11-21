@@ -1169,7 +1169,7 @@ impl<'a> BuildAssembly<'a> {
     Ok((s, end, a, thm!(self.thm, {asm_thm}(): (assemble s global_start {*end} a))))
   }
 
-  fn assemble(&mut self, proof: &'a ElfProof<'a>) -> Result<()> {
+  fn assemble(&mut self, proof: &'a ElfProof<'a>) -> Result<TermId> {
     let mut iter = proof.assembly();
     let x = self.hex.from_u32(&mut self.thm, TEXT_START);
     let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, *x, &mut |this, item, x| {
@@ -1205,7 +1205,8 @@ impl<'a> BuildAssembly<'a> {
       .map_err(|e| e.into_elab_error(self.full))?;
 
     let mut iter = proof.assembly();
-    self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.elab, asmd_thm))
+    self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.elab, asmd_thm))?;
+    Ok(gctx)
   }
 
   fn mk_lemma(&mut self,
@@ -1283,7 +1284,7 @@ pub(super) fn assemble_proof(
   proof: &ElfProof<'_>,
   span: &FileSpan,
   full: Span,
-) -> Result<()> {
+) -> Result<TermId> {
   let mut thm = ProofDedup::new(pd, &[]);
   let mut build = BuildAssembly {
     proc_asm,
@@ -1296,6 +1297,5 @@ pub(super) fn assemble_proof(
     thm,
     asmd_lemmas: 0,
   };
-  build.assemble(proof)?;
-  Ok(())
+  build.assemble(proof)
 }

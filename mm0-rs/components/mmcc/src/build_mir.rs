@@ -467,7 +467,7 @@ impl BlockTreeBuilder {
 pub(crate) struct Initializer {
   cfg: Cfg,
   /// A list of allocated globals and the variables they were assigned to.
-  globals: Vec<(Symbol, VarId, Ty)>,
+  globals: Vec<(Symbol, bool, VarId, Ty)>,
   cur: Block<(BlockId, CtxId, GenId)>,
 }
 
@@ -495,7 +495,7 @@ pub(crate) struct BuildMir<'a, 'n> {
   /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
   returns: Option<Rc<[(VarId, bool)]>>,
   /// A list of allocated globals and the variables they were assigned to.
-  globals: Vec<(Symbol, VarId, Ty)>,
+  globals: Vec<(Symbol, bool, VarId, Ty)>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
   /// inserted.
   cur_block: BlockId,
@@ -548,6 +548,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn new_block(&mut self) -> BlockId { self.cfg.new_block(self.cur_ctx) }
 
+  fn dominated_block(&mut self, ctx: CtxId) -> BlockId {
+    let bl = self.new_block();
+    self.cur_block().stmts.push(Statement::DominatedBlock(bl, ctx));
+    bl
+  }
+
   fn extend_ctx(&mut self, var: VarId, r: bool, ty: ExprTy) {
     self.cur_ctx = self.cfg.ctxs.extend(self.cur_ctx, var, r, ty)
   }
@@ -563,6 +569,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       Statement::Assign(_, _, _, ref vars) => for v in &**vars {
         self.extend_ctx(v.to, v.rel, v.ety.clone())
       }
+      Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
     }
     self.cur_block().stmts.push(stmt);
   }
@@ -886,7 +893,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.fulfill_unit_dest(e.k.1, dest, |this, dest| {
       match e.k.0 {
         hir::ExprKind::If {hyp, cond, cases, gen, muts} =>
-          return this.expr_if(hyp, *cond, *cases, gen, muts, dest),
+          return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, dest),
         hir::ExprKind::Block(bl) => return this.block(bl, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
@@ -1026,9 +1033,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let v = self.tr(v);
         let src = if global {
           let tgt = self.tr(ty);
-          let lk = LetKind::Let(v, !ty.ghostly(), None);
+          let r = !ty.ghostly();
+          let lk = LetKind::Let(v, r, None);
           self.push_stmt(Statement::Let(lk, tgt.clone(), src.clone().into()));
-          self.globals.push((name, v, tgt));
+          self.globals.push((name, r, v, tgt));
           (Rc::new(EPlaceKind::Var(v)), v.into())
         } else {
           (esrc, src.clone())
@@ -1184,7 +1192,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             self.cur_ctx = base_ctx;
             (bl, args)
           }).collect::<Rc<[_]>>();
-          self.tree.push_group(jumps.iter().map(|p| p.0).collect());
+          let bls: SmallVec<[_; 2]> = jumps.iter().map(|p| p.0).collect();
+          self.cur_block().stmts.push(Statement::LabelGroup(bls.clone(), base_ctx));
+          self.tree.push_group(bls);
           self.labels.push((v, LabelGroupData {
             jumps: Some(((base_gen, brk.1 .1.clone()), jumps.clone())),
             brk: Some((brk.clone(), dest))
@@ -1213,13 +1223,17 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   fn block(&mut self, hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest) -> Block<()> {
     let reset = (self.labels.len(), self.tree.groups.len());
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
+      let base_ctx = self.cur_ctx;
       let dest2 = dest.map(|v| self.tr_gen(v, gen));
-      Some((JoinBlock(self.new_block(), (gen, muts.into())), dest2))
+      Some((JoinBlock(self.dominated_block(base_ctx), (gen, muts.into())), dest2))
     } else { None };
     let r = (|| {
       for stmt in stmts { self.stmt(stmt, jb.as_ref())? }
-      if let Some(e) = expr { self.expr(*e, dest) }
-      else { self.expr_unit(dest); Ok(()) }
+      if let Some(e) = expr { self.expr(*e, dest)? }
+      else { self.expr_unit(dest) }
+      let stmts = &mut self.cfg[self.cur_block].stmts;
+      for _ in self.labels.len()..reset.0 { stmts.push(Statement::PopLabelGroup) }
+      Ok(())
     })();
     self.labels.truncate(reset.0);
     self.tree.truncate(reset.1);
@@ -1231,6 +1245,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn expr_if(&mut self,
+    ety: ty::ExprTy<'a>,
     hyp: Option<[HVarId; 2]>,
     cond: hir::Expr<'a>,
     [e_tru, e_fal]: [hir::Expr<'a>; 2],
@@ -1240,6 +1255,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   ) -> Block<()> {
     // In the general case, we generate:
     //   v_cond := cond
+    //   dominated_block(after)
     //   if v_cond {h. goto tru(h)} else {h. goto fal(h)}
     // tru(h: cond):
     //   v := e_tru
@@ -1256,7 +1272,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       None => (self.fresh_var(), self.fresh_var()),
       Some([vh1, vh2]) => (self.tr(vh1), self.tr(vh2)),
     };
-    let (_, base_ctx, base_gen) = self.cur();
+    let base@(_, base_ctx, base_gen) = self.cur();
     // tru_ctx is the current context with `vh: cond`
     let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
@@ -1301,7 +1317,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       (Err(Diverged), Ok(())) => { self.set(fal) }
       (Ok(()), Ok(())) => {
         // If neither diverges, we put `goto after` at the end of each block
-        let join = JoinBlock(self.new_block(), (gen, muts.into()));
+        self.set(base);
+        if let Some(v) = trans {
+          let ety = self.tr_gen(ety, gen);
+          self.extend_ctx(v, true, ety)
+        }
+        let join = JoinBlock(self.dominated_block(base_ctx), (gen, muts.into()));
         self.set(tru);
         let args = match trans { None => vec![], Some(v) => vec![(v, true, v.into())] };
         self.join(&join, args.clone(), None);
@@ -1338,6 +1359,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
     // Otherwise we actually have a loop. Generally we want to produce:
     //
+    //   label_group([base])
     //   jump base
     // base:
     //   v := cond
@@ -1346,10 +1368,13 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     //   _ := body
     //   goto base
     // after(h': !cond):
+    //   pop_label_group
     //   dest := h'
     //
     // If `has_break` is true, then we use an extra block `fal` to drop `!cond`:
     //
+    //   dominated_block(after)
+    //   label_group([base])
     //   jump base
     // base:
     //   v := cond
@@ -1362,18 +1387,19 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     // after:
     //   dest := ()
     let base_bl = self.new_block();
+    let base_ctx = self.cur_ctx;
+    let muts: Rc<[HVarId]> = muts.into();
+    // if `has_break` then we need to be prepared to jump to `after` from inside the loop.
+    let brk = if has_break {
+      Some((JoinBlock(self.dominated_block(base_ctx), (gen, muts.clone())), None))
+    } else { None };
+
+    self.cur_block().stmts.push(Statement::LabelGroup([base_bl].into_iter().collect(), base_ctx));
     self.tree.push_group([base_bl].into_iter().collect());
     self.tree.push(base_bl);
     self.cur_block().terminate(Terminator::Jump(base_bl, vec![], None));
     self.cur_block = base_bl;
     let base_gen = self.tr.cur_gen;
-    let base_ctx = self.cur_ctx;
-    let muts: Rc<[HVarId]> = muts.into();
-
-    // if `has_break` then we need to be prepared to jump to `after` from inside the loop.
-    let brk = if has_break {
-      Some((JoinBlock(self.new_block(), (gen, muts.clone())), None))
-    } else { None };
 
     // Set things up so that `(continue label)` jumps to `base`,
     // and `(break label)` jumps to `after`
@@ -1393,6 +1419,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         // If `cond` evaluates to `true`, then this is an infinite loop and `after` is not
         // reachable, unless it is accessed indirectly via `break`.
         // We generate the following code:
+        //   label_group([base])
         //   jump base
         // base:
         //   _ := cond   (we know it is true so no point in capturing the result)
@@ -1435,6 +1462,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.set((fal, fal_ctx, test.2));
           self.join(join, vec![], None);
         } else {
+          // Pop the label group for the while because we are still in scope
+          self.cfg[fal].stmts.push(Statement::PopLabelGroup);
           // Set `exit_point` to the `after` block (the false branch of the if),
           // and `vh: !cond` is the output
           exit_point = Ok(((fal, fal_ctx, test.2), vh.into()));
@@ -1486,12 +1515,13 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let tys = self.tr(tys);
     let args = args.into_iter().map(|e| Ok((!e.k.1 .1.ghostly(), self.operand(e)?)))
       .collect::<Block<Box<[_]>>>()?;
+    let base_ctx = self.cur_ctx;
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
         let v = self.fresh_var();
         self.extend_ctx(v, false, (None, Rc::new(TyKind::False)));
-        let bl = self.new_block();
+        let bl = self.dominated_block(base_ctx);
         self.cur_block().terminate(Terminator::Call {
           f: f.k, se, tys, args, reach: false, tgt: bl, rets: Box::new([(false, v)])
         });
@@ -1522,7 +1552,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         }).collect()
       }
     };
-    let bl = self.new_block();
+    let bl = self.dominated_block(base_ctx);
     self.cur_block().terminate(Terminator::Call {
       f: f.k, se, tys, args, reach: true, tgt: bl, rets: vars
     });
@@ -1610,7 +1640,7 @@ impl Initializer {
   /// Append the call to `main` at the end of the `start` routine.
   pub(crate) fn finish(&mut self,
     mir: &HashMap<Symbol, Proc>, main: Option<Symbol>
-  ) -> (Cfg, Vec<(Symbol, VarId, Ty)>) {
+  ) -> (Cfg, Vec<(Symbol, bool, VarId, Ty)>) {
     let mut build = BuildMir::new(None);
     mem::swap(&mut self.cfg, &mut build.cfg);
     mem::swap(&mut self.globals, &mut build.globals);

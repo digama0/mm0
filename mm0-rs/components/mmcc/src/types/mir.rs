@@ -675,23 +675,26 @@ pub type BlockVec<T> = super::IdxVec<BlockId, T>;
 /// list of variables and types. The context at index 0 is the root context, and is its own parent.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub struct Contexts(Vec<CtxBuf>);
+pub struct Contexts(IdxVec<CtxBufId, CtxBuf>);
 
 impl Index<CtxBufId> for Contexts {
   type Output = CtxBuf;
-  fn index(&self, index: CtxBufId) -> &Self::Output { &self.0[index.0 as usize] }
+  fn index(&self, index: CtxBufId) -> &Self::Output { &self.0[index] }
 }
 impl IndexMut<CtxBufId> for Contexts {
-  fn index_mut(&mut self, index: CtxBufId) -> &mut Self::Output { &mut self.0[index.0 as usize] }
+  fn index_mut(&mut self, index: CtxBufId) -> &mut Self::Output { &mut self.0[index] }
 }
 impl Default for Contexts {
-  fn default() -> Self { Self(vec![CtxBuf::default()]) }
+  fn default() -> Self { Self(vec![CtxBuf::default()].into()) }
 }
 
 impl Contexts {
+  /// The number of allocated context buffers.
+  pub fn len(&self) -> usize { self.0.len() }
+
   /// Given a context ID, retrieve a context buffer, ensuring that it can be directly extended by
   /// allocating a new context buffer if necessary.
-  pub fn unshare(&mut self, id: &'_ mut CtxId) -> &mut CtxBuf {
+  fn unshare(&mut self, id: &'_ mut CtxId) -> &mut CtxBuf {
     let ctx = &mut self[id.0];
     if u32::try_from(ctx.vars.len()).expect("overflow") == id.1 {
       // Safety: NLL case 3 (polonius validates this borrow pattern)
@@ -699,10 +702,9 @@ impl Contexts {
       unsafe { std::mem::transmute::<&mut CtxBuf, &mut CtxBuf>(ctx) }
     } else {
       let size = ctx.size;
-      let buf_id = CtxBufId(self.0.len().try_into().expect("overflow"));
-      self.0.push(CtxBuf {parent: *id, size: size + id.1, vars: vec![]});
-      *id = CtxId(buf_id, 1);
-      unwrap_unchecked!(self.0.last_mut())
+      let buf_id = self.0.push(CtxBuf {parent: *id, size: size + id.1, vars: vec![]});
+      *id = CtxId(buf_id, 0);
+      unwrap_unchecked!(self.0 .0.last_mut())
     }
   }
 
@@ -718,6 +720,15 @@ impl Contexts {
   /// keep a stack.
   pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxRevIter<'_> {
     CtxRevIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
+  }
+
+  /// Construct an iterator over the variables in the context, using the relevance values after
+  /// ghost analysis, instead of the relevance values stored in the context itself.
+  /// Only callable after ghost analysis is done.
+  pub fn rev_iter_with_rel<'a>(&'a self, id: CtxId, rel: &'a BitVec) -> CtxRevIterWithRel<'a> {
+    let a = self.rev_iter(id);
+    debug_assert_eq!(rel.len(), a.len());
+    CtxRevIterWithRel { a, b: rel.iter() }
   }
 
   /// Returns an iterator over the variables and their values.
@@ -740,7 +751,7 @@ impl Contexts {
 
   /// Clear all computational relevance settings in the contexts.
   pub fn reset_ghost(&mut self) {
-    self.0.iter_mut().for_each(|ctx| ctx.vars.iter_mut().for_each(|v| v.1 = false))
+    self.0 .0.iter_mut().for_each(|ctx| ctx.vars.iter_mut().for_each(|v| v.1 = false))
   }
 
   /// Set computational relevance for all variables in the context for which `vars` returns true.
@@ -792,7 +803,7 @@ impl ExactSizeIterator for CtxRevIter<'_> {
 
 /// The iterator struct returned by [`Contexts::iter`].
 pub type CtxIter<'a> = std::iter::Flatten<std::iter::Rev<
-  std::vec::IntoIter<&'a [(VarId, bool, (Option<Rc<ExprKind>>, Rc<TyKind>))]>>>;
+  std::vec::IntoIter<&'a [(VarId, bool, ExprTy)]>>>;
 
 /// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
 #[must_use] #[derive(Clone)]
@@ -986,9 +997,9 @@ impl CtxBufId {
 /// [`Contexts`]), plus an index into that buffer. The logical context denoted includes all
 /// contexts in the parent chain up to the root, plus the selected context buffer up to the
 /// specified index (which may be any number `<= buf.len()`).
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub struct CtxId(CtxBufId, u32);
+pub struct CtxId(pub CtxBufId, pub u32);
 
 impl CtxId {
   /// The empty context.
@@ -1561,14 +1572,33 @@ pub enum Statement {
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
   Assign(Place, Ty, Operand, Box<[Rename]>),
+  /// Declare that we may backward-jump to any of the blocks in this list.
+  /// This is used to forward declare blocks like the start block in a while or label.
+  /// The block's context must extend the context at this point in the basic block
+  /// (which is an argument to the statement declaration).
+  /// This is a ghost operation which does nothing to the state.
+  LabelGroup(SmallVec<[BlockId; 2]>, CtxId),
+  /// Exit the scope of a previously declared label group.
+  PopLabelGroup,
+  /// Declare that we may forward-jump to this block. This is used to forward declare
+  /// blocks like the block after an if statement or while.
+  /// The block's context must extend the context at this point in the basic block
+  /// (the argument to this statement is the initial context, and the block's context
+  /// is the derived context).
+  /// This is a ghost operation which does nothing to the state.
+  DominatedBlock(BlockId, CtxId),
 }
 
 impl std::fmt::Debug for Statement {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
     match self {
       Self::Let(lk, ty, rv) => write!(f, "let {:?}: {:?} := {:?}", lk, ty, rv),
       Self::Assign(lhs, ty, rhs, renames) =>
         write!(f, "{:?}: {:?} <- {:?}, with {:?}", lhs, ty, rhs, renames),
+      Self::LabelGroup(bls, _) => write!(f, "label_group({:?})", bls.iter().format(", ")),
+      Self::PopLabelGroup => write!(f, "pop_label_group"),
+      Self::DominatedBlock(bl, _) => write!(f, "dominated_block({:?})", bl),
     }
   }
 }
@@ -1577,32 +1607,35 @@ impl Statement {
   /// True if this statement is computationally relevant.
   #[must_use] pub fn relevant(&self) -> bool {
     match self {
-      Statement::Let(lk, _, _) => lk.relevant(),
-      Statement::Assign(_, _, _, vars) => vars.iter().any(|v| v.rel),
+      Self::Let(lk, _, _) => lk.relevant(),
+      Self::Assign(_, _, _, vars) => vars.iter().any(|v| v.rel),
+      Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => false,
     }
   }
 
   /// The number of variables created by this statement.
   #[must_use] pub fn num_defs(&self) -> usize {
     match self {
-      Statement::Let(LetKind::Let(..), _, _) => 1,
-      Statement::Let(LetKind::Own(..), _, _) => 2,
-      Statement::Assign(_, _, _, vars) => vars.len(),
+      Self::Let(LetKind::Let(..), _, _) => 1,
+      Self::Let(LetKind::Own(..), _, _) => 2,
+      Self::Assign(_, _, _, vars) => vars.len(),
+      Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => 0,
     }
   }
 
   /// (Internal) iteration over the variables created by a statement.
   pub fn foreach_def<'a>(&'a self, mut f: impl FnMut(VarId, bool, Option<&'a Expr>, &'a Ty)) {
     match self {
-      &Statement::Let(LetKind::Let(v, r, ref e), ref ty, _) => f(v, r, e.as_ref(), ty),
-      &Statement::Let(LetKind::Own([(x, xr, ref xt), (y, yr, ref yt)]), _, _) => {
+      &Self::Let(LetKind::Let(v, r, ref e), ref ty, _) => f(v, r, e.as_ref(), ty),
+      &Self::Let(LetKind::Own([(x, xr, ref xt), (y, yr, ref yt)]), _, _) => {
         f(x, xr, None, xt);
         f(y, yr, None, yt);
       }
-      Statement::Assign(_, _, _, vars) =>
+      Self::Assign(_, _, _, vars) =>
         vars.iter().for_each(|Rename {to, rel, ety: (e, ty), ..}| {
           f(*to, *rel, e.as_ref(), ty)
         }),
+      Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => {}
     }
   }
 
@@ -1781,6 +1814,7 @@ pub(crate) trait Visitor {
         if needed { self.visit_place(lhs); self.visit_operand(rhs) }
       }
       Statement::Let(lk, _, rv) => if lk.relevant() { self.visit_rvalue(rv) }
+      Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
     }
   }
 
@@ -1855,9 +1889,7 @@ impl BasicBlock {
   /// Only callable after ghost analysis is done.
   pub fn ctx_rev_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxRevIterWithRel<'a> {
     let rel = self.relevance.as_ref().expect("ghost analysis not done yet");
-    let a = ctxs.rev_iter(self.ctx);
-    debug_assert_eq!(rel.len(), a.len());
-    CtxRevIterWithRel { a, b: rel.iter() }
+    ctxs.rev_iter_with_rel(self.ctx, rel)
   }
 
   /// Construct an iterator over the variables in the context, using the relevance values after

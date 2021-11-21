@@ -251,18 +251,24 @@ impl Cfg {
       let last_use = bl.liveness(&init);
       let mut patch: VecPatch<Statement, StorageEdit> = Default::default();
       let mut live = HashMap::new();
-      for (v, r, (e, ty)) in bl.ctx_rev_iter(&self.ctxs) {
+      let mut to_ghost = vec![];
+      let rel = bl.relevance.as_mut().expect("ghost analysis not done yet");
+      for (i, (v, r, (e, ty))) in self.ctxs.rev_iter_with_rel(bl.ctx, rel).enumerate() {
         if r {
           live.insert(v, (e.as_ref(), ty));
-          allocs.push(v, || meta(ty));
+          if allocs.push(v, || meta(ty)) == AllocId::ZERO { to_ghost.push(i) }
         }
       }
 
-      for (i, s) in bl.stmts.iter().enumerate() {
+      for (i, s) in bl.stmts.iter_mut().enumerate() {
         match s {
-          Statement::Assign(_, _, _, vars) => for r in vars.iter().filter(|r| r.rel) {
+          Statement::Assign(_, _, _, vars) => for r in vars.iter_mut().filter(|r| r.rel) {
             if !r.rel { continue }
             if let Some(&(mut a)) = allocs.vars.get(&r.from) {
+              if a == AllocId::ZERO {
+                r.rel = false;
+                continue
+              }
 
               // Consider the following code.
               //   let y = x;
@@ -317,19 +323,21 @@ impl Cfg {
                   LetKind::Let(v, true, e.cloned()), ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
-                a = interfere((old, allocs.push(v, || meta(ty))), &allocs);
+                let new = allocs.push(v, || meta(ty));
+                assert!(new != AllocId::ZERO);
+                a = interfere((old, new), &allocs);
               } else if split {
                 a = interfere(allocs.split(r.from), &allocs)
               }
               allocs.insert(a, r.to, meta(&r.ety.1));
             }
           }
-          Statement::Let(lk, ty, rv) => {
-            let (v, r, ty) = match *lk {
-              LetKind::Let(v, r, _) => (v, r, ty),
-              LetKind::Own([_, (v, r, ref ty)]) => (v, r, ty),
+          Statement::Let(lk, ref ty, rv) => {
+            let (v, r, ty) = match lk {
+              LetKind::Let(v, r, _) => (*v, r, ty),
+              LetKind::Own([_, (v, r, ref ty)]) => (*v, r, ty),
             };
-            if !r { continue }
+            if !*r { continue }
             let mut copy = None;
             let mut copy_place = |p: &Place| if p.proj.is_empty() { copy = Some(p.local) };
             match rv {
@@ -340,22 +348,27 @@ impl Cfg {
               }
               _ => {}
             }
+            let mut tgt = AllocId::ZERO;
             if let Some(from) = copy {
               if let Some(&a) = allocs.vars.get(&from) {
+                tgt = a;
                 allocs.insert(a, v, meta(ty));
               }
             } else {
-              let _a = allocs.push(v, || meta(ty));
+              tgt = allocs.push(v, || meta(ty));
               live.retain(|u, _| last_use.get(u).map_or(false, |&j| j > i) && {
                 // interference.insert(a, allocs.vars[u]);
                 true
               });
             }
+            if tgt == AllocId::ZERO { *r = false }
           }
+          Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
         s.foreach_def(|v, r, e, ty| if r { live.insert(v, (e, ty)); })
       }
 
+      for i in to_ghost { rel.set(i, false); }
       patch.apply(&mut bl.stmts);
     }
 

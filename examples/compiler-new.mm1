@@ -40,24 +40,31 @@ local def okLabelGroupsN (pctx: set): set = $ Snd (Snd pctx) $;
 @mmc-th local def labelGroup0: set = $ 0 $; -- TODO
 prefix labelGroup0: $LG0$ prec max;
 @mmc-th local def labelGroup (var: nat) (ls labs: set): set = $ 0 $; -- TODO
-notation labelGroup (var: nat) (ls labs: set): set = ($LG($:max) var ($,$:0) ls ($);$:0) labs;
+notation labelGroup (var: nat) (ls labs: set): set = ($LG($:85) var ($,$:0) ls ($);$:0) labs;
 
 @mmc-th local def findLabels (labs: set) (var: nat) (ls: set): wff = $ F. $; -- TODO
 @mmc-th theorem findLabels1: $ findLabels (LG(var, ls); labs) var ls $ = 'sorry;
 @mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
   $ findLabels (LG(var1, ls1); labs) var ls $ = 'sorry;
 
--- inductive labels
--- | and : labels → labels → labels
--- | one : block_loc → tctx → labels
+--| `labels.and : labels → labels → labels`
 @mmc-th local def labelA (A B: set): set = $ 0 $; -- TODO
 infixl labelA: $+L$ prec 20;
-@mmc-th local def label1 (x: nat) (P: set): set = $ 0 $; -- TODO
+--| `labels.one : option block_loc → tctx → labels`
+@mmc-th local def label1 (x: nat) (tctx: set): set = $ 0 $; -- TODO
 
 @mmc-th local def findLabel (ls: set) (x: nat) (A: set): wff = $ F. $; -- TODO
 @mmc-th theorem findLabel_l (h: $ findLabel A x P $): $ findLabel (A +L B) x P $ = 'sorry;
 @mmc-th theorem findLabel_r (h: $ findLabel B x P $): $ findLabel (A +L B) x P $ = 'sorry;
 @mmc-th theorem findLabel1: $ findLabel (label1 x P) x P $ = 'sorry;
+
+--| The empty context.
+@mmc-th local def vctx0: set = $ 0 $; -- TODO
+
+--| Type context, or type state.
+--| The first part is the logical context, where variables and their types are stored,
+--| and the second part is the machine context where variables are assigned to memory locations.
+@mmc-th local def mkTCtx (vctx: set) (mctx: nat): set = $ 0 $; -- TODO
 
 local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
 local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO
@@ -121,6 +128,8 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th local def okWeak (bctx lctx1 lctx2: set): wff = $ F. $; -- TODO
 
+@mmc-th theorem okWeak_id: $ okWeak bctx lctx lctx $ = 'sorry;
+
 @mmc-th local def okBlock (bctx: set) (ip: nat) (lctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okBlock_weak
@@ -133,9 +142,13 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
   (h2: $ okCode (mkBCtx pctx L) lctx code ok0 $):
   $ okBlock (mkBCtx pctx L) ip lctx $ = 'sorry;
 
-@mmc-th theorem okCode_loop
-  (h: $ okCode (mkBCtx pctx (labelGroup var ls L)) lctx code ok0 $):
-  $ okCode (mkBCtx pctx L) lctx code ok0 $ = 'sorry;
+@mmc-th theorem okBlock0
+  (h: $ okWeak (mkBCtx pctx L) lctx ok0 $):
+  $ okBlock (mkBCtx pctx L) 0 lctx $ = 'sorry;
+
+@mmc-th theorem okBlock_loop
+  (h: $ okBlock (mkBCtx pctx (LG(var, ls); L)) ip lctx $):
+  $ okBlock (mkBCtx pctx L) ip lctx $ = 'sorry;
 
 @mmc-th local def okPushVariant (v: nat) (lctx1 lctx2: set): wff = $ F. $; -- TODO
 
@@ -161,8 +174,8 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th theorem okPrologue_alloc0
   (h1: $ okEpi bctx epi x0 tctx $)
-  (h2: $ okCode bctx (okPrologue epi sp tctx) code lctx2 $):
-  $ okCode bctx tctx code lctx2 $ = 'sorry;
+  (h2: $ okCode bctx tctx code lctx2 $):
+  $ okCode bctx (okPrologue epi sp tctx) code lctx2 $ = 'sorry;
 
 @mmc-th local def okEpilogue (epi: nat): set = $ 0 $; -- TODO
 

@@ -258,7 +258,8 @@ impl ExactSizeIterator for ProcIter<'_> {
 #[derive(Clone, Copy, Debug)]
 pub struct Proc<'a> {
   code: &'a LinkedCode,
-  cfg: &'a Cfg,
+  /// The corresponding CFG object in the MIR.
+  pub cfg: &'a Cfg,
   proc: &'a PCode,
   /// The function being proven, or `None` for the init function.
   pub id: Option<ProcId>,
@@ -330,7 +331,7 @@ impl<'a> Proc<'a> {
   }
 
   /// The proof tree for the entry block.
-  #[must_use] fn proof_tree(&self) -> BlockProofTree<'_> {
+  #[must_use] pub fn proof_tree(&self) -> BlockProofTree<'_> {
     BlockProofTree::new(self, &self.cfg.tree)
   }
 }
@@ -496,26 +497,21 @@ impl<'a> Inst<'a> {
 #[derive(Clone, Debug)]
 pub enum BlockProofTree<'a> {
   /// A proof by induction.
-  Induction(BlockTreeInduction<'a>),
+  Induction(&'a [BlockId], BlockTreeSeq<'a>),
   /// A sequence of block proofs in dependency order.
-  Seq(BlockTreeIter<'a>),
-  /// A sequence of block proofs in dependency order.
+  Seq(BlockTreeSeq<'a>),
+  /// A single block proof.
   One(BlockProof<'a>),
 }
 
 impl<'a> BlockProofTree<'a> {
   fn new(ctx: &'a Proc<'a>, bt: &'a BlockTree) -> Self {
     match bt {
-      BlockTree::LabelGroup(data) => Self::Induction(BlockTreeInduction {
+      BlockTree::LabelGroup(data) => Self::Induction(&data.0, BlockTreeSeq {
         ctx,
-        labels: &data.0,
-        rest: &data.1,
+        args: &data.1,
       }),
-      BlockTree::Many(args) => Self::Seq(BlockTreeIter {
-        ctx,
-        seq: args.iter(),
-        stack: vec![],
-      }),
+      BlockTree::Many(args) => Self::Seq(BlockTreeSeq { ctx, args }),
       &BlockTree::One(id) => Self::One(BlockProof { ctx, id }),
     }
   }
@@ -553,25 +549,34 @@ impl<'a> BlockProofTree<'a> {
   // }
 }
 
-/// An induction step in a block tree proof.
+/// An iterator over block tree proofs, in forward dependency order
+/// (i.e. working backward from the end of the function).
 #[derive(Clone, Copy, Debug)]
-pub struct BlockTreeInduction<'a> {
+pub struct BlockTreeSeq<'a> {
   ctx: &'a Proc<'a>,
-  labels: &'a [BlockId],
-  rest: &'a [mir::BlockTree],
+  args: &'a [mir::BlockTree],
 }
 
-impl<'a> BlockTreeInduction<'a> {
-  /// The set of labels that are being made available in the body by this induction.
-  /// They are proved in reverse order of the `body` iterator.
-  #[must_use] pub fn labels(&self) -> &'a [BlockId] { self.labels }
+impl<'a> BlockTreeSeq<'a> {
+  /// Get the root block of the proof tree.
+  pub fn main(&self) -> BlockProofTree<'a> {
+    BlockProofTree::new(self.ctx, &self.args[0])
+  }
 
-  /// The body of the proof (the induction step).
-  /// This is a sequence of block tree proofs which includes all the `labels`.
-  #[must_use] pub fn body(&self) -> BlockTreeIter<'a> {
+  /// Get the sequence of dependencies, in dependency order.
+  pub fn deps(&self) -> BlockTreeIter<'a> {
     BlockTreeIter {
       ctx: self.ctx,
-      seq: self.rest.iter(),
+      seq: self.args[1..].iter(),
+      stack: vec![],
+    }
+  }
+
+  /// Get the sequence of dependencies, including the root, in dependency order.
+  pub fn deps_full(&self) -> BlockTreeIter<'a> {
+    BlockTreeIter {
+      ctx: self.ctx,
+      seq: self.args.iter(),
       stack: vec![],
     }
   }
@@ -657,15 +662,23 @@ impl ElfProof<'_> {
   }
 }
 
+impl BlockTreeSeq<'_> {
+  #[allow(clippy::unwrap_used)]
+  fn validate(self, ctx: &mut im::HashMap<BlockId, bool>) {
+    for tr in self.deps() { tr.validate(ctx) }
+    self.main().validate(ctx)
+  }
+}
+
 impl BlockProofTree<'_> {
   #[allow(clippy::unwrap_used)]
   fn validate(self, ctx: &mut im::HashMap<BlockId, bool>) {
     match self {
-      BlockProofTree::Induction(ind) => {
-        let mut iter = ind.body();
+      BlockProofTree::Induction(labs, seq) => {
+        let mut iter = seq.deps_full();
         let mut ctx2 = ctx.clone();
-        for &l in ind.labels() { assert!(ctx2.insert(l, true).is_none()) }
-        'todo: for &tgt in ind.labels().iter().rev() {
+        for &l in labs { assert!(ctx2.insert(l, true).is_none()) }
+        'todo: for &tgt in labs.iter().rev() {
           loop {
             let tr = iter.next().unwrap();
             let ok = matches!(tr, BlockProofTree::One(bl) if bl.id == tgt);
@@ -674,9 +687,9 @@ impl BlockProofTree<'_> {
           }
         }
         assert!(iter.next().is_none());
-        for &l in ind.labels() { assert!(ctx.insert(l, false).is_none()) }
+        for &l in labs { assert!(ctx.insert(l, false).is_none()) }
       }
-      BlockProofTree::Seq(iter) => for tr in iter { tr.validate(ctx) }
+      BlockProofTree::Seq(seq) => seq.validate(ctx),
       BlockProofTree::One(bl) => {
         bl.validate(ctx);
         assert!(ctx.insert(bl.id, false).is_none());

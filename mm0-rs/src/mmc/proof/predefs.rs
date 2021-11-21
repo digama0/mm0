@@ -496,6 +496,8 @@ make_predefs! {
   labelGroup0: TermId => "labelGroup0";
   labelGroup: TermId => "labelGroup";
 
+  vctx0: TermId => "vctx0";
+
   okAssembled: TermId => "okAssembled";
   okAssembledI: ThmId => "okAssembledI";
   okAssembled_l: ThmId => "okAssembled_l";
@@ -510,10 +512,21 @@ make_predefs! {
   okProc: TermId => "okProc";
   okProcI: ThmId => "okProcI";
 
+  okWeak: TermId => "okWeak";
+  okWeak_id: ThmId => "okWeak_id";
+
+  okBlock: TermId => "okBlock";
+  okBlock_weak: ThmId => "okBlock_weak";
+  okBlockI: ThmId => "okBlockI";
+  okBlock0: ThmId => "okBlock0";
+  okBlock_loop: ThmId => "okBlock_loop";
+
   okPrologue: TermId => "okPrologue";
   okPrologue_push: ThmId => "okPrologue_push";
   okPrologue_alloc: ThmId => "okPrologue_alloc";
   okPrologue_alloc0: ThmId => "okPrologue_alloc0";
+
+  okEpi: TermId => "okEpi";
 
   epiRet: TermId => "epiRet";
   epiFree: TermId => "epiFree";
@@ -522,6 +535,10 @@ make_predefs! {
   Loc_reg: TermId => "Loc_reg";
   Loc_local: TermId => "Loc_local";
 
+  okRead: TermId => "okRead";
+
+  okWrite: TermId => "okWrite";
+
   spillslot: TermId => "spillslot";
 
   ok_movRR: ThmId => "ok_movRR";
@@ -529,6 +546,8 @@ make_predefs! {
   ok_unspill: ThmId => "ok_unspill";
 
   // basicElf_ok: ThmId => "basicElf_ok";
+
+  sorry: ThmId => "sorry"; // delete me
 }
 
 pub(crate) enum Rex {

@@ -23,7 +23,7 @@ memory = [
   "mm0_deepsize", "mm0_deepsize_derive/nodummy",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
 wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
-mmc = ["mmcc"]
+mmc = ["mmcc", "im"]
 
 [profile.release]
 debug = true
@@ -81,6 +81,7 @@ web-sys = { version = "0.3", optional = true, features = [
 
 # For "mmc" feature
 mmcc = { path = "components/mmcc", optional = true }
+im = { version = "15.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4"

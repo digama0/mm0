@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::build_vcode::VCodeCtx;
 use crate::codegen::FUNCTION_ALIGN;
-use crate::mir_opt::storage::Allocations;
+use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::{PCode, regalloc_vcode};
 use crate::types::global::{TyKind, ExprKind};
 use crate::types::entity::{ConstTc, Entity, ProcTc};
@@ -235,7 +235,7 @@ impl LinkedCode {
     mir: HashMap<Symbol, Proc>,
     init: Cfg,
     allocs: &Allocations,
-    globals: &[(Symbol, VarId, Ty)]
+    globals: &[(Symbol, bool, VarId, Ty)]
   ) -> Self {
     let mut coll = Collector::new(names, &mir);
     coll.collect_cfg(&init, &[]);
@@ -257,11 +257,14 @@ impl LinkedCode {
     }
 
     let mut global_size = 0;
-    let globals_out = globals.iter().map(|&(g, v, _)| {
+    let globals_out = globals.iter().filter_map(|&(g, r, v, _)| {
+      if !r { return None }
       let off = global_size;
-      let size = allocs[allocs.get(v)].m.size.try_into().expect("overflow");
+      let a = allocs.get(v);
+      assert_ne!(a, AllocId::ZERO);
+      let size = allocs[a].m.size.try_into().expect("overflow");
       global_size += size;
-      (g, off, size)
+      Some((g, off, size))
     }).collect();
     let init_code = regalloc_vcode(
       names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)).1;

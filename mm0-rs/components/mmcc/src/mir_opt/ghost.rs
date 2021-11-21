@@ -278,6 +278,7 @@ impl Cfg {
               d.apply_operand(rhs)
             }
           }
+          Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
       }
 
@@ -347,6 +348,7 @@ impl Cfg {
           Statement::Let(LetKind::Let(v, r, _), _, _) => *r = get(*v),
           Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { *r = get(*v) }
           Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to) }
+          Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
       }
     }

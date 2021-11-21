@@ -120,7 +120,7 @@ pub(crate) enum VCodeCtx<'a> {
   Proc(&'a [Arg]),
   /// This is the `start` function, which is called by the operating system and has a
   /// special stack layout.
-  Start(&'a [(Symbol, VarId, Ty)]),
+  Start(&'a [(Symbol, bool, VarId, Ty)]),
 }
 
 impl<'a> From<&'a [Arg]> for VCodeCtx<'a> {
@@ -173,9 +173,10 @@ impl<'a> LowerCtx<'a> {
         VCodeCtx::Proc(_) => HashMap::new(),
         VCodeCtx::Start(ls) => {
           let mut map = HashMap::new();
-          for (id, &(_, v, _)) in ls.iter().enumerate() {
-            let a = allocs.get(v);
-            if a != AllocId::ZERO {
+          for (id, &(_, r, v, _)) in ls.iter().enumerate() {
+            if r {
+              let a = allocs.get(v);
+              assert_ne!(a, AllocId::ZERO);
               assert!(map.insert(a, GlobalId::from_usize(id)).is_none(),
                 "global allocation collision");
             }
@@ -558,7 +559,7 @@ impl<'a> LowerCtx<'a> {
     for &(v, r, ref o) in args {
       if !r { continue }
       let a = self.allocs.get(v);
-      if a == AllocId::ZERO { continue }
+      assert_ne!(a, AllocId::ZERO);
       let (&(dst, sz), size) = self.get_alloc(a);
       self.build_move(size, sz, dst, o);
       if let RegMem::Reg(v) = dst {
@@ -660,7 +661,7 @@ impl<'a> LowerCtx<'a> {
         }
         if let ArgAbi::Boxed {..} | ArgAbi::BoxedMem {..} = arg {
           let a = self.allocs.get(v);
-          if a == AllocId::ZERO { continue }
+          assert_ne!(a, AllocId::ZERO);
           let (&(dst, sz), size) = self.get_alloc(a);
           let addr = match dst {
             RegMem::Reg(r) => {
@@ -690,7 +691,7 @@ impl<'a> LowerCtx<'a> {
       for (arg, &(vr, v)) in retabi.iter().zip(rets) {
         if !vr { continue }
         let a = self.allocs.get(v);
-        if a == AllocId::ZERO { continue }
+        assert_ne!(a, AllocId::ZERO);
         let dst = self.get_alloc(a).0 .0;
         match *arg {
           ArgAbi::Reg(_, sz) =>
@@ -767,10 +768,9 @@ impl<'a> LowerCtx<'a> {
     let vreg = self.code.fresh_vreg();
     self.build_syscall(f, &rmis, vreg);
     let a = self.allocs.get(ret);
-    if a != AllocId::ZERO {
-      let (dst, sz) = *self.get_alloc(a).0;
-      self.code.emit_copy(sz, dst, vreg);
-    }
+    assert_ne!(a, AllocId::ZERO);
+    let (dst, sz) = *self.get_alloc(a).0;
+    self.code.emit_copy(sz, dst, vreg);
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
   }
 
@@ -838,10 +838,9 @@ impl<'a> LowerCtx<'a> {
     let cfg = self.cfg;
     let mut insert = |out: &mut Vec<_>, v| {
       let a = allocs.get(v);
-      if a != AllocId::ZERO {
-        if let RegMem::Reg(v) = self.get_alloc(a).0 .0 {
-          if !out.contains(&v) { out.push(v) }
-        }
+      assert_ne!(a, AllocId::ZERO);
+      if let RegMem::Reg(v) = self.get_alloc(a).0 .0 {
+        if !out.contains(&v) { out.push(v) }
       }
     };
 
@@ -899,7 +898,7 @@ impl<'a> LowerCtx<'a> {
     self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, _)| {
       if !b { return ArgAbi::Ghost }
       let a = self.allocs.get(v);
-      if a == AllocId::ZERO { return ArgAbi::Ghost }
+      assert_ne!(a, AllocId::ZERO);
       let (&(dst, sz), size) = self.get_alloc(a);
       match (dst, arg_regs.next()) {
         (RegMem::Reg(dst), Some(&r)) => {
@@ -944,10 +943,11 @@ impl<'a> LowerCtx<'a> {
         if stmt.relevant() {
           match stmt {
             Statement::Let(lk, ty, rv) => {
-              let ((&LetKind::Let(v, _, _), &ref ty) |
-                (&LetKind::Own([_, (v, _, ref ty)]), _)) = (lk, ty);
-              let a = self.allocs.get(v);
-              if a != AllocId::ZERO {
+              let ((&LetKind::Let(v, r, _), &ref ty) |
+                (&LetKind::Own([_, (v, r, ref ty)]), _)) = (lk, ty);
+              if r {
+                let a = self.allocs.get(v);
+                assert_ne!(a, AllocId::ZERO);
                 if let RValue::Pun(_, p) = rv {
                   let rm = self.get_place(p);
                   self.var_map.entry(a).or_insert_with(||
@@ -963,6 +963,7 @@ impl<'a> LowerCtx<'a> {
               let dst = self.get_place(p);
               self.build_move(size, Size::from_u64(size), dst, o);
             }
+            Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
           }
         }
         stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))
