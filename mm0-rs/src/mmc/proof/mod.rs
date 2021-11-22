@@ -21,7 +21,8 @@ use mmcc::{Idx, Symbol};
 use mmcc::proof::ElfProof;
 
 use crate::elab::Result;
-use crate::{ElabError, Elaborator, Environment, Expr, ExprNode, LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
+use crate::{ElabError, Elaborator, Environment, Expr, ExprNode,
+  LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
 use crate::elab::proof::{self, IDedup, ProofKind};
 
 pub(crate) use predefs::Predefs;

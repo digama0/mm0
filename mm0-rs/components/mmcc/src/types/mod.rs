@@ -74,9 +74,12 @@ impl<I, T> IdxVec<I, T> {
     self.0.get_mut(I::into_usize(index))
   }
 
+  /// Returns the value that would be returned by the next call to `push`.
+  pub fn peek(&mut self) -> I where I: Idx { I::from_usize(self.0.len()) }
+
   /// Insert a new value at the end of the vector.
   pub fn push(&mut self, val: T) -> I where I: Idx {
-    let id = I::from_usize(self.0.len());
+    let id = self.peek();
     self.0.push(val);
     id
   }

@@ -46,6 +46,9 @@
 #[cfg(feature = "mmc")]
 #[macro_use] extern crate if_chain;
 
+#[cfg(feature = "mmc")]
+#[macro_use] extern crate mmcc;
+
 #[cfg(feature = "memory")]
 #[macro_use] extern crate mm0_deepsize;
 

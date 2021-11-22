@@ -61,10 +61,36 @@ infixl labelA: $+L$ prec 20;
 --| The empty context.
 @mmc-th local def vctx0: set = $ 0 $; -- TODO
 
+@mmc-th local def vctxA (A B: set): set = $ 0 $; -- TODO
+infixl vctxA: $*V$ prec 20;
+
+@mmc-th local def vProp (ty: set): set = $ 0 $; -- TODO
+
+@mmc-th local def okVCtxPush (vctx1 A vctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okVCtxPush_1: $ okVCtxPush vctx0 A A $ = 'sorry;
+@mmc-th theorem okVCtxPush_S:
+  $ okVCtxPush vctx A (vctx *V A) $ = 'sorry;
+@mmc-th theorem okVCtxPush_R
+  (h: $ okVCtxPush vctx ty ((A *V B) *V C) $):
+  $ okVCtxPush vctx ty (A *V (B *V C)) $ = 'sorry;
+
+@mmc-th local def okVCtxGet (vctx A: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okVCtxPush_get
+  (h: $ okVCtxPush vctx A vctx2 $):
+  $ okVCtxGet vctx2 A $ = 'sorry;
+
+@mmc-th theorem okVCtxGet_R
+  (h: $ okVCtxGet ((A *V B) *V C) ty $):
+  $ okVCtxGet (A *V (B *V C)) ty $ = 'sorry;
+@mmc-th theorem okVCtxGet_l (h: $ okVCtxGet A ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
+@mmc-th theorem okVCtxGet_r (h: $ okVCtxGet B ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
+
 --| Type context, or type state.
 --| The first part is the logical context, where variables and their types are stored,
 --| and the second part is the machine context where variables are assigned to memory locations.
-@mmc-th local def mkTCtx (vctx: set) (mctx: nat): set = $ 0 $; -- TODO
+@mmc-th local def mkTCtx (vctx: set) (vctx_sz mctx: nat): set = $ 0 $; -- TODO
 
 local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
 local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO

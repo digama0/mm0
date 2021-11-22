@@ -58,7 +58,8 @@
   clippy::use_self
 )]
 
-macro_rules! mk_id {
+/// Construct an identifier type wrapping a `u32`.
+#[macro_export] macro_rules! mk_id {
   (@ImplDebug $id:ident) => {
     impl std::fmt::Debug for $id {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -81,9 +82,9 @@ macro_rules! mk_id {
     #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
     mk_id!(@ImplDebug $id $($($lit)*)?);
     impl From<$id> for usize {
-      fn from(id: $id) -> usize { crate::u32_as_usize(id.0) }
+      fn from(id: $id) -> usize { $crate::u32_as_usize(id.0) }
     }
-    impl crate::Idx for $id {
+    impl $crate::Idx for $id {
       fn into_usize(self) -> usize { self.into() }
       fn from_usize(n: usize) -> Self { $id(TryFrom::try_from(n).expect("overflow")) }
       fn fresh(&mut self) -> Self {

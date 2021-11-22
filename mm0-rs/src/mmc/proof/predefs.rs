@@ -497,6 +497,19 @@ make_predefs! {
   labelGroup: TermId => "labelGroup";
 
   vctx0: TermId => "vctx0";
+  vctxA: TermId => "vctxA";
+  vProp: TermId => "vProp";
+
+  okVCtxPush: TermId => "okVCtxPush";
+  okVCtxPush_1: ThmId => "okVCtxPush_1";
+  okVCtxPush_S: ThmId => "okVCtxPush_S";
+  okVCtxPush_R: ThmId => "okVCtxPush_R";
+
+  okVCtxGet: TermId => "okVCtxGet";
+  okVCtxPush_get: ThmId => "okVCtxPush_get";
+  okVCtxGet_R: ThmId => "okVCtxGet_R";
+  okVCtxGet_l: ThmId => "okVCtxGet_l";
+  okVCtxGet_r: ThmId => "okVCtxGet_r";
 
   okAssembled: TermId => "okAssembled";
   okAssembledI: ThmId => "okAssembledI";

@@ -1,5 +1,6 @@
 #![allow(clippy::cast_possible_truncation)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use mmcc::Idx;
@@ -61,79 +62,224 @@ impl Ctx {
   }
 }
 
-struct VContexts {
-  root: VarMap,
-  bufs: IdxVec<CtxBufId, VCtxBuf>
-}
+mmcc::mk_id! { VCtxId, }
 
-struct VCtxBuf {
-  vctxs: Vec<VCtxNext>,
-}
-
-struct VCtxNext {
-  map: VarMap,
+impl VCtxId {
+  const ROOT: Self = Self(0);
 }
 
 #[derive(Clone)]
-struct VarMap {
+struct VCtxVar {
+  var: VarId,
   e: ProofId,
-  map: im::HashMap<VarId, ProofId>,
 }
 
-impl VContexts {
-  fn get_map(&self, ctxs: &Contexts, mut id: CtxId) -> &VarMap {
-    while id.1 == 0 {
-      if id.0 == CtxBufId::ROOT { return &self.root }
-      id = ctxs[id.0].parent
+/// This function produces the following sequence:
+///
+/// | p \ n | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 |
+/// | ----- | - | - | - | - | - | - | - | - | - | - | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+/// | false | ! | 0 | 0 | 1 | 0 | 1 | 0 | 2 | 0 | 1 | 0  | 2  | 0  | 1  | 0  | 3  | 0  | 1  | 0  |
+/// | true  | 0 | 1 | 0 | 2 | 0 | 1 | 0 | 3 | 0 | 1 | 0  | 2  | 0  | 1  | 0  | 4  | 0  | 1  | 0  |
+///
+/// * `rotation_sequence(n, false) + 1` is <https://oeis.org/A091090>
+/// * `rotation_sequence(n, true)` is <https://oeis.org/A007814>
+///
+/// This represents the number of rotations to put after each insertion to balance a binary tree
+/// which looks like this:
+///
+/// | n | T(n,false)    | r(n,false) | T(n,true)       | r(n,true) |
+/// | - | ------------- | ---------- | --------------- | --------- |
+/// | 0 | N/A                  | N/A | a                       | 0 |
+/// | 1 | x                    | 0   | ax                      | 1 |
+/// | 2 | xx                   | 0   | a(xx)                   | 0 |
+/// | 3 | (xx)x                | 1   | (a(xx))x                | 2 |
+/// | 4 | (xx)(xx)             | 0   | a((xx)(xx))             | 0 |
+/// | 5 | ((xx)(xx))x          | 1   | (a((xx)(xx)))x          | 1 |
+/// | 6 | ((xx)(xx))(xx)       | 0   | (a((xx)(xx)))(xx)       | 0 |
+/// | 7 | (((xx)(xx))(xx))x    | 2   | ((a((xx)(xx)))(xx))x    | 3 |
+/// | 8 | ((xx)(xx))((xx)(xx)) | 0   | a(((xx)(xx))((xx)(xx))) | 0 |
+///
+/// Following the left spine results in a sequence of perfect binary trees, going up the binary
+/// representation of `n`, i.e. `n = 19 = 2^4 + 2^2 + 2^0` is translated to `(T_4 T_2) T_0` or
+/// `((a T_4) T_2) T_0` depending on whether we have parent `a` or not, where `T_n` is the perfect
+/// binary tree on `2^n` leaves.
+#[inline] fn rotation_sequence(mut n: u32, parent: bool) -> u32 {
+  if !parent { n -= ((n >> 1) + 1).next_power_of_two() }
+  n.trailing_ones()
+}
+
+/// A `VarCache` stores the information for a variable access in a context.
+/// The first part is the size of the smallest prefix of the context that contains this variable.
+/// (So the first variable has index 1.) This is a "global" counter, i.e. it includes `base`.
+///
+/// The second part is a cache of various local sizes (not including `base`) and a proof
+/// that from the prefix of `vars` of that length, `|- okVCtxGet vctx var`.
+///
+/// The cached indices follow a particular pattern: If `n` is the size of the context
+/// as of the last access, then we store caches for `n`, `n` with the lowest nonzero bit cleared
+/// (i.e. `n & (n - 1)`), repeating the lowest bit clear operation until 0 or we go past the index
+/// of the variable. For example, if `n = 19` then we will store caches for `16, 18, 19`;
+/// if the variable has index `18` then we will store only `18, 19` since `16` is not valid.
+type VarCache = (u32, Vec<(u32, ProofId)>);
+
+#[derive(Clone)]
+struct VCtx {
+  e: ProofId,
+  base: u32,
+  vars: Vec<VCtxVar>,
+  access_cache: RefCell<HashMap<VarId, VarCache>>,
+  parent: VCtxId,
+}
+
+impl VCtx {
+  /// Build the root context. Note that variables can be added to the root context with `add`
+  fn root(de: &mut ProofDedup<'_>) -> Self {
+    Self {
+      e: app!(de, (vctx0)),
+      base: 0,
+      vars: vec![],
+      access_cache: Default::default(),
+      parent: VCtxId::ROOT,
     }
-    &self.bufs[id.0].vctxs[(id.1 - 1) as usize].map
   }
 
-  fn expr(
-    &self,
-    de: &mut ProofDedup<'_>,
-    cfg: &Cfg,
-    e: &ExprKind,
-  ) -> ProofId {
-    todo!()
-  }
-
-  fn new(
-    de: &mut ProofDedup<'_>,
-    cfg: &Cfg,
-  ) -> Self {
-    let mut max = vec![0; cfg.ctxs.len()];
-    for (id, bl) in cfg.blocks() {
-      let CtxId(buf, n) = bl.ctx;
-      if max[buf.0 as usize] < n { max[buf.0 as usize] = n }
-    }
-    let mut ctxs = Self {
-      root: VarMap {
-        e: app!(de, (vctx0)),
-        map: Default::default(),
-      },
-      bufs: IdxVec::with_capacity(max.len())
+  /// Allocate a new context ID for this context, and store it in the context list.
+  /// `self` is modified to derive from the new context. This is roughly equivalent to
+  /// `clone()`, but it moves the data into `vctxs` instead of doing a deep copy.
+  fn share(&mut self, vctxs: &mut IdxVec<VCtxId, VCtx>) -> impl Fn() -> Self + Copy {
+    let parent = vctxs.peek();
+    let Self { e, mut base, ref vars, .. } = *self;
+    base += vars.len() as u32;
+    let f = move || VCtx {
+      e, base, vars: vec![],
+      access_cache: Default::default(),
+      parent
     };
-    for (id, i) in max.into_iter().enumerate() {
-      let id = CtxBufId::from_usize(id);
-      let mut map = ctxs.get_map(&cfg.ctxs, CtxId(id, 0)).clone();
-      let buf = &cfg.ctxs[id];
-      ctxs.bufs.push(VCtxBuf {
-        vctxs: buf.vars[..i as usize].iter().enumerate().map(|(i, &(v, _, (ref e, ref ty)))| {
-          match e {
-            Some(e) => {
-              let e = ctxs.expr(de, cfg, e);
-              map.map.insert(v, e);
-            }
-            None => {
-              todo!()
-            }
-          }
-          VCtxNext { map: map.clone() }
-        }).collect(),
-      });
+    vctxs.push(std::mem::replace(self, f()));
+    f
+  }
+
+  /// Get the number of variables added since the last `share`.
+  fn len(&self) -> u32 { self.vars.len() as u32 }
+
+  /// Push a new variable to the context. Returns a proof of `|- okVCtxPush old v new`,
+  /// where `old` is the original `self.e` and `new` is `self.e` after the modification.
+  fn push(&mut self, de: &mut ProofDedup<'_>, var: VarId, v: ProofId) -> ProofId {
+    self.vars.push(VCtxVar {var, e: v});
+    let old = self.e;
+    let len = self.vars.len() as u32;
+    let mut th;
+    let mut new;
+    if self.parent == VCtxId::ROOT && len == 0 {
+      self.e = v; new = v;
+      th = thm!(de, okVCtxPush_1(v): (okVCtxPush old v new))
+    } else {
+      let (mut l, mut r) = (old, v);
+      new = app!(de, (vctxA l r));
+      th = thm!(de, okVCtxPush_S(v, old): (okVCtxPush old v new));
+      for _ in 0..rotation_sequence(len, self.parent != VCtxId::ROOT) {
+        let (a, b) = app_match!(de, l => { (vctxA a b) => (a, b), ! });
+        let c = r;
+        l = a; r = app!(de, (vctxA b c)); new = app!(de, (vctxA l r));
+        th = thm!(de, okVCtxPush_R(a, b, c, v, old): (okVCtxPush old v new));
+      }
+      self.e = new;
+    };
+    self.access_cache.get_mut().insert(var, (self.base + len, vec![
+      (self.base + len, thm!(de, okVCtxPush_get(v, old, new): (okVCtxGet new v)))
+    ]));
+    th
+  }
+
+  /// Add a new proof to the context without changing the set of assumptions.
+  /// This is used to be able to reference derived theorems that appear in the MIR by `VarId`,
+  /// but do not actually require extending the logical context.
+  /// If `or_parent` is true (the default), the proof is inserted to the parent context if
+  /// possible, including even the root context.
+  fn add(&self, vctxs: &IdxVec<VCtxId, VCtx>, or_parent: bool, var: VarId, th: ProofId) {
+    let len = self.len();
+    if or_parent && len == 0 {
+      vctxs[self.parent].add(vctxs, self.parent != VCtxId::ROOT, var, th)
+    } else {
+      self.access_cache.borrow_mut().insert(var, (self.base + len, vec![(len, th)]));
     }
-    ctxs
+  }
+
+  /// Get a stored variable assumption from the context. Returns `(i, v, |- okVCtxGet vctx v)`
+  /// where `i` is the index of the variable (the length of the smallest context prefix that
+  /// validates the hypothesis).
+  fn get(&self,
+    de: &mut ProofDedup<'_>, vctxs: &IdxVec<VCtxId, VCtx>, v: VarId
+  ) -> (u32, ProofId, ProofId) {
+
+    fn build_cut(de: &mut ProofDedup<'_>,
+      [base, src, tgt, cut]: [u32; 4], [l, r, v, th]: [ProofId; 4]) -> ProofId {
+      debug_assert!(src < tgt && cut > 0);
+      if src <= tgt - cut {
+        let th = build(de, base, src, tgt - cut, l, v, th);
+        return thm!(de, okVCtxGet_l(l, r, v, th): (okVCtxGet (vctxA l r) v))
+      }
+      app_match!(de, r => {
+        (vctxA b c) => {
+          let l2 = app!(de, (vctxA l b));
+          let th = build_cut(de, [base, src, tgt, cut >> 1], [l2, c, v, th]);
+          thm!(de, okVCtxGet_R(l, b, c, v, th): (okVCtxGet (vctxA l r) v))
+        },
+        !
+      })
+    }
+
+    fn build(de: &mut ProofDedup<'_>,
+      base: u32, src: u32, tgt: u32, e: ProofId, v: ProofId, th: ProofId,
+    ) -> ProofId {
+      debug_assert!(src <= tgt);
+      if src == tgt { return th }
+      let mut cut = 1 << tgt.trailing_zeros();
+      if base == 0 && cut == tgt { cut >>= 1 }
+      app_match!(de, e => {
+        (vctxA a b) => build_cut(de, [base, src, tgt, cut], [a, b, v, th]),
+        !
+      })
+    }
+
+    let mut cache = self.access_cache.borrow_mut();
+    let (i, ref mut cache) = *cache.entry(v).or_insert_with(|| {
+      assert!(self.parent != VCtxId::ROOT, "variable not found");
+      let (i, _, th) = vctxs[self.parent].get(de, vctxs, v);
+      (i, vec![(0, th)])
+    });
+    let mut last = cache.last_mut().expect("impossible");
+    let len = self.len();
+    let v = app_match!(de, de.concl(last.1) => { (okVCtxGet _ v) => v, ! });
+    if last.0 == len { return (i, v, last.1) }
+
+    let bound = i.saturating_sub(self.base);
+    let mut cur = len;
+    let mut stack = vec![];
+    let mut e = self.e;
+    while last.0 != cur {
+      if last.0 > cur {
+        cache.pop();
+        last = cache.last_mut().expect("impossible");
+      } else {
+        let cur2 = cur & (cur - 1);
+        if cur2 < bound {
+          let th = build(de, self.base, last.0, cur, e, v, last.1);
+          *last = (cur, th);
+          break
+        }
+        cur = cur2;
+        let e2 = app_match!(de, e => { (vctxA a _) => a, ! });
+        stack.push((len, std::mem::replace(&mut e, e2)));
+      }
+    }
+    let mut th = last.1;
+    for (cur2, e2) in stack.into_iter().rev() {
+      th = build(de, self.base, cur, cur2, e2, v, th);
+      cache.push((cur2, th));
+      cur = cur2;
+    }
+    (i, v, th)
   }
 }
 
@@ -171,7 +317,7 @@ struct ProcProver<'a> {
   /// Contains a map from a block id to
   /// `[labs, ip, lctx, |- okBlock (mkBCtx pctx labs) ip lctx]`
   block_proof: HashMap<BlockId, [ProofId; 4]>,
-  vctxs: VContexts,
+  vctxs: IdxVec<VCtxId, VCtx>,
   elab: &'a mut Elaborator,
   hex: HexCache,
   thm: ProofDedup<'a>,
@@ -552,7 +698,7 @@ pub(super) fn compile_proof(
       block_proof: Default::default(),
       elab,
       ctx: Ctx::new(&mut thm, &hex, &proc, gctx),
-      vctxs: VContexts::new(&mut thm, proc.cfg),
+      vctxs: vec![VCtx::root(&mut thm)].into(),
       hex,
       thm,
     };
