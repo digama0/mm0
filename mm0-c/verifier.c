@@ -168,8 +168,8 @@ cmd_unpack_result cmd_unpack(u8* cmd) {
 // name then so is 'from'.
 bool sorts_compatible(u64 from, u64 to) {
   u64 diff = from ^ to;
-  return (diff & ~TYPE_DEPS_MASK) == 0 ||
-    ((diff & ~TYPE_BOUND_MASK & ~TYPE_DEPS_MASK) == 0 &&
+  return (diff & TYPE_UPPER_MASK) == 0 ||
+    ((diff & ~TYPE_BOUND_MASK & TYPE_UPPER_MASK) == 0 &&
     (from & TYPE_BOUND_MASK) != 0);
 }
 
@@ -395,8 +395,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // Allocate a new variable x of sort s, and push it to the stack and the heap.
       case CMD_PROOF_DUMMY: {
         ENSURE("bad dummy sort", data < g_num_sorts);
-        ENSURE("dummy variable in strict sort",
-          (g_sorts[data] & SORT_STRICT) == 0);
+        ENSURE("dummy variable in strict or free sort",
+          (g_sorts[data] & (SORT_STRICT | SORT_FREE)) == 0);
         ENSURE("too many bound variables, please rewrite the verifier",
           (g_next_bv >> 56) == 0);
         u64 type = TYPE_BOUND_MASK | ((u64)data << 56) | g_next_bv;
@@ -487,8 +487,10 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         for (u16 i = 0; i < t->num_args; i++) {
           u32 arg = as_type(g_stack_top[i], STACK_TYPE_EXPR);
           g_uheap[i] = arg;
+          store_expr* e = get_expr(arg);
           u64 target = targs[i];
-          u64 deps = get_expr(arg)->type & TYPE_DEPS_MASK;
+          ENSURE("type mismatch", sorts_compatible(e->type, target));
+          u64 deps = e->type & TYPE_DEPS_MASK;
           if (target & TYPE_BOUND_MASK) {
             g_deps[bound++] = deps;
             for (u16 j = 0; j < i; j++)

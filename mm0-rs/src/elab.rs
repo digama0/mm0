@@ -15,6 +15,7 @@ pub mod local_context;
 pub mod refine;
 pub mod proof;
 pub mod inout;
+pub mod verify;
 
 
 use std::collections::HashMap;

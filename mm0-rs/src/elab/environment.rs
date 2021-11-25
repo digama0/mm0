@@ -5,10 +5,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
 use std::collections::HashMap;
-use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
+use super::{BoxError, ElabError, FrozenEnv, FrozenLispVal, spans::Spans, verify::VERIFY_ON_ADD};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
-  lisp::{LispVal, RefineSyntax, Syntax}};
+  elab::verify::VerifyError, lisp::{LispVal, RefineSyntax, Syntax}};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 
 /// The information associated to a defined [`Sort`].
@@ -242,7 +242,7 @@ pub struct Thm {
   /// The span around the name of the theorem. This is the `"foo"` in `theorem foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `theorem`, the only allowed modifier is
-  /// [`PUB`](Modifiers::PUB), and for `term` no modifiers are permitted.
+  /// [`PUB`](Modifiers::PUB), and for `axiom` no modifiers are permitted.
   pub vis: Modifiers,
   /// The span around the entire declaration for the theorem, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
@@ -1062,7 +1062,9 @@ pub enum AddItemError<A> {
   /// The declaration overlaps with some previous declaration
   Redeclaration(A, RedeclarationError),
   /// Need more numbers
-  Overflow
+  Overflow,
+  /// A verification error occurred when checking the addition
+  Verify(String),
 }
 
 /// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
@@ -1076,7 +1078,8 @@ impl<A> AddItemError<A> {
       AddItemError::Redeclaration(_, r) =>
         ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]),
       AddItemError::Overflow =>
-        ElabError::new_e(sp, "too many sorts"),
+        ElabError::new_e(sp, "too many items"),
+      AddItemError::Verify(e) => ElabError::new_e(sp, e),
     }
   }
 }
@@ -1110,7 +1113,7 @@ impl Environment {
   /// we check for redeclaration before inspecting the term data itself.
   pub fn try_add_term(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
     let new_id = TermId(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    let data = &mut self.data[a];
+    let data = &self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Term(old_id) => {
@@ -1126,8 +1129,15 @@ impl Environment {
         other: sp.clone()
       }))
     } else {
-      data.decl = Some(DeclKey::Term(new_id));
-      self.terms.push(t());
+      let t = t();
+      if VERIFY_ON_ADD {
+        match self.verify_termdef(&Default::default(), &t) {
+          Ok(()) | Err(VerifyError::UsesSorry) => {}
+          Err(e) => return Err(AddItemError::Verify(e.render_to_string(self))),
+        }
+      }
+      self.data[a].decl = Some(DeclKey::Term(new_id));
+      self.terms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
     }
@@ -1143,7 +1153,7 @@ impl Environment {
   /// we check for redeclaration before inspecting the theorem data itself.
   pub fn try_add_thm(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
     let new_id = ThmId(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    let data = &mut self.data[a];
+    let data = &self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Thm(old_id) => {
@@ -1159,8 +1169,15 @@ impl Environment {
         other: sp.clone()
       }))
     } else {
-      data.decl = Some(DeclKey::Thm(new_id));
-      self.thms.push(t());
+      let t = t();
+      if VERIFY_ON_ADD {
+        match self.verify_thmdef(&Default::default(), &t) {
+          Ok(()) | Err(VerifyError::UsesSorry) => {}
+          Err(e) => return Err(AddItemError::Verify(e.render_to_string(self))),
+        }
+      }
+      self.data[a].decl = Some(DeclKey::Thm(new_id));
+      self.thms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
     }
@@ -1224,7 +1241,7 @@ impl Environment {
             ]));
             id
           }
-          Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many sorts"))
+          Err(e) => return Err(e.into_elab_error(sp))
         };
         assert_eq!(remap.sort.len(), i.0 as usize);
         remap.sort.push(id);
@@ -1241,7 +1258,7 @@ impl Environment {
               ]);
               match id { None => return Err(e), Some(id) => {errors.push(e); id} }
             }
-            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many terms"))
+            Err(e) => return Err(e.into_elab_error(sp)),
           };
           assert_eq!(remap.term.len(), tid.0 as usize);
           remap.term.push(id);
@@ -1257,7 +1274,7 @@ impl Environment {
               ]);
               match id { None => return Err(e), Some(id) => {errors.push(e); id} }
             }
-            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many theorems"))
+            Err(e) => return Err(e.into_elab_error(sp)),
           };
           assert_eq!(remap.thm.len(), tid.0 as usize);
           remap.thm.push(id);

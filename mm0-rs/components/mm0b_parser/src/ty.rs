@@ -10,8 +10,11 @@ pub const TYPE_BOUND_MASK: u64 = 1 << 63;
 /// `10000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111`
 pub const TYPE_SORT_MASK: u64 = (1 << 63) | ((1 << 56) - 1);
 
-/// deps mask: `00000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111`
-pub const TYPE_DEPS_MASK: u64 = (1 << 56) - 1;
+/// upper mask: `11111111_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
+pub const TYPE_UPPER_MASK: u64 = 0xFF << 56;
+
+/// deps mask: `00000000_01111111_11111111_11111111_11111111_11111111_11111111_11111111`
+pub const TYPE_DEPS_MASK: u64 = (1 << 55) - 1;
 
 /// An argument binder in a term/def or axiom/theorem.
 /// * Bit 63 (the high bit of the high byte) is 1 if this is a bound variable.
@@ -141,11 +144,11 @@ impl Type {
   /// on which it depends.
   #[inline]
   #[must_use]
-  pub fn deps_unchecked(self) -> u64 { self.0.get() & !(0xFF << 56) }
+  pub fn deps_unchecked(self) -> u64 { self.0.get() & TYPE_DEPS_MASK }
 
   /// Get the high bit only, which holds the boundedness and the sort.
   #[must_use]
-  pub fn high_bit(self) -> Self { Type(U64::new(self.0.get() & !TYPE_DEPS_MASK)) }
+  pub fn high_bit(self) -> Self { Type(U64::new(self.0.get() & TYPE_UPPER_MASK)) }
 
   /// Are these two types totally bitwise-disjoint
   #[must_use]

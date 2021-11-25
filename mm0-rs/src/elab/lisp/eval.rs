@@ -502,7 +502,7 @@ impl Elaborator {
         a
       }
       ProofNode::Term {term, args: ref es} |
-      ProofNode::Cong {term, args: ref es} => {
+      ProofNode::Cong {term, args: ref es, ..} => {
         let mut args = vec![LispVal::atom(self.terms[term].atom)];
         args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
         LispVal::list(args)
