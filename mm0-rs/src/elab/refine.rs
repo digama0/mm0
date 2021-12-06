@@ -35,17 +35,24 @@ pub enum InferMode {
 enum RefineExpr {
   /// An application like `(foo p1 p2)` or `(!! bar x p1)`.
   App {
-    /** The span of the application. */                                sp: Span,
-    /** The span of the head term, `foo` or `bar` in the examples. */  sp2: Span,
-    /** The infer mode (see [`InferMode`]), the prefix `!!` or `!`. */ im: InferMode,
-    /** The head term or theorem. */                                   head: AtomId,
-    /** The remainder of the term. */                                  u: Uncons
+    /// The span of the application.
+    sp: Span,
+    /// The span of the head term, `foo` or `bar` in the examples.
+    sp2: Span,
+    /// The infer mode (see [`InferMode`]), the prefix `!!` or `!`.
+    im: InferMode,
+    /// The head term or theorem.
+    head: AtomId,
+    /// The remainder of the term.
+    u: Uncons
   },
   /// A type ascription `{e : ty}`. This is the same as `e` but where we assert that
   /// it has type `ty` (which may result in additional unification of metavariables).
   Typed {
-    /** The demanded type */   ty: LispVal,
-    /** The main expression */ e: LispVal
+    /// The demanded type
+    ty: LispVal,
+    /// The main expression
+    e: LispVal
   },
   /// An elaborated or "verbatim" term. This term is assumed to be a full proof already
   /// and is not interpreted as a refine script.
@@ -71,9 +78,12 @@ pub(crate) enum RStack {
   ///   return RState::Goals(gs, es)
   /// ```
   Goals {
-    /** The current goal */                               g: LispVal,
-    /** Later goals */                                    gs: std::vec::IntoIter<LispVal>,
-    /** Later expressions to unify against later goals */ es: std::vec::IntoIter<LispVal>,
+    /// The current goal
+    g: LispVal,
+    /// Later goals
+    gs: std::vec::IntoIter<LispVal>,
+    /// Later expressions to unify against later goals
+    es: std::vec::IntoIter<LispVal>,
   },
   /// This is not used directly by evaluation, but can be set manually. When we return
   /// to this stack element, we append this list of goals and pass the return value to the parent.
@@ -90,8 +100,10 @@ pub(crate) enum RStack {
   ///   return (:conv u tgt p)
   /// ```
   Coerce {
-    /** The elaborated target type */              tgt: LispVal,
-    /** The conversion proof, possibly `#undef` */ u: LispVal
+    /// The elaborated target type
+    tgt: LispVal,
+    /// The conversion proof, possibly `#undef`
+    u: LispVal
   },
   /// This is like [`Coerce`](Self::Coerce) but infers the type of `p` and uses it to determine the coercion.
   /// ```text
@@ -110,9 +122,12 @@ pub(crate) enum RStack {
   ///   return RStack::Coerce(tgt, u)(elab_p)
   /// ```
   TypedAt {
-    /** The span of `p` */             sp: Span,
-    /** The elaborated target type */  tgt: LispVal,
-    /** The unelaborated proof */      p: LispVal
+    /// The span of `p`
+    sp: Span,
+    /// The elaborated target type
+    tgt: LispVal,
+    /// The unelaborated proof
+    p: LispVal
   },
   /// Like [`TypedAt`](Self::TypedAt) but the target type is unknown.
   /// ```text
@@ -126,11 +141,16 @@ pub(crate) enum RStack {
   ///   return RState::RefineApp(tgt, t, u, args ++ [arg])
   /// ```
   RefineApp {
-    /** The span of the term `t` */         sp2: Span,
-    /** The expected type */                tgt: InferTarget,
-    /** The head term */                    t: TermId,
-    /** The remainder of the application */ u: Uncons,
-    /** The elaborated arguments */         args: Vec<LispVal>
+    /// The span of the term `t`
+    sp2: Span,
+    /// The expected type
+    tgt: InferTarget,
+    /// The head term
+    t: TermId,
+    /// The remainder of the application
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>
   },
   /// Elaborating the binders of a theorem application. See [`RState::RefineBis`].
   /// ```text
@@ -138,13 +158,20 @@ pub(crate) enum RStack {
   ///   return RState::RefineBis(tgt, im, t, u, args ++ [arg])
   /// ```
   RefineBis {
-    /** The span of the application */        sp: Span,
-    /** The span of the theorem `t` */        sp2: Span,
-    /** The expected type */                  tgt: LispVal,
-    /** The infer mode (see [`InferMode`]) */ im: InferMode,
-    /** The head theorem */                   t: ThmId,
-    /** The remainder of the application */   u: Uncons,
-    /** The elaborated arguments */           args: Vec<LispVal>,
+    /// The span of the application
+    sp: Span,
+    /// The span of the theorem `t`
+    sp2: Span,
+    /// The expected type
+    tgt: LispVal,
+    /// The infer mode (see [`InferMode`])
+    im: InferMode,
+    /// The head theorem
+    t: ThmId,
+    /// The remainder of the application
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>,
   },
   /// Elaborating the hypotheses of a theorem application. See `RState::RefineHyps`.
   /// ```text
@@ -152,15 +179,51 @@ pub(crate) enum RStack {
   ///   return RState::RefineHyps(tgt, im, t, u, args ++ [arg], hyps, res)
   /// ```
   RefineHyps {
-    /** The span of the application */      sp: Span,
-    /** The span of the theorem `t` */      sp2: Span,
-    /** The expected type */                tgt: LispVal,
-    /** The head theorem */                 t: ThmId,
-    /** The remainder of the application */ u: Uncons,
-    /** The elaborated arguments */         args: Vec<LispVal>,
-    /** The elaborated subproofs */         hyps: std::vec::IntoIter<LispVal>,
-    /** The unification result */           res: RefineHypsResult,
+    /// The span of the application
+    sp: Span,
+    /// The span of the theorem `t`
+    sp2: Span,
+    /// The expected type
+    tgt: LispVal,
+    /// The head theorem
+    t: ThmId,
+    /// The remainder of the application
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>,
+    /// The elaborated subproofs
+    hyps: std::vec::IntoIter<LispVal>,
+    /// The unification result
+    res: RefineHypsResult,
   },
+}
+
+impl EnvDisplay for RStack {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RStack::Goals { g, gs, es } => write!(f,
+        "Goals {{g: {}, gs: {}, es: {}}}",
+        fe.to(g), fe.to(gs.as_slice()), fe.to(es.as_slice())),
+      RStack::DeferGoals(es) => write!(f,
+        "DeferGoals {{es: {}}}", fe.to(es.as_slice())),
+      RStack::Coerce { tgt, u } => write!(f,
+        "Coerce {{tgt: {}, u: {}}}", fe.to(tgt), fe.to(u)),
+      RStack::CoerceTo(tgt) => write!(f,
+        "CoerceTo {{tgt: {}}}", fe.to(tgt)),
+      RStack::TypedAt { tgt, p, .. } => write!(f,
+        "TypedAt {{tgt: {}, p: {}}}", fe.to(tgt), fe.to(p)),
+      RStack::Typed(p) => write!(f, "Typed {{p: {}}}", fe.to(p)),
+      RStack::RefineApp { tgt, t, u, args, .. } => write!(f,
+        "RefineApp {{\n  tgt: {},\n  {} {} -> {}}}",
+        fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
+      RStack::RefineBis { tgt, im, t, u, args, .. } => write!(f,
+        "RefineBis {{\n  tgt: {},\n  im: {:?},\n  {} {} -> {}}}",
+        fe.to(tgt), im, fe.to(t), fe.to(u), fe.to(args)),
+      RStack::RefineHyps { tgt, t, u, args, hyps, res, .. } => write!(f,
+        "RefineHyps {{\n  tgt: {},\n  {} {} -> {},\n  hyps: {},\n  res: {}}}",
+        fe.to(tgt), fe.to(t), fe.to(u), fe.to(args), fe.to(hyps.as_slice()), fe.to(res)),
+    }
+  }
 }
 
 /// The states of the state machine that implements `refine`. (Ideally we could
@@ -180,8 +243,10 @@ pub(crate) enum RState {
   /// RState::Goals(gs, _) := goals += gs; return
   /// ```
   Goals {
-    /** Later goals */                                    gs: std::vec::IntoIter<LispVal>,
-    /** Later expressions to unify against later goals */ es: std::vec::IntoIter<LispVal>,
+    /// Later goals
+    gs: std::vec::IntoIter<LispVal>,
+    /// Later expressions to unify against later goals
+    es: std::vec::IntoIter<LispVal>,
   },
   /// Elaborate the unelaborated proof `p` against the target type `tgt`.
   /// ```text
@@ -196,8 +261,10 @@ pub(crate) enum RState {
   /// ...
   /// ```
   RefineProof {
-    /** The (elaborated) expected type */ tgt: LispVal,
-    /** The unelaborated proof */         p: LispVal,
+    /// The (elaborated) expected type
+    tgt: LispVal,
+    /// The unelaborated proof
+    p: LispVal,
   },
   /// Elaborate the unelaborated term `e` against the target sort `tgt`.
   /// ```text
@@ -208,8 +275,10 @@ pub(crate) enum RState {
   /// ...
   /// ```
   RefineExpr {
-    /** The expected type */     tgt: InferTarget,
-    /** The unelaborated term */ e: LispVal,
+    /// The expected type
+    tgt: InferTarget,
+    /// The unelaborated term
+    e: LispVal,
   },
   /// Elaborate the arguments of a term application.
   /// ```text
@@ -221,11 +290,16 @@ pub(crate) enum RState {
   /// ...
   /// ```
   RefineApp {
-    /** The span of `t` */            sp2: Span,
-    /** The expected type */          tgt: InferTarget,
-    /** The head term */              t: TermId,
-    /** The unelaborated arguments */ u: Uncons,
-    /** The elaborated arguments */   args: Vec<LispVal>,
+    /// The span of `t`
+    sp2: Span,
+    /// The expected type
+    tgt: InferTarget,
+    /// The head term
+    t: TermId,
+    /// The unelaborated arguments
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>,
   },
   /// Elaborate the (possibly) extra arguments of a completed theorem application.
   /// ```text
@@ -233,41 +307,63 @@ pub(crate) enum RState {
   /// RState::RefineArgs(tgt, ty, p, args) := return (yield RefineExtraArgs(tgt, p, args))
   /// ```
   RefineArgs {
-    /** The span of the application */ sp: Span,
-    /** The expected type */           tgt: LispVal,
-    /** The type of `p` */             ty: LispVal,
-    /** The elaborated proof */        p: LispVal,
-    /** The extra arguments */         u: Uncons,
+    /// The span of the application
+    sp: Span,
+    /// The expected type
+    tgt: LispVal,
+    /// The type of `p`
+    ty: LispVal,
+    /// The elaborated proof
+    p: LispVal,
+    /// The extra arguments
+    u: Uncons,
   },
   /// Elaborates the binders (bound and regular variables) of a theorem application. The
   /// behavior of this phase depends on the infer mode.
   RefineBis {
-    /** The span of the application. */       sp: Span,
-    /** The span of `t`. */                   sp2: Span,
-    /** The expected type */                  tgt: LispVal,
-    /** The infer mode (see [`InferMode`]) */ im: InferMode,
-    /** The head theorem */                   t: ThmId,
-    /** The remainder of the application */   u: Uncons,
-    /** The elaborated arguments */           args: Vec<LispVal>,
+    /// The span of the application.
+    sp: Span,
+    /// The span of `t`.
+    sp2: Span,
+    /// The expected type
+    tgt: LispVal,
+    /// The infer mode (see [`InferMode`])
+    im: InferMode,
+    /// The head theorem
+    t: ThmId,
+    /// The remainder of the application
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>,
   },
   /// Elaborates the hypotheses of a theorem application.
   RefineHyps {
-    /** The span of the application. */     sp: Span,
-    /** The span of `t`. */                 sp2: Span,
-    /** The expected type */                tgt: LispVal,
-    /** The head theorem */                 t: ThmId,
-    /** The remainder of the application */ u: Uncons,
-    /** The elaborated arguments */         args: Vec<LispVal>,
-    /** The elaborated subproofs */         hyps: std::vec::IntoIter<LispVal>,
-    /** The unification result */           res: RefineHypsResult,
+    /// The span of the application.
+    sp: Span,
+    /// The span of `t`.
+    sp2: Span,
+    /// The expected type
+    tgt: LispVal,
+    /// The head theorem
+    t: ThmId,
+    /// The remainder of the application
+    u: Uncons,
+    /// The elaborated arguments
+    args: Vec<LispVal>,
+    /// The elaborated subproofs
+    hyps: std::vec::IntoIter<LispVal>,
+    /// The unification result
+    res: RefineHypsResult,
   },
   /// Elaborates a proof `p` that is a user procedure, by calling it with
   /// a callback for calling back into `refine`. This can be used to implement
   /// tactics that are placed inline in a refine script
   /// (and sequenced with it, called in the middle of the `refine`).
   Proc {
-    /** The expected type */   tgt: LispVal,
-    /** The proof procedure */ p: LispVal,
+    /// The expected type
+    tgt: LispVal,
+    /// The proof procedure
+    p: LispVal,
   },
   /// State that pops the stack and calls a stack procedure.
   /// ```text
@@ -806,7 +902,7 @@ impl Elaborator {
             if let Some(proc) = &self.data[AtomId::TO_EXPR_FALLBACK].lisp {
               let proc = proc.val.clone();
               let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
-              if let Ok(res) = self.call_func(sp, proc, args) {
+              if let Ok(res) = self.call_func(sp, &proc, args) {
                 return Ok(RState::Ret(res))
               }
             }

@@ -37,66 +37,11 @@ macro_rules! env_debug {
   };
 }
 
-// Generate an implementation for any sequence whose `self.iter()` method has an associated
-// Item type that implements EnvDebug.
-//
-// Type parameters need to be in a comma separated list that's surrounded by parens.
-macro_rules! env_debug_seq {
-  ( $( ($($id:ident),+) -> $T:ty )+ ) => {
-    $(
-      impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-          f.debug_list().entries(self.iter().map(|x| fe.to(x))).finish()
-        }
-      }
-    )+
-  };
-}
-
-// Generate an implementation for any map type whose `self.iter()` method has an associated
-// Item which is a (&K, &V), where the K and V types both implement EnvDebug.
-//
-// Type parameters need to be in a comma separated list that's surrounded by parens.
-macro_rules! env_debug_map {
-  ( $( ($($id:ident),+) -> $T:ty )+ ) => {
-    $(
-      impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-          f.debug_map().entries(
-            self.iter().map(|(k, v)| (fe.to(k), fe.to(v)))
-          ).finish()
-        }
-      }
-    )+
-  };
-}
-
-// Generate an implementation for some type whose AsRef target implements EnvDebug, like Box<A>.
-//
-// Type parameters need to be in a comma separated list that's surrounded by parens.
-macro_rules! env_debug_as_ref {
-  ( $( ($($id:ident),+) -> $T:ty )+ ) => {
-    $(
-      impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-          self.as_ref().env_dbg(fe, f)
-        }
-      }
-    )+
-  };
-}
-
 
 // Generate implementations of EnvDebug for arrays of a type that implements EnvDebug.
-macro_rules! dbg_arrays {
-  ($($N:literal)+) => {
-    $(
-      impl<A: EnvDebug> EnvDebug for [A; $N] {
-        fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-          self.as_ref().env_dbg(fe, f)
-        }
-      }
-    )+
+impl<A: EnvDebug, const N: usize> EnvDebug for [A; N] {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.as_ref().env_dbg(fe, f)
   }
 }
 
@@ -140,8 +85,14 @@ macro_rules! env_debug_id {
 }
 
 
+impl<T: EnvDebug> EnvDebug for [T] {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_list().entries(self.iter().map(|x| fe.to(x))).finish()
+  }
+}
+
 // Instances for a few common types that require some sort of special behavior to display nicely.
-impl<A: EnvDebug> EnvDebug for std::cell::RefCell<A> {
+impl<A: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.try_borrow() {
       Ok(x) => x.env_dbg(fe, f),
@@ -180,9 +131,27 @@ impl<A: EnvDebug + Copy> EnvDebug for std::cell::Cell<A> {
   }
 }
 
+impl<A: EnvDebug + ?Sized> EnvDebug for &A {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    (**self).env_dbg(fe, f)
+  }
+}
+
+impl<A: EnvDebug + ?Sized> EnvDebug for Box<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    (**self).env_dbg(fe, f)
+  }
+}
+
+impl<A: EnvDebug> EnvDebug for Vec<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    (**self).env_dbg(fe, f)
+  }
+}
+
 impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    std::sync::Arc::as_ref(self).env_dbg(fe, f)
+    (**self).env_dbg(fe, f)
   }
 }
 
@@ -195,7 +164,7 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<A> {
   }
 }
 
-impl<A: EnvDebug> EnvDebug for std::rc::Rc<A> {
+impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Rc<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     std::rc::Rc::as_ref(self).env_dbg(fe, f)
   }
@@ -207,6 +176,14 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<A> {
       None => write!(f, "_Weak_"),
       Some(arc) => arc.env_dbg(fe, f)
     }
+  }
+}
+
+impl<K: EnvDebug, V: EnvDebug, S> EnvDebug for std::collections::HashMap<K, V, S> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_map().entries(
+      self.iter().map(|(k, v)| (fe.to(k), fe.to(v)))
+    ).finish()
   }
 }
 
@@ -259,27 +236,6 @@ env_debug! {
 
 #[cfg(feature = "server")]
 env_debug! {lsp_types::Url}
-
-env_debug_seq! {
-  (A) -> &[A]
-  (A) -> Vec<A>
-}
-
-env_debug_map! {
-  (K, V) -> std::collections::HashMap<K, V>
-}
-
-env_debug_as_ref! {
-  (A) -> Box<A>
-  (A) -> Box<[A]>
-}
-
-dbg_arrays! {
-     0  1  2  3  4  5  6  7  8  9
-    10 11 12 13 14 15 16 17 18 19
-    20 21 22 23 24 25 26 27 28 29
-    30 31 32
-}
 
 dbg_tuples! {
   {

@@ -588,7 +588,7 @@ impl Elaborator {
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];
-        self.call_func(e.span, ann, args)?;
+        self.call_func(e.span, &ann, args)?;
       },
       StmtKind::DocComment(doc2, s) => {
         // push an extra newline to separate multiple doc comments

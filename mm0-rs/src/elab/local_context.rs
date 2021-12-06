@@ -413,7 +413,7 @@ impl<'a> ElabTermMut<'a> {
     };
     let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
     let sp = self.as_ref().try_get_span(e);
-    let res = self.call_func(sp, proc, args)?;
+    let res = self.call_func(sp, &proc, args)?;
     let et = self.as_ref();
     et.coerce(e, et.infer_sort(&res)?, res, tgt)
   }
@@ -1120,7 +1120,9 @@ impl Elaborator {
   /// in which case it returns `Ok(Err((ap, proof_closure)))` where `(proof_closure)` should
   /// evaluate to some value `proof`, which can be passed to [`AwaitingProof::finish`]
   /// to finish adding the theorem to the environment.
-  pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<Result<(), (AwaitingProof, LispVal)>> {
+  pub fn add_thm(&mut self,
+    fsp: FileSpan, es: &[LispVal]
+  ) -> Result<Result<(), (Box<AwaitingProof>, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let (x, args, hyps, ret, proof) = match es {
       [x, args, hyps, ret] => (x, args, hyps, ret, None),
@@ -1188,7 +1190,7 @@ impl Elaborator {
         if proof.is_proc() {
           lc.set_goals(Some(LispVal::goal(fsp, e_ret)).into_iter());
           let lc = Box::new(mem::replace(&mut self.lc, lc));
-          return Ok(Err((AwaitingProof {thm, de, var_map, lc, is}, proof)))
+          return Ok(Err((Box::new(AwaitingProof {thm, de, var_map, lc, is}), proof)))
         }
         Some(ThmVal {de, var_map, lc: Some(Box::new(lc)), is, proof})
       } else {None})

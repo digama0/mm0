@@ -863,12 +863,17 @@ pub enum ProcPos {
   /// immediately bound to a name. It is associated only with its span
   /// in the file.
   Unnamed(FileSpan),
+  /// A builtin procedure.
+  Builtin(BuiltinProc),
 }
 
 impl ProcPos {
   /// Get the file span for a procedure.
-  fn fspan(&self) -> &FileSpan {
-    match self { ProcPos::Named(fsp, _, _) | ProcPos::Unnamed(fsp) => fsp }
+  fn fspan(&self) -> Option<&FileSpan> {
+    match self {
+      ProcPos::Named(fsp, _, _) | ProcPos::Unnamed(fsp) => Some(fsp),
+      ProcPos::Builtin(_) => None,
+    }
   }
 }
 
@@ -1164,6 +1169,7 @@ str_enum! {
     /// `(set! r v)` sets the value of the ref-cell `r` to `v`.
     SetRef: "set!",
     /// `(set-weak! r v)` sets the value of the ref-cell `r` to a weak reference to `v`.
+    /// It returns (a strong reference to) `v`.
     SetWeak: "set-weak!",
     /// `(copy-span from to)` makes a copy of `to` with its position information copied from `from`.
     /// (This can be used for improved error reporting, but
@@ -1563,6 +1569,7 @@ impl Remap for ProcPos {
     match self {
       ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), *sp, a.remap(r)),
       ProcPos::Unnamed(fsp) => ProcPos::Unnamed(fsp.clone()),
+      &ProcPos::Builtin(p) => ProcPos::Builtin(p),
     }
   }
 }

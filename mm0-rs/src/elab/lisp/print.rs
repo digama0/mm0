@@ -158,7 +158,7 @@ impl EnvDisplay for LispKind {
       LispKind::Bool(false) => "#f".fmt(f),
       LispKind::Syntax(s) => s.fmt(f),
       LispKind::Undef => write!(f, "#undef"),
-      LispKind::Proc(Proc::Builtin(p)) => p.fmt(f),
+      &LispKind::Proc(Proc::Builtin(p) | Proc::Lambda {pos: ProcPos::Builtin(p), ..}) => p.fmt(f),
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");

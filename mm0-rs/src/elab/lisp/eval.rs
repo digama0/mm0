@@ -78,6 +78,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::Ret(_, pos, _, _) => match pos {
         &ProcPos::Named(_, _, a) => write!(f, "ret {}", fe.to(&a)),
         ProcPos::Unnamed(_) => write!(f, "ret"),
+        &ProcPos::Builtin(p) => write!(f, "ret {}", p),
       },
       Stack::MatchCont(_, e, bs, _) => write!(f, "(=> match {}\n  {})",
         fe.to(e), fe.to(bs.as_slice())),
@@ -354,8 +355,8 @@ impl Elaborator {
   }
 
   /// Shorthand to call a lisp function from the top level.
-  pub fn call_func(&mut self, sp: Span, f: LispVal, es: Vec<LispVal>) -> Result<LispVal> {
-    Evaluator::new(self, sp).run(State::App(sp, sp, f, es, [].iter()))
+  pub fn call_func(&mut self, sp: Span, f: &LispVal, es: Vec<LispVal>) -> Result<LispVal> {
+    Evaluator::new(self, sp).run(State::App(sp, sp, f.clone(), es, [].iter()))
   }
 
   /// Call an overridable lisp function. This uses the name of a builtin procedure `foo`
@@ -367,12 +368,14 @@ impl Elaborator {
       Some(e) => (**e).clone(),
       None => LispVal::proc(Proc::Builtin(p))
     };
-    self.call_func(sp, val, es)
+    self.call_func(sp, &val, es)
   }
 
   /// Run a merge operation from the top level. This is used during `import` in order to handle
   /// merge operations that occur due to diamond dependencies.
-  pub fn apply_merge(&mut self, sp: Span, strat: Option<&MergeStrategyInner>, old: LispVal, new: LispVal) -> Result<LispVal> {
+  pub fn apply_merge(&mut self,
+    sp: Span, strat: Option<&MergeStrategyInner>, old: LispVal, new: LispVal
+  ) -> Result<LispVal> {
     let mut eval = Evaluator::new(self, sp);
     let st = eval.apply_merge(sp, strat, old, new)?;
     eval.run(st)
@@ -697,6 +700,7 @@ impl<'a> Evaluator<'a> {
         let x = match pos {
           ProcPos::Named(_, _, a) => format!("({})", self.data[*a].name).into(),
           ProcPos::Unnamed(_) => "[fn]".into(),
+          ProcPos::Builtin(p) => format!("({})", p).into()
         };
         if let Some((sp, good, base)) = old.take() {
           let (sp, osp) = if good {(sp, fsp.clone())} else {(fsp.clone(), sp)};
@@ -741,7 +745,7 @@ impl<'a> Evaluator<'a> {
       Ok(()) => State::Ret(LispVal::undef()),
       Err((ap, proc)) => {
         let sp = try_get_span(&fsp, &proc);
-        self.stack.push(Stack::AddThmProc(fsp, Box::new(ap)));
+        self.stack.push(Stack::AddThmProc(fsp, ap));
         State::App(sp, sp, proc, vec![], [].iter())
       }
     })
@@ -1092,7 +1096,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   SetWeak: Exact(2) => {
     try1!(self.as_lref(&args[0], |e| {e.set_weak(&args[1]); Ok(())}));
-    LispVal::undef()
+    args[1].clone()
   },
   CopySpan: Exact(2) => {
     let mut it = args.drain(..);
@@ -1640,7 +1644,7 @@ impl<'a> Evaluator<'a> {
                   self.stack.push(Stack::Ret(self.fspan(sp1), pos.clone(),
                     mem::replace(&mut self.ctx, (**env).into()), code.clone()));
                 }
-                self.file = pos.fspan().file.clone();
+                if let Some(fsp) = pos.fspan() { self.file = fsp.file.clone() }
                 self.stack.push(Stack::Drop(self.ctx.len()));
                 match spec {
                   ProcSpec::Exact(_) => self.ctx.extend(args),
