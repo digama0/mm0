@@ -904,7 +904,7 @@ impl<'a> LowerCtx<'a> {
         (RegMem::Reg(dst), Some(&r)) => {
           let src = self.code.fresh_vreg();
           self.code.emit(Inst::MovPR { dst: src, src: r });
-          self.code.emit(Inst::MovRR { sz, dst, src });
+          self.code.emit(Inst::MovRR { dst, src });
           ArgAbi::Reg(r, sz)
         },
         (RegMem::Mem(_), Some(&r)) => {

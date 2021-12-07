@@ -648,7 +648,7 @@ impl<'a> Evaluator<'a> {
     let ret = self.pop_lisp();
     stack_match!(let ap as Some(Stack::AddThmProc(ap)) = self.stack.pop());
     let fsp = &self.call_stack.last().expect("impossible").span;
-    ap.finish(&mut self.elab, fsp, ret)?;
+    ap.finish(self.elab, fsp, ret)?;
     self.stack.push(Stack::Undef);
     Ok(())
   }

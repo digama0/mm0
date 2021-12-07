@@ -657,10 +657,9 @@ pub(crate) enum Inst {
     dst: VReg,
     src: u64,
   },
-  /// GPR to GPR move: `reg <- mov (64|32) reg`. This is always a pure move,
+  /// GPR to GPR move: `reg <- movq reg`. This is always a pure move,
   /// because we require that a 32 bit source register has zeroed high part.
   MovRR {
-    sz: Size, // 4 or 8
     dst: VReg,
     src: VReg,
   },
@@ -796,7 +795,7 @@ impl VInst for Inst {
   fn branch_blockparam_arg_offset(&self) -> usize { 0 }
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
-    if let Inst::MovRR { dst, src, .. } = *self {
+    if let Inst::MovRR { dst, src } = *self {
       Some((Operand::reg_use(src), Operand::reg_def(dst)))
     } else { None }
   }
@@ -973,7 +972,7 @@ impl VCode<Inst> {
   #[inline] pub(crate) fn emit_copy(&mut self, sz: Size, dst: RegMem, src: impl Into<RegMemImm<u64>>) {
     fn copy(code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>) {
       match (dst, src) {
-        (RegMem::Reg(dst), RegMemImm::Reg(src)) => { code.emit(Inst::MovRR { sz, dst, src }); }
+        (RegMem::Reg(dst), RegMemImm::Reg(src)) => { code.emit(Inst::MovRR { dst, src }); }
         (RegMem::Reg(dst), RegMemImm::Mem(src)) => { code.emit(Inst::load_mem(sz, dst, src)); }
         (RegMem::Reg(dst), RegMemImm::Imm(src)) => {
           code.emit(Inst::Imm { sz: sz.max(Size::S32), dst, src });
