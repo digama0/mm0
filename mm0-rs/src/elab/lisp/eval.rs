@@ -550,6 +550,18 @@ impl<'a> DerefMut for Evaluator<'a> {
   fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
+macro_rules! stack_match {
+  (let $x:ident as $pat:pat = $e:expr) => {
+    let $x = if let $pat = $e { $x } else { panic!("stack type error") };
+  };
+  (let $($x:ident),* as $pat:pat = $e:expr) => {
+    let ($($x,)*) = if let $pat = $e { ($($x,)*) } else { panic!("stack type error") };
+  };
+  ($x:ident => $e:expr) => {
+    if let Stack::$x(x) = $e { x } else { panic!("stack type error") }
+  };
+}
+
 impl<'a> Evaluator<'a> {
   fn new(elab: &'a mut Elaborator, orig_span: Span, code: &'a [Ir]) -> Evaluator<'a> {
     // println!("new:\n{}", elab.print(&IrList(1, code)));
@@ -632,6 +644,15 @@ impl<'a> Evaluator<'a> {
     }
   }
 
+  fn add_thm_resume(&mut self) -> Result<()> {
+    let ret = self.pop_lisp();
+    stack_match!(let ap as Some(Stack::AddThmProc(ap)) = self.stack.pop());
+    let fsp = &self.call_stack.last().expect("impossible").span;
+    ap.finish(&mut self.elab, fsp, ret)?;
+    self.stack.push(Stack::Undef);
+    Ok(())
+  }
+
   fn merge_map(&mut self,
     sp: Span, strat: MergeStrategy, mut old: LispVal, new: &LispKind
   ) -> Result<Option<LispVal>> {
@@ -670,6 +691,30 @@ impl<'a> Evaluator<'a> {
       }
       _ => Err(self.err(Some((sp, false)), "merge-map: not an atom map"))
     })
+  }
+
+  fn merge_map_resume(&mut self) -> Result<()> {
+    let ret = self.try_pop_lisp();
+    stack_match!(let data as Some(Stack::MergeMap(data)) = self.stack.last_mut());
+    if let (Some(ret), Some(k)) = (ret, data.k.take()) {
+      data.map.insert(k, ret);
+    }
+    let sp = self.call_stack.last().expect("impossible").span.span;
+    if let Some((k, oldv, newv)) = data.it.next() {
+      data.k = Some(k);
+      self.ip -= 1;
+      let strat = data.strat.clone();
+      self.push_apply_merge(sp, strat.as_deref(), oldv, newv)
+    } else {
+      let_unchecked!(data as Some(Stack::MergeMap(data)) = self.stack.pop());
+      let MergeMapData { mut old, map, .. } = *data;
+      let mut opt = Some(map);
+      if !old.is_ref() || old.as_map_mut(|m| *m = opt.take().expect("impossible")).is_none() {
+        old = LispVal::new(LispKind::AtomMap(opt.take().expect("impossible")))
+      }
+      self.stack.push(old.into());
+      Ok(())
+    }
   }
 
   fn push_merge_map(&mut self,
@@ -1363,6 +1408,7 @@ impl<'a> Evaluator<'a> {
       let err = $e;
       return Err(self.err(Some(($sp, false)), err))
     }}}
+    self.heartbeat()?;
     func.unwrapped(|func| {
       let func = if let LispKind::Proc(f) = func { f }
       else { throw!(sp1, "not a function, cannot apply") };
@@ -1467,33 +1513,32 @@ impl<'a> Evaluator<'a> {
 
   fn call_refine(&mut self, tail: bool, state: RState) -> Result<()> {
     let val = self.stack.last_mut().expect("underflow");
-    if let Stack::Refine(sp, ref mut stack) = *val {
-      match self.elab.run_refine(self.orig_span, stack, state) {
-        Err(e) => return Err(self.err(Some((e.pos, true)), e.kind.msg())),
-        Ok(RefineResult::Ret(e)) => {
-          self.elab.lc.clean_mvars();
-          *val = Stack::Val(e)
-        }
-        Ok(RefineResult::RetNone) => {
-          self.elab.lc.clean_mvars();
-          self.stack.pop();
-        }
-        Ok(RefineResult::RefineExtraArgs(tgt, e, u)) => {
-          let mut args = vec![LispVal::proc(Proc::RefineCallback), tgt.clone(), e];
-          for e in u { args.push(e) }
-          stack.push(RStack::CoerceTo(tgt));
-          self.insert_call_refine(tail, sp);
-          match &self.data[AtomId::REFINE_EXTRA_ARGS].lisp {
-            None => self.evaluate_builtin(false, sp, sp, BuiltinProc::RefineExtraArgs, args)?,
-            Some(v) => { let v = v.val.clone(); self.app(false, sp, sp, &v, args)? }
-          }
-        }
-        Ok(RefineResult::Proc(tgt, proc)) => {
-          self.insert_call_refine(tail, sp);
-          self.app(false, sp, sp, &proc, vec![LispVal::proc(Proc::RefineCallback), tgt])?
+    stack_match!(let sp, stack as Stack::Refine(sp, ref mut stack) = *val);
+    match self.elab.run_refine(self.orig_span, stack, state) {
+      Err(e) => return Err(self.err(Some((e.pos, true)), e.kind.msg())),
+      Ok(RefineResult::Ret(e)) => {
+        self.elab.lc.clean_mvars();
+        *val = Stack::Val(e)
+      }
+      Ok(RefineResult::RetNone) => {
+        self.elab.lc.clean_mvars();
+        self.stack.pop();
+      }
+      Ok(RefineResult::RefineExtraArgs(tgt, e, u)) => {
+        let mut args = vec![LispVal::proc(Proc::RefineCallback), tgt.clone(), e];
+        for e in u { args.push(e) }
+        stack.push(RStack::CoerceTo(tgt));
+        self.insert_call_refine(tail, sp);
+        match &self.data[AtomId::REFINE_EXTRA_ARGS].lisp {
+          None => self.evaluate_builtin(false, sp, sp, BuiltinProc::RefineExtraArgs, args)?,
+          Some(v) => { let v = v.val.clone(); self.app(false, sp, sp, &v, args)? }
         }
       }
-    } else { panic!("stack error") }
+      Ok(RefineResult::Proc(tgt, proc)) => {
+        self.insert_call_refine(tail, sp);
+        self.app(false, sp, sp, &proc, vec![LispVal::proc(Proc::RefineCallback), tgt])?
+      }
+    }
     Ok(())
   }
 
@@ -1642,6 +1687,199 @@ impl<'a> Evaluator<'a> {
     }
   }
 
+  fn heartbeat(&mut self) -> Result<()> {
+    // self.iters = self.iters.wrapping_add(1);
+    if self.cur_timeout.map_or(false, |t| t < Instant::now()) {
+      return Err(self.err(None, "timeout"))
+    }
+    if self.cancel.load(Ordering::Relaxed) {
+      return Err(self.err(None, "cancelled"))
+    }
+    if self.stack.len() >= self.stack_limit {
+      return Err(self.err(None, "stack overflow"))
+    }
+    Ok(())
+  }
+
+  fn dotted_list(&mut self, n: usize) {
+    let dot = self.pop_lisp();
+    let args = self.popn(n).map(Stack::into_lisp);
+    let ret = match dot.try_unwrap() {
+      Ok(LispKind::List(es)) =>
+        LispVal::list(args.chain(es.into_vec()).collect::<Box<[_]>>()),
+      Ok(LispKind::DottedList(es, e)) =>
+        LispVal::dotted_list(args.chain(es.into_vec()).collect::<Box<[_]>>(), e),
+      Ok(e) => LispVal::dotted_list(args.collect::<Box<[_]>>(), LispVal::new(e)),
+      Err(ret) => LispVal::dotted_list(args.collect::<Box<[_]>>(), ret),
+    };
+    self.stack.push(ret.into())
+  }
+
+  fn focus_finish(&mut self) -> Result<()> {
+    macro_rules! throw {($sp:expr, $e:expr) => {{
+      let err = $e;
+      return Err(self.err(Some(($sp, false)), err))
+    }}}
+    let mut ir = self.stack.pop().expect("underflow");
+    let mut close = true;
+    loop {
+      if let Stack::Focus(sp, gs) = ir {
+        if close {
+          if self.lc.closer.is_def() {
+            self.ip -= 1;
+            self.stack.push(Stack::Focus(sp, gs));
+            self.app(false, sp, sp, &self.lc.closer.clone(), vec![])?;
+            break
+          } else if !self.lc.goals.is_empty() {
+            let stat = self.stat();
+            self.call_goal_listener(&stat);
+            let span = self.fspan(sp);
+            for g in mem::take(&mut self.lc.goals) {
+              let err = ElabError::new_e(try_get_span(&span, &g), format!("|- {}",
+                self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)));
+              self.report(err)
+            }
+            throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
+          }
+        }
+        self.lc.set_goals(gs);
+        self.stack.push(Stack::Undef);
+        break
+      }
+      ir = self.stack.pop().expect("underflow");
+      close = false;
+    }
+    Ok(())
+  }
+
+  fn global_def(&mut self, sp1: Span, sp2: Span, a: AtomId) -> Result<()> {
+    let ret = self.pop_lisp();
+    if matches!(self.stack.last(), Some(Stack::DefMerge)) {
+      self.stack.pop();
+    } else if let Some(LispData {merge: strat @ Some(_), val, ..}) =
+      &mut self.data[a].lisp
+    {
+      let (strat, old) = (strat.clone(), val.clone());
+      self.ip -= 1;
+      self.stack.push(Stack::DefMerge);
+      self.push_apply_merge(sp1, strat.as_deref(), old, ret)?;
+      return Ok(())
+    }
+    let loc = (self.fspan(sp2), sp1);
+    let env = &mut self.env;
+    match (&mut env.data[a].lisp, ret.is_def_strict()) {
+      (l @ None, true) => {
+        env.stmts.push(StmtTrace::Global(a));
+        *l = Some(LispData {src: Some(loc), doc: None, val: ret, merge: None})
+      }
+      (Some(LispData {val, ..}), true) => *val = ret,
+      (l, false) => if l.is_some() {
+        env.data[a].graveyard = Some(Box::new(loc));
+      }
+    }
+    Ok(())
+  }
+
+  fn lambda(&mut self, sp: Span, name: u8, spec: ProcSpec, code: Arc<[Ir]>) {
+    let pos = if name == u8::MAX {
+      ProcPos::Unnamed(self.fspan(sp))
+    } else {
+      let_unchecked!(
+        Ir::GlobalDef(span, full, x) = self.code[self.ip + usize::from(name)],
+        ProcPos::Named(self.fspan(full), span, x))
+    };
+    self.stack.push(LispVal::proc(Proc::Lambda {
+      pos,
+      env: self.ctx.clone().into(),
+      spec,
+      code,
+    }).into())
+  }
+
+  fn map(&mut self) -> Result<()> {
+    if let Some(e) = self.try_pop_lisp() {
+      let len = self.stack.len();
+      stack_match!(MapProc2 => &mut self.stack[len - 2]).push(e)
+    }
+    let len = self.stack.len();
+    let func = self.stack[len - 3].cloned_lisp();
+    stack_match!(let sp, us as Some(&mut Stack::MapProc1(sp, ref mut us)) = self.stack.last_mut());
+    let mut it = us.iter_mut();
+    let u0 = it.next().expect("impossible");
+    if let Some(e0) = u0.next() {
+      let mut args = vec![e0];
+      for u in it {
+        if let Some(e) = u.next() { args.push(e) }
+        else { return Err(self.err(Some((sp, false)), "mismatched input length")) }
+      }
+      self.ip -= 1;
+      self.app(false, sp, sp, &func, args)?
+    } else {
+      if !(u0.exactly(0) && it.all(|u| u.exactly(0))) {
+        return Err(self.err(Some((sp, false)), "mismatched input length"))
+      }
+      self.stack.pop();
+      stack_match!(let args as Some(Stack::MapProc2(args)) = self.stack.pop());
+      *self.stack.last_mut().expect("underflow") = LispVal::list(args).into()
+    }
+    Ok(())
+  }
+
+  fn have(&mut self) -> Result<()> {
+    let ret = self.pop_lisp();
+    let x = self.pop_lisp();
+    let a = x.as_atom().expect("checked");
+    let fsp = &self.call_stack.last().expect("impossible").span;
+    let e = self.elab.infer_type(fsp.span, &ret)?;
+    let span = try_get_span(fsp, &x);
+    self.elab.lc.add_proof(a, e, ret);
+    if span != fsp.span {
+      self.spans.insert_if(span, || ObjectKind::proof(x));
+    }
+    self.stack.push(Stack::Undef);
+    Ok(())
+  }
+
+  fn refine_goal(&mut self, ret_val: bool) -> Result<()> {
+    match self.stack.pop().expect("underflow") {
+      Stack::Undef => if ret_val { self.stack.push(Stack::Undef) }
+      Stack::Val(e) if !e.is_def() => if ret_val { self.stack.push(Stack::Undef) }
+      e => {
+        let e = e.into_lisp();
+        let esp = self.try_get_span(e.fspan().as_ref());
+        self.stack.push(Stack::Refine(esp, vec![]));
+        let gs = mem::take(&mut self.lc.goals).into_iter();
+        let es = vec![e].into_iter();
+        self.call_refine(false, RState::Goals { gs, es, ret_val })?
+      }
+    }
+    Ok(())
+  }
+
+  #[inline] fn global_var(&mut self, sp: Span, a: AtomId) -> Result<()> {
+    match &self.data[a] {
+      AtomData {name, lisp: None, ..} => match BuiltinProc::from_bytes(name) {
+        None => {
+          let err = format!("Reference to unbound variable '{}'", name);
+          return Err(self.err(Some((sp, false)), err))
+        },
+        Some(p) => {
+          let s = name.clone();
+          let a = self.get_atom(&s);
+          let ret = LispVal::proc(Proc::Builtin(p));
+          self.data[a].lisp =
+            Some(LispData {src: None, doc: None, val: ret.clone(), merge: None});
+          self.stack.push(ret.into())
+        }
+      },
+      AtomData {lisp: Some(x), ..} => {
+        let ret = x.val.clone();
+        self.stack.push(ret.into())
+      }
+    }
+    Ok(())
+  }
+
   #[allow(clippy::never_loop, clippy::many_single_char_names)]
   fn run(&mut self) -> Result<LispVal> {
     macro_rules! throw {($sp:expr, $e:expr) => {{
@@ -1649,21 +1887,8 @@ impl<'a> Evaluator<'a> {
       return Err(self.err(Some(($sp, false)), err))
     }}}
 
-    let mut iters: u8 = 0;
     // let mut stacklen = 0;
     loop {
-      iters = iters.wrapping_add(1);
-      if iters == 0 {
-        if self.cur_timeout.map_or(false, |t| t < Instant::now()) {
-          return Err(self.err(None, "timeout"))
-        }
-        if self.cancel.load(Ordering::Relaxed) {
-          return Err(self.err(None, "cancelled"))
-        }
-      }
-      if self.stack.len() >= self.stack_limit {
-        return Err(self.err(None, "stack overflow"))
-      }
       // if self.check_proofs {
       //   if self.stack.len() < stacklen {
       //     println!("stack -= {}", stacklen - self.stack.len());
@@ -1707,41 +1932,13 @@ impl<'a> Evaluator<'a> {
           Ir::AssertScope(n) => assert!(self.ctx.len() == n),
           Ir::EndScope(n) => self.ctx.truncate(n),
           Ir::Local(i) => self.stack.push(self.ctx[i].clone().into()),
-          Ir::Global(sp, a) => match &self.data[a] {
-            AtomData {name, lisp: None, ..} => match BuiltinProc::from_bytes(name) {
-              None => throw!(sp, format!("Reference to unbound variable '{}'", name)),
-              Some(p) => {
-                let s = name.clone();
-                let a = self.get_atom(&s);
-                let ret = LispVal::proc(Proc::Builtin(p));
-                self.data[a].lisp =
-                  Some(LispData {src: None, doc: None, val: ret.clone(), merge: None});
-                self.stack.push(ret.into())
-              }
-            },
-            AtomData {lisp: Some(x), ..} => {
-              let ret = x.val.clone();
-              self.stack.push(ret.into())
-            }
-          }
+          Ir::Global(sp, a) => self.global_var(sp, a)?,
           Ir::Const(ref val) => self.stack.push(val.clone().into()),
           Ir::List(sp, n) => {
             let args = self.popn(n).map(Stack::into_lisp).collect::<Box<[_]>>();
             self.stack.push(LispVal::list(args).span(self.fspan(sp)).into())
           }
-          Ir::DottedList(n) => {
-            let dot = self.pop_lisp();
-            let args = self.popn(n).map(Stack::into_lisp);
-            let ret = match dot.try_unwrap() {
-              Ok(LispKind::List(es)) =>
-                LispVal::list(args.chain(es.into_vec()).collect::<Box<[_]>>()),
-              Ok(LispKind::DottedList(es, e)) =>
-                LispVal::dotted_list(args.chain(es.into_vec()).collect::<Box<[_]>>(), e),
-              Ok(e) => LispVal::dotted_list(args.collect::<Box<[_]>>(), LispVal::new(e)),
-              Err(ret) => LispVal::dotted_list(args.collect::<Box<[_]>>(), ret),
-            };
-            self.stack.push(ret.into())
-          }
+          Ir::DottedList(n) => self.dotted_list(n),
           ref ir @ (Ir::App(sp1, sp2, n) | Ir::TailApp(sp1, sp2, n)) => {
             let args = self.popn(n).map(Stack::into_lisp).collect();
             let func = self.pop_lisp();
@@ -1763,37 +1960,7 @@ impl<'a> Evaluator<'a> {
             let gs = self.lc.goals.drain(1..).collect();
             self.stack.push(Stack::Focus(sp, gs));
           }
-          Ir::FocusFinish => {
-            let mut ir = self.stack.pop().expect("underflow");
-            let mut close = true;
-            loop {
-              if let Stack::Focus(sp, gs) = ir {
-                if close {
-                  if self.lc.closer.is_def() {
-                    self.ip -= 1;
-                    self.stack.push(Stack::Focus(sp, gs));
-                    self.app(false, sp, sp, &self.lc.closer.clone(), vec![])?;
-                    break
-                  } else if !self.lc.goals.is_empty() {
-                    let stat = self.stat();
-                    self.call_goal_listener(&stat);
-                    let span = self.fspan(sp);
-                    for g in mem::take(&mut self.lc.goals) {
-                      let err = ElabError::new_e(try_get_span(&span, &g), format!("|- {}",
-                        self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)));
-                      self.report(err)
-                    }
-                    throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
-                  }
-                }
-                self.lc.set_goals(gs);
-                self.stack.push(Stack::Undef);
-                break
-              }
-              ir = self.stack.pop().expect("underflow");
-              close = false;
-            }
-          }
+          Ir::FocusFinish => self.focus_finish()?,
           Ir::SetMergeStrategy(sp, a) => if let Some(ref mut data) = self.elab.data[a].lisp {
             data.merge = self.stack.pop().expect("underflow").into_lisp().into_merge_strategy()
           } else {
@@ -1805,53 +1972,11 @@ impl<'a> Evaluator<'a> {
             let ret = self.pop_lisp();
             self.ctx.push(ret);
           }
-          Ir::GlobalDef(sp1, sp2, a) => {
-            let ret = self.pop_lisp();
-            loop { // not a loop
-              if matches!(self.stack.last(), Some(Stack::DefMerge)) {
-                self.stack.pop();
-              } else if let Some(LispData {merge: strat @ Some(_), val, ..}) =
-                &mut self.data[a].lisp
-              {
-                let (strat, old) = (strat.clone(), val.clone());
-                self.ip -= 1;
-                self.stack.push(Stack::DefMerge);
-                self.push_apply_merge(sp1, strat.as_deref(), old, ret)?;
-                break
-              }
-              let loc = (self.fspan(sp2), sp1);
-              let env = &mut self.env;
-              match (&mut env.data[a].lisp, ret.is_def_strict()) {
-                (l @ None, true) => {
-                  env.stmts.push(StmtTrace::Global(a));
-                  *l = Some(LispData {src: Some(loc), doc: None, val: ret, merge: None})
-                }
-                (Some(LispData {val, ..}), true) => *val = ret,
-                (l, false) => if l.is_some() {
-                  env.data[a].graveyard = Some(Box::new(loc));
-                }
-              }
-              break
-            }
-          }
+          Ir::GlobalDef(sp1, sp2, a) => self.global_def(sp1, sp2, a)?,
           Ir::SetDoc(ref doc, a) => if let Some(data) = &mut self.data[a].lisp {
             if data.val.is_def_strict() { data.doc = Some(doc.clone()) }
           }
-          Ir::Lambda(sp, name, spec, ref e) => {
-            let pos = if name == u8::MAX {
-              ProcPos::Unnamed(self.fspan(sp))
-            } else {
-              let_unchecked!(
-                Ir::GlobalDef(span, full, x) = self.code[self.ip + usize::from(name)],
-                ProcPos::Named(self.fspan(full), span, x))
-            };
-            self.stack.push(LispVal::proc(Proc::Lambda {
-              pos,
-              env: self.ctx.clone().into(),
-              spec,
-              code: e.clone()
-            }).into())
-          }
+          Ir::Lambda(sp, name, spec, ref e) => self.lambda(sp, name, spec, e.clone()),
           Ir::Branch(vars, next, cont) => {
             let e = self.pop_lisp();
             self.stack.push(Stack::Branch(next, e.clone(), cont));
@@ -1860,111 +1985,23 @@ impl<'a> Evaluator<'a> {
           }
           Ir::TestPatternResume => {
             let ok = self.pop_lisp().truthy();
-            if let Some(Stack::PatternPause(vars)) = self.stack.pop() {
-              self.pattern_match(vars, ok)?
-            } else { panic!("stack type error") }
+            stack_match!(let vars as Some(Stack::PatternPause(vars)) = self.stack.pop());
+            self.pattern_match(vars, ok)?
           }
           Ir::BranchFail(sp) => {
             let e = self.pop_lisp();
             throw!(sp, format!("match failed: {}", self.print(&e)))
           }
 
-          Ir::Map => {
-            if let Some(e) = self.try_pop_lisp() {
-              let len = self.stack.len();
-              if let Stack::MapProc2(ref mut args) = self.stack[len - 2] {
-                args.push(e)
-              } else { panic!("stack type error") }
-            }
-            let len = self.stack.len();
-            let func = self.stack[len - 3].cloned_lisp();
-            if let Some(&mut Stack::MapProc1(sp, ref mut us)) = self.stack.last_mut() {
-              let mut it = us.iter_mut();
-              let u0 = it.next().expect("impossible");
-              if let Some(e0) = u0.next() {
-                let mut args = vec![e0];
-                for u in it {
-                  if let Some(e) = u.next() {args.push(e)}
-                  else {throw!(sp, "mismatched input length")}
-                }
-                self.ip -= 1;
-                self.app(false, sp, sp, &func, args)?
-              } else {
-                if !(u0.exactly(0) && it.all(|u| u.exactly(0))) {
-                  throw!(sp, "mismatched input length")
-                }
-                self.stack.pop();
-                if let Stack::MapProc2(args) = self.stack.pop().expect("underflow") {
-                  *self.stack.last_mut().expect("underflow") = LispVal::list(args).into()
-                } else { panic!("stack type error") }
-              }
-            } else { panic!("stack type error") }
-          }
-
-          Ir::Have => {
-            let ret = self.pop_lisp();
-            let x = self.pop_lisp();
-            let a = x.as_atom().expect("checked");
-            let fsp = &self.call_stack.last().expect("impossible").span;
-            let e = self.elab.infer_type(fsp.span, &ret)?;
-            let span = try_get_span(fsp, &x);
-            self.elab.lc.add_proof(a, e, ret.clone());
-            if span != fsp.span {
-              self.spans.insert_if(span, || ObjectKind::proof(x));
-            }
-            self.stack.push(Stack::Undef)
-          }
-
+          Ir::Map => self.map()?,
+          Ir::Have => self.have()?,
           Ir::RefineResume => {
             let ret = self.pop_lisp();
             self.call_refine(true, RState::Ret(ret))?
           }
-
-          Ir::RefineGoal(ret_val) => match self.stack.pop().expect("underflow") {
-            Stack::Undef => if ret_val { self.stack.push(Stack::Undef) }
-            Stack::Val(e) if !e.is_def() => if ret_val { self.stack.push(Stack::Undef) }
-            e => {
-              let e = e.into_lisp();
-              let esp = self.try_get_span(e.fspan().as_ref());
-              self.stack.push(Stack::Refine(esp, vec![]));
-              let gs = mem::take(&mut self.lc.goals).into_iter();
-              let es = vec![e].into_iter();
-              self.call_refine(false, RState::Goals { gs, es, ret_val })?
-            }
-          }
-
-          Ir::AddThm => {
-            let ret = self.pop_lisp();
-            if let Some(Stack::AddThmProc(ap)) = self.stack.pop() {
-              let fsp = &self.call_stack.last().expect("impossible").span;
-              ap.finish(&mut self.elab, fsp, ret)?;
-              self.stack.push(Stack::Undef)
-            } else { panic!("stack type error") }
-          }
-
-          Ir::MergeMap => {
-            let ret = self.try_pop_lisp();
-            if let Some(Stack::MergeMap(data)) = self.stack.last_mut() {
-              if let (Some(ret), Some(k)) = (ret, data.k.take()) {
-                data.map.insert(k, ret);
-              }
-              let sp = self.call_stack.last().expect("impossible").span.span;
-              if let Some((k, oldv, newv)) = data.it.next() {
-                data.k = Some(k);
-                self.ip -= 1;
-                let strat = data.strat.clone();
-                self.push_apply_merge(sp, strat.as_deref(), oldv, newv)?;
-              } else {
-                let_unchecked!(data as Some(Stack::MergeMap(data)) = self.stack.pop());
-                let MergeMapData { mut old, map, .. } = *data;
-                let mut opt = Some(map);
-                if !old.is_ref() || old.as_map_mut(|m| *m = opt.take().expect("impossible")).is_none() {
-                  old = LispVal::new(LispKind::AtomMap(opt.take().expect("impossible")))
-                }
-                self.stack.push(old.into())
-              }
-            } else { panic!("stack type error") }
-          }
+          Ir::RefineGoal(ret_val) => self.refine_goal(ret_val)?,
+          Ir::AddThm => self.add_thm_resume()?,
+          Ir::MergeMap => self.merge_map_resume()?,
 
           // Listing the instructions explicitly so that we get missing match arm errors
           Ir::PatternResult(_) | Ir::PatternAtom(_) | Ir::PatternQuoteAtom(_) |

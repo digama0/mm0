@@ -60,6 +60,7 @@ pub enum Ir {
   /// `[#t] -> [] (and ip += 1)`, or `[#f] -> [] (and ip = tgt)`
   JumpUnless(usize),
   /// Jump unconditionally to the indicated location. `ip = tgt`, does not touch the stack.
+  /// Only used for forward jumps.
   Jump(usize),
   /// The initializer for the `(focus es)` syntax form.
   /// Takes the goals out of the state and puts them in a `focus` node on the stack.
