@@ -48,11 +48,15 @@ pub enum Ir {
   /// Function application: given `1 + n` results on the stack, where the first argument
   /// is a procedure and the following `n` are the arguments, call the procedure
   /// and put the result on the stack.
-  /// `[f, a1, ..., an] -> [f(a1, ..., an)]`
-  App(Span, Span, usize),
-  /// Same as `App` but for a tail call.
-  /// `[ret, ..., f, a1, ..., an] -> [ret, f(a1, ..., an)]`
-  TailApp(Span, Span, usize),
+  /// * `app: [f, a1, ..., an] -> [f(a1, ..., an)]`
+  /// * `tail-app: [ret, ..., f, a1, ..., an] -> [ret, f(a1, ..., an)]`
+  App(bool, Box<(Span, Span)>, usize),
+  /// Function application: given `1 + n` results on the stack, where the first argument
+  /// is a procedure and the following `n` are the arguments, call the procedure
+  /// and put the result on the stack.
+  /// * `app: [f, a1, ..., an] -> [f(a1, ..., an)]`
+  /// * `tail-app: [ret, ..., f, a1, ..., an] -> [ret, f(a1, ..., an)]`
+  BuiltinApp(bool, BuiltinProc, Box<(Span, Span)>, usize),
   /// Applies the head of the stack to the element under it. `[x, f] -> [f(x)]`
   AppHead(Span),
   /// Pop the last result on the stack; if it is truthy then continue, else jump
@@ -90,7 +94,7 @@ pub enum Ir {
   /// [`App`](Self::App) instruction.
   /// The `u8` is `u8::MAX` if the lambda is unnamed; else it is a forward reference
   /// to a `GlobalDef` with the name information. `[] -> [lambda spec [code...]]`
-  Lambda(Span, u8, ProcSpec, Arc<[Ir]>),
+  Lambda(u8, Box<(Span, ProcSpec, Arc<[Ir]>)>),
   /// Start a match branch. Push `n` variables to the match context,
   /// to store the values of variables to match.
   /// The second usize is the address of the next branch.
@@ -197,6 +201,9 @@ pub enum Ir {
   PatternQExprAtom(AtomId),
 }
 
+// make sure that `Ir` doesn't get too big
+const _: [(); 40] = [(); std::mem::size_of::<Ir>()];
+
 impl Ir {
   const fn drop(keep: bool, n: usize) -> Ir {
     if keep { Ir::DropAbove(n) } else { Ir::Drop(n) }
@@ -225,8 +232,10 @@ impl Ir {
       Ir::Const(ref e) => write!(f, "const {}", fe.to(e)),
       Ir::List(_, n) => write!(f, "list {}", n),
       Ir::DottedList(n) => write!(f, "dotted-list {}", n),
-      Ir::App(_, _, n) => write!(f, "app {}", n),
-      Ir::TailApp(_, _, n) => write!(f, "tail-app {}", n),
+      Ir::App(false, _, n) => write!(f, "app {}", n),
+      Ir::App(true, _, n) => write!(f, "tail-app {}", n),
+      Ir::BuiltinApp(false, p, _, n) => write!(f, "app {} {}", p, n),
+      Ir::BuiltinApp(true, p, _, n) => write!(f, "tail-app {} {}", p, n),
       Ir::AppHead(_) => write!(f, "app-head"),
       Ir::JumpUnless(ip) => write!(f, "jump-unless -> {}", ip),
       Ir::Jump(ip) => write!(f, "jump -> {}", ip),
@@ -238,13 +247,13 @@ impl Ir {
       Ir::LocalDef(n) => write!(f, "def x{}", n),
       Ir::GlobalDef(_, _, a) => write!(f, "def {}", fe.to(&a)),
       Ir::SetDoc(_, a) => write!(f, "set-doc _ {}", fe.to(&a)),
-      Ir::Lambda(_, n, sp, ref code) => {
+      Ir::Lambda(n, ref args) => {
         write!(f, "lambda{} ", if n == u8::MAX {""} else {"-global"})?;
-        match sp {
+        match args.1 {
           ProcSpec::Exact(n) => writeln!(f, "{} [", n)?,
           ProcSpec::AtLeast(n) => writeln!(f, "{}+ [", n)?,
         }
-        Self::fmt_list(code, depth + 1, fe, f)?;
+        Self::fmt_list(&args.2, depth + 1, fe, f)?;
         for _ in 0..depth { f.write_str("  ")? }
         write!(f, "]")
       }
@@ -295,12 +304,6 @@ impl EnvDisplay for IrList<'_> {
   }
 }
 
-impl Ir {
-  fn app(span: Span, full: Span, n: usize, tail: bool) -> Ir {
-    if tail { Ir::TailApp(span, full, n) } else { Ir::App(span, full, n) }
-  }
-}
-
 /// The `(mvar)` patterns, which match a metavariable of different kinds.
 #[derive(Clone, Copy, Debug, EnvDebug, DeepSizeOf)]
 pub enum MVarPattern {
@@ -321,7 +324,7 @@ impl Remap for Ir {
       Ir::Const(v) => Ir::Const(unsafe { v.freeze() }.remap(r)),
       &Ir::SetMergeStrategy(sp, a) => Ir::SetMergeStrategy(sp, a.remap(r)),
       &Ir::GlobalDef(sp, sp2, a) => Ir::GlobalDef(sp, sp2, a.remap(r)),
-      &Ir::Lambda(sp, name, spec, ref e) => Ir::Lambda(sp, name, spec, e.remap(r)),
+      &Ir::Lambda(name, ref args) => Ir::Lambda(name, Box::new((args.0, args.1, args.2.remap(r)))),
       &Ir::PatternQuoteAtom(a) => Ir::PatternQuoteAtom(a.remap(r)),
       &Ir::PatternQExprAtom(a) => Ir::PatternQExprAtom(a.remap(r)),
       _ => self.clone()
@@ -425,7 +428,7 @@ impl<'a> LispParser<'a> {
       for (i, ir) in self.code.iter_mut().rev().enumerate() {
         match ir {
           Ir::AssertScope(_) | Ir::EndScope(_) => {}
-          Ir::Lambda(_, name, _, _) => {
+          Ir::Lambda(name, _) => {
             if let Ok(i) = i.try_into() { *name = i }
             break
           }
@@ -444,7 +447,7 @@ impl<'a> LispParser<'a> {
 
   fn push_lambda(&mut self, sp: Span, n: usize, spec: ProcSpec, code: Arc<[Ir]>) {
     self.code.push(Ir::AssertScope(n));
-    self.code.push(Ir::Lambda(sp, u8::MAX, spec, code))
+    self.code.push(Ir::Lambda(u8::MAX, Box::new((sp, spec, code))))
   }
 
   fn restore(&mut self, n: usize) {
@@ -522,8 +525,12 @@ impl<'a> LispParser<'a> {
 }
 
 impl<'a> LispParser<'a> {
-  fn builtin_start(&mut self, f: BuiltinProc) {
-    self.code.push(Ir::Const(LispVal::proc(Proc::Builtin(f))));
+  fn pop_builtin(&mut self) -> Option<BuiltinProc> {
+    let v = if let Some(Ir::Const(v)) = self.code.last() { v } else { return None };
+    let p = v.unwrapped(|e|
+      if let LispKind::Proc(Proc::Builtin(p)) = *e { Some(p) } else { None })?;
+    self.code.pop();
+    Some(p)
   }
 
   fn new_patch(&mut self) -> usize {
@@ -695,17 +702,15 @@ impl<'a> LispParser<'a> {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let n = self.ctx.push(x);
-        self.builtin_start(BuiltinProc::NewRef);
         self.code.push(Ir::Undef);
-        self.code.push(Ir::App(sp, sp, 1));
+        self.code.push(Ir::BuiltinApp(false, BuiltinProc::NewRef, Box::new((sp, sp)), 1));
         self.code.push(Ir::LocalDef(n));
         ds.push((sp, x, stk, e2, n));
       }
       for (sp, x, stk, e2, n) in ds {
-        self.builtin_start(BuiltinProc::SetWeak);
         self.code.push(Ir::Local(n));
         self.def_ir(sp, true, false, e2, stk)?;
-        self.code.push(Ir::App(sp, sp, 2));
+        self.code.push(Ir::BuiltinApp(false, BuiltinProc::SetWeak, Box::new((sp, sp)), 2));
         let m = self.ctx.push(x);
         self.code.push(Ir::LocalDef(m));
       }
@@ -794,7 +799,11 @@ impl<'a> LispParser<'a> {
               [test, tail @ ..] => finish!({
                 self.code.push(Ir::PatternTestPause);
                 self.expr(ExprCtx::EVAL.mask_def(), test)?;
-                self.code.push(Ir::AppHead(test.span));
+                if let Some(p) = self.pop_builtin() {
+                  self.code.push(Ir::BuiltinApp(false, p, Box::new((test.span, test.span)), 1));
+                } else {
+                  self.code.push(Ir::AppHead(test.span));
+                }
                 self.code.push(Ir::TestPatternResume);
                 self.patterns_and(ctx, tail)?
               }),
@@ -977,7 +986,18 @@ impl<'a> LispParser<'a> {
     match self.ctx.get(x) {
       None => {
         self.spans.insert(sp, ObjectKind::Global(x));
-        if keep { self.code.push(Ir::Global(sp, x)) }
+        if keep {
+          // Preload the value, if it exists; else look it up at run time
+          let data = &self.data[x];
+          if let Some(data) = &data.lisp {
+            let val = data.val.clone();
+            self.code.push(Ir::Const(val))
+          } else if let Some(p) = BuiltinProc::from_bytes(&data.name) {
+            self.code.push(Ir::Const(LispVal::proc(Proc::Builtin(p))))
+          } else {
+            self.code.push(Ir::Global(sp, x))
+          }
+        }
       },
       Some(i) => if keep { self.code.push(Ir::Local(i)) }
     }
@@ -1059,8 +1079,13 @@ impl<'a> LispParser<'a> {
           Ok(AtomId::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
           Ok(x) => {
             self.eval_atom(true, es[0].span, x);
+            let p = self.pop_builtin();
             let n = self.exprs(ExprsCtx::App, &es[1..])?;
-            self.code.push(Ir::app(e.span, es[0].span, n, ctx.tail));
+            if let Some(p) = p {
+              self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span, es[0].span)), n));
+            } else {
+              self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
+            }
             if !ctx.keep { self.code.push(Ir::Drop(1)) }
           }
           Err(stx) => {
@@ -1170,7 +1195,7 @@ impl<'a> LispParser<'a> {
       } else {
         self.expr(ExprCtx::EVAL.mask_def(), &es[0])?;
         let n = self.exprs(ExprsCtx::App, &es[1..])?;
-        self.code.push(Ir::app(e.span, es[0].span, n, ctx.tail));
+        self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
         if !ctx.keep { self.code.push(Ir::Drop(1)) }
       },
       &SExprKind::Formula(f) => {
