@@ -899,7 +899,7 @@ pub enum Proc {
     /// is how many arguments are expected.
     spec: ProcSpec,
     /// The code of the procedure.
-    code: Arc<Ir>
+    code: Arc<[Ir]>
   },
   /// A match continuation, which is passed to client code in the variable `k`
   /// of `(match e [pat (=> k) code])`. It is a *delimited* continuation, which means

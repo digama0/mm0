@@ -335,7 +335,7 @@ impl Elaborator {
     let fsp = self.fspan(sp);
     let mut es = Vec::with_capacity(hs.len());
     for f in hs {
-      let e = self.eval_lisp(f)?;
+      let e = self.eval_lisp(false, f)?;
       let val = self.elaborate_term(f.span, &e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
       let s = self.infer_sort(sp, &val)?;

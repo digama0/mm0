@@ -84,6 +84,8 @@ pub(crate) enum RStack {
     gs: std::vec::IntoIter<LispVal>,
     /// Later expressions to unify against later goals
     es: std::vec::IntoIter<LispVal>,
+    /// return a value
+    ret_val: bool,
   },
   /// This is not used directly by evaluation, but can be set manually. When we return
   /// to this stack element, we append this list of goals and pass the return value to the parent.
@@ -201,9 +203,9 @@ pub(crate) enum RStack {
 impl EnvDisplay for RStack {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      RStack::Goals { g, gs, es } => write!(f,
-        "Goals {{g: {}, gs: {}, es: {}}}",
-        fe.to(g), fe.to(gs.as_slice()), fe.to(es.as_slice())),
+      RStack::Goals { g, gs, es, ret_val } => write!(f,
+        "Goals {{g: {}, gs: {}, es: {}, ret_val: {}}}",
+        fe.to(g), fe.to(gs.as_slice()), fe.to(es.as_slice()), ret_val),
       RStack::DeferGoals(es) => write!(f,
         "DeferGoals {{es: {}}}", fe.to(es.as_slice())),
       RStack::Coerce { tgt, u } => write!(f,
@@ -247,6 +249,8 @@ pub(crate) enum RState {
     gs: std::vec::IntoIter<LispVal>,
     /// Later expressions to unify against later goals
     es: std::vec::IntoIter<LispVal>,
+    /// return a value
+    ret_val: bool,
   },
   /// Elaborate the unelaborated proof `p` against the target type `tgt`.
   /// ```text
@@ -375,7 +379,7 @@ pub(crate) enum RState {
 impl EnvDisplay for RState {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      RState::Goals {gs, es} => write!(f,
+      RState::Goals {gs, es, ..} => write!(f,
         "Goals {{gs: {}, es: {}}}", fe.to(gs.as_slice()), fe.to(es.as_slice())),
       RState::RefineProof {tgt, p} => write!(f,
         "RefineProof {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
@@ -432,6 +436,8 @@ impl EnvDisplay for RefineHypsResult {
 pub enum RefineResult {
   /// `return e`: `refine` completed successfully and this is the result.
   Ret(LispVal),
+  /// `return`: `refine` completed successfully and there is no result.
+  RetNone,
   /// `await (refine-extra-args tgt p args)`: we want to call the `refine-extra-args`
   /// callback to determine how to apply `args` to the proof `p`, with expected type `tgt`.
   RefineExtraArgs(LispVal, LispVal, Uncons),
@@ -805,22 +811,29 @@ impl Elaborator {
     mut active: RState
   ) -> Result<RefineResult> {
     let fsp = self.fspan(sp);
-    loop {
+    'main: loop {
       // if self.check_proofs {
       //   println!("{}", self.print(&active));
       // }
       active = match active {
-        RState::Goals {mut gs, mut es} => match es.next() {
-          None => {self.lc.goals.extend(gs); RState::Ret(LispVal::undef())}
-          Some(p) => loop {
-            if let Some(g) = gs.next() {
+        RState::Goals {mut gs, mut es, ret_val} => {
+          if let Some(p) = es.next() {
+            while let Some(g) = gs.next() {
               if let Some(tgt) = g.goal_type() {
-                stack.push(RStack::Goals {g, gs, es});
-                break RState::RefineProof {tgt, p}
+                stack.push(RStack::Goals {g, gs, es, ret_val});
+                active = RState::RefineProof {tgt, p};
+                continue 'main
               }
-            } else {break RState::Ret(LispVal::undef())}
+            }
           }
-        },
+          self.lc.goals.extend(gs);
+          if ret_val {
+            RState::Ret(LispVal::undef())
+          } else {
+            assert!(stack.is_empty());
+            return Ok(RefineResult::RetNone)
+          }
+        }
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App {sp, sp2, head: AtomId::QMARK, ..} => {
             let head = LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt));
@@ -984,9 +997,9 @@ impl Elaborator {
             self.lc.goals.append(&mut gs);
             RState::Ret(ret)
           }
-          Some(RStack::Goals {g, gs, es}) => {
+          Some(RStack::Goals {g, gs, es, ret_val}) => {
             g.as_ref_(|e| *e = ret).expect("a goal is a ref");
-            RState::Goals {gs, es}
+            RState::Goals {gs, es, ret_val}
           }
           Some(RStack::Coerce {tgt, u}) => RState::Ret(LispVal::apply_conv(u, tgt, ret)),
           Some(RStack::CoerceTo(tgt)) => {

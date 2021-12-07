@@ -736,7 +736,7 @@ impl Elaborator {
                 self.report(ElabError::warn(f.span, "(MM0 mode) expected formula"))
               }
             }
-            let e = self.eval_lisp(f)?;
+            let e = self.eval_lisp(false, f)?;
             Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
               None => InferTarget::Unknown,
               Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),

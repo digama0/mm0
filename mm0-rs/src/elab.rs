@@ -513,7 +513,7 @@ impl Elaborator {
   }
 
   fn parse_and_print(&mut self, e: &SExpr, doc: String) -> Result<()> {
-    let val = self.eval_lisp_doc(e, doc)?;
+    let val = self.eval_lisp_doc(true, e, doc)?;
     if val.is_def() {
       // add hover info / go to definition for `do 'thm_name;`
       // to make it easy to look up theorems by name
@@ -581,7 +581,7 @@ impl Elaborator {
         for e in es { self.parse_and_print(e, mem::take(&mut doc))? }
       }
       StmtKind::Annot(e, s) => {
-        let v = self.eval_lisp(e)?;
+        let v = self.eval_lisp(false, e)?;
         self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomId::ANNOTATE].lisp {
           Some(e) => e.val.clone(),
