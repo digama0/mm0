@@ -294,20 +294,39 @@ impl<C: Config> Compiler<C> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::wildcard_imports)]
 mod test {
+  use std::fs::File;
+  use std::io::{self, Write};
   use crate::types::ast::{
     ArgAttr, ArgKind, Block, ExprKind, ItemKind, Ret, StmtKind, TuplePatternKind, TypeKind};
-  use crate::{Compiler, FileSpan, Idx, Symbol, intern};
+  use crate::{Compiler, Idx, Symbol, intern};
   use crate::types::{Binop, Size, Spanned, VarId, hir::ProcKind, entity::IntrinsicProc};
 
-  fn assert_eq_hex(data: &[u8], hex: &str) {
+  fn assert_eq_hex(test_name: &str, data: &[u8], hex: &str) {
     let mut result = String::from(hex);
     result.retain(|c| c.is_ascii_hexdigit());
-    assert_eq!(hex::encode(data), result);
+    if hex::encode(data) != result {
+      fn write_file(name: &str, data: &[u8]) -> io::Result<()> {
+        File::create(name)?.write_all(data)
+      }
+      let _ = write_file(&format!("{}.expected", test_name), &hex::decode(result).unwrap());
+      let _ = write_file(&format!("{}.produced", test_name), data);
+      let mut msg = String::new();
+      for (i, &c) in data.iter().enumerate() {
+        if i % 16 == 0 { msg += "\\\n     " }
+        if i % 2 == 0 { msg += " " }
+        use std::fmt::Write;
+        write!(msg, "{:02x}", c).unwrap();
+      }
+      if data.len() % 16 == 0 { msg += "\\\n    " }
+      panic!("Binary comparison failed.\n\
+        Outputs produced at {0}.expected and {0}.produced\n\
+        To bless new test:\n\n    \
+        assert_eq_hex(\"{0}\", &out, \"{1}\");\n\n", test_name, msg);
+    }
   }
 
   #[test] fn trivial_ir() {
-    use std::{collections::HashMap, rc::Rc};
-    use crate::{LinkedCode, Idx, types::IntTy, mir::*};
+    use crate::{LinkedCode, mir::*};
     let names = Default::default();
     let mut cfg = Cfg::default();
     let bl = cfg.new_block(CtxId::ROOT);
@@ -322,7 +341,7 @@ mod test {
     // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
-    assert_eq_hex(&out, "\
+    assert_eq_hex("trivial_ir", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\
       4000 0000 0000 0000 0000 0000 0000 0000\
@@ -382,10 +401,10 @@ mod test {
     // println!("allocs = {:#?}", allocs);
     let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]);
     // println!("code = {:#?}", code);
-    // code.write_elf(&mut std::fs::File::create("two_plus_two").unwrap());
+    // code.write_elf(&mut File::create("two_plus_two_ir").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
-    assert_eq_hex(&out, "\
+    assert_eq_hex("two_plus_two_ir", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\
       4000 0000 0000 0000 0000 0000 0000 0000\
@@ -393,9 +412,9 @@ mod test {
       0100 0000 0700 0000 7800 0000 0000 0000\
       7800 4000 0000 0000 0000 0000 0000 0000\
       2800 0000 0000 0000 2800 0000 0000 0000\
-      0000 2000 0000 0000 ba02 0000 00be 0200\
-      0000 4002 d680 fa04 400f 94c6 4080 fe00\
-      7502 0f0b b83c 0000 0033 ff0f 0500 0000\
+      0000 2000 0000 0000 ba02 0000 00b9 0200\
+      0000 02d1 80fa 0441 0f94 c041 80f8 0075\
+      020f 0bb8 3c00 0000 33ff 0f05 0000 0000\
     ");
   }
 
@@ -425,13 +444,13 @@ mod test {
         expr: None,
       },
     });
-    compiler.add(&main, Default::default(), ());
+    compiler.add(&main, Default::default(), ()).unwrap();
     let code = compiler.finish();
-    println!("code = {:#?}", code);
-    // code.write_elf(&mut std::fs::File::create("two_plus_two").unwrap());
+    // println!("code = {:#?}", code);
+    // code.write_elf(&mut File::create("two_plus_two").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
-    assert_eq_hex(&out, "\
+    assert_eq_hex("two_plus_two", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\
       4000 0000 0000 0000 0000 0000 0000 0000\
@@ -441,8 +460,8 @@ mod test {
       3800 0000 0000 0000 3800 0000 0000 0000\
       0000 2000 0000 0000 e813 0000 00b8 3c00\
       0000 33ff 0f05 0000 0000 0000 0000 0000\
-      ba02 0000 00be 0200 0000 4002 d6b8 0400\
-      0000 3ad0 0f94 c180 f900 7502 0f0b c300\
+      ba02 0000 00b9 0200 0000 02d1 b904 0000\
+      003a d10f 94c0 3c00 7502 0f0b c300 0000\
     ");
   }
 
@@ -502,7 +521,7 @@ mod test {
         variant: None,
         body: Block::default()
       }),
-      Default::default(), ());
+      Default::default(), ()).unwrap();
 
     // main() {
     //   let hello: [u8; 11] = ['h', 'e', 'l', 'l', 'o', ...];
@@ -548,13 +567,13 @@ mod test {
           expr: None,
         },
       }),
-      Default::default(), ());
+      Default::default(), ()).unwrap();
     let code = compiler.finish();
-    println!("code = {:#?}", code);
-    // code.write_elf(&mut std::fs::File::create("hello_world").unwrap());
+    // println!("code = {:#?}", code);
+    // code.write_elf(&mut File::create("hello_world").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();
-    assert_eq_hex(&out, "\
+    assert_eq_hex("hello_world", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\
       4000 0000 0000 0000 0000 0000 0000 0000\

@@ -720,28 +720,28 @@ impl<'a> LowerCtx<'a> {
     rets: &[(bool, VarId)],
   ) {
     let mut rmis = ArrayVec::<RegMemImm<u64>, 6>::new();
-    let (f, ret) = match (f, rets, args) {
-      (IntrinsicProc::Open, &[(true, ret)], [(true, fname)]) => {
+    let (f, (ret_used, ret)) = match (f, rets, args) {
+      (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), 0.into(), 0.into()]);
         (SysCall::Open, ret)
       }
-      (IntrinsicProc::Create, &[(true, ret)], [(true, fname)]) => {
+      (IntrinsicProc::Create, &[ret], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), (1 + (1<<6) + (1<<9)).into(), 0.into()]);
         (SysCall::Open, ret)
       }
-      (IntrinsicProc::Read, &[(true, ret)], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+      (IntrinsicProc::Read, &[ret], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
         rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
         (SysCall::Read, ret)
       }
-      (IntrinsicProc::Write, &[(true, ret)], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
+      (IntrinsicProc::Write, &[ret], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
         rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
         (SysCall::Write, ret)
       }
-      (IntrinsicProc::FStat, &[(_, _buf_new), (true, ret)], [(true, fd), (_, _buf_old), (true, p)]) => {
+      (IntrinsicProc::FStat, &[(_, _buf_new), ret], [(true, fd), (_, _buf_old), (true, p)]) => {
         rmis.extend([fd, p].map(|x| self.get_operand(x)));
         (SysCall::FStat, ret)
       }
-      (IntrinsicProc::MMap, &[(true, ret)], [(true, len), (true, prot), (true, fd)]) => {
+      (IntrinsicProc::MMap, &[ret], [(true, len), (true, prot), (true, fd)]) => {
         rmis.extend([
           0.into(),
           self.get_operand(len),
@@ -752,7 +752,7 @@ impl<'a> LowerCtx<'a> {
         ]);
         (SysCall::MMap, ret)
       }
-      (IntrinsicProc::MMapAnon, &[(true, ret)], [(true, len), (true, prot)]) => {
+      (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
           rmis.extend([
             0.into(),
             self.get_operand(len),
@@ -767,10 +767,12 @@ impl<'a> LowerCtx<'a> {
     };
     let vreg = self.code.fresh_vreg();
     self.build_syscall(f, &rmis, vreg);
-    let a = self.allocs.get(ret);
-    assert_ne!(a, AllocId::ZERO);
-    let (dst, sz) = *self.get_alloc(a).0;
-    self.code.emit_copy(sz, dst, vreg);
+    if ret_used {
+      let a = self.allocs.get(ret);
+      assert_ne!(a, AllocId::ZERO);
+      let (dst, sz) = *self.get_alloc(a).0;
+      self.code.emit_copy(sz, dst, vreg);
+    }
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
   }
 
@@ -963,7 +965,8 @@ impl<'a> LowerCtx<'a> {
               let dst = self.get_place(p);
               self.build_move(size, Size::from_u64(size), dst, o);
             }
-            Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
+            Statement::LabelGroup(..) | Statement::PopLabelGroup |
+            Statement::DominatedBlock(..) => {}
           }
         }
         stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))

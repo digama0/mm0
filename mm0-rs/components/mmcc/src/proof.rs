@@ -315,7 +315,6 @@ impl<'a> Proc<'a> {
   #[must_use] pub fn assembly_blocks(&self) -> AssemblyBlocks<'_> {
     AssemblyBlocks {
       ctx: self,
-      content: self.content,
       iter: 0..self.proc.blocks.len(),
     }
   }
@@ -340,7 +339,6 @@ impl<'a> Proc<'a> {
 #[derive(Debug)]
 pub struct AssemblyBlocks<'a> {
   ctx: &'a Proc<'a>,
-  content: &'a [u8],
   iter: std::ops::Range<usize>,
 }
 

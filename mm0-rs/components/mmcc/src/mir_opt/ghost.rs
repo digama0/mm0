@@ -356,12 +356,24 @@ impl Cfg {
     let Cfg {ctxs, blocks, ..} = self;
     for i in 0..blocks.len() {
       let blocks = &mut *blocks.0;
-      if let Some(Terminator::Jump(tgt, ref mut args, _)) = blocks[i].term {
-        let tgt_ctx = blocks[tgt.0 as usize].ctx;
-        let s = cache[tgt].get_or_insert_with(|| {
-          ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
-        });
-        for (v, r, _) in args { *r = s.contains(v) }
+      match blocks[i].term {
+        Some(Terminator::Jump(tgt, ref mut args, _)) => {
+          let tgt_ctx = blocks[tgt.0 as usize].ctx;
+          let s = cache[tgt].get_or_insert_with(|| {
+            ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
+          });
+          for (v, r, _) in args { *r = s.contains(v) }
+        }
+        Some(Terminator::Call {reach: false, ref mut rets, ..}) =>
+          for i in &mut **rets { i.0 = false },
+        Some(Terminator::Call {reach: true, tgt, ref mut rets, ..}) => {
+          let tgt_ctx = blocks[tgt.0 as usize].ctx;
+          let s = cache[tgt].get_or_insert_with(|| {
+            ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
+          });
+          for (r, v) in &mut **rets { *r = s.contains(v) }
+        }
+        _ => {}
       }
     }
   }
