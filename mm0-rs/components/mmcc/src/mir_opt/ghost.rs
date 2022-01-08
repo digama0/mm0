@@ -171,7 +171,7 @@ impl Cfg {
     reachable: &BlockVec<Reachability>,
     returns: &[Arg],
   ) -> GhostAnalysisResult {
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct GhostDom {
       active: OptBlockId,
       vars: im::HashSet<VarId>,
@@ -358,18 +358,20 @@ impl Cfg {
       let blocks = &mut *blocks.0;
       match blocks[i].term {
         Some(Terminator::Jump(tgt, ref mut args, _)) => {
-          let tgt_ctx = blocks[tgt.0 as usize].ctx;
+          let BasicBlock {ctx: tgt_ctx, relevance: ref rel, ..} = blocks[tgt.0 as usize];
+          let rel = rel.as_ref().expect("impossible");
           let s = cache[tgt].get_or_insert_with(|| {
-            ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
+            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0).collect()
           });
           for (v, r, _) in args { *r = s.contains(v) }
         }
         Some(Terminator::Call {reach: false, ref mut rets, ..}) =>
           for i in &mut **rets { i.0 = false },
         Some(Terminator::Call {reach: true, tgt, ref mut rets, ..}) => {
-          let tgt_ctx = blocks[tgt.0 as usize].ctx;
+          let BasicBlock {ctx: tgt_ctx, relevance: ref rel, ..} = blocks[tgt.0 as usize];
+          let rel = rel.as_ref().expect("impossible");
           let s = cache[tgt].get_or_insert_with(|| {
-            ctxs.rev_iter(tgt_ctx).filter(|p| p.1).map(|p| p.0).collect()
+            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0).collect()
           });
           for (r, v) in &mut **rets { *r = s.contains(v) }
         }
