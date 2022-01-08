@@ -42,7 +42,7 @@ impl Alpha {
 /// A trait for the alpha conversion operation on subparts of a type.
 pub trait HasAlpha {
   /// Applies the alpha conversion operation, producing a copy of the value.
-  fn alpha(&self, a: &mut Alpha) -> Self;
+  #[must_use] fn alpha(&self, a: &mut Alpha) -> Self;
 }
 
 impl<T: HasAlpha> HasAlpha for Rc<T> {
@@ -469,7 +469,7 @@ impl EPlaceKind {
   }
 
   /// Convert this place to an expression.
-  pub fn to_expr(&self) -> Expr {
+  #[must_use] pub fn to_expr(&self) -> Expr {
     Rc::new(match self {
       EPlaceKind::Var(v) => ExprKind::Var(*v),
       EPlaceKind::Index(p, _, e) => ExprKind::Index(p.to_expr(), e.clone()),
@@ -690,7 +690,8 @@ impl Default for Contexts {
 
 impl Contexts {
   /// The number of allocated context buffers.
-  pub fn len(&self) -> usize { self.0.len() }
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(&self) -> usize { self.0.len() }
 
   /// Given a context ID, retrieve a context buffer, ensuring that it can be directly extended by
   /// allocating a new context buffer if necessary.

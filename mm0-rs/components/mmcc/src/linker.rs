@@ -270,11 +270,12 @@ impl LinkedCode {
       names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)).1;
 
     let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
-    let funcs = func_code.0.into_iter().map(|code| (pos, {
+    let funcs = func_code.0.into_iter().map(|code| {
       let code = code.expect("impossible");
+      let cur = pos;
       pos = (pos + code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
-      code
-    })).collect();
+      (cur, code)
+    }).collect();
 
     Self {
       consts: coll.consts,

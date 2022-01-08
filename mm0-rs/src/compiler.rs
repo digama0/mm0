@@ -225,8 +225,9 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
   let annotation_type = level.to_annotation_type();
   let Range {start, end} = file.to_range(pos);
   let start2 = pos.start - start.character as usize;
+  #[allow(clippy::or_fun_call)]
   let end2 = file.to_idx(Position {line: end.line + 1, character: 0})
-    .unwrap_or_else(|| file.len());
+    .unwrap_or(file.len());
   Snippet {
     title: Some(Annotation {
       id: None,

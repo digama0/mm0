@@ -1590,6 +1590,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     self.interner.intern(self.alloc, t)
   }
 
+  #[allow(clippy::wrong_self_convention)]
   pub(crate) fn to_global_ctx(&mut self) -> ToGlobalCtx<'a, '_> {
     ToGlobalCtx::new(&mut self.mvars, &mut self.errors, self.common.t_error, self.common.e_error)
   }

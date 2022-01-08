@@ -1366,7 +1366,7 @@ impl Debug for InstLayout {
 impl InstLayout {
   /// The byte length of any instruction with this layout.
   #[allow(clippy::len_without_is_empty)]
-  #[must_use] pub fn len(self) -> u8 { self.rex as u8 + self.opc.len() }
+  #[must_use] pub fn len(self) -> u8 { u8::from(self.rex) + self.opc.len() }
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
@@ -1469,8 +1469,8 @@ fn layout_binop_lo(sz: Size, dst: PReg, src: &PRegMemImm) -> InstLayout {
     _ => OpcodeLayout::BinopReg(layout_rmi(&mut rex, dst, src))
   };
   if dst == RAX && matches!(src, PRegMemImm::Imm(..)) {
-    let rax = OpcodeLayout::BinopRAX(sz != Size::S8);
-    if rax.len() <= opc.len() { opc = rax }
+    let rax_layout = OpcodeLayout::BinopRAX(sz != Size::S8);
+    if rax_layout.len() <= opc.len() { opc = rax_layout }
   }
   InstLayout { rex, opc }
 }
@@ -1776,7 +1776,7 @@ impl PInst {
         buf.push_u32(src as u32);
       }
       (OpcodeLayout::PushImm(b), &PInst::Push64 { src: PRegMemImm::Imm(src) }) => {
-        buf.push_u8(0x68 + (((!b) as u8) << 2));
+        buf.push_u8(0x68 + (u8::from(!b) << 2));
         push_u8_u32(b, buf, src);
       }
       (OpcodeLayout::PushReg, &PInst::Push64 { src: PRegMemImm::Reg(src) }) =>
@@ -1785,8 +1785,8 @@ impl PInst {
         buf.push_u8(0x58 + encode_reg(dst, &mut rex, REX_B)),
       (OpcodeLayout::Jump(b), &PInst::JmpKnown { short, dst }) => {
         let dst = buf.rip_relative_block(dst);
-        assert!(short == !b);
-        buf.push_u8(0xe9 + ((short as u8) << 2));
+        assert!(short != b);
+        buf.push_u8(0xe9 + (u8::from(short) << 2));
         push_u8_u32(b, buf, dst as u32);
       }
       (OpcodeLayout::Jcc8, &PInst::JmpCond { cc, short: true, dst }) => {
@@ -1855,7 +1855,7 @@ impl PInst {
         };
         assert!(op_size_w(&mut rex, ext_mode.dst()) == 1);
         buf.push_u8(0x0f);
-        buf.push_u8(opc + (ext_mode.src() == Size::S16) as u8);
+        buf.push_u8(opc + u8::from(ext_mode.src() == Size::S16));
         write_modrm(modrm, &mut rex, buf, dst, src);
       }
       (OpcodeLayout::Jcc, &PInst::JmpCond { cc, short: false, dst }) => {

@@ -310,7 +310,7 @@ pub(crate) fn regalloc_vcode(
     fwd_jumps: vec![],
   };
   let mut bb = BlockBuilder::new(&vcode.blocks.0);
-  code.push_prologue(stack_size_no_ret, saved_regs.iter().cloned());
+  code.push_prologue(stack_size_no_ret, saved_regs.iter().copied());
   for (i, inst) in vcode.insts.enum_iter() {
     ar.next_inst();
     if bb.next == i {
@@ -380,7 +380,7 @@ pub(crate) fn regalloc_vcode(
       }
       Inst::Epilogue { ref params } => {
         for _ in &**params { ar.next(); }
-        code.push_epilogue(stack_size_no_ret, saved_regs.iter().cloned())
+        code.push_epilogue(stack_size_no_ret, saved_regs.iter().copied())
       }
       Inst::JmpKnown { dst, ref params } => {
         for _ in &**params { ar.next(); }

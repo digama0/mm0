@@ -23,7 +23,7 @@ pub trait Idx: Copy + Eq {
   /// Convert from `usize` to `T`
   fn from_usize(_: usize) -> Self;
   /// Generate a fresh variable from a `&mut ID` counter.
-  fn fresh(&mut self) -> Self {
+  #[must_use] fn fresh(&mut self) -> Self {
     let n = *self;
     *self = Self::from_usize(self.into_usize() + 1);
     n

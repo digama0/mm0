@@ -1027,7 +1027,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })
   }
 
-  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, esrc: EPlace, src: &mut Place) {
+  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, e_src: EPlace, src: &mut Place) {
     match pat.k {
       TuplePatternKind::Name(name, v, ty) => {
         let v = self.tr(v);
@@ -1039,7 +1039,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.globals.push((name, r, v, tgt));
           (Rc::new(EPlaceKind::Var(v)), v.into())
         } else {
-          (esrc, src.clone())
+          (e_src, src.clone())
         };
         self.tr.vars.insert(v, src);
       }
@@ -1067,8 +1067,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let i = i.try_into().expect("overflow");
           let ty = self.tr(ty);
           src.proj.push((ty.clone(), Projection::Proj(pk, i)));
-          let esrc = Rc::new(EPlaceKind::Proj(esrc.clone(), ty, i));
-          self.tup_pat(global, pat, esrc, src);
+          let e_src = Rc::new(EPlaceKind::Proj(e_src.clone(), ty, i));
+          self.tup_pat(global, pat, e_src, src);
           src.proj.pop();
         }
       }
@@ -1244,6 +1244,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     } else { r }
   }
 
+  #[allow(clippy::too_many_arguments)]
   fn expr_if(&mut self,
     ety: ty::ExprTy<'a>,
     hyp: Option<[HVarId; 2]>,
@@ -1336,6 +1337,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     Ok(())
   }
 
+  #[allow(clippy::manual_assert)]
   fn rvalue_while(&mut self,
     hir::While { label, hyp, cond, variant: _, body, gen, muts, trivial }: hir::While<'a>,
     ret: ty::ExprTy<'a>,

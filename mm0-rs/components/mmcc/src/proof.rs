@@ -428,7 +428,7 @@ pub struct Inst<'a> {
 
 impl<'a> Inst<'a> {
   /// The byte data for this instruction.
-  pub fn content(&self) -> &'a [u8] {
+  #[must_use] pub fn content(&self) -> &'a [u8] {
     &self.ctx.content[self.start as usize..][..self.layout.len() as usize]
   }
 }
@@ -557,12 +557,12 @@ pub struct BlockTreeSeq<'a> {
 
 impl<'a> BlockTreeSeq<'a> {
   /// Get the root block of the proof tree.
-  pub fn main(&self) -> BlockProofTree<'a> {
+  #[must_use] pub fn main(&self) -> BlockProofTree<'a> {
     BlockProofTree::new(self.ctx, &self.args[0])
   }
 
   /// Get the sequence of dependencies, in dependency order.
-  pub fn deps(&self) -> BlockTreeIter<'a> {
+  #[must_use] pub fn deps(&self) -> BlockTreeIter<'a> {
     BlockTreeIter {
       ctx: self.ctx,
       seq: self.args[1..].iter(),
@@ -571,7 +571,7 @@ impl<'a> BlockTreeSeq<'a> {
   }
 
   /// Get the sequence of dependencies, including the root, in dependency order.
-  pub fn deps_full(&self) -> BlockTreeIter<'a> {
+  #[must_use] pub fn deps_full(&self) -> BlockTreeIter<'a> {
     BlockTreeIter {
       ctx: self.ctx,
       seq: self.args.iter(),
