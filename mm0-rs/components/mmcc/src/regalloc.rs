@@ -10,17 +10,17 @@
 use std::collections::HashMap;
 
 use mm0_util::u32_as_usize;
-use regalloc2::{Allocation, Edit, Function, PReg, ProgPoint, SpillSlot, VReg};
+use regalloc2::{Allocation, Edit, Function, ProgPoint, SpillSlot};
 
 use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offset, PAMode, PInst,
-  PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, RegMem, RegMemImm};
+  PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, PReg, RegMem, RegMemImm};
 use crate::linker::ConstData;
 use crate::mir_opt::storage::Allocations;
 use crate::types::{IdxVec, Size};
 use crate::types::mir::{self, Cfg};
 use crate::{Entity, Idx, Symbol};
 use crate::build_vcode::{VCode, VCodeCtx, build_vcode};
-use crate::types::vcode::{self, InstId, ProcAbi, ProcId, SpillId, BlockId};
+use crate::types::vcode::{self, IsReg, InstId, ProcAbi, ProcId, SpillId, BlockId};
 
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn regalloc(&self) -> regalloc2::Output {
@@ -66,13 +66,13 @@ impl ApplyRegalloc {
   }
 
   fn reg(&mut self) -> PReg {
-    self.next().as_reg().expect("expected a register")
+    PReg(self.next().as_reg().expect("expected a register"))
   }
   fn mem(&mut self, a: &AMode) -> PAMode {
-    let (off, base) = match (a.off, a.base == VReg::invalid()) {
-      (Offset::Spill(sp, n), true) => ((self.spill_map[sp] + n).into(), RSP),
-      (off, false) => (off, self.reg()),
-      (off, true) => (off, PReg::invalid()),
+    let (off, base) = match (a.off, a.base.is_valid()) {
+      (Offset::Spill(sp, n), false) => ((self.spill_map[sp] + n).into(), RSP),
+      (off, true) => (off, self.reg()),
+      (off, false) => (off, PReg::invalid()),
     };
     let si = a.si.map(|si| PShiftIndex { index: self.reg(), shift: si.shift });
     PAMode { off, base, si }
@@ -175,7 +175,7 @@ impl PCodeBuilder {
   ) {
     while edits.peek().map_or(false, |p| p.0 == pt) {
       if let Some((_, Edit::Move { from, to, .. })) = edits.next() {
-        match (from.as_reg(), to.as_reg()) {
+        match (from.as_reg().map(PReg), to.as_reg().map(PReg)) {
           (Some(src), Some(dst)) => self.push(PInst::MovRR { sz: Size::S64, dst, src }),
           (Some(src), _) => {
             let dst = ar.spill(to.as_stack().expect("bad regalloc"));
@@ -246,14 +246,14 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
   let mut result = PRegSet::default();
   for (_, edit) in &out.edits {
     if let Edit::Move { to, .. } = *edit {
-      if let Some(r) = to.as_reg() { result.insert(r) }
+      if let Some(r) = to.as_reg() { result.insert(PReg(r)) }
     }
   }
   for (i, _) in vcode.insts.enum_iter() {
-    for &r in vcode.inst_clobbers(i) { result.insert(r) }
+    for &r in vcode.inst_clobbers(i) { result.insert(PReg(r)) }
     for (op, alloc) in vcode.inst_operands(i).iter().zip(out.inst_allocs(i)) {
       if op.kind() != regalloc2::OperandKind::Use {
-        if let Some(r) = alloc.as_reg() { result.insert(r) }
+        if let Some(r) = alloc.as_reg() { result.insert(PReg(r)) }
       }
     }
   }

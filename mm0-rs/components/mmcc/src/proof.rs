@@ -10,8 +10,7 @@ use crate::types::{mir::{self, Cfg}, vcode::ConstRef};
 
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
-pub use crate::arch::{self, PInst as VInst};
-pub use regalloc2::PReg;
+pub use crate::arch::{self, PReg, PInst as VInst};
 
 /// If true, we are proving total correctness, so all recursions and loops
 /// must come with a variant that decreases on recursive calls.

@@ -3,33 +3,68 @@
 use std::fmt::Debug;
 
 use num::Zero;
-use regalloc2::{MachineEnv, PReg, VReg, Operand};
+use regalloc2::{MachineEnv, Operand};
 
 use crate::codegen::InstSink;
 use crate::types::{Size,
-  vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, Inst as VInst, VCode}};
+  vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg, IsReg, Inst as VInst, VCode}};
 
-const fn preg(i: usize) -> PReg { PReg::new(i, regalloc2::RegClass::Int) }
+/// A physical register. For x86, this is one of the 16 general purpose integer registers.
+#[repr(transparent)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct PReg(pub regalloc2::PReg);
 
-/// If true, then a REX byte is needed to encode this register
-#[inline] fn large_preg(r: PReg) -> bool { r.hw_enc() & 8 != 0 }
+impl PReg {
+  #[inline(always)]
+  pub(crate) const fn new(reg: usize) -> Self {
+    Self(regalloc2::PReg::new(reg, regalloc2::RegClass::Int))
+  }
 
-const RAX: PReg = preg(0);
-const RCX: PReg = preg(1);
-const RDX: PReg = preg(2);
-const RBX: PReg = preg(3);
-pub(crate) const RSP: PReg = preg(4);
-const RBP: PReg = preg(5);
-const RSI: PReg = preg(6);
-const RDI: PReg = preg(7);
-const R8: PReg = preg(8);
-const R9: PReg = preg(9);
-const R10: PReg = preg(10);
-const R11: PReg = preg(11);
-const R12: PReg = preg(12);
-const R13: PReg = preg(13);
-const R14: PReg = preg(14);
-const R15: PReg = preg(15);
+  /// The index of the register, a number from 0 to 15.
+  #[inline(always)]
+  pub fn index(self) -> u8 { self.0.hw_enc() as u8 }
+
+  /// If true, then a REX byte is needed to encode this register
+  #[inline] fn large(self) -> bool { self.index() & 8 != 0 }
+}
+
+impl IsReg for PReg {
+  fn invalid() -> Self { Self(regalloc2::PReg::invalid()) }
+}
+
+impl Debug for PReg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match *self {
+      RAX => write!(f, "rax"),
+      RCX => write!(f, "rcx"),
+      RDX => write!(f, "rdx"),
+      RBX => write!(f, "rbx"),
+      RSP => write!(f, "rsp"),
+      RBP => write!(f, "rbp"),
+      RSI => write!(f, "rsi"),
+      RDI => write!(f, "rdi"),
+      _ if self.is_valid() => write!(f, "r{}", self.index()),
+      _ => write!(f, "r-")
+    }
+  }
+}
+
+const RAX: PReg = PReg::new(0);
+const RCX: PReg = PReg::new(1);
+const RDX: PReg = PReg::new(2);
+const RBX: PReg = PReg::new(3);
+pub(crate) const RSP: PReg = PReg::new(4);
+const RBP: PReg = PReg::new(5);
+const RSI: PReg = PReg::new(6);
+const RDI: PReg = PReg::new(7);
+const R8: PReg = PReg::new(8);
+const R9: PReg = PReg::new(9);
+const R10: PReg = PReg::new(10);
+const R11: PReg = PReg::new(11);
+const R12: PReg = PReg::new(12);
+const R13: PReg = PReg::new(13);
+const R14: PReg = PReg::new(14);
+const R15: PReg = PReg::new(15);
 pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 pub(crate) const SYSCALL_ARG_REGS: (PReg, [PReg; 6]) = (RAX, [RDI, RSI, RDX, R10, R8, R9]);
 pub(crate) const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
@@ -49,10 +84,10 @@ pub(crate) fn non_callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone 
 lazy_static! {
   pub(crate) static ref MACHINE_ENV: MachineEnv = {
     MachineEnv {
-      preferred_regs_by_class: [CALLER_SAVED.into(), vec![]],
-      non_preferred_regs_by_class: [CALLEE_SAVED.into(), vec![]],
-      scratch_by_class: [SCRATCH, PReg::invalid()],
-      regs: caller_saved().chain(callee_saved()).chain([SCRATCH]).collect(),
+      preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
+      non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
+      scratch_by_class: [SCRATCH.0, PReg::invalid().0],
+      regs: caller_saved().chain(callee_saved()).chain([SCRATCH]).map(|r| r.0).collect(),
     }
   };
 }
@@ -60,9 +95,9 @@ lazy_static! {
 #[derive(Copy, Clone, Default)]
 pub(crate) struct PRegSet(u16);
 impl PRegSet {
-  #[inline] pub(crate) fn insert(&mut self, r: PReg) { self.0 |= 1 << r.hw_enc() }
-  #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.hw_enc()) != 0 }
-  #[inline] pub(crate) fn remove(&mut self, r: PReg) { self.0 &= !(1 << r.hw_enc()) }
+  #[inline] pub(crate) fn insert(&mut self, r: PReg) { self.0 |= 1 << r.index() }
+  #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.index()) != 0 }
+  #[inline] pub(crate) fn remove(&mut self, r: PReg) { self.0 &= !(1 << r.index()) }
 }
 
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
@@ -313,20 +348,6 @@ impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Offset<N> {
   }
 }
 
-/// A trait to factor the commonalities of [`VReg`] and [`PReg`].
-pub trait IsReg: Sized + Eq {
-  /// A special value of the type representing the invalid value.
-  fn invalid() -> Self;
-  /// Is this value not the invalid values?
-  fn is_valid(&self) -> bool { *self != Self::invalid() }
-}
-impl IsReg for VReg {
-  fn invalid() -> Self { VReg::invalid() }
-}
-impl IsReg for PReg {
-  fn invalid() -> Self { PReg::invalid() }
-}
-
 /// A memory address. This has the form `off+base+si`, where `off` is a base memory location
 /// (a 32 bit address, or an offset from a stack slot, named global or named constant),
 /// `base` is a register or 0, and `si` is a shifted register or 0.
@@ -368,8 +389,8 @@ impl<Reg: IsReg> AMode<Reg> {
 
 impl AMode {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
-    if self.base != VReg::invalid() { args.push(Operand::reg_use(self.base)) }
-    if let Some(si) = &self.si { args.push(Operand::reg_use(si.index)) }
+    if self.base.is_valid() { args.push(Operand::reg_use(self.base.0)) }
+    if let Some(si) = &self.si { args.push(Operand::reg_use(si.index.0)) }
   }
 
   pub(crate) fn emit_load(&self, code: &mut VCode<Inst>, sz: Size) -> VReg {
@@ -444,7 +465,7 @@ impl<Reg> From<AMode<Reg>> for RegMem<Reg> {
 impl RegMem {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
-      RegMem::Reg(reg) => args.push(Operand::reg_use(reg)),
+      RegMem::Reg(reg) => args.push(Operand::reg_use(reg.0)),
       RegMem::Mem(ref addr) => addr.collect_operands(args),
     }
   }
@@ -526,7 +547,7 @@ impl From<u64> for RegMemImm<u64> {
 impl<N> RegMemImm<N> {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
-      RegMemImm::Reg(reg) => args.push(Operand::reg_use(reg)),
+      RegMemImm::Reg(reg) => args.push(Operand::reg_use(reg.0)),
       RegMemImm::Mem(ref addr) => addr.collect_operands(args),
       RegMemImm::Imm(_) => {}
     }
@@ -796,29 +817,30 @@ impl VInst for Inst {
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
     if let Inst::MovRR { dst, src } = *self {
-      Some((Operand::reg_use(src), Operand::reg_def(dst)))
+      Some((Operand::reg_use(src.0), Operand::reg_def(dst.0)))
     } else { None }
   }
 
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
+      Inst::SyncLet { dst, .. } => dst.collect_operands(args),
       Inst::Imm { dst, .. } |
-      Inst::SetCC { dst, .. } => args.push(Operand::reg_def(dst)),
+      Inst::SetCC { dst, .. } => args.push(Operand::reg_def(dst.0)),
       Inst::Unop { dst, src, .. } |
       Inst::ShiftImm { dst, src, .. } => {
-        args.push(Operand::reg_use(src));
-        args.push(Operand::reg_reuse_def(dst, 0));
+        args.push(Operand::reg_use(src.0));
+        args.push(Operand::reg_reuse_def(dst.0, 0));
       }
       Inst::Binop { dst, src1, ref src2, .. } => {
-        args.push(Operand::reg_use(src1));
+        args.push(Operand::reg_use(src1.0));
         src2.collect_operands(args);
-        args.push(Operand::reg_reuse_def(dst, 0));
+        args.push(Operand::reg_reuse_def(dst.0, 0));
       }
       Inst::Mul { dst_lo, dst_hi, src1, ref src2, .. } => {
-        args.push(Operand::reg_fixed_use(src1, RAX));
+        args.push(Operand::reg_fixed_use(src1.0, RAX.0));
         src2.collect_operands(args);
-        args.push(Operand::reg_fixed_def(dst_lo, RAX));
-        args.push(Operand::reg_fixed_def(dst_hi, RDX));
+        args.push(Operand::reg_fixed_def(dst_lo.0, RAX.0));
+        args.push(Operand::reg_fixed_def(dst_hi.0, RDX.0));
       },
       // Inst::DivRem { dst_div, dst_rem, src1, ref src2, .. } => {
       //   args.push(Operand::reg_fixed_use(src1, RAX));
@@ -827,37 +849,37 @@ impl VInst for Inst {
       //   args.push(Operand::reg_fixed_def(dst_rem, RDX));
       // },
       // Inst::MovRP { dst, src } => args.push(Operand::reg_fixed_use(src, dst)),
-      Inst::MovPR { dst, src } => args.push(Operand::reg_fixed_def(dst, src)),
+      Inst::MovPR { dst, src } => args.push(Operand::reg_fixed_def(dst.0, src.0)),
       Inst::MovzxRmR { dst, ref src, .. } |
       Inst::MovsxRmR { dst, ref src, .. } => {
         src.collect_operands(args);
-        args.push(Operand::reg_def(dst));
+        args.push(Operand::reg_def(dst.0));
       }
       Inst::Load64 { dst, ref src } => {
         src.collect_operands(args);
-        args.push(Operand::reg_def(dst));
+        args.push(Operand::reg_def(dst.0));
       }
       Inst::Lea { dst, ref addr, .. } => {
         addr.collect_operands(args);
-        args.push(Operand::reg_def(dst));
+        args.push(Operand::reg_def(dst.0));
       }
       Inst::Store { ref dst, src, .. } => {
-        args.push(Operand::reg_use(src));
+        args.push(Operand::reg_use(src.0));
         dst.collect_operands(args);
       }
       Inst::ShiftRR { dst, src, src2, .. } => {
-        args.push(Operand::reg_use(src));
-        args.push(Operand::reg_fixed_use(src2, RCX));
-        args.push(Operand::reg_reuse_def(dst, 0));
+        args.push(Operand::reg_use(src.0));
+        args.push(Operand::reg_fixed_use(src2.0, RCX.0));
+        args.push(Operand::reg_reuse_def(dst.0, 0));
       }
       Inst::Cmp { src1, ref src2, .. } => {
-        args.push(Operand::reg_use(src1));
+        args.push(Operand::reg_use(src1.0));
         src2.collect_operands(args);
       }
       Inst::CMov { dst, src1, ref src2, .. } => {
-        args.push(Operand::reg_use(src1));
+        args.push(Operand::reg_use(src1.0));
         src2.collect_operands(args);
-        args.push(Operand::reg_reuse_def(dst, 0));
+        args.push(Operand::reg_reuse_def(dst.0, 0));
       }
       Inst::CallKnown { operands: ref params, .. } |
       Inst::SysCall { operands: ref params, .. } |
@@ -1387,16 +1409,16 @@ fn layout_offset(off: &Offset) -> DispLayout {
 }
 
 fn layout_opc_reg(rex: &mut bool, rm: PReg) -> ModRMLayout {
-  *rex |= large_preg(rm);
+  *rex |= rm.large();
   ModRMLayout::Reg
 }
 
 fn layout_opc_mem(rex: &mut bool, a: &PAMode) -> ModRMLayout {
-  if a.base.is_valid() { *rex |= large_preg(a.base) }
-  if let Some(si) = a.si { *rex |= large_preg(si.index) }
+  if a.base.is_valid() { *rex |= a.base.large() }
+  if let Some(si) = a.si { *rex |= si.index.large() }
   match a {
     _ if !a.base().is_valid() => ModRMLayout::Sib0,
-    PAMode {off, si: None, ..} if a.base().hw_enc() & 7 != 4 =>
+    PAMode {off, si: None, ..} if a.base().index() & 7 != 4 =>
       ModRMLayout::Disp(layout_offset(off)),
     PAMode {off, base, ..} => match (*base, layout_offset(off)) {
       (RBP, DispLayout::S0) => ModRMLayout::SibReg(DispLayout::S8),
@@ -1421,22 +1443,22 @@ fn layout_opc_rmi(rex: &mut bool, rm: &PRegMemImm) -> ModRMLayout {
 }
 
 fn layout_reg(rex: &mut bool, r: PReg, rm: PReg) -> ModRMLayout {
-  *rex |= large_preg(r);
+  *rex |= r.large();
   layout_opc_reg(rex, rm)
 }
 
 fn layout_mem(rex: &mut bool, r: PReg, a: &PAMode) -> ModRMLayout {
-  *rex |= large_preg(r);
+  *rex |= r.large();
   layout_opc_mem(rex, a)
 }
 
 fn layout_rm(rex: &mut bool, r: PReg, rm: &PRegMem) -> ModRMLayout {
-  *rex |= large_preg(r);
+  *rex |= r.large();
   layout_opc_rm(rex, rm)
 }
 
 fn layout_rmi(rex: &mut bool, r: PReg, rm: &PRegMemImm) -> ModRMLayout {
-  *rex |= large_preg(r);
+  *rex |= r.large();
   layout_opc_rmi(rex, rm)
 }
 
@@ -1503,7 +1525,7 @@ impl PInst {
             OpcodeLayout::MovImm(layout_opc_reg(&mut true, dst)),
           _ => OpcodeLayout::Mov64(sz == Size::S64),
         };
-        InstLayout { rex: sz == Size::S64 || large_preg(dst), opc }
+        InstLayout { rex: sz == Size::S64 || dst.large(), opc }
       }
       PInst::MovRR { sz, dst, src } => {
         let mut rex = sz == Size::S64;
@@ -1567,12 +1589,12 @@ impl PInst {
         let mut rex = false;
         let opc = match *src {
           PRegMemImm::Imm(i) => OpcodeLayout::PushImm(i as i8 as u32 != i),
-          PRegMemImm::Reg(r) => { rex |= large_preg(r); OpcodeLayout::PushReg }
+          PRegMemImm::Reg(r) => { rex |= r.large(); OpcodeLayout::PushReg }
           PRegMemImm::Mem(ref a) => OpcodeLayout::Hi(layout_opc_mem(&mut rex, a))
         };
         InstLayout { rex, opc }
       }
-      PInst::Pop64 { dst } => InstLayout { opc: OpcodeLayout::PopReg, rex: large_preg(dst) },
+      PInst::Pop64 { dst } => InstLayout { opc: OpcodeLayout::PopReg, rex: dst.large() },
       PInst::CallKnown { .. } => InstLayout { opc: OpcodeLayout::Call, rex: false },
       PInst::SysCall => InstLayout { opc: OpcodeLayout::SysCall, rex: false },
       PInst::Ret => InstLayout { opc: OpcodeLayout::Ret, rex: false },
@@ -1638,7 +1660,7 @@ impl PInst {
     }
 
     #[inline] fn encode_reg(preg: PReg, rex: &mut u8, x: u8) -> u8 {
-      encode_reg8(preg.index() as u8, rex, x)
+      encode_reg8(preg.index(), rex, x)
     }
 
     fn write_disp(disp: DispLayout, buf: &mut InstSink<'_>, n: u32) {
@@ -1696,7 +1718,7 @@ impl PInst {
     fn write_modrm(modrm: ModRMLayout,
       rex: &mut u8, buf: &mut InstSink<'_>, arg1: PReg, arg2: PRegMem
     ) {
-      write_opc_modrm(modrm, rex, buf, arg1.index() as u8, arg2)
+      write_opc_modrm(modrm, rex, buf, arg1.index(), arg2)
     }
 
     fn push_u8_u32(sz32: bool, buf: &mut InstSink<'_>, src: u32) {

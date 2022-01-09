@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
-use regalloc2::{Operand as ROperand, PReg};
+use regalloc2::Operand as ROperand;
 
 use crate::linker::ConstData;
 use crate::types::entity::{IntrinsicProc, ProcTc, ProcTy};
 use crate::{Symbol, Entity};
 use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
-  Inst, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
+  Inst, PReg, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{Idx, IdxVec, IntTy, Size, Spanned};
@@ -569,7 +569,7 @@ impl<'a> LowerCtx<'a> {
     assert!(params_it.peek().is_none());
     self.unpatched.push((vbl, self.code.emit(Inst::JmpKnown {
       dst: VBlockId(tgt.0),
-      params: params.iter().map(|&v| ROperand::reg_use(v)).collect()
+      params: params.iter().map(|&v| ROperand::reg_use(v.0)).collect()
     })))
   }
 
@@ -586,7 +586,7 @@ impl<'a> LowerCtx<'a> {
           let dst = self.code.fresh_vreg();
           let src = self.get_operand(o);
           self.code.emit_copy(sz, dst.into(), src);
-          params.push(ROperand::reg_fixed_use(dst, reg));
+          params.push(ROperand::reg_fixed_use(dst.0, reg.0));
         }
         VRetAbi::Mem { off, sz } => {
           let sz = sz.into();
@@ -626,7 +626,7 @@ impl<'a> LowerCtx<'a> {
           let src = self.get_operand(o);
           let temp = self.code.fresh_vreg();
           self.code.emit_copy(sz, temp.into(), src);
-          operands.push(ROperand::reg_fixed_use(temp, reg));
+          operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
         }
         ArgAbi::Mem { off, sz } => {
           let sz64 = sz.into();
@@ -637,7 +637,7 @@ impl<'a> LowerCtx<'a> {
           let sz = Size::from_u64(sz64);
           let src = self.get_operand(o).into_mem(&mut self.code, sz);
           let temp = self.code.emit_lea(Size::S64, src);
-          operands.push(ROperand::reg_fixed_use(temp, reg));
+          operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
         }
         ArgAbi::BoxedMem { off, sz } => {
           let sz64 = sz.into();
@@ -656,7 +656,7 @@ impl<'a> LowerCtx<'a> {
         if !vr { continue }
         if let ArgAbi::Reg(reg, _) = *arg {
           let src = self.code.fresh_vreg();
-          operands.push(ROperand::reg_fixed_def(src, reg));
+          operands.push(ROperand::reg_fixed_def(src.0, reg.0));
           ret_regs.push(src);
         }
         if let ArgAbi::Boxed {..} | ArgAbi::BoxedMem {..} = arg {
@@ -675,7 +675,7 @@ impl<'a> LowerCtx<'a> {
           let temp = self.code.emit_lea(Size::S64, addr);
           match *arg {
             ArgAbi::Boxed { reg, .. } =>
-              operands.push(ROperand::reg_fixed_use(temp, reg)),
+              operands.push(ROperand::reg_fixed_use(temp.0, reg.0)),
             ArgAbi::BoxedMem { off, .. } =>
               self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp),
             _ => unreachable!()
@@ -781,13 +781,13 @@ impl<'a> LowerCtx<'a> {
     debug_assert!(args.len() <= argregs.len());
     let fname = self.code.fresh_vreg();
     self.code.emit_copy(Size::S32, fname.into(), u64::from(f as u8));
-    let mut params = vec![ROperand::reg_fixed_use(fname, rax)];
+    let mut params = vec![ROperand::reg_fixed_use(fname.0, rax.0)];
     for (arg, &reg) in args.iter().zip(argregs) {
       let dst = self.code.fresh_vreg();
       self.code.emit_copy(Size::S64, dst.into(), *arg);
-      params.push(ROperand::reg_fixed_use(dst, reg));
+      params.push(ROperand::reg_fixed_use(dst.0, reg.0));
     }
-    if f.returns() { params.push(ROperand::reg_fixed_def(dst, rax)) }
+    if f.returns() { params.push(ROperand::reg_fixed_def(dst.0, rax.0)) }
     self.code.emit(Inst::SysCall { f, operands: params.into() });
   }
 

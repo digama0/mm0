@@ -175,7 +175,7 @@ impl HexCache {
     }
     fn decadd(hex: &HexCache, de: &mut ProofDedup<'_>, carry: bool, b: u8, d: u8
     ) -> (bool, u8, ProofId, ProofId, ProofId, (Num, ProofId)) {
-      let f = b + d + (carry as u8);
+      let f = b + d + u8::from(carry);
       let carryout = f >= 16;
       let f = f & 15;
       let (eb, ed, ef) = (hex[b], hex[d], hex[f]);

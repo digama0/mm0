@@ -50,7 +50,7 @@ impl Ctx {
     let mut epi = app!(de, (epiRet));
     #[allow(clippy::cast_possible_truncation)]
     for &reg in proc.saved_regs() {
-      epi = app!(de, epiPop[hex[reg.index() as u8], epi]);
+      epi = app!(de, epiPop[hex[reg.index()], epi]);
     }
     let sp_max = hex.from_u32(de, proc.stack_size());
     if sp_max.val != 0 { epi = app!(de, epiFree[*sp_max, epi]) }
@@ -582,7 +582,7 @@ impl<'a> ProcProver<'a> {
       (LCtx::Prologue(p), None) => unreachable!("entry block must have code"),
       (LCtx::Prologue(p), Some(code)) => if let Some(&reg) = p.iter.next() {
         let Prologue {epi, sp, ref tctx, ..} = **p;
-        let r = self.hex[reg.index() as u8];
+        let r = self.hex[reg.index()];
         let n = self.hex.h2n(&mut self.thm, 8);
         let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
         p.epi = app!(self.thm, epiPop[r, epi]);

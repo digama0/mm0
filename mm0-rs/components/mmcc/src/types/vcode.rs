@@ -2,13 +2,45 @@
 
 use std::{collections::HashMap, fmt::Debug, iter::FromIterator};
 
-use crate::{Idx, types::{IdxVec, mir}};
+use crate::{Idx, types::{IdxVec, mir}, arch::PReg};
 
 use mm0_util::u32_as_usize;
-pub(crate) use regalloc2::{PReg, VReg, RegClass, InstRange, Operand, Inst as InstId};
+pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
 pub use regalloc2::Block as BlockId;
 
 use super::Size;
+
+/// A trait to factor the commonalities of [`VReg`] and [`PReg`].
+pub trait IsReg: Sized + Eq {
+  /// A special value of the type representing the invalid value.
+  fn invalid() -> Self;
+  /// Is this value not the invalid values?
+  fn is_valid(&self) -> bool { *self != Self::invalid() }
+}
+
+/// A virtual register, which is a stand-in for physical registers before register allocation.
+#[repr(transparent)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct VReg(pub regalloc2::VReg);
+
+impl VReg {
+  #[inline(always)]
+  pub(crate) const fn new(reg: usize) -> Self { Self(regalloc2::VReg::new(reg, RegClass::Int)) }
+}
+
+impl IsReg for VReg {
+  fn invalid() -> Self { Self(regalloc2::VReg::invalid()) }
+}
+
+impl Debug for VReg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if self.is_valid() {
+      std::fmt::Display::fmt(&self.0, f)
+    } else {
+      write!(f, "v-")
+    }
+  }
+}
 
 impl Idx for BlockId {
   fn into_usize(self) -> usize { self.index() }
@@ -226,7 +258,7 @@ impl<I> Default for VCode<I> {
 impl<I> VCode<I> {
   /// Create a new unused `VReg`.
   #[must_use] pub fn fresh_vreg(&mut self) -> VReg {
-    let v = VReg::new(self.num_vregs, RegClass::Int);
+    let v = VReg::new(self.num_vregs);
     self.num_vregs += 1;
     v
   }
@@ -264,7 +296,7 @@ impl<I> VCode<I> {
     let bl = self.blocks.push((inst, inst));
     self.block_preds.push(vec![]);
     self.block_succs.push(vec![]);
-    self.block_params.push(params);
+    self.block_params.push(params.into_iter());
     bl
   }
 }
@@ -297,7 +329,11 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
 
   fn block_succs(&self, block: BlockId) -> &[BlockId] { &self.block_succs[block] }
   fn block_preds(&self, block: BlockId) -> &[BlockId] { &self.block_preds[block] }
-  fn block_params(&self, block: BlockId) -> &[VReg] { &self.block_params[block] }
+  fn block_params(&self, block: BlockId) -> &[regalloc2::VReg] {
+    let ret = &self.block_params[block];
+    // Safety: `VReg` is repr(transparent)
+    unsafe { std::mem::transmute::<&[VReg], &[regalloc2::VReg]>(ret) }
+  }
 
   fn is_ret(&self, insn: InstId) -> bool { self.insts[insn].is_ret() }
   fn is_branch(&self, insn: InstId) -> bool { self.insts[insn].is_branch() }
@@ -308,7 +344,11 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
 
   fn is_move(&self, insn: InstId) -> Option<(Operand, Operand)> { self.insts[insn].is_move() }
   fn inst_operands(&self, insn: InstId) -> &[Operand] { &self.operands[insn] }
-  fn inst_clobbers(&self, insn: InstId) -> &[PReg] { self.insts[insn].clobbers() }
+  fn inst_clobbers(&self, insn: InstId) -> &[regalloc2::PReg] {
+    let ret = self.insts[insn].clobbers();
+    // Safety: `PReg` is repr(transparent)
+    unsafe { std::mem::transmute::<&[PReg], &[regalloc2::PReg]>(ret) }
+  }
   fn num_vregs(&self) -> usize { self.num_vregs }
   fn spillslot_size(&self, _: regalloc2::RegClass) -> usize { 1 }
 }
