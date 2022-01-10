@@ -965,6 +965,9 @@ impl BuildAssemblyProc<'_> {
     }
   }
 
+  /// If `false`, the instruction will be skipped in the generated assembly listing.
+  fn keep_inst(inst: &Inst<'_>) -> bool { !matches!(inst.inst, PInst::SyncLet {..}) }
+
   /// Given `x`, proves `(y, A, Ok((s, |- localAssemble start s x y A)))`, using elements of the
   /// iterator `iter` in a balanced binary tree of `localAssembleA` nodes.
   /// The function `f` handles the base case of an individual item in the iterator.
@@ -1041,8 +1044,8 @@ impl BuildAssemblyProc<'_> {
     let x = self.hex.h2n(&mut self.thm, 0);
     let mut entry = true;
     let (y, a, th) = self.bisect(iter.len(), &mut iter, x, &mut |this, block, x| {
-      let mut iter = block.insts();
-      let (y, a, th) = this.bisect(iter.len(), &mut iter, x, &mut |this, inst, x| {
+      let mut iter = block.insts().filter(Self::keep_inst);
+      let (y, a, th) = this.bisect(iter.clone().count(), &mut iter, x, &mut |this, inst, x| {
         let n = inst.layout.len();
         if n == 0 {
           let [inst, th] = this.parse_ghost_inst(&inst, x);

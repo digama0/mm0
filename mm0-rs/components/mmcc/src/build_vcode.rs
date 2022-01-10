@@ -941,7 +941,7 @@ impl<'a> LowerCtx<'a> {
       self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
-      for stmt in &bl.stmts {
+      for (inst, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {
             Statement::Let(lk, ty, rv) => {
@@ -957,6 +957,7 @@ impl<'a> LowerCtx<'a> {
                 } else {
                   let (&(dst, sz), size) = self.get_alloc(a);
                   self.build_rvalue(ty, size, sz, dst, rv);
+                  self.code.emit(Inst::SyncLet { inst, dst });
                 }
               }
             }

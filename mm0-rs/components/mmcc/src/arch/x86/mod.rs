@@ -623,6 +623,10 @@ pub(crate) enum Inst {
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
   Fallthrough { dst: BlockId },
+  /// A ghost instruction for synchronizing with the source IR.
+  /// `inst` refers to the instruction index of a `Let` in the MIR of the current `BasicBlock`,
+  ///  and `dst` refers to the register, just assigned, that corresponds to the new variable.
+  SyncLet { inst: usize, dst: RegMem },
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
@@ -1059,6 +1063,10 @@ pub enum PInst {
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
   Fallthrough { dst: BlockId },
+  /// A ghost instruction for synchronizing with the source IR.
+  /// `inst` refers to the instruction index of a `Let` in the MIR of the current `BasicBlock`,
+  ///  and `dst` refers to the register, just assigned, that corresponds to the new variable.
+  SyncLet { inst: usize, dst: PRegMem },
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
@@ -1503,7 +1511,8 @@ impl PInst {
   #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
   pub(crate) fn layout_inst(&self) -> InstLayout {
     match *self {
-      PInst::Fallthrough { .. } => InstLayout { rex: false, opc: OpcodeLayout::Ghost },
+      PInst::Fallthrough { .. } |
+      PInst::SyncLet { .. } => InstLayout { rex: false, opc: OpcodeLayout::Ghost },
       PInst::Binop { sz, dst, ref src, .. } => layout_binop_lo(sz, dst, src),
       PInst::Unop { sz, dst, .. } => {
         let mut rex = sz == Size::S64;

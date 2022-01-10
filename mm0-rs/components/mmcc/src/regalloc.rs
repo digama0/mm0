@@ -323,6 +323,8 @@ pub(crate) fn regalloc_vcode(
         assert!(vcode.blocks[dst].0 == i.next());
         code.push(PInst::Fallthrough { dst })
       }
+      Inst::SyncLet { inst, ref dst } =>
+        code.push(PInst::SyncLet { inst, dst: ar.rm(dst) }),
       Inst::Binop { op, sz, ref src2, .. } => {
         let (_, src, dst) = (ar.reg(), ar.rmi(src2), ar.reg());
         code.push(PInst::Binop { op, sz, dst, src });
