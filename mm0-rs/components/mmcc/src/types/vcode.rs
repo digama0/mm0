@@ -1,8 +1,8 @@
 //! The low level IR, based on cranelift's `VCode`.
 
-use std::{collections::HashMap, fmt::Debug, iter::FromIterator};
+use std::{collections::HashMap, fmt::{Debug, Display}, iter::FromIterator};
 
-use crate::{Idx, types::{IdxVec, mir}, arch::PReg};
+use crate::{Idx, types::{IdxVec, mir}, arch::{PReg, RegMem as VRegMem}};
 
 use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
@@ -34,8 +34,14 @@ impl IsReg for VReg {
 
 impl Debug for VReg {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
+
+impl Display for VReg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if self.is_valid() {
-      std::fmt::Display::fmt(&self.0, f)
+      Display::fmt(&self.0, f)
     } else {
       write!(f, "v-")
     }

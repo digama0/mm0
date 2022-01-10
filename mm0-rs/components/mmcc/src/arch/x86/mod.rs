@@ -1,6 +1,6 @@
 //! x86-specific parts of the compiler.
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use num::Zero;
 use regalloc2::{MachineEnv, Operand};
@@ -32,7 +32,7 @@ impl IsReg for PReg {
   fn invalid() -> Self { Self(regalloc2::PReg::invalid()) }
 }
 
-impl Debug for PReg {
+impl Display for PReg {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       RAX => write!(f, "rax"),
@@ -47,6 +47,10 @@ impl Debug for PReg {
       _ => write!(f, "r-")
     }
   }
+}
+
+impl Debug for PReg {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
 }
 
 const RAX: PReg = PReg::new(0);
@@ -101,7 +105,7 @@ impl PRegSet {
 }
 
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum ShiftKind {
   // Rol = 0,
   // Ror = 1,
@@ -113,13 +117,40 @@ pub enum ShiftKind {
   ShrA = 7,
 }
 
+impl Display for ShiftKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Shl => write!(f, "shl"),
+      Self::ShrL => write!(f, "shr"),
+      Self::ShrA => write!(f, "sar"),
+    }
+  }
+}
+
+impl Debug for ShiftKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
+}
+
 /// A binop which is used only for its effect on the flags.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Cmp {
   /// CMP instruction: compute `a - b` and set flags from result.
   Cmp,
   /// TEST instruction: compute `a & b` and set flags from result.
   Test,
+}
+
+impl Display for Cmp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Cmp => write!(f, "cmp"),
+      Self::Test => write!(f, "test"),
+    }
+  }
+}
+
+impl Debug for Cmp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
 }
 
 /// These indicate ways of extending (widening) a value, using the Intel
@@ -171,7 +202,7 @@ impl ExtMode {
 
 /// Condition code tests supported by the x86 architecture.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 #[repr(u8)]
 pub enum CC {
   ///  overflow
@@ -208,6 +239,31 @@ pub enum CC {
   NLE = 15,
 }
 
+impl Display for CC {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      CC::O => write!(f, "o"),
+      CC::NO => write!(f, "no"),
+      CC::B => write!(f, "b"),
+      CC::NB => write!(f, "nb"),
+      CC::Z => write!(f, "z"),
+      CC::NZ => write!(f, "nz"),
+      CC::BE => write!(f, "be"),
+      CC::NBE => write!(f, "nbe"),
+      CC::S => write!(f, "s"),
+      CC::NS => write!(f, "ns"),
+      CC::L => write!(f, "l"),
+      CC::NL => write!(f, "nl"),
+      CC::LE => write!(f, "le"),
+      CC::NLE => write!(f, "nle"),
+    }
+  }
+}
+
+impl Debug for CC {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
+}
+
 impl CC {
   /// Invert the logical meaning of a condition code, e.g. `Z <-> NZ`, `LE <-> G` etc.
   #[must_use] pub fn invert(self) -> Self {
@@ -233,7 +289,7 @@ impl CC {
 }
 
 /// Some basic ALU operations.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Binop {
   /// Addition
@@ -252,8 +308,26 @@ pub enum Binop {
   Xor = 6,
 }
 
+impl Display for Binop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Add => write!(f, "add"),
+      Self::Or => write!(f, "or"),
+      Self::Adc => write!(f, "adc"),
+      Self::Sbb => write!(f, "sbb"),
+      Self::And => write!(f, "and"),
+      Self::Sub => write!(f, "sub"),
+      Self::Xor => write!(f, "xor"),
+    }
+  }
+}
+
+impl Debug for Binop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
+}
+
 /// Some basic ALU operations.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Unop {
   /// Increment (add 1)
@@ -264,6 +338,21 @@ pub enum Unop {
   Not = 2,
   /// Signed integer negation
   Neg = 3,
+}
+
+impl Display for Unop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Inc => write!(f, "inc"),
+      Self::Dec => write!(f, "dec"),
+      Self::Not => write!(f, "not"),
+      Self::Neg => write!(f, "neg"),
+    }
+  }
+}
+
+impl Debug for Unop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
 }
 
 /// A shift amount, which can be used as an addend in an addressing mode.
@@ -376,6 +465,19 @@ impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
   }
 }
 
+impl<Reg: IsReg + Display> Display for AMode<Reg> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "[{:?}", self.off)?;
+    if self.base.is_valid() {
+      write!(f, " + {}", self.base)?
+    }
+    if let Some(si) = &self.si {
+      write!(f, " + {}*{}", 1 << si.shift, si.index)?
+    }
+    write!(f, "]")
+  }
+}
+
 impl<Reg: IsReg> From<Offset> for AMode<Reg> {
   fn from(off: Offset) -> Self { Self { off, base: Reg::invalid(), si: None } }
 }
@@ -446,6 +548,15 @@ pub enum RegMem<Reg = VReg> {
   Mem(AMode<Reg>),
 }
 
+impl<Reg: IsReg + Display> Display for RegMem<Reg> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RegMem::Reg(r) => r.fmt(f),
+      RegMem::Mem(a) => a.fmt(f),
+    }
+  }
+}
+
 impl<Reg: IsReg + Debug> Debug for RegMem<Reg> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -507,9 +618,19 @@ pub(crate) enum RegMemImm<N = u32> {
 impl<N: Zero + Debug> Debug for RegMemImm<N> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      RegMemImm::Reg(r) => r.fmt(f),
-      RegMemImm::Mem(a) => a.fmt(f),
-      RegMemImm::Imm(i) => i.fmt(f),
+      RegMemImm::Reg(r) => Debug::fmt(r, f),
+      RegMemImm::Mem(a) => Debug::fmt(a, f),
+      RegMemImm::Imm(i) => Debug::fmt(i, f),
+    }
+  }
+}
+
+impl<N: Zero + Display> Display for RegMemImm<N> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RegMemImm::Reg(r) => Display::fmt(r, f),
+      RegMemImm::Mem(a) => Display::fmt(a, f),
+      RegMemImm::Imm(i) => Display::fmt(i, f),
     }
   }
 }
@@ -591,7 +712,7 @@ impl RegMemImm<u64> {
 }
 
 /// The available set of kernel calls that can be made through the `syscall` instruction.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum SysCall {
   /// `fd <- open(filename, flags, 0)`. `flags` must be one of:
@@ -612,11 +733,23 @@ pub(crate) enum SysCall {
   Exit = 0x3c,
 }
 
+impl Debug for SysCall {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Open => write!(f, "open"),
+      Self::Read => write!(f, "read"),
+      Self::Write => write!(f, "write"),
+      Self::FStat => write!(f, "fstat"),
+      Self::MMap => write!(f, "mmap"),
+      Self::Exit => write!(f, "exit"),
+    }
+  }
+}
+
 impl SysCall {
   #[inline] pub(crate) fn returns(self) -> bool { self != Self::Exit }
 }
 
-#[derive(Debug)]
 pub(crate) enum Inst {
   // /// A length 0 no-op instruction.
   // Nop,
@@ -802,6 +935,52 @@ pub(crate) enum Inst {
   Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
+}
+
+impl Debug for Inst {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    match self {
+      Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
+      Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
+      Self::Binop { op, sz, dst, src1, src2 } =>
+        write!(f, "{} <- {:?}.{} {}, {}", dst, op, sz.bits0(), src1, src2),
+      Self::Unop { op, sz, dst, src } =>
+        write!(f, "{} <- {:?}.{} {}", dst, op, sz.bits0(), src),
+      Self::Mul { sz, dst_lo, dst_hi, src1, src2 } =>
+        write!(f, "{}:{} <- mul.{} {}, {}", dst_hi, dst_lo, sz.bits0(), src1, src2),
+      Self::Imm { sz, dst, src } => write!(f, "{} <- imm.{} {}", dst, sz.bits0(), src),
+      Self::MovRR { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
+      Self::MovPR { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
+      Self::MovzxRmR { ext_mode, dst, src } =>
+        write!(f, "{}.{} <- movz {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
+      Self::Load64 { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
+      Self::Lea { sz, dst, addr } => write!(f, "{} <- lea.{} {}", dst, sz.bits0(), addr),
+      Self::MovsxRmR { ext_mode, dst, src } =>
+        write!(f, "{}.{} <- movs {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
+      Self::Store { sz, dst, src } => write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+      Self::ShiftImm { sz, kind, num_bits, dst, src } =>
+        write!(f, "{} <- {:?}.{} {}, {}", dst, kind, sz.bits0(), src, num_bits),
+      Self::ShiftRR { sz, kind, dst, src, src2 } =>
+        write!(f, "{} <- {:?}.{} {}, {}", dst, kind, sz.bits0(), src, src2),
+      Self::Cmp { sz, op, src1, src2 } => write!(f, "{}.{} {}, {}", op, sz.bits0(), src1, src2),
+      Self::SetCC { cc, dst } => write!(f, "{} <- set{}", dst, cc),
+      Self::CMov { sz, cc, dst, src1, src2 } =>
+        write!(f, "{} <- cmov{}.{} {}, {}", dst, cc, sz.bits0(), src1, src2),
+      Self::CallKnown { f: func, operands, .. } =>
+        write!(f, "call {:?}({})", func, operands.iter().format(", ")),
+      Self::SysCall { f: func, operands } =>
+        write!(f, "syscall {:?}({})", func, operands.iter().format(", ")),
+      Self::Epilogue { params } =>
+        write!(f, "epilogue({})", params.iter().format(", ")),
+      Self::JmpKnown { dst, params } =>
+        write!(f, "jump -> bb{}({})", dst.0, params.iter().format(", ")),
+      Self::JmpCond { cc, taken, not_taken } =>
+        write!(f, "j{} -> bb{} else bb{}", cc, taken.0, not_taken.0),
+      Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
+      Self::Ud2 => write!(f, "ud2"),
+    }
+  }
 }
 
 impl VInst for Inst {
@@ -1044,18 +1223,22 @@ pub enum PRegMemImm {
   Imm(u32),
 }
 
-impl Debug for PRegMemImm {
+impl Display for PRegMemImm {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      PRegMemImm::Reg(r) => r.fmt(f),
-      PRegMemImm::Mem(a) => a.fmt(f),
-      PRegMemImm::Imm(i) => i.fmt(f),
+      PRegMemImm::Reg(r) => Display::fmt(r, f),
+      PRegMemImm::Mem(a) => Display::fmt(a, f),
+      PRegMemImm::Imm(i) => Display::fmt(i, f),
     }
   }
 }
 
+impl Debug for PRegMemImm {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(self, f) }
+}
+
 /// A representation of x86 assembly instructions.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 #[allow(missing_docs)]
 pub enum PInst {
   // /// A length 0 no-op instruction.
@@ -1221,6 +1404,52 @@ pub enum PInst {
   Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
+}
+
+impl Debug for PInst {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
+      Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
+      Self::Binop { op, sz, dst, src } =>
+        write!(f, "{} <- {:?}.{} {0}, {}", dst, op, sz.bits0(), src),
+      Self::Unop { op, sz, dst } =>
+        write!(f, "{} <- {:?}.{} {0}", dst, op, sz.bits0()),
+      Self::Mul { sz, src } => write!(f, "rdx:rax <- mul.{} rax, {}", sz.bits0(), src),
+      Self::Cdx { sz } => write!(f, "rdx:rax <- cdx.{} rax", sz.bits0()),
+      Self::DivRem { sz, src } => write!(f, "rax,rdx <- divrem.{} rdx:rax, {}", sz.bits0(), src),
+      Self::Imm { sz, dst, src } => write!(f, "{} <- imm.{} {}", dst, sz.bits0(), src),
+      Self::MovRR { sz, dst, src } => write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+      Self::MovzxRmR { ext_mode, dst, src } =>
+        write!(f, "{}.{} <- movz {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
+      Self::Load64 { spill: false, dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
+      Self::Load64 { spill: true, dst, src } => write!(f, "{} <- mov.64 {} (spill)", dst, src),
+      Self::Lea { sz, dst, addr } => write!(f, "{} <- lea.{} {}", dst, sz.bits0(), addr),
+      Self::MovsxRmR { ext_mode, dst, src } =>
+        write!(f, "{}.{} <- movs {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
+      Self::Store { spill: false, sz, dst, src } =>
+        write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+      Self::Store { spill: true, sz, dst, src } =>
+        write!(f, "{} <- mov.{} {} (spill)", dst, sz.bits0(), src),
+      Self::Shift { sz, kind, num_bits: Some(num_bits), dst } =>
+        write!(f, "{} <- {:?}.{} {0}, {}", dst, kind, sz.bits0(), num_bits),
+      Self::Shift { sz, kind, num_bits: None, dst } =>
+        write!(f, "{} <- {:?}.{} {0}, cl", dst, kind, sz.bits0()),
+      Self::Cmp { sz, op, src1, src2 } => write!(f, "{}.{} {}, {}", op, sz.bits0(), src1, src2),
+      Self::SetCC { cc, dst } => write!(f, "{} <- set{}", dst, cc),
+      Self::CMov { sz, cc, dst, src } =>
+        write!(f, "{} <- cmov{}.{} {0}, {}", dst, cc, sz.bits0(), src),
+      Self::Push64 { src } => write!(f, "push {}", src),
+      Self::Pop64 { dst } => write!(f, "pop {}", dst),
+      Self::CallKnown { f: func } => write!(f, "call {:?}", func),
+      Self::SysCall => write!(f, "syscall"),
+      Self::Ret => write!(f, "ret"),
+      Self::JmpKnown { dst, .. } => write!(f, "jump -> bb{}", dst.0),
+      Self::JmpCond { cc, dst, .. } => write!(f, "j{} -> bb{}", cc, dst.0),
+      Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
+      Self::Ud2 => write!(f, "ud2"),
+    }
+  }
 }
 
 /// The layout of a displacement, used in [`ModRMLayout`].
