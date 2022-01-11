@@ -2024,5 +2024,5 @@ pub struct Proc {
   /// The body of the procedure.
   pub body: Cfg,
   /// The result of the allocation pass, created once optimization is done.
-  pub allocs: Option<Rc<Allocations>>,
+  pub(crate) allocs: Option<Rc<Allocations>>,
 }

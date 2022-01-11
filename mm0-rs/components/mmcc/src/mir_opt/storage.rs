@@ -44,9 +44,9 @@ impl AllocId {
 }
 
 #[derive(Copy, Clone, Default, Debug)]
-pub struct Meta {
-  pub size: u64,
-  pub on_stack: bool,
+pub(crate) struct Meta {
+  pub(crate) size: u64,
+  pub(crate) on_stack: bool,
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Meta);
 
@@ -67,9 +67,9 @@ impl Meta {
 
 #[derive(Default, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub struct Allocation {
-  pub m: Meta,
-  pub vars: Vec<VarId>,
+pub(crate) struct Allocation {
+  pub(crate) m: Meta,
+  pub(crate) vars: Vec<VarId>,
 }
 
 impl Allocation {
@@ -82,7 +82,7 @@ impl Allocation {
 /// The result of storage analysis.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub struct Allocations {
+pub(crate) struct Allocations {
   allocs: IdxVec<AllocId, Allocation>,
   vars: HashMap<VarId, AllocId>,
 }
@@ -97,7 +97,7 @@ impl Default for Allocations {
   }
 }
 impl Allocations {
-  pub fn get(&self, v: VarId) -> AllocId {
+  pub(crate) fn get(&self, v: VarId) -> AllocId {
     self.vars.get(&v).copied().unwrap_or(AllocId::ZERO)
   }
 
@@ -152,7 +152,7 @@ impl TyKind {
   }
 
   /// Gets the ABI information of this type, if it is a compile-time constant.
-  #[must_use] pub fn meta(&self, ns: &HashMap<Symbol, Entity>) -> Option<Meta> {
+  #[must_use] pub(crate) fn meta(&self, ns: &HashMap<Symbol, Entity>) -> Option<Meta> {
     match self {
       TyKind::Unit |
       TyKind::True |
@@ -380,7 +380,7 @@ impl Cfg {
   /// groups, as few as possible, such that all variables in a group have the same bit pattern at
   /// a given point in time, and any variable whose storage is overwritten by a later variable in
   /// the same group is dead.
-  #[must_use] pub fn storage(&mut self, names: &HashMap<Symbol, Entity>) -> Allocations {
+  #[must_use] pub(crate) fn storage(&mut self, names: &HashMap<Symbol, Entity>) -> Allocations {
     self.build_allocations(names)
   }
 }

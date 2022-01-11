@@ -78,6 +78,7 @@
   ($($(#[$attr:meta])* $id:ident $(($($lit:tt)*))?),* $(,)?) => {$(
     $(#[$attr])*
     #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[allow(unreachable_pub)]
     pub struct $id(pub u32);
     #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
     mk_id!(@ImplDebug $id $($($lit)*)?);

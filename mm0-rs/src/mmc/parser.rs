@@ -168,23 +168,23 @@ impl From<mmcc::DeclarationError> for ElabError {
 
 /// The annotations that can appear on function arguments.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct PArgAttr {
+pub(crate) struct PArgAttr {
   /// `(mut {x : T})` in function arguments means that `x` will be mutated
   /// as a side effect of the call. It should be paired with `out` in the function
   /// returns to indicate the resulting name; otherwise it will be prepended to
   /// the function returns as an `out` with the same name.
-  pub mut_: bool,
+  pub(crate) mut_: bool,
   /// `(global {x : T})` in function arguments means that `x` is the name of a global
   /// variable that will be used in the function.
-  pub global: bool,
+  pub(crate) global: bool,
   /// `(implicit {x : T})` in function arguments means that applications will
   /// use `_` for this argument instead of supplying a value.
-  pub implicit: bool,
+  pub(crate) implicit: bool,
   /// `(out x {x' : T})` in function returns means that the variable `x`
   /// (which must be a `(mut x)` in the function arguments) is being mutated to
   /// `x'`; this acts as a binder declaring variable `x'`, and both `x` and `x'`
   /// can be used in subsequent types.
-  pub out: Option<Symbol>,
+  pub(crate) out: Option<Symbol>,
 }
 crate::deep_size_0!(PArgAttr);
 
