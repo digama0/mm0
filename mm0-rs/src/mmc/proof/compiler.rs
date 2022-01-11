@@ -513,8 +513,8 @@ impl<'a> ProcProver<'a> {
     });
     match (reg_or_mem(dst), reg_or_mem(src), inst) {
       (Ok(edst), Ok(esrc), &PInst::MovRR { dst, src, .. }) => {
-        let lsrc = Loc::Reg((src.index() as u8, esrc)).as_expr(&mut self.thm);
-        let ldst = Loc::Reg((dst.index() as u8, edst)).as_expr(&mut self.thm);
+        let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
+        let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
         let (v, h1) = match self.read((tctx, l1), &lsrc) {
           ((Value::Reg, v), h1) => (v, h1),
           _ => unreachable!(),
@@ -525,7 +525,7 @@ impl<'a> ProcProver<'a> {
       }
       (Ok(edst), Err(esrc), &PInst::Load64 { dst, .. }) => {
         let lsrc = Loc::Local(esrc).as_expr(&mut self.thm);
-        let ldst = Loc::Reg((dst.index() as u8, edst)).as_expr(&mut self.thm);
+        let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
         let (v, h1) = match self.read((tctx, l1), &lsrc) {
           ((Value::SpillSlot(v), _), h1) => (v, h1),
           _ => unreachable!(),
@@ -535,7 +535,7 @@ impl<'a> ProcProver<'a> {
           ok_unspill(self.bctx, edst, esrc, l1, l2, v, h1, h2)))
       }
       (Err(edst), Ok(esrc), &PInst::Store { src, .. }) => {
-        let lsrc = Loc::Reg((src.index() as u8, esrc)).as_expr(&mut self.thm);
+        let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
         let ldst = Loc::Local(edst).as_expr(&mut self.thm);
         let (v, h1) = match self.read((tctx, l1), &lsrc) {
           ((Value::Reg, v), h1) => (v, h1),

@@ -203,6 +203,9 @@ impl Size {
     }
   }
 
+  /// The number of bits of this type, or `0` for the infinite case.
+  #[must_use] pub fn bits0(self) -> u8 { self.bits().unwrap_or(0) }
+
   /// The number of bytes of this type, or `None` for the infinite case.
   #[must_use] pub fn bytes(self) -> Option<u8> {
     match self {
