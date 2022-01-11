@@ -169,6 +169,9 @@ process _ ("$}" : ss) = do
   put $ t {mScope = sc}
   process Nothing ss
 process _ (x : "$f" : c : v : "$." : ss) = do
+  db <- gets mDB
+  guardError ("at " ++ T.unpack x ++ ": '" ++ T.unpack c ++ "' is not a declared sort") $
+    M.member c $ mSorts db
   modify $ \t -> t {mVMap = M.insert v (c, x) (mVMap t)}
   addHyp x (VHyp c v) S.empty
   process Nothing ss
