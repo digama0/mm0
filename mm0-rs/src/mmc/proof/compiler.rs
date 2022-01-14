@@ -559,7 +559,7 @@ impl<'a> ProcProver<'a> {
     dbg!(self.pp(l1), code.map(|code| self.pp(code)));
     if let Some(stmt) = tctx.stmts.next() {
       match stmt {
-        Statement::Let(lk, ty, rv) => todo!(),
+        Statement::Let(lk, r, ty, rv) => todo!(),
         Statement::Assign(_, _, _, _) => todo!(),
         Statement::LabelGroup(..) => todo!(),
         Statement::PopLabelGroup => todo!(),

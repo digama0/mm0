@@ -369,21 +369,21 @@ mod test {
     let [x1, x2] = [(); 2].map(|_| {
       let x = fresh_var.fresh();
       cfg[bl1].stmts.push(Statement::Let(
-        LetKind::Let(x, true, None),
+        LetKind::Let(x, None), true,
         Rc::new(TyKind::Int(u8)),
         Constant::int(u8, 2.into()).into()));
       x
     });
     let sum = fresh_var.fresh();
     cfg[bl1].stmts.push(Statement::Let(
-      LetKind::Let(sum, true, None),
+      LetKind::Let(sum, None), true,
       Rc::new(TyKind::Int(u8)),
       RValue::Binop(Binop::Add(u8),
         Operand::Copy(Place::local(x1)),
         Operand::Copy(Place::local(x2)))));
     let eq = fresh_var.fresh();
     cfg[bl1].stmts.push(Statement::Let(
-      LetKind::Let(eq, true, None),
+      LetKind::Let(eq, None), true,
       Rc::new(TyKind::Bool),
       RValue::Binop(Binop::Eq(u8),
         Operand::Copy(Place::local(sum)),

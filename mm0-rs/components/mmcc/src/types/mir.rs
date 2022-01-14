@@ -1,6 +1,6 @@
 //! The mid level IR, a basic block based representation used for most optimizations.
 
-use std::{collections::HashMap, ops::{Index, IndexMut}, rc::Rc};
+use std::{collections::HashMap, ops::{Index, IndexMut, Range, RangeTo}, rc::Rc};
 use std::mem;
 use bit_vec::BitVec;
 use num::BigInt;
@@ -734,7 +734,7 @@ impl Contexts {
 
   /// Returns an iterator over the variables and their values.
   /// Prefer `rev_iter` when possible, since this has to maintain a stack.
-  pub fn iter(&self, mut id: CtxId) -> CtxIter<'_> {
+  pub fn iter(&self, RangeTo {end: mut id}: RangeTo<CtxId>) -> CtxIter<'_> {
     let mut iters = vec![];
     loop {
       let ctx = &self[id.0];
@@ -743,6 +743,22 @@ impl Contexts {
       id = ctx.parent;
     }
     iters.into_iter().rev().flatten()
+  }
+
+  /// Returns an iterator over the variables and their values.
+  /// Prefer `rev_iter` when possible, since this has to maintain a stack.
+  pub fn iter_range(&self, Range {start, end: mut id}: Range<CtxId>) -> CtxIter<'_> {
+    let mut iters = vec![];
+    loop {
+      let ctx = &self[id.0];
+      if id.0 == start.0 {
+        iters.push(&ctx.vars[start.1 as usize..id.1 as usize]);
+        return iters.into_iter().rev().flatten()
+      }
+      iters.push(&ctx.vars[..id.1 as usize]);
+      if id.0 == CtxBufId::ROOT { panic!("iter_from: id not in (from..) range") }
+      id = ctx.parent;
+    }
   }
 
   /// Get the last variable pushed on a context, and its type. Panics if used on the root context.
@@ -1510,33 +1526,28 @@ impl From<VarId> for RValue {
 pub enum LetKind {
   /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
   /// variable is non-ghost.
-  Let(VarId, bool, Option<Expr>),
+  Let(VarId, Option<Expr>),
   /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
   /// value `x` and a pointer `p: &sn x`.
-  Own([(VarId, bool, Ty); 2]),
+  Own([(VarId, Ty); 2]),
 }
 
 impl std::fmt::Debug for LetKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match *self {
-      Self::Let(v, r, ref e) => {
-        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
-        if let Some(e) = e { write!(f, " => {:?}", e)? }
-        Ok(())
-      },
-      Self::Own([(v1, r1, _), (v2, r2, _)]) =>
-        write!(f, "({}{:?}, {}{:?})",
-          if r1 {""} else {"ghost "}, v1, if r2 {""} else {"ghost "}, v2),
-    }
+    self.fmt_rel(true, f)
   }
 }
 
 impl LetKind {
-  /// Returns true if the variables declared in this let binding are computationally relevant.
-  #[must_use] pub fn relevant(&self) -> bool {
+  fn fmt_rel(&self, r: bool, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
-      LetKind::Let(_, r, _) => r,
-      LetKind::Own([(_, xr, _), (_, yr, _)]) => xr || yr,
+      Self::Let(v, ref e) => {
+        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
+        if let Some(e) = e { write!(f, " => {:?}", e)? }
+        Ok(())
+      },
+      Self::Own([(v1, _), (v2, _)]) =>
+        write!(f, "(ghost {:?}, {}{:?})", v1, if r {""} else {"ghost "}, v2),
     }
   }
 }
@@ -1568,7 +1579,7 @@ impl std::fmt::Debug for Rename {
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Statement {
   /// A let or tuple destructuring of values from an [`RValue`] of the specified type.
-  Let(LetKind, Ty, RValue),
+  Let(LetKind, bool, Ty, RValue),
   /// `Assign(lhs, T, rhs, vars)` is the statement `lhs: T <- rhs`.
   /// `vars` is a list of tuples `(from, to: T)` which says that the value `from` is
   /// transformed into `to`, and `to: T` is introduced into the context.
@@ -1594,7 +1605,11 @@ impl std::fmt::Debug for Statement {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match self {
-      Self::Let(lk, ty, rv) => write!(f, "let {:?}: {:?} := {:?}", lk, ty, rv),
+      Self::Let(lk, r, ty, rv) => {
+        write!(f, "let ")?;
+        lk.fmt_rel(*r, f)?;
+        write!(f, ": {:?} := {:?}", ty, rv)
+      }
       Self::Assign(lhs, ty, rhs, renames) =>
         write!(f, "{:?}: {:?} <- {:?}, with {:?}", lhs, ty, rhs, renames),
       Self::LabelGroup(bls, _) => write!(f, "label_group({:?})", bls.iter().format(", ")),
@@ -1608,7 +1623,7 @@ impl Statement {
   /// True if this statement is computationally relevant.
   #[must_use] pub fn relevant(&self) -> bool {
     match self {
-      Self::Let(lk, _, _) => lk.relevant(),
+      &Self::Let(_, r, _, _) => r,
       Self::Assign(_, _, _, vars) => vars.iter().any(|v| v.rel),
       Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => false,
     }
@@ -1617,8 +1632,8 @@ impl Statement {
   /// The number of variables created by this statement.
   #[must_use] pub fn num_defs(&self) -> usize {
     match self {
-      Self::Let(LetKind::Let(..), _, _) => 1,
-      Self::Let(LetKind::Own(..), _, _) => 2,
+      Self::Let(LetKind::Let(..), ..) => 1,
+      Self::Let(LetKind::Own(..), ..) => 2,
       Self::Assign(_, _, _, vars) => vars.len(),
       Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => 0,
     }
@@ -1627,9 +1642,9 @@ impl Statement {
   /// (Internal) iteration over the variables created by a statement.
   pub fn foreach_def<'a>(&'a self, mut f: impl FnMut(VarId, bool, Option<&'a Expr>, &'a Ty)) {
     match self {
-      &Self::Let(LetKind::Let(v, r, ref e), ref ty, _) => f(v, r, e.as_ref(), ty),
-      &Self::Let(LetKind::Own([(x, xr, ref xt), (y, yr, ref yt)]), _, _) => {
-        f(x, xr, None, xt);
+      &Self::Let(LetKind::Let(v, ref e), r, ref ty, _) => f(v, r, e.as_ref(), ty),
+      &Self::Let(LetKind::Own([(x, ref xt), (y, ref yt)]), yr, _, _) => {
+        f(x, false, None, xt);
         f(y, yr, None, yt);
       }
       Self::Assign(_, _, _, vars) =>
@@ -1814,7 +1829,7 @@ pub(crate) trait Visitor {
         }
         if needed { self.visit_place(lhs); self.visit_operand(rhs) }
       }
-      Statement::Let(lk, _, rv) => if lk.relevant() { self.visit_rvalue(rv) }
+      Statement::Let(_, r, _, rv) => if *r { self.visit_rvalue(rv) }
       Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
     }
   }

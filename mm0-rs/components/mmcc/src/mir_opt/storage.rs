@@ -320,7 +320,7 @@ impl Cfg {
                 let old = allocs.vars[&r.from];
                 let v = self.max_var.fresh();
                 patch.insert(i, Statement::Let(
-                  LetKind::Let(v, true, e.cloned()), ty.clone(),
+                  LetKind::Let(v, e.cloned()), true, ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
                 let new = allocs.push(v, || meta(ty));
@@ -332,10 +332,10 @@ impl Cfg {
               allocs.insert(a, r.to, meta(&r.ety.1));
             }
           }
-          Statement::Let(lk, ref ty, rv) => {
-            let (v, r, ty) = match lk {
-              LetKind::Let(v, r, _) => (*v, r, ty),
-              LetKind::Own([_, (v, r, ref ty)]) => (*v, r, ty),
+          Statement::Let(lk, r, ref ty, rv) => {
+            let (v, ty) = match lk {
+              LetKind::Let(v, _) => (*v, ty),
+              LetKind::Own([_, (v, ref ty)]) => (*v, ty),
             };
             if !*r { continue }
             let mut copy = None;

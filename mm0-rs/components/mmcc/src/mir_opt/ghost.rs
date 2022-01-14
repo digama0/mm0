@@ -120,7 +120,7 @@ impl Cfg {
             let (e2, ty2) = &self.ctxs.head(self[vtgt2.1].ctx).2;
             bl = &mut self.blocks[id];
             bl.stmts.push(Statement::Let(
-              LetKind::Let(vtgt2.0, false, e2.clone()), ty2.clone(),
+              LetKind::Let(vtgt2.0, e2.clone()), false, ty2.clone(),
               Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
             ));
             bl.term = Some(Terminator::Jump1(tgt2));
@@ -257,13 +257,10 @@ impl Cfg {
       fn apply_statement(&mut self, _: &Self::Doms,
           loc: Location, stmt: &Statement, d: &mut GhostDom) {
         match stmt {
-          Statement::Let(lk, _, rv) => {
-            let needed = match *lk {
-              LetKind::Let(v, vr, _) => vr && d.vars.contains(&v),
-              LetKind::Own([(x, xr, _), (y, yr, _)]) =>
-                xr && d.vars.contains(&x) || yr && d.vars.contains(&y)
-            };
-            if needed { d.apply_rvalue(loc.block, rv) }
+          Statement::Let(_, false, _, _) => {}
+          Statement::Let(lk, true, _, rv) => {
+            let (LetKind::Let(v, _) | LetKind::Own([_, (v, _)])) = lk;
+            if d.vars.contains(&v) { d.apply_rvalue(loc.block, rv) }
           }
           Statement::Assign(_, _, rhs, vars) => {
             let mut needed = false;
@@ -345,8 +342,7 @@ impl Cfg {
       let get = |v| res.contains(&v);
       for stmt in &mut bl.stmts {
         match stmt {
-          Statement::Let(LetKind::Let(v, r, _), _, _) => *r = get(*v),
-          Statement::Let(LetKind::Own(vs), _, _) => for (v, r, _) in vs { *r = get(*v) }
+          Statement::Let(LetKind::Let(v, _) | LetKind::Own([_, (v, _)]), r, _, _) => *r = get(*v),
           Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to) }
           Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }

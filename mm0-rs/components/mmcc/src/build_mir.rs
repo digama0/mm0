@@ -560,10 +560,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn push_stmt(&mut self, stmt: Statement) {
     match stmt {
-      Statement::Let(LetKind::Let(v, r, ref e), ref ty, _) =>
+      Statement::Let(LetKind::Let(v, ref e), r, ref ty, _) =>
         self.extend_ctx(v, r, (e.clone(), ty.clone())),
-      Statement::Let(LetKind::Own([(v, vr, ref ty), (h, hr, ref ty2)]), _, _) => {
-        self.extend_ctx(v, vr, (None, ty.clone()));
+      Statement::Let(LetKind::Own([(v, ref ty), (h, ref ty2)]), hr, _, _) => {
+        self.extend_ctx(v, false, (None, ty.clone()));
         self.extend_ctx(h, hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
       Statement::Assign(_, _, _, ref vars) => for v in &**vars {
@@ -608,7 +608,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(vb, true, Some(cond.clone())), Rc::new(TyKind::Bool),
+          LetKind::Let(vb, Some(cond.clone())), true, Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Lt(IntTy::NAT),
             Operand::Copy(vi.into()), vn.into())));
         self.assert(vb.into(), cond)
@@ -630,7 +630,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vl))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(v_add, true, Some(add.clone())),
+          LetKind::Let(v_add, Some(add.clone())), true,
           Rc::new(TyKind::Int(IntTy::INT)),
           RValue::Binop(Binop::Add(IntTy::NAT),
             Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
@@ -638,7 +638,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let cond = Rc::new(ExprKind::Binop(types::Binop::Le,
           add, Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(v_cond, true, Some(cond.clone())),
+          LetKind::Let(v_cond, Some(cond.clone())), true,
           Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Le(IntTy::NAT), v_add.into(), vn.into())));
         self.assert(v_cond.into(), cond)
@@ -875,7 +875,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       let v = self.tr(v);
       let rel = !ety.1.ghostly();
       let (e, ty) = self.tr(ety);
-      self.push_stmt(Statement::Let(LetKind::Let(v, rel, e), ty, rv.into()));
+      self.push_stmt(Statement::Let(LetKind::Let(v, e), rel, ty, rv.into()));
       Ok(r)
     } else { f(self, dest) }
   }
@@ -885,7 +885,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       let rv = Constant::unit();
       let (e, ty) = rv.ety.clone();
       let v = self.tr(v);
-      self.push_stmt(Statement::Let(LetKind::Let(v, false, e), ty, rv.into()));
+      self.push_stmt(Statement::Let(LetKind::Let(v, e), false, ty, rv.into()));
     }
   }
 
@@ -1020,7 +1020,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let dest = this.tr(dest);
           let rel = !ety.1.ghostly();
           let (e, ty) = this.tr(ety);
-          this.push_stmt(Statement::Let(LetKind::Let(dest, rel, e), ty, rv))
+          this.push_stmt(Statement::Let(LetKind::Let(dest, e), rel, ty, rv))
         }
       }
       Ok(())
@@ -1034,8 +1034,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let src = if global {
           let tgt = self.tr(ty);
           let r = !ty.ghostly();
-          let lk = LetKind::Let(v, r, None);
-          self.push_stmt(Statement::Let(lk, tgt.clone(), src.clone().into()));
+          let lk = LetKind::Let(v, None);
+          self.push_stmt(Statement::Let(lk, r, tgt.clone(), src.clone().into()));
           self.globals.push((name, r, v, tgt));
           (Rc::new(EPlaceKind::Var(v)), v.into())
         } else {
@@ -1055,9 +1055,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             let v = self.tr.tr_opt_var(vpat.k.var());
             let h = self.tr.tr_opt_var(hpat.k.var());
             let vty = vpat.k.ty();
-            let lk = LetKind::Own([
-              (v, !vty.ghostly(), self.tr(vty)), (h, true, self.tr(hpat.k.ty()))]);
-            self.push_stmt(Statement::Let(lk, tgt, src.clone().into()));
+            let lk = LetKind::Own([(v, self.tr(vty)), (h, self.tr(hpat.k.ty()))]);
+            self.push_stmt(Statement::Let(lk, true, tgt, src.clone().into()));
             self.tup_pat(global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
             self.tup_pat(global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
             return
@@ -1435,7 +1434,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let pe = self.tr(pe);
           let vh = self.tr(hyp);
           self.push_stmt(Statement::Let(
-            LetKind::Let(vh, false, Some(Rc::new(ExprKind::Unit))),
+            LetKind::Let(vh, Some(Rc::new(ExprKind::Unit))), false,
             Rc::new(TyKind::Pure(pe)),
             Constant::itrue().into()));
         }

@@ -27,7 +27,7 @@ impl PackedOp {
 
 impl Replace<Statement> for RValue {
   fn replace(self, t: &mut Statement) {
-    if let Statement::Let(_, _, rv) = t { *rv = self }
+    if let Statement::Let(_, _, _, rv) = t { *rv = self }
   }
 }
 struct Legalizer<'a> {
@@ -63,7 +63,7 @@ impl<'a> Legalizer<'a> {
     };
     if let Some(res) = self.generated.get(&(v, pred)) { return Some(res.clone()) }
     let res = (|| match &self.stmts[i] {
-      Statement::Let(LetKind::Let(_, _, e), _, rv) => {
+      Statement::Let(LetKind::Let(_, e), _, _, rv) => {
         if let RValue::Use(o) | RValue::Cast(_, o, _) = rv {
           return self.try_legalize_operand(o, pred)
         }
@@ -74,9 +74,9 @@ impl<'a> Legalizer<'a> {
               let o = self.try_legalize_operand(o, Predicate::As(ity))?.unpack();
               let v = self.max_var.fresh();
               self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(v, true, e.as_ref().map(|e|
+                LetKind::Let(v, e.as_ref().map(|e|
                   Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
-                Ty::new(TyKind::Int(ity)),
+                true, Ty::new(TyKind::Int(ity)),
                 RValue::Unop(op, o)));
               Some(PackedOp::Copy(v))
             }
@@ -86,9 +86,9 @@ impl<'a> Legalizer<'a> {
               let o2 = self.try_legalize_operand(o2, Predicate::As(ity))?.unpack();
               let v = self.max_var.fresh();
               self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(v, true, e.as_ref().map(|e|
+                LetKind::Let(v, e.as_ref().map(|e|
                   Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
-                Ty::new(TyKind::Int(ity)),
+                true, Ty::new(TyKind::Int(ity)),
                 RValue::Binop(op, o1, o2)));
               Some(PackedOp::Copy(v))
             }
@@ -125,7 +125,7 @@ impl<'a> Legalizer<'a> {
 
   fn legalize_all(mut self) -> VecPatch<Statement, RValue> {
     for (i, s) in self.stmts.iter().enumerate().rev() {
-      if let Statement::Let(LetKind::Let(_, true, _), ty, rv) = s {
+      if let Statement::Let(LetKind::Let(..), true, ty, rv) = s {
         match rv {
           &RValue::Unop(Unop::As(from, to), ref o) if from.size() == Size::Inf => {
             if self.is_infinite_var(o) {

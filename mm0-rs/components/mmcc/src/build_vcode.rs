@@ -944,9 +944,9 @@ impl<'a> LowerCtx<'a> {
       for (inst, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {
-            Statement::Let(lk, ty, rv) => {
-              let ((&LetKind::Let(v, r, _), &ref ty) |
-                (&LetKind::Own([_, (v, r, ref ty)]), _)) = (lk, ty);
+            &Statement::Let(ref lk, r, ref ty, ref rv) => {
+              let ((&LetKind::Let(v, _), &ref ty) |
+                (&LetKind::Own([_, (v, ref ty)]), _)) = (lk, ty);
               if r {
                 let a = self.allocs.get(v);
                 assert_ne!(a, AllocId::ZERO);
