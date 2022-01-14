@@ -836,10 +836,9 @@ impl<'a> LowerCtx<'a> {
   fn build_block_args(&mut self) -> ChunkVec<BlockId, VReg> {
     let preds = self.cfg.predecessors();
 
-    let allocs = self.allocs;
     let cfg = self.cfg;
     let mut insert = |out: &mut Vec<_>, v| {
-      let a = allocs.get(v);
+      let a = self.allocs.get(v);
       assert_ne!(a, AllocId::ZERO);
       if let RegMem::Reg(v) = self.get_alloc(a).0 .0 {
         if !out.contains(&v) { out.push(v) }
@@ -862,6 +861,17 @@ impl<'a> LowerCtx<'a> {
       }
       out
     }).collect()
+  }
+
+  fn build_block_prologue(&mut self, bl: &'a BasicBlock) {
+    if bl.is_dead() { return }
+    for &(v, r, _) in self.cfg.ctxs.iter(..bl.ctx) {
+      if !r { continue }
+      let a = self.allocs.get(v);
+      if a == AllocId::ZERO { continue }
+      let val = self.get_alloc(a).0 .0;
+      self.code.emit(Inst::BlockParam {var: v, val});
+    }
   }
 
   fn build_prologue(&mut self, bl: &'a BasicBlock, ctx: VCodeCtx<'_>) {
@@ -941,6 +951,7 @@ impl<'a> LowerCtx<'a> {
       self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
+      else { self.build_block_prologue(bl) }
       for (inst, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {

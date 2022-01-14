@@ -3,14 +3,13 @@
 use std::collections::HashMap;
 
 use crate::regalloc::PCode;
-use crate::types::mir::BlockTree;
 use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
 use crate::codegen::FUNCTION_ALIGN;
-use crate::types::{mir::{self, Cfg}, vcode::ConstRef};
+use crate::types::{mir::{self, Cfg, BlockTree}, vcode::ConstRef};
 
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
-pub use crate::arch::{self, PReg, PInst as VInst};
+pub use crate::arch::{self, PReg, PInst as VInst, PRegMem};
 
 /// If true, we are proving total correctness, so all recursions and loops
 /// must come with a variant that decreases on recursive calls.
@@ -317,6 +316,10 @@ impl<'a> Proc<'a> {
       iter: 0..self.proc.blocks.len(),
     }
   }
+  /// Get the block by ID.
+  #[must_use] pub fn block(&self, id: BlockId) -> BlockProof<'_> {
+    BlockProof { ctx: self, id }
+  }
 
   /// Get the physical block ID for a virtual block, or `None` for a pure virtual block.
   #[must_use] pub fn vblock_id(&self, id: BlockId) -> Option<VBlockId> {
@@ -363,7 +366,10 @@ pub struct VBlock<'a> {
   pub start: u32,
   /// The byte data for this block.
   pub content: &'a [u8],
-  insts: &'a [VInst],
+  /// The memory locations of variables that have been mapped.
+  pub block_params: &'a [(mir::VarId, PRegMem)],
+  /// The sequence of (physical) instructions in the block.
+  pub insts: &'a [VInst],
 }
 
 impl<'a> VBlock<'a> {
@@ -371,11 +377,13 @@ impl<'a> VBlock<'a> {
     let start = ctx.proc.block_addr.0[id];
     let end = ctx.proc.block_addr.0.get(id+1).copied().unwrap_or(ctx.proc.len);
     let (inst_start, inst_end) = ctx.proc.blocks.0[id];
+    let id = VBlockId::from_usize(id);
     Self {
       ctx,
-      id: VBlockId::from_usize(id),
+      id,
       start,
       content: &ctx.content[start as usize..end as usize],
+      block_params: &ctx.proc.block_params[id],
       insts: &ctx.proc.insts[inst_start..inst_end],
     }
   }
@@ -509,7 +517,7 @@ impl<'a> BlockProofTree<'a> {
         args: &data.1,
       }),
       BlockTree::Many(args) => Self::Seq(BlockTreeSeq { ctx, args }),
-      &BlockTree::One(id) => Self::One(BlockProof { ctx, id }),
+      &BlockTree::One(id) => Self::One(ctx.block(id)),
     }
   }
 
@@ -592,10 +600,9 @@ impl<'a> Iterator for BlockTreeIter<'a> {
   type Item = BlockProofTree<'a>;
   fn next(&mut self) -> Option<Self::Item> {
     if let Some((developed, bl)) = self.stack.pop() {
-      Some(BlockProofTree::One(BlockProof {
-        ctx: self.ctx,
-        id: if developed { bl } else { BlockProofTree::develop(self.ctx, bl, &mut self.stack) }
-      }))
+      Some(BlockProofTree::One(self.ctx.block(
+        if developed { bl } else { BlockProofTree::develop(self.ctx, bl, &mut self.stack) }
+      )))
     } else {
       Some(BlockProofTree::new(self.ctx, self.seq.next_back()?))
     }
@@ -696,8 +703,6 @@ impl BlockProofTree<'_> {
 }
 
 impl<'a> BlockProof<'a> {
-  fn to(&self, id: BlockId) -> Self { Self { ctx: self.ctx, id } }
-
   fn validate(&self, ctx: &im::HashMap<BlockId, bool>) {
     loop {
       match *self.ctx.cfg[self.id].terminator() {
@@ -710,10 +715,10 @@ impl<'a> BlockProof<'a> {
         mir::Terminator::Assert(_, _, false, _) => {}
         mir::Terminator::Jump1(tgt) |
         mir::Terminator::Assert(_, _, _, tgt) |
-        mir::Terminator::Call { tgt, .. } => self.to(tgt).validate(ctx),
+        mir::Terminator::Call { tgt, .. } => self.ctx.block(tgt).validate(ctx),
         mir::Terminator::If(_, [(_, bl1), (_, bl2)]) => {
-          self.to(bl1).validate(ctx);
-          self.to(bl2).validate(ctx);
+          self.ctx.block(bl1).validate(ctx);
+          self.ctx.block(bl2).validate(ctx);
         }
       }
     }

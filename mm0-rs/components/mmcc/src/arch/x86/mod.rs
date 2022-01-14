@@ -6,7 +6,7 @@ use num::Zero;
 use regalloc2::{MachineEnv, Operand};
 
 use crate::codegen::InstSink;
-use crate::types::{Size,
+use crate::types::{mir, Size,
   vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg, IsReg, Inst as VInst, VCode}};
 
 /// A physical register. For x86, this is one of the 16 general purpose integer registers.
@@ -490,9 +490,13 @@ impl<Reg: IsReg> AMode<Reg> {
 }
 
 impl AMode {
+  fn on_regs(&self, mut f: impl FnMut(VReg)) {
+    if self.base.is_valid() { f(self.base) }
+    if let Some(si) = &self.si { f(si.index) }
+  }
+
   fn collect_operands(&self, args: &mut Vec<Operand>) {
-    if self.base.is_valid() { args.push(Operand::reg_use(self.base.0)) }
-    if let Some(si) = &self.si { args.push(Operand::reg_use(si.index.0)) }
+    self.on_regs(|v| args.push(Operand::reg_use(v.0)))
   }
 
   pub(crate) fn emit_load(&self, code: &mut VCode<Inst>, sz: Size) -> VReg {
@@ -574,11 +578,15 @@ impl<Reg> From<AMode<Reg>> for RegMem<Reg> {
 }
 
 impl RegMem {
-  fn collect_operands(&self, args: &mut Vec<Operand>) {
+  fn on_regs(&self, mut f: impl FnMut(VReg)) {
     match *self {
-      RegMem::Reg(reg) => args.push(Operand::reg_use(reg.0)),
-      RegMem::Mem(ref addr) => addr.collect_operands(args),
+      RegMem::Reg(reg) => f(reg),
+      RegMem::Mem(ref addr) => addr.on_regs(f),
     }
+  }
+
+  fn collect_operands(&self, args: &mut Vec<Operand>) {
+    self.on_regs(|v| args.push(Operand::reg_use(v.0)))
   }
 
   pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> VReg {
@@ -760,6 +768,9 @@ pub(crate) enum Inst {
   /// `inst` refers to the instruction index of a `Let` in the MIR of the current `BasicBlock`,
   ///  and `dst` refers to the register, just assigned, that corresponds to the new variable.
   SyncLet { inst: usize, dst: RegMem },
+  /// A ghost instruction at the start of a basic block to declare that a MIR variable
+  /// lives at a certain machine location.
+  BlockParam { var: mir::VarId, val: RegMem },
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
@@ -931,7 +942,7 @@ pub(crate) enum Inst {
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: RegMem },
   /// Traps if the condition code is not set.
-  /// Followed by a fallthrough instruction to the target block.
+  /// Otherwise, jumps to the target block.
   Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
@@ -940,9 +951,26 @@ pub(crate) enum Inst {
 impl Debug for Inst {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
+    struct PrintOperand(Operand);
+    impl Display for PrintOperand {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use regalloc2::{OperandKind, OperandConstraint};
+        match self.0.kind() {
+          OperandKind::Def => write!(f, "def ")?,
+          OperandKind::Use => {}
+          _ => unreachable!(),
+        }
+        match self.0.constraint() {
+          OperandConstraint::FixedReg(r) => write!(f, "{} @ {}", self.0.vreg(), PReg(r)),
+          OperandConstraint::Reg => write!(f, "{}", self.0.vreg()),
+          _ => unreachable!(),
+        }
+      }
+    }
     match self {
       Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
       Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
+      Self::BlockParam { var, val } => write!(f, "param {} @ {}", var, val),
       Self::Binop { op, sz, dst, src1, src2 } =>
         write!(f, "{} <- {:?}.{} {}, {}", dst, op, sz.bits0(), src1, src2),
       Self::Unop { op, sz, dst, src } =>
@@ -968,13 +996,13 @@ impl Debug for Inst {
       Self::CMov { sz, cc, dst, src1, src2 } =>
         write!(f, "{} <- cmov{}.{} {}, {}", dst, cc, sz.bits0(), src1, src2),
       Self::CallKnown { f: func, operands, .. } =>
-        write!(f, "call {:?}({})", func, operands.iter().format(", ")),
+        write!(f, "call {:?}({})", func, operands.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::SysCall { f: func, operands } =>
-        write!(f, "syscall {:?}({})", func, operands.iter().format(", ")),
+        write!(f, "syscall {:?}({})", func, operands.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::Epilogue { params } =>
-        write!(f, "epilogue({})", params.iter().format(", ")),
+        write!(f, "epilogue({})", params.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::JmpKnown { dst, params } =>
-        write!(f, "jump -> bb{}({})", dst.0, params.iter().format(", ")),
+        write!(f, "jump -> bb{}({})", dst.0, params.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::JmpCond { cc, taken, not_taken } =>
         write!(f, "j{} -> bb{} else bb{}", cc, taken.0, not_taken.0),
       Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
@@ -1007,6 +1035,12 @@ impl VInst for Inst {
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
       Inst::SyncLet { dst, .. } => dst.collect_operands(args),
+      Inst::BlockParam { val, .. } =>
+        val.on_regs(|r| args.push(Operand::new(r.0,
+          regalloc2::OperandConstraint::Any,
+          regalloc2::OperandKind::Use,
+          regalloc2::OperandPos::Early,
+        ))),
       Inst::Imm { dst, .. } |
       Inst::SetCC { dst, .. } => args.push(Operand::reg_def(dst.0)),
       Inst::Unop { dst, src, .. } |
@@ -1202,7 +1236,7 @@ pub(crate) type PShiftIndex = ShiftIndex<PReg>;
 pub(crate) type PAMode = AMode<PReg>;
 
 /// A version of `RegMem` post-register allocation.
-pub(crate) type PRegMem = RegMem<PReg>;
+pub type PRegMem = RegMem<PReg>;
 
 impl PAMode {
   pub(crate) fn base(&self) -> PReg {
@@ -1400,7 +1434,7 @@ pub enum PInst {
   // /// Indirect jump: `jmpq r/m`.
   // JmpUnknown { target: PRegMem },
   /// Traps if the condition code is not set.
-  /// Followed by a fallthrough instruction to the target block.
+  /// Otherwise, jumps to the target block.
   Assert { cc: CC, dst: BlockId },
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,

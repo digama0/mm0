@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt::{Debug, Display}, iter::FromIterator};
 
-use crate::{Idx, types::{IdxVec, mir}, arch::PReg};
+use crate::{Idx, types::{IdxVec, mir}, arch::{PReg, RegMem as VRegMem}};
 
 use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
@@ -149,6 +149,15 @@ impl<I: Idx, T> ChunkVec<I, T> {
     self.push_into(|v| v.extend(it))
   }
 
+  /// Push a new empty list to the list of lists.
+  pub fn push_new(&mut self) -> I { self.push_into(|_| ()) }
+
+  /// Push a `T` to the last element of the list. The list must be nonempty.
+  pub fn extend_last(&mut self, val: T) {
+    assert!(!self.idxs.is_empty());
+    self.data.push(val);
+  }
+
   /// The starting index for the given value in the `data` array.
   fn start(&self, i: I) -> usize { u32_as_usize(self.idxs[i]) }
 
@@ -239,6 +248,7 @@ pub struct VCode<I> {
   pub(crate) block_preds: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_params: ChunkVec<BlockId, VReg>,
+  pub(crate) vblock_args: ChunkVec<BlockId, VRegMem>,
   pub(crate) operands: ChunkVec<InstId, Operand>,
   pub(crate) num_vregs: usize,
   pub(crate) spills: IdxVec<SpillId, u32>,
@@ -254,6 +264,7 @@ impl<I> Default for VCode<I> {
       block_preds: Default::default(),
       block_succs: Default::default(),
       block_params: Default::default(),
+      vblock_args: Default::default(),
       operands: Default::default(),
       num_vregs: 0,
       spills: vec![0, 0].into(), // INCOMING, OUTGOING

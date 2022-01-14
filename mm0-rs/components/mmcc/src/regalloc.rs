@@ -20,7 +20,7 @@ use crate::types::{IdxVec, Size};
 use crate::types::mir::{self, Cfg};
 use crate::{Entity, Idx, Symbol};
 use crate::build_vcode::{VCode, VCodeCtx, build_vcode};
-use crate::types::vcode::{self, IsReg, InstId, ProcAbi, ProcId, SpillId, BlockId};
+use crate::types::vcode::{self, IsReg, InstId, ProcAbi, ProcId, SpillId, BlockId, ChunkVec};
 
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn regalloc(&self) -> regalloc2::Output {
@@ -105,6 +105,7 @@ pub(crate) struct PCode {
   pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
   pub(crate) blocks: IdxVec<BlockId, (PInstId, PInstId)>,
   pub(crate) block_addr: IdxVec<BlockId, u32>,
+  pub(crate) block_params: ChunkVec<BlockId, (mir::VarId, PRegMem)>,
   pub(crate) stack_size: u32,
   pub(crate) saved_regs: Vec<PReg>,
   pub(crate) len: u32,
@@ -303,6 +304,7 @@ pub(crate) fn regalloc_vcode(
       block_map: vcode.block_map,
       blocks: IdxVec::from(vec![]),
       block_addr: IdxVec::from(vec![0]),
+      block_params: [[]].into_iter().collect(),
       stack_size: stack_size_no_ret,
       saved_regs: vec![],
       len: 0,
@@ -315,6 +317,7 @@ pub(crate) fn regalloc_vcode(
     ar.next_inst();
     if bb.next == i {
       bb.finish_block(&mut code);
+      code.block_params.push_new();
       code.code.block_addr.push(code.len);
     };
     code.apply_edits(&mut edits, &mut ar, ProgPoint::before(i));
@@ -325,6 +328,9 @@ pub(crate) fn regalloc_vcode(
       }
       Inst::SyncLet { inst, ref dst } =>
         code.push(PInst::SyncLet { inst, dst: ar.rm(dst) }),
+      Inst::BlockParam { var, ref val } => {
+        code.block_params.extend_last((var, ar.rm(val)))
+      }
       Inst::Binop { op, sz, ref src2, .. } => {
         let (_, src, dst) = (ar.reg(), ar.rmi(src2), ar.reg());
         code.push(PInst::Binop { op, sz, dst, src });
