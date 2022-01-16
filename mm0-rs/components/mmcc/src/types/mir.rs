@@ -727,9 +727,9 @@ impl Contexts {
   /// ghost analysis, instead of the relevance values stored in the context itself.
   /// Only callable after ghost analysis is done.
   pub fn rev_iter_with_rel<'a>(&'a self, id: CtxId, rel: &'a BitVec) -> CtxRevIterWithRel<'a> {
-    let a = self.rev_iter(id);
-    debug_assert_eq!(rel.len(), a.len());
-    CtxRevIterWithRel { a, b: rel.iter() }
+    let iter = self.rev_iter(id);
+    debug_assert_eq!(rel.len(), iter.len());
+    WithRel { iter, rel: rel.iter().rev() }
   }
 
   /// Returns an iterator over the variables and their values.
@@ -743,6 +743,15 @@ impl Contexts {
       id = ctx.parent;
     }
     iters.into_iter().rev().flatten()
+  }
+
+  /// Construct an iterator over the variables in the context, using the relevance values after
+  /// ghost analysis, instead of the relevance values stored in the context itself.
+  /// Only callable after ghost analysis is done.
+  pub fn iter_with_rel<'a>(&'a self, id: CtxId, rel: &'a BitVec) -> CtxIterWithRel<'a> {
+    let iter = self.iter(..id);
+    debug_assert_eq!(rel.len(), iter.clone().count());
+    WithRel { iter, rel: rel.iter() }
   }
 
   /// Returns an iterator over the variables and their values.
@@ -823,53 +832,42 @@ pub type CtxIter<'a> = std::iter::Flatten<std::iter::Rev<
   std::vec::IntoIter<&'a [(VarId, bool, ExprTy)]>>>;
 
 /// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
+pub type CtxRevIterWithRel<'a> = WithRel<CtxRevIter<'a>, std::iter::Rev<bit_vec::Iter<'a>>>;
+
+/// The iterator struct returned by [`BasicBlock::ctx_iter`].
+pub type CtxIterWithRel<'a> = WithRel<CtxIter<'a>, bit_vec::Iter<'a>>;
+
+/// Implementation of [`CtxIterWithRel`] and [`CtxRevIterWithRel`].
 #[must_use] #[derive(Clone)]
-pub struct CtxRevIterWithRel<'a> {
-  a: CtxRevIter<'a>,
-  b: bit_vec::Iter<'a>,
+pub struct WithRel<I, J> {
+  iter: I,
+  rel: J,
 }
 
-impl std::fmt::Debug for CtxRevIterWithRel<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "CtxRevIterWithRel".fmt(f) }
+impl<I, J> std::fmt::Debug for WithRel<I, J> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "WithRel".fmt(f) }
 }
 
-impl<'a> Iterator for CtxRevIterWithRel<'a> {
+impl<'a, I, J> Iterator for WithRel<I, J>
+where
+  I: Iterator<Item = &'a (VarId, bool, ExprTy)>,
+  J: ExactSizeIterator<Item = bool>
+{
   type Item = (VarId, bool, &'a ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
-    let (v, _, ref ety) = *self.a.next()?;
-    Some((v, self.b.next_back()?, ety))
+    let (v, _, ref ety) = *self.iter.next()?;
+    Some((v, self.rel.next()?, ety))
   }
-  fn size_hint(&self) -> (usize, Option<usize>) { self.b.size_hint() }
+  fn size_hint(&self) -> (usize, Option<usize>) { self.rel.size_hint() }
   fn count(self) -> usize { self.len() }
 }
 
-impl ExactSizeIterator for CtxRevIterWithRel<'_> {
-  fn len(&self) -> usize { self.b.len() }
-}
-
-/// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
-#[must_use] #[derive(Clone)]
-pub struct CtxIterWithRel<'a> {
-  a: CtxIter<'a>,
-  b: bit_vec::Iter<'a>,
-}
-
-impl std::fmt::Debug for CtxIterWithRel<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "CtxIterWithRel".fmt(f) }
-}
-
-impl<'a> Iterator for CtxIterWithRel<'a> {
-  type Item = (VarId, bool, &'a ExprTy);
-  fn next(&mut self) -> Option<Self::Item> {
-    let (v, _, ref ety) = *self.a.next()?;
-    Some((v, self.b.next()?, ety))
-  }
-  fn size_hint(&self) -> (usize, Option<usize>) { self.b.size_hint() }
-  fn count(self) -> usize { self.len() }
-}
-
-impl ExactSizeIterator for CtxIterWithRel<'_> {
-  fn len(&self) -> usize { self.b.len() }
+impl<'a, I, J> ExactSizeIterator for WithRel<I, J>
+where
+  I: Iterator<Item = &'a (VarId, bool, ExprTy)>,
+  J: ExactSizeIterator<Item = bool>
+{
+  fn len(&self) -> usize { self.rel.len() }
 }
 
 /// A function for visiting every variable in the tree contexts only once.
@@ -1919,8 +1917,7 @@ impl BasicBlock {
   /// Only callable after ghost analysis is done.
   pub fn ctx_iter<'a>(&'a self, ctxs: &'a Contexts) -> CtxIterWithRel<'a> {
     let rel = self.relevance.as_ref().expect("ghost analysis not done yet");
-    let a = ctxs.iter(self.ctx);
-    CtxIterWithRel { a, b: rel.iter() }
+    ctxs.iter_with_rel(self.ctx, rel)
   }
 
   /// Finish this basic block by adding the terminator.
@@ -1974,7 +1971,7 @@ impl BasicBlock {
       if self.relevance.is_some() {
         for (v, r, (e, ty)) in self.ctx_iter(ctxs) { write(v, r, e, ty)? }
       } else {
-        for &(v, r, (ref e, ref ty)) in ctxs.iter(self.ctx) { write(v, r, e, ty)? }
+        for &(v, r, (ref e, ref ty)) in ctxs.iter(..self.ctx) { write(v, r, e, ty)? }
       }
       write!(f, ")")?
     } else {
