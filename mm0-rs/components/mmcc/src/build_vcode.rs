@@ -16,8 +16,8 @@ use regalloc2::Operand as ROperand;
 use crate::linker::ConstData;
 use crate::types::entity::{IntrinsicProc, ProcTc, ProcTy};
 use crate::{Symbol, Entity};
-use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode,
-  Inst, PReg, RegMem, RegMemImm, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
+use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode, Inst, PReg, RegMem, RegMemImm,
+  RET_AND_ARG_REGS, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{Idx, IdxVec, IntTy, Size, Spanned};
@@ -36,7 +36,7 @@ pub(crate) type VCode = vcode::VCode<Inst>;
 fn visit_blocks<'a>(cfg: &'a Cfg, mut f: impl FnMut(BlockId, &'a BasicBlock)) {
   let mut visited: BitSet<BlockId> = BitSet::default();
   for (mut i, mut bl) in cfg.blocks() {
-    if visited.insert(i) && !bl.is_dead() {
+    if visited.insert(i) && !bl.is_dead() && bl.reachable {
       while let Some((_, j)) = {
         f(i, bl);
         bl.successors().find(|&(_, j)| visited.insert(j))
@@ -863,19 +863,8 @@ impl<'a> LowerCtx<'a> {
     }).collect()
   }
 
-  fn build_block_prologue(&mut self, bl: &'a BasicBlock) {
-    if bl.is_dead() { return }
-    for &(v, r, _) in self.cfg.ctxs.iter(..bl.ctx) {
-      if !r { continue }
-      let a = self.allocs.get(v);
-      if a == AllocId::ZERO { continue }
-      let val = self.get_alloc(a).0 .0;
-      self.code.emit(Inst::BlockParam {var: v, val});
-    }
-  }
-
   fn build_prologue(&mut self, bl: &'a BasicBlock, ctx: VCodeCtx<'_>) {
-    let mut arg_regs = crate::arch::ARG_REGS.iter();
+    let mut arg_regs = RET_AND_ARG_REGS.iter();
     let incoming = AMode::spill(SpillId::INCOMING);
     let mut off = 0_u32;
     let mut alloc = |sz| {
@@ -947,11 +936,18 @@ impl<'a> LowerCtx<'a> {
 
   fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
     visit_blocks(self.cfg, move |i, bl| {
+      assert!(!bl.is_dead()); // dead blocks are not reachable from the entry
       let vbl = self.code.new_block(block_args[i].iter().copied());
       self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
-      else { self.build_block_prologue(bl) }
+      for (v, r, _) in bl.ctx_iter(&self.cfg.ctxs) {
+        if !r { continue }
+        let a = self.allocs.get(v);
+        assert_ne!(a, AllocId::ZERO);
+        let val = self.get_alloc(a).0 .0;
+        self.code.emit(Inst::BlockParam {var: v, val});
+      }
       for (inst, stmt) in bl.stmts.iter().enumerate() {
         if stmt.relevant() {
           match stmt {
