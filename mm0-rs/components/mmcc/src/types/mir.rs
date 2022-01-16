@@ -1127,7 +1127,7 @@ impl<'a> Iterator for Successors<'a> {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Call, tgt))
         }
-        Terminator::Return(_) |
+        Terminator::Return(..) |
         Terminator::Exit(_) |
         Terminator::Unreachable(_) |
         Terminator::Dead => {
@@ -1677,14 +1677,16 @@ pub enum Terminator {
   ///
   /// This is the only terminator that admits back-edges, and the final argument is the variant,
   /// a ghost value to prove that this jump decreases the variant of the target.
-  Jump(BlockId, Vec<(VarId, bool, Operand)>, Option<Operand>),
+  Jump(BlockId, Box<[(VarId, bool, Operand)]>, Option<Operand>),
   /// Semantically equivalent to `Jump(tgt, [])`, with the additional guarantee that this jump is
   /// the only incoming edge to the target block. This is used to cheaply append basic blocks.
   Jump1(BlockId),
-  /// A `return(x -> arg,*);` statement - unconditionally return from the function.
+  /// A `return((out z)*, (x -> arg)*);` statement - unconditionally return from the function.
   /// The `x -> arg` values assign values to variables, where `x` is a variable in the function
   /// returns and `arg` is an operand evaluated in the current basic block context.
-  Return(Vec<(VarId, bool, Operand)>),
+  /// The `out z` values give the variables corresponding to the function's out parameters at the
+  /// return point.
+  Return(Box<[VarId]>, Box<[(VarId, bool, Operand)]>),
   /// A `unreachable e;` statement takes a proof `e` of false and cancels this basic block.
   /// Later optimization passes will attempt to delete the entire block.
   Unreachable(Operand),
@@ -1743,7 +1745,11 @@ impl std::fmt::Debug for Terminator {
         Ok(())
       },
       Self::Jump1(bl) => write!(f, "jump {:?}", bl),
-      Self::Return(args) => write!(f, "return {:?}", args.iter().map(DebugArg).format(", ")),
+      Self::Return(outs, args) => {
+        write!(f, "return ")?;
+        for &v in &**outs { write!(f, "out {:?}, ", v)? }
+        write!(f, "{:?}", args.iter().map(DebugArg).format(", "))
+      }
       Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
       Self::If(cond, [(v1, bl1), (v2, bl2)]) => write!(f,
         "if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
@@ -1837,7 +1843,7 @@ pub(crate) trait Visitor {
   fn visit_terminator(&mut self, term: &Terminator) {
     match term {
       Terminator::Jump(_, args, _) |
-      Terminator::Return(args) => for (_, r, o) in args { if *r { self.visit_operand(o) } }
+      Terminator::Return(_, args) => for (_, r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Call { args, .. } => for (r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Unreachable(o) |
       Terminator::Exit(o) |
@@ -2034,6 +2040,9 @@ pub struct Proc {
   pub tyargs: u32,
   /// The arguments of the procedure.
   pub args: Vec<Arg>,
+  /// The out parameter origin variables. `outs.len() <= rets.len()` and the first
+  /// `outs.len()` arguments in `rets` correspond to the out arguments.
+  pub outs: Box<[u32]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
   pub rets: Vec<Arg>,
   /// The body of the procedure.

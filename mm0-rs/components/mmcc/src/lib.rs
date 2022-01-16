@@ -298,7 +298,7 @@ mod test {
   use std::fs::File;
   use std::io::{self, Write};
   use crate::types::ast::{
-    ArgAttr, ArgKind, Block, ExprKind, ItemKind, Ret, StmtKind, TuplePatternKind, TypeKind};
+    ArgAttr, ArgKind, Block, ExprKind, ItemKind, StmtKind, TuplePatternKind, TypeKind};
   use crate::{Compiler, Idx, Symbol, intern};
   use crate::types::{Binop, Size, Spanned, VarId, hir::ProcKind, entity::IntrinsicProc};
 
@@ -357,7 +357,7 @@ mod test {
 
   #[test] fn two_plus_two_ir() {
     use std::{collections::HashMap, rc::Rc};
-    use crate::{LinkedCode, Idx, types::IntTy, mir::*};
+    use crate::{LinkedCode, types::IntTy, mir::*};
 
     let names = HashMap::new();
     let mut fresh_var = VarId::default();
@@ -427,7 +427,8 @@ mod test {
       name: Spanned::dummy(intern("main")),
       tyargs: 0,
       args: Box::new([]),
-      rets: vec![],
+      outs: Box::new([]),
+      rets: Box::new([]),
       variant: None,
       body: Block {
         stmts: vec![Spanned::dummy(StmtKind::Expr(ExprKind::Assert(
@@ -512,13 +513,14 @@ mod test {
             ))),
           )))),
         ]),
-        rets: vec![
+        outs: Box::new([]),
+        rets: Box::new([
           // -> u32
-          Ret::Reg(Spanned::dummy(TuplePatternKind::Typed(
+          Spanned::dummy(TuplePatternKind::Typed(
             Box::new(Spanned::dummy(TuplePatternKind::Name(false, Symbol::UNDER, fresh.fresh()))),
             Box::new(Spanned::dummy(TypeKind::UInt(Size::S32))),
-          )))
-        ],
+          ))
+        ]),
         variant: None,
         body: Block::default()
       }),
@@ -537,7 +539,8 @@ mod test {
         name: Spanned::dummy(intern("main")),
         tyargs: 0,
         args: Box::new([]),
-        rets: vec![],
+        outs: Box::new([]),
+        rets: Box::new([]),
         variant: None,
         body: Block {
           stmts: vec![

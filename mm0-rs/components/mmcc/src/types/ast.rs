@@ -827,18 +827,6 @@ pub enum ProcKind {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ProcKind);
 
-/// A return value, after resolving `mut` / `out` annotations.
-#[derive(Debug)]
-#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub enum Ret {
-  /// This is a regular argument, with the given argument pattern.
-  Reg(TuplePattern),
-  /// This is an `out` argument: `Out(i, n, v, ty)` means that this argument was marked as
-  /// `out` corresponding to argument `i` in the inputs; `n` or `v` is the name of the binder,
-  /// and `ty` is the type, if provided.
-  Out(u32, Symbol, VarId, Option<Box<Type>>),
-}
-
 bitflags! {
   /// Attributes on function arguments.
   pub struct ArgAttr: u8 {
@@ -881,8 +869,12 @@ pub enum ItemKind {
     tyargs: u32,
     /// The arguments of the procedure.
     args: Box<[Arg]>,
+    /// The out parameters of the procedure. `(i, n, v, ty)` means that this argument was marked as
+    /// `out` corresponding to argument `i` in the inputs; `n` or `v` is the name of the binder,
+    /// and `ty` is the type, if provided.
+    outs: Box<[(u32, Symbol, VarId, Option<Box<Type>>)]>,
     /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-    rets: Vec<Ret>,
+    rets: Box<[TuplePattern]>,
     /// The variant, used for recursive functions.
     variant: Option<Box<Variant>>,
     /// The body of the procedure.

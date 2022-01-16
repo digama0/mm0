@@ -887,6 +887,7 @@ impl<'a, C> Parser<'a, C> {
     };
     let mut outmap: Vec<OutVal> = vec![];
     let mut args = vec![];
+    let mut outs = vec![];
     let mut rets = vec![];
     let (name, header) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (spanned(&span, &e, self.as_symbol(a)), None),
@@ -955,39 +956,44 @@ impl<'a, C> Parser<'a, C> {
             Ok(())
           })?
         }
-        rets.extend(outmap.iter().filter(|val| !val.used)
-          .map(|&OutVal {index, name, ..}|
-            Ret::Out(index, name, this.ba.push_fresh(name), None)));
+        outs.extend(outmap.iter().filter(|val| !val.used)
+          .map(|&OutVal {index, name, ..}| (index, name, this.ba.push_fresh(name), None)));
         for (span, attr, pat) in rets1 {
           if attr.mut_ {
             return Err(ElabError::new_e(&span, "'mut' not permitted on function returns"))
           }
           match pat {
-            ArgKind::Let(_, _) => return Err(ElabError::new_e(&span, "assignment not permitted here")),
-            ArgKind::Lam(mut pat) => rets.push(match attr.out {
-              None => Ret::Reg(Spanned {span, k: pat}),
-              Some(name) => {
-                let mut oty = None;
-                let mut sp = span.clone();
-                loop {
-                  match pat {
-                    TuplePatternKind::Name(_, name2, v) => {
-                      let &OutVal {index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
-                      break Ret::Out(index, name2, v, oty)
-                    }
-                    TuplePatternKind::Typed(pat2, ty) => {
-                      if oty.replace(ty).is_some() {
-                        return Err(ElabError::new_e(&span, "double type ascription not permitted here"))
-                      }
-                      sp = pat2.span.clone();
-                      pat = pat2.k;
-                    }
-                    TuplePatternKind::Tuple(_) =>
-                      return Err(ElabError::new_e(&sp, "tuple pattern not permitted in 'out' returns"))
-                  }
-                }
+            ArgKind::Let(..) =>
+              return Err(ElabError::new_e(&span, "assignment not permitted here")),
+            ArgKind::Lam(mut pat) => if let Some(name) = attr.out {
+              if !rets.is_empty() {
+                return Err(ElabError::new_e(&span,
+                  "out parameters must precede regular function returns"))
               }
-            })
+              let mut oty = None;
+              let mut sp = span.clone();
+              outs.push(loop {
+                match pat {
+                  TuplePatternKind::Name(_, name2, v) => {
+                    let &OutVal {index, ..} =
+                      outmap.iter().find(|p| p.name == name).expect("checked");
+                    break (index, name2, v, oty)
+                  }
+                  TuplePatternKind::Typed(pat2, ty) => {
+                    if oty.replace(ty).is_some() {
+                      return Err(ElabError::new_e(&span,
+                        "double type ascription not permitted here"))
+                    }
+                    sp = pat2.span.clone();
+                    pat = pat2.k;
+                  }
+                  TuplePatternKind::Tuple(_) => return Err(ElabError::new_e(&sp,
+                    "tuple pattern not permitted in 'out' returns"))
+                }
+              })
+            } else {
+              rets.push(Spanned {span, k: pat})
+            }
           }
         }
         Ok(())
@@ -995,6 +1001,8 @@ impl<'a, C> Parser<'a, C> {
     }
     let tyargs = self.ba.num_tyvars();
     let args = args.into();
+    let outs = outs.into();
+    let rets = rets.into();
     let variant = if let Some(e) = u.head() {
       if intrinsic.is_some() {
         return Err(ElabError::new_e(&span, "intrinsic: unexpected body"))
@@ -1002,7 +1010,9 @@ impl<'a, C> Parser<'a, C> {
       self.parse_variant(&span, &e)?
     } else {None};
     let body = self.parse_block(&span, u)?;
-    Ok(Spanned {span, k: ItemKind::Proc {intrinsic, kind, name, tyargs, args, rets, variant, body}})
+    Ok(Spanned {span, k: ItemKind::Proc {
+      intrinsic, kind, name, tyargs, args, outs, rets, variant, body
+    }})
   }
 
   #[allow(clippy::type_complexity)]

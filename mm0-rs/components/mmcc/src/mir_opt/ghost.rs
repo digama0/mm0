@@ -65,9 +65,9 @@ impl Cfg {
     struct ReachabilityAnalysis;
     fn side_effecting(t: &Terminator) -> bool {
       matches!(t,
-        Terminator::Return(_) |
-        Terminator::Exit(_) |
-        Terminator::Assert(_, _, _, _) |
+        Terminator::Return(..) |
+        Terminator::Exit(..) |
+        Terminator::Assert(..) |
         Terminator::Call {se: true, ..})
     }
     impl Analysis for ReachabilityAnalysis {
@@ -146,7 +146,7 @@ impl Cfg {
       fn apply_trans_for_block(&mut self,
           _: &Self::Doms, _: BlockId, bl: &BasicBlock, d: &mut bool) {
         match *bl.terminator() {
-          Terminator::Return(_) |
+          Terminator::Return(..) |
           Terminator::Exit(_) => *d = true,
           Terminator::Assert(_, _, false, _) |
           Terminator::Call {reach: false, ..} => *d = false,
@@ -284,7 +284,7 @@ impl Cfg {
         match term {
           Terminator::Jump(_, args, _) => {
             let GhostDom {vars, ..} = mem::take(d);
-            for &(v, vr, ref o) in args {
+            for &(v, vr, ref o) in &**args {
               if vr && vars.contains(&v) {
                 d.active = OptBlockId::new(id);
                 d.apply_operand(o)
@@ -293,7 +293,7 @@ impl Cfg {
           }
           Terminator::Jump1(_) |
           Terminator::Exit(_) => {}
-          Terminator::Return(args) => {
+          Terminator::Return(_, args) => {
             d.active = OptBlockId::new(id);
             for ((_, vr, o), ret) in args.iter().zip(self.returns) {
               if *vr && !ret.attr.contains(ArgAttr::GHOST) { d.apply_operand(o) }
@@ -359,7 +359,7 @@ impl Cfg {
           let s = cache[tgt].get_or_insert_with(|| {
             ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0).collect()
           });
-          for (v, r, _) in args { *r = s.contains(v) }
+          for (v, r, _) in &mut **args { *r = s.contains(v) }
         }
         Some(Terminator::Call {reach: false, ref mut rets, ..}) =>
           for i in &mut **rets { i.0 = false },

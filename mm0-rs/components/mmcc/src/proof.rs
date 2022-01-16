@@ -524,8 +524,8 @@ impl<'a> BlockProofTree<'a> {
   fn develop(ctx: &'a Proc<'a>, mut id: BlockId, stack: &mut Vec<(bool, BlockId)>) -> BlockId {
     loop {
       match *ctx.cfg[id].terminator() {
-        mir::Terminator::Jump(_, _, _) |
-        mir::Terminator::Return(_) |
+        mir::Terminator::Jump(..) |
+        mir::Terminator::Return(..) |
         mir::Terminator::Unreachable(_) |
         mir::Terminator::Exit(_) |
         mir::Terminator::Dead |
@@ -707,7 +707,7 @@ impl<'a> BlockProof<'a> {
     loop {
       match *self.ctx.cfg[self.id].terminator() {
         mir::Terminator::Jump(bl, _, ref var) => assert!(*ctx.get(&bl).unwrap() == var.is_some()),
-        mir::Terminator::Return(_) |
+        mir::Terminator::Return(..) |
         mir::Terminator::Unreachable(_) |
         mir::Terminator::Exit(_) |
         mir::Terminator::Dead |

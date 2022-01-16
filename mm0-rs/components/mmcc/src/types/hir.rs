@@ -84,7 +84,12 @@ pub enum ArgKind<'a> {
   Let(ty::TuplePattern<'a>, ty::Expr<'a>, Option<Box<Expr<'a>>>),
 }
 
-impl ArgKind<'_> {
+impl<'a> ArgKind<'a> {
+  /// Get the variable part of this argument.
+  pub fn var(&self) -> ty::TuplePattern<'a> {
+    match self { Self::Lam(pat) | Self::Let(pat, ..) => pat }
+  }
+
   fn debug_with_attr(&self,
     attr: ty::ArgAttr,
     f: &mut std::fmt::Formatter<'_>
@@ -880,7 +885,11 @@ pub enum ItemKind<'a> {
     args: Box<[Arg<'a>]>,
     /// The generation for the return values.
     gen: GenId,
-    /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
+    /// The out parameter origin variables. `outs.len() <= rets.len()` and the first
+    /// `outs.len()` arguments in `rets` correspond to the out arguments.
+    outs: Box<[u32]>,
+    /// The out parameters and return values of the procedure.
+    /// (Functions and procedures return multiple values in MMC.)
     rets: Box<[Arg<'a>]>,
     /// The variant, used for recursive functions.
     variant: Option<Variant<'a>>,

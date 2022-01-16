@@ -18,7 +18,7 @@ pub(crate) trait Internable<'a>: Sized + 'a where &'a WithMeta<Self>: ToGlobal<'
 #[derive(Debug)]
 pub(crate) struct ToGlobalCtx<'a, 'n> {
   mvars: &'n mut MVars<'a>,
-  tpat: Mapper<'a, ty::TuplePatternKind<'a>>,
+  tpat: Mapper<'a, ty::TuplePatternS<'a>>,
   arg: Mapper<'a, ty::ArgS<'a>>,
   expr: Mapper<'a, ty::ExprKind<'a>>,
   place: Mapper<'a, ty::PlaceKind<'a>>,
@@ -49,8 +49,8 @@ impl<'a, 'n> ToGlobalCtx<'a, 'n> {
   }
 }
 
-impl<'a> Internable<'a> for ty::TuplePatternKind<'a> {
-  type Inner = TuplePatternKind;
+impl<'a> Internable<'a> for ty::TuplePatternS<'a> {
+  type Inner = TuplePatternS;
   fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a, '_>) -> &'s mut Mapper<'a, Self> { &mut ctx.tpat }
 }
 impl<'a> Internable<'a> for ty::ArgS<'a> {
@@ -108,37 +108,46 @@ impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
 }
 
 /// A strongly typed tuple pattern.
-pub type TuplePattern = Rc<TuplePatternKind>;
+pub type TuplePattern = Rc<TuplePatternS>;
+
+/// A strongly typed tuple pattern.
+#[derive(Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub struct TuplePatternS {
+  /// A variable referring to the tuple.
+  pub var: VarId,
+  /// The pattern.
+  pub k: TuplePatternKind,
+  /// The type of the value.
+  pub ty: Ty
+}
 
 /// A strongly typed tuple pattern.
 #[derive(Hash, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind {
   /// A variable binding.
-  Name(Symbol, VarId, Ty),
+  Name(Symbol),
   /// A tuple destructuring pattern.
-  Tuple(Box<[TuplePattern]>, TupleMatchKind, Ty),
+  Tuple(Box<[TuplePattern]>, TupleMatchKind),
   /// An error that has been reported.
   /// (We keep the original tuple pattern so that name scoping still works.)
-  Error(TuplePattern, Ty),
+  Error(TuplePattern),
 }
 
-impl TuplePatternKind {
-  /// Get the type of this tuple pattern.
-  #[must_use] pub fn ty(&self) -> &Ty {
-    match self { Self::Name(_, _, ty) | Self::Tuple(_, _, ty) | Self::Error(_, ty) => ty }
-  }
-}
-
-impl<'a> ToGlobal<'a> for ty::TuplePatternKind<'a> {
-  type Output = Rc<TuplePatternKind>;
+impl<'a> ToGlobal<'a> for ty::TuplePatternS<'a> {
+  type Output = Rc<TuplePatternS>;
   fn to_global(&self, ctx: &mut ToGlobalCtx<'a, '_>) -> Self::Output {
-    Rc::new(match *self {
-      ty::TuplePatternKind::Name(a, v, ty) => TuplePatternKind::Name(a, v, ty.to_global(ctx)),
-      ty::TuplePatternKind::Tuple(pats, mk, ty) =>
-        TuplePatternKind::Tuple(pats.to_global(ctx), mk, ty.to_global(ctx)),
-      ty::TuplePatternKind::Error(pat, ty) =>
-        TuplePatternKind::Error(pat.to_global(ctx), ty.to_global(ctx)),
+    Rc::new(TuplePatternS {
+      var: self.var,
+      k: match self.k {
+        ty::TuplePatternKind::Name(a) => TuplePatternKind::Name(a),
+        ty::TuplePatternKind::Tuple(pats, mk) =>
+          TuplePatternKind::Tuple(pats.to_global(ctx), mk),
+        ty::TuplePatternKind::Error(pat) =>
+          TuplePatternKind::Error(pat.to_global(ctx)),
+      },
+      ty: self.ty.to_global(ctx),
     })
   }
 }
@@ -162,7 +171,7 @@ pub enum ArgKind {
 impl ArgKind {
   /// Get the type of this tuple pattern.
   #[must_use] pub fn ty(&self) -> &Ty {
-    match self { Self::Lam(arg) | Self::Let(arg, _) => arg.ty() }
+    match self { Self::Lam(arg) | Self::Let(arg, _) => &arg.ty }
   }
 }
 

@@ -224,29 +224,49 @@ impl<'a> BitOrAssign<Coercion<'a>> for Flags {
 }
 
 /// A strongly typed tuple pattern.
-pub type TuplePattern<'a> = &'a TuplePatternS<'a>;
+pub type TuplePattern<'a> = &'a WithMeta<TuplePatternS<'a>>;
+
 /// A strongly typed tuple pattern.
-pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
+#[derive(PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub struct TuplePatternS<'a> {
+  /// A variable referring to the tuple.
+  pub var: VarId,
+  /// The pattern.
+  pub k: TuplePatternKind<'a>,
+  /// The type of the value.
+  pub ty: Ty<'a>
+}
+
+impl std::fmt::Debug for TuplePatternS<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self.k {
+      TuplePatternKind::Name(name) => write!(f, "{}{{{}}}: {:?}", self.var, name, self.ty),
+      TuplePatternKind::Tuple(..) => write!(f, "{:?}", self.k),
+      TuplePatternKind::Error(pat) => write!(f, "{:?} ??as {:?}", pat, self.ty),
+    }
+  }
+}
 
 /// A strongly typed tuple pattern.
 #[derive(PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
-  Name(Symbol, VarId, Ty<'a>),
+  Name(Symbol),
   /// A tuple destructuring pattern.
-  Tuple(&'a [TuplePattern<'a>], TupleMatchKind, Ty<'a>),
+  Tuple(&'a [TuplePattern<'a>], TupleMatchKind),
   /// An error that has been reported.
   /// (We keep the original tuple pattern so that name scoping still works.)
-  Error(TuplePattern<'a>, Ty<'a>),
+  Error(TuplePattern<'a>),
 }
 
 impl std::fmt::Debug for TuplePatternKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
-      TuplePatternKind::Name(name, v, ty) => write!(f, "{:?}{{{}}}: {:?}", v, name, ty),
-      TuplePatternKind::Tuple(args, mk, _) => match mk {
+      TuplePatternKind::Name(name) => write!(f, "{}", name),
+      TuplePatternKind::Tuple(args, mk) => match mk {
         TupleMatchKind::Unit => write!(f, "()"),
         TupleMatchKind::True => write!(f, "itrue"),
         TupleMatchKind::List |
@@ -256,7 +276,7 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
         TupleMatchKind::Array => write!(f, "[{:?}]", args.iter().format(", ")),
         TupleMatchKind::And => write!(f, "<{:?}>", args.iter().format(", ")),
       }
-      TuplePatternKind::Error(pat, ty) => write!(f, "{:?} ??as {:?}", pat, ty),
+      TuplePatternKind::Error(pat) => write!(f, "{:?} ??", pat),
     }
   }
 }
@@ -287,37 +307,35 @@ pub enum TupleMatchKind {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(TupleMatchKind);
 
-impl<'a> TuplePatternKind<'a> {
-  /// The type of values that will be matched by the pattern.
-  #[must_use] pub fn ty(&self) -> Ty<'a> {
-    match *self {
-      TuplePatternKind::Name(_, _, ty) |
-      TuplePatternKind::Error(_, ty) |
-      TuplePatternKind::Tuple(_, _, ty) => ty
-    }
-  }
-
+impl<'a> TuplePatternS<'a> {
   /// Calls function `f` on all variables in the pattern.
   pub fn on_vars(&self, f: &mut impl FnMut(Symbol, VarId)) {
+    self.k.on_vars(self.var, f)
+  }
+}
+
+impl<'a> TuplePatternKind<'a> {
+  /// Calls function `f` on all variables in the pattern.
+  pub fn on_vars(&self, v: VarId, f: &mut impl FnMut(Symbol, VarId)) {
     match *self {
-      TuplePatternKind::Name(n, v, _) => f(n, v),
-      TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
-      TuplePatternKind::Tuple(pats, _, _) => for pat in pats { pat.k.on_vars(f) }
+      TuplePatternKind::Name(n) => f(n, v),
+      TuplePatternKind::Error(pat) => pat.k.on_vars(f),
+      TuplePatternKind::Tuple(pats, _) => for pat in pats { pat.k.on_vars(f) }
     }
   }
 
-  /// Returns the variable of this pattern, if it is a simple (non-tuple) pattern.
-  #[must_use] pub fn var(&self) -> Option<VarId> {
-    if let TuplePatternKind::Name(_, v, _) = *self { Some(v) } else { None }
+  /// Returns true if this is a simple (non-tuple) pattern.
+  #[must_use] pub fn is_name(&self) -> bool {
+    matches!(self, TuplePatternKind::Name(..))
   }
 
   fn find_field(&self, f: Symbol, idxs: &mut Vec<u32>) -> bool {
     match *self {
-      TuplePatternKind::Name(a, _, _) => a == f,
-      TuplePatternKind::Error(pat, _) => pat.k.find_field(f, idxs),
-      TuplePatternKind::Tuple(pats, _, _) =>
+      TuplePatternKind::Name(a) => a == f,
+      TuplePatternKind::Error(pat) => pat.k.k.find_field(f, idxs),
+      TuplePatternKind::Tuple(pats, _) =>
         pats.iter().enumerate().any(|(i, &pat)| {
-          pat.k.find_field(f, idxs) && {
+          pat.k.k.find_field(f, idxs) && {
             idxs.push(i.try_into().expect("overflow"));
             true
           }
@@ -326,23 +344,27 @@ impl<'a> TuplePatternKind<'a> {
   }
 }
 
+impl AddFlags for TuplePatternS<'_> {
+  fn add(&self, f: &mut Flags) { *f |= (&self.k, self.ty) }
+}
+
 impl AddFlags for TuplePatternKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
-      TuplePatternKind::Name(_, _, ty) => *f |= ty,
-      TuplePatternKind::Error(pat, ty) => *f |= (Flags::HAS_ERROR, pat, ty),
-      TuplePatternKind::Tuple(pats, _, ty) => *f |= (pats, ty),
+      TuplePatternKind::Name(_) => {}
+      TuplePatternKind::Error(pat) => *f |= (Flags::HAS_ERROR, pat),
+      TuplePatternKind::Tuple(pats, _) => *f |= pats,
     }
   }
 }
 
-impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TuplePatternKind<'a> {
+impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TuplePatternS<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
-    match *self {
-      TuplePatternKind::Name(_, v, _) => ctx.fmt_var(v, f),
-      TuplePatternKind::Error(pat, _) => write!(f, "??{}", CtxPrint(ctx, pat)),
-      TuplePatternKind::Tuple(pats, _, _) =>
+    match self.k {
+      TuplePatternKind::Name(_) => ctx.fmt_var(self.var, f),
+      TuplePatternKind::Error(pat) => write!(f, "??{}", CtxPrint(ctx, pat)),
+      TuplePatternKind::Tuple(pats, _) =>
         write!(f, "({})", pats.iter().map(|&pat| CtxPrint(ctx, pat)).format(" ")),
     }
   }
@@ -380,7 +402,7 @@ impl<'a> ArgKind<'a> {
   #[must_use] pub fn find_field(args: &'a [Arg<'a>], f: Symbol) -> Option<(u32, Vec<u32>)> {
     let mut path = vec![];
     for (i, &arg) in args.iter().enumerate() {
-      if arg.k.1.var().k.find_field(f, &mut path) {
+      if arg.k.1.var().k.k.find_field(f, &mut path) {
         return Some((i.try_into().expect("overflow"), path))
       }
     }
@@ -402,9 +424,9 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ArgS<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.1 {
       ArgKind::Lam(pat) =>
-        write!(f, "{}: {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty())),
+        write!(f, "{}: {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty)),
       ArgKind::Let(pat, e) =>
-        write!(f, "{}: {} := {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty()), CtxPrint(ctx, e)),
+        write!(f, "{}: {} := {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty), CtxPrint(ctx, e)),
     }
   }
 }
@@ -561,7 +583,7 @@ impl<'a> TyS<'a> {
       TyKind::Error => {}
       TyKind::Array(ty, e) |
       TyKind::Sn(e, ty) => {ty.visit(f); f.visit_expr(e)}
-      TyKind::All(pat, p) => {pat.k.ty().visit(f); p.visit(f)}
+      TyKind::All(pat, p) => {pat.k.ty.visit(f); p.visit(f)}
       TyKind::Imp(p, q) |
       TyKind::Wand(p, q) => {p.visit(f); q.visit(f)}
       TyKind::Own(ty) |
@@ -577,8 +599,8 @@ impl<'a> TyS<'a> {
       TyKind::Or(tys) => for &ty in tys { ty.visit(f) },
       TyKind::Struct(args) => for &arg in args {
         match arg.k.1 {
-          ArgKind::Lam(pat) => pat.k.ty().visit(f),
-          ArgKind::Let(pat, e) => {pat.k.ty().visit(f); f.visit_expr(e)}
+          ArgKind::Lam(pat) => pat.k.ty.visit(f),
+          ArgKind::Let(pat, e) => {pat.k.ty.visit(f); f.visit_expr(e)}
         }
       },
       TyKind::If(e, ty1, ty2) => {f.visit_expr(e); ty1.visit(f); ty2.visit(f)}

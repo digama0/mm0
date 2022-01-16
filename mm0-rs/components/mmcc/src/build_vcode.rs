@@ -800,7 +800,7 @@ impl<'a> LowerCtx<'a> {
         self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
         }))),
-      Terminator::Return(ref args) => self.build_ret(args),
+      Terminator::Return(_, ref args) => self.build_ret(args),
       Terminator::Exit(_) => {
         let dst = self.code.fresh_vreg();
         self.build_syscall(SysCall::Exit, &[0.into()], dst);
@@ -852,7 +852,7 @@ impl<'a> LowerCtx<'a> {
           if !matches!(e, Edge::Jump | Edge::Call) { continue }
           match cfg[j].terminator() {
             Terminator::Jump(_, args, _) =>
-              for &(v, r, _) in args { if r { insert(&mut out, v) } }
+              for &(v, r, _) in &**args { if r { insert(&mut out, v) } }
             Terminator::Call {rets, ..} =>
               for &(r, v) in &**rets { if r { insert(&mut out, v) } }
             _ => unreachable!()

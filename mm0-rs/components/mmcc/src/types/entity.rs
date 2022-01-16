@@ -417,9 +417,13 @@ pub struct ProcTy {
   pub tyargs: u32,
   /// The non-type input arguments to the procedure.
   pub args: Box<[global::Arg]>,
-  /// The output arguments / return values of the procedure.
+  /// The out parameter origin variables. `outs.len() <= rets.len()` and the first
+  /// `outs.len()` arguments in `rets` correspond to the out arguments.
+  pub outs: Box<[u32]>,
+  /// The output parameters and return values of the procedure.
+  /// The first `outs.len()` elements are the output parameters.
   pub rets: Box<[global::Arg]>,
-  /// The output arguments / return values of the procedure.
+  /// The variant, a measure that decreases on recursive calls.
   pub variant: Option<global::Variant>,
 }
 

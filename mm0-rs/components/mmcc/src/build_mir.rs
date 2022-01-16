@@ -3,6 +3,7 @@
 use std::{rc::Rc, fmt::Debug, mem};
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use mm0_util::u32_as_usize;
 use smallvec::SmallVec;
 use types::{IntTy, Size};
 use crate::{Idx, Symbol};
@@ -265,10 +266,6 @@ impl<'a> Translator<'a, '_> {
     val
   }
 
-  fn tr_opt_var(&mut self, var: Option<HVarId>) -> VarId {
-    if let Some(v) = var { v.tr(self) } else { self.fresh_var() }
-  }
-
   fn location(&mut self, var: HVarId) -> VarId {
     *self.locations.entry(var).or_insert_with(|| self.next_var.fresh())
   }
@@ -290,9 +287,10 @@ impl<'a> Translator<'a, '_> {
   }
 
   fn tr_tup_pat(&mut self, pat: ty::TuplePattern<'a>, e: Expr) {
-    match pat.k {
-      TuplePatternKind::Name(_, v, _) => assert!(self.subst.insert(v, e).is_none()),
-      TuplePatternKind::Tuple(pats, mk, _) => match mk {
+    assert!(self.subst.insert(pat.k.var, e.clone()).is_none());
+    match pat.k.k {
+      TuplePatternKind::Name(_) => {}
+      TuplePatternKind::Tuple(pats, mk) => match mk {
         TupleMatchKind::Unit | TupleMatchKind::True => {}
         TupleMatchKind::List | TupleMatchKind::Struct =>
           for (i, &pat) in pats.iter().enumerate() {
@@ -311,24 +309,25 @@ impl<'a> Translator<'a, '_> {
         }
         TupleMatchKind::Own => panic!("existential pattern match in proof relevant position")
       }
-      TuplePatternKind::Error(_, _) => unreachable!()
+      TuplePatternKind::Error(_) => unreachable!()
     }
   }
   fn finish_tup_pat(&mut self, pat: ty::TuplePattern<'a>) {
-    match pat.k {
-      TuplePatternKind::Name(_, v, _) => { self.subst.remove(&v); }
-      TuplePatternKind::Tuple(pats, _, _) =>
+    match pat.k.k {
+      TuplePatternKind::Name(_) => {}
+      TuplePatternKind::Tuple(pats, _) =>
         for pat in pats.iter().rev() { self.finish_tup_pat(pat) }
-      TuplePatternKind::Error(_, _) => unreachable!()
+      TuplePatternKind::Error(_) => unreachable!()
     }
+    self.subst.remove(&pat.k.var);
   }
 
   fn tr_all(&mut self, pat: ty::TuplePattern<'a>, ty: ty::Ty<'a>) -> TyKind {
-    if let Some(v) = pat.k.var() {
-      TyKind::All(v.tr(self), pat.k.ty().tr(self), ty.tr(self))
+    let v = pat.k.var.tr(self);
+    let tgt = pat.k.ty.tr(self);
+    if pat.k.k.is_name() {
+      TyKind::All(v, tgt, ty.tr(self))
     } else {
-      let v = self.fresh_var();
-      let tgt = pat.k.ty().tr(self);
       self.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
       let ty = ty.tr(self);
       self.finish_tup_pat(pat);
@@ -351,16 +350,13 @@ impl<'a> Translator<'a, '_> {
         (attr, ty::ArgKind::Lam(pat)) => {
           let mut attr2 = ArgAttr::empty();
           if attr.contains(ty::ArgAttr::NONDEP) { attr2 |= ArgAttr::NONDEP }
-          let ty = pat.k.ty();
-          if ty.ghostly() { attr2 |= ArgAttr::GHOST }
-          let ty = ty.tr(self);
-          if let Some(v) = pat.k.var() {
-            args2.push(Arg {attr: attr2, var: v.tr(self), ty})
-          } else {
-            let v = self.fresh_var();
+          if pat.k.ty.ghostly() { attr2 |= ArgAttr::GHOST }
+          let v = pat.k.var.tr(self);
+          let ty = pat.k.ty.tr(self);
+          if !pat.k.k.is_name() {
             self.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
-            args2.push(Arg {attr: attr2, var: v, ty})
           }
+          args2.push(Arg {attr: attr2, var: v, ty})
         }
         (_, ty::ArgKind::Let(pat, e)) => {
           let e = e.tr(self);
@@ -369,7 +365,7 @@ impl<'a> Translator<'a, '_> {
       }
     }
     for &arg in args {
-      if !matches!(arg.k.1, ty::ArgKind::Lam(pat) if pat.k.var().is_some()) {
+      if !matches!(arg.k.1, ty::ArgKind::Lam(pat) if pat.k.k.is_name()) {
         self.finish_tup_pat(arg.k.1.var())
       }
     }
@@ -493,7 +489,7 @@ pub(crate) struct BuildMir<'a, 'n> {
   tree: BlockTreeBuilder,
   /// If this is `Some(args)` then `args` are the names of the return places.
   /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
-  returns: Option<Rc<[(VarId, bool)]>>,
+  returns: Option<Rc<(Box<[HVarId]>, Box<[(VarId, bool)]>)>>,
   /// A list of allocated globals and the variables they were assigned to.
   globals: Vec<(Symbol, bool, VarId, Ty)>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -1028,12 +1024,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, e_src: EPlace, src: &mut Place) {
-    match pat.k {
-      TuplePatternKind::Name(name, v, ty) => {
-        let v = self.tr(v);
+    match pat.k.k {
+      TuplePatternKind::Name(name) => {
+        let v = self.tr(pat.k.var);
         let src = if global {
-          let tgt = self.tr(ty);
-          let r = !ty.ghostly();
+          let tgt = self.tr(pat.k.ty);
+          let r = !pat.k.ty.ghostly();
           let lk = LetKind::Let(v, None);
           self.push_stmt(Statement::Let(lk, r, tgt.clone(), src.clone().into()));
           self.globals.push((name, r, v, tgt));
@@ -1043,7 +1039,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         };
         self.tr.vars.insert(v, src);
       }
-      TuplePatternKind::Tuple(pats, mk, ty) => {
+      TuplePatternKind::Tuple(pats, mk) => {
         let pk = match mk {
           TupleMatchKind::Unit | TupleMatchKind::True => return,
           TupleMatchKind::List | TupleMatchKind::Struct => ListKind::Struct,
@@ -1051,11 +1047,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           TupleMatchKind::And => ListKind::And,
           TupleMatchKind::Sn => ListKind::Sn,
           TupleMatchKind::Own => let_unchecked!([vpat, hpat] = *pats, {
-            let tgt = self.tr(pat.k.ty());
-            let v = self.tr.tr_opt_var(vpat.k.var());
-            let h = self.tr.tr_opt_var(hpat.k.var());
-            let vty = vpat.k.ty();
-            let lk = LetKind::Own([(v, self.tr(vty)), (h, self.tr(hpat.k.ty()))]);
+            let tgt = self.tr(pat.k.ty);
+            let v = self.tr(vpat.k.var);
+            let h = self.tr(hpat.k.var);
+            let lk = LetKind::Own([(v, self.tr(vpat.k.ty)), (h, self.tr(hpat.k.ty))]);
             self.push_stmt(Statement::Let(lk, true, tgt, src.clone().into()));
             self.tup_pat(global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
             self.tup_pat(global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
@@ -1064,14 +1059,14 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         };
         for (i, &pat) in pats.iter().enumerate() {
           let i = i.try_into().expect("overflow");
-          let ty = self.tr(ty);
+          let ty = self.tr(pat.k.ty);
           src.proj.push((ty.clone(), Projection::Proj(pk, i)));
           let e_src = Rc::new(EPlaceKind::Proj(e_src.clone(), ty, i));
           self.tup_pat(global, pat, e_src, src);
           src.proj.pop();
         }
       }
-      TuplePatternKind::Error(_, _) => unreachable!()
+      TuplePatternKind::Error(_) => unreachable!()
     }
   }
 
@@ -1081,10 +1076,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let mut vs = Vec::with_capacity(args.len());
     for arg in args {
       if let hir::ArgKind::Lam(pat) = arg.1 {
-        let var = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
-        let ty = pat.k.ty();
-        vs.push((var, !ty.ghostly()));
-        let ty = self.tr(ty);
+        let var = self.tr(pat.k.var);
+        vs.push((var, !pat.k.ty.ghostly()));
+        let ty = self.tr(pat.k.ty);
         f(arg.0, var, &ty);
         self.extend_ctx(var, !arg.0.contains(ty::ArgAttr::GHOST), (None, ty));
       }
@@ -1099,30 +1093,27 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let bl = self.new_block();
     self.cur_block = bl;
     let mut pats = vec![];
-    (|| -> Block<()> {
-      let mut it = vs.iter();
-      for arg in args.into_vec() {
-        match arg.1 {
-          hir::ArgKind::Lam(pat) => {
-            let v = unwrap_unchecked!(it.next()).0;
-            self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
+    let mut it = vs.iter();
+    for arg in args.into_vec() {
+      match arg.1 {
+        hir::ArgKind::Lam(pat) => {
+          let v = unwrap_unchecked!(it.next()).0;
+          self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
+          self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+          pats.push(pat);
+        }
+        hir::ArgKind::Let(pat, pe, e) => {
+          if let Some(e) = e {
+            let v = self.tr(pat.k.var);
+            self.expr(*e, Some(PreVar::Ok(v))).expect("pure expressions can't diverge");
             self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
-            pats.push(pat);
           }
-          hir::ArgKind::Let(pat, pe, e) => {
-            if let Some(e) = e {
-              let v = self.tr(pat.k.var().map_or(PreVar::Fresh, PreVar::Pre));
-              self.expr(*e, Some(PreVar::Ok(v)))?;
-              self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
-            }
-            let pe = self.tr(pe);
-            self.tr.tr_tup_pat(pat, pe);
-            pats.push(pat);
-          }
+          let pe = self.tr(pe);
+          self.tr.tr_tup_pat(pat, pe);
+          pats.push(pat);
         }
       }
-      Ok(())
-    })().expect("pure expressions can't diverge");
+    }
     for pat in pats.into_iter().rev() { self.tr.finish_tup_pat(pat) }
     (bl, vs.into())
   }
@@ -1146,19 +1137,17 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   ) {
     let ctx = self.cfg[tgt].ctx;
     self.join_args(ctx, jp, &mut args);
-    self.cur_block().terminate(Terminator::Jump(tgt, args, variant))
+    self.cur_block().terminate(Terminator::Jump(tgt, args.into(), variant))
   }
 
   fn let_stmt(&mut self, global: bool, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
     if_chain! {
       if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
-      if let ty::TuplePatternKind::Tuple(pats, _, _) = lhs.k;
+      if let ty::TuplePatternKind::Tuple(pats, _) = lhs.k.k;
       if pats.len() == usize::from(n);
       then {
         let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
-        let dest = pats.iter().map(|&pat| {
-          pat.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre)
-        }).collect::<Vec<_>>();
+        let dest = pats.iter().map(|&pat| PreVar::Pre(pat.k.var)).collect::<Vec<_>>();
         self.expr_call(call, rhs.k.1 .1, &dest)?;
         for (&pat, v) in pats.iter().zip(dest) {
           let v = self.tr(v);
@@ -1167,7 +1156,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         return Ok(())
       }
     }
-    let v = lhs.k.var().map_or_else(|| PreVar::Ok(self.fresh_var()), PreVar::Pre);
+    let v = PreVar::Pre(lhs.k.var);
     self.expr(rhs, Some(v))?;
     let v = self.tr(v);
     self.tup_pat(global, lhs, Rc::new(EPlaceKind::Var(v)), &mut v.into());
@@ -1398,7 +1387,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.cur_block().stmts.push(Statement::LabelGroup([base_bl].into_iter().collect(), base_ctx));
     self.tree.push_group([base_bl].into_iter().collect());
     self.tree.push(base_bl);
-    self.cur_block().terminate(Terminator::Jump(base_bl, vec![], None));
+    self.cur_block().terminate(Terminator::Jump(base_bl, Box::new([]), None));
     self.cur_block = base_bl;
     let base_gen = self.tr.cur_gen;
 
@@ -1565,11 +1554,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     es: impl FnOnce(usize) -> I,
     mut f: impl FnMut(&mut Self, T) -> Block<Place>,
   ) -> Block<std::convert::Infallible> {
-    let args = self.returns.as_ref().expect("can't return here").clone();
-    let args = es(args.len()).zip(&*args).map(|(e, &(v, r))| {
+    let (outs, args) = &*self.returns.as_ref().expect("can't return here").clone();
+    let args = es(args.len()).zip(&**args).map(|(e, &(v, r))| {
       Ok((v, r, f(self, e)?.into()))
-    }).collect::<Block<Vec<_>>>()?;
-    self.cur_block().terminate(Terminator::Return(args));
+    }).collect::<Block<Box<[_]>>>()?;
+    let outs = outs.iter().map(|&out| self.tr(out)).collect();
+    self.cur_block().terminate(Terminator::Return(outs, args));
     Err(Diverged)
   }
 
@@ -1580,7 +1570,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     it: hir::Item<'a>
   ) -> Option<Symbol> {
     match it.k {
-      hir::ItemKind::Proc { kind, name, tyargs, args, gen, rets, variant, body } => {
+      hir::ItemKind::Proc { kind, name, tyargs, args, gen, outs, rets, variant, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
           let mut out = ArgAttr::empty();
           if attr.contains(ty::ArgAttr::NONDEP) { out |= ArgAttr::NONDEP }
@@ -1590,6 +1580,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         if variant.is_some() {
           unimplemented!("recursive functions not supported")
         }
+        let outs2 = outs.iter().map(|&i| args[u32_as_usize(i)].1.var().k.var)
+          .collect::<Box<[_]>>();
         let mut args2 = Vec::with_capacity(args.len());
         assert_eq!(self.push_args(args, |attr, var, ty| {
           args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
@@ -1598,8 +1590,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let mut rets2 = Vec::with_capacity(rets.len());
         let ret_vs = self.push_args_raw(&rets, |attr, var, ty| {
           rets2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
-        });
-        self.returns = Some(ret_vs.into());
+        })[outs2.len()..].into();
+        self.returns = Some(Rc::new((outs2, ret_vs)));
         self.tr.cur_gen = GenId::ROOT;
         match self.block(body, None) {
           Ok(()) => unreachable!("bodies should end in unconditional return"),
@@ -1612,6 +1604,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           name: Spanned {span: name.span.clone(), k: name.k},
           tyargs,
           args: args2,
+          outs,
           rets: rets2,
           body: self.cfg,
           allocs: None,
