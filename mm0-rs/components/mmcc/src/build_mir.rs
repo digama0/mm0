@@ -279,6 +279,12 @@ impl<'a> Translator<'a, '_> {
       GenMap { dominator, value, cache: Default::default() }).is_none())
   }
 
+  fn try_add_gen(&mut self, dominator: GenId, gen: GenId) {
+    if let Entry::Vacant(e) = self.gen_vars.entry(gen) {
+      e.insert(GenMap { dominator, value: Default::default(), cache: Default::default() });
+    }
+  }
+
   fn with_gen<R>(&mut self, mut gen: GenId, f: impl FnOnce(&mut Self) -> R) -> R {
     mem::swap(&mut self.cur_gen, &mut gen);
     let r = f(self);
@@ -517,7 +523,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       cur_gen: GenId::ROOT,
       ..Default::default()
     };
-    tr.add_gen(GenId::ROOT, GenId::ROOT, Default::default());
+    tr.try_add_gen(GenId::ROOT, GenId::ROOT);
     Self {
       cfg: Cfg::default(),
       labels: vec![],
@@ -723,6 +729,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     Ok(if copy {Operand::Copy(p)} else {Operand::Ref(p)})
   }
 
+  fn copy_or_move_place(&mut self, e: hir::Place<'a>) -> Block<Operand> {
+    let copy = e.ty().is_copy();
+    let p = self.place(e)?;
+    Ok(if copy {Operand::Copy(p)} else {Operand::Move(p)})
+  }
+
   fn operand(&mut self, e: hir::Expr<'a>) -> Block<Operand> {
     Ok(match e.k.0 {
       hir::ExprKind::Var(_, _) |
@@ -731,6 +743,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Proj(_, _, _) |
       hir::ExprKind::Deref(_) => self.copy_or_move(e)?,
       hir::ExprKind::Rval(e) => self.copy_or_move(*e)?,
+      hir::ExprKind::ArgRef(e) => self.copy_or_move_place(*e)?,
       hir::ExprKind::Ref(e) => self.copy_or_ref(*e)?,
       hir::ExprKind::Unit => Constant::unit().into(),
       hir::ExprKind::ITrue => Constant::itrue().into(),
@@ -756,6 +769,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Deref(_) |
       hir::ExprKind::Rval(_) |
       hir::ExprKind::Ref(_) |
+      hir::ExprKind::ArgRef(_) |
       hir::ExprKind::Unit |
       hir::ExprKind::ITrue |
       hir::ExprKind::Bool(_) |
@@ -915,6 +929,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ExprKind::Deref(e) |
           hir::ExprKind::Proj(_, e, _) => return this.expr(e.1, None),
           hir::ExprKind::Ref(e) |
+          hir::ExprKind::ArgRef(e) |
           hir::ExprKind::Borrow(e) => return this.ignore_place(*e),
           hir::ExprKind::Binop(_, e1, e2) |
           hir::ExprKind::Eq(_, _, e1, e2) => {
@@ -1210,6 +1225,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn block(&mut self, hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest) -> Block<()> {
     let reset = (self.labels.len(), self.tree.groups.len());
+    self.tr.try_add_gen(self.tr.cur_gen, gen);
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
       let base_ctx = self.cur_ctx;
       let dest2 = dest.map(|v| self.tr_gen(v, gen));
@@ -1262,6 +1278,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       Some([vh1, vh2]) => (self.tr(vh1), self.tr(vh2)),
     };
     let base@(_, base_ctx, base_gen) = self.cur();
+    self.tr.try_add_gen(base_gen, gen);
     // tru_ctx is the current context with `vh: cond`
     let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
@@ -1390,6 +1407,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.cur_block().terminate(Terminator::Jump(base_bl, Box::new([]), None));
     self.cur_block = base_bl;
     let base_gen = self.tr.cur_gen;
+    self.tr.try_add_gen(base_gen, gen);
 
     // Set things up so that `(continue label)` jumps to `base`,
     // and `(break label)` jumps to `after`
@@ -1506,6 +1524,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let args = args.into_iter().map(|e| Ok((!e.k.1 .1.ghostly(), self.operand(e)?)))
       .collect::<Block<Box<[_]>>>()?;
     let base_ctx = self.cur_ctx;
+    self.tr.try_add_gen(self.tr.cur_gen, gen);
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
@@ -1586,6 +1605,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         assert_eq!(self.push_args(args, |attr, var, ty| {
           args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
         }).0, BlockId::ENTRY);
+        self.tr.try_add_gen(GenId::ROOT, gen);
         self.tr.cur_gen = gen;
         let mut rets2 = Vec::with_capacity(rets.len());
         let ret_vs = self.push_args_raw(&rets, |attr, var, ty| {

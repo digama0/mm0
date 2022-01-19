@@ -562,7 +562,7 @@ mod test {
               args: vec![
                 Spanned::dummy(ExprKind::Int(1.into())),
                 Spanned::dummy(ExprKind::Int(hello.len().into())),
-                Spanned::dummy(ExprKind::Ref(Box::new(Spanned::dummy(ExprKind::Var(v))))),
+                Spanned::dummy(ExprKind::Var(v)),
                 Spanned::dummy(ExprKind::Borrow(Box::new(Spanned::dummy(ExprKind::Var(v))))),
               ],
               variant: None,

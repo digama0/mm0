@@ -548,6 +548,8 @@ pub enum ExprKind<'a> {
   /// Evaluates the expression as a pure expression, so it will not take
   /// ownership of the result.
   Ref(Box<Place<'a>>),
+  /// Capture a place being used as a function argument.
+  ArgRef(Box<Place<'a>>),
   /// `(& x)` constructs a reference to `x`.
   Borrow(Box<Place<'a>>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
@@ -713,6 +715,7 @@ impl ExprKind<'_> {
         write!(f, "ghost(")?; e.k.0.debug_indent(i, f)?; write!(f, ")")
       }
       ExprKind::Ref(e) => { write!(f, "ref ")?; e.k.0.debug_indent(i, f) }
+      ExprKind::ArgRef(e) => e.k.0.debug_indent(i, f),
       ExprKind::Borrow(e) => { write!(f, "&")?; e.k.0.debug_indent(i, f) }
       ExprKind::Mm0(e) => {
         write!(f, "{:?}", e.expr)?;
