@@ -21,6 +21,7 @@ use mmcc::{Idx, Symbol};
 use mmcc::proof::ElfProof;
 
 use crate::elab::Result;
+use crate::elab::verify::scope_ast_source;
 use crate::{ElabError, Elaborator, Environment, Expr, ExprNode,
   LispVal, Proof, ProofNode, Term, TermKind, Thm, ThmKind, Type};
 use crate::elab::proof::{self, IDedup, ProofKind};
@@ -294,10 +295,12 @@ pub(crate) fn render_proof(
   };
   let fsp = elab.fspan(sp);
   let mut proc_asm = HashMap::new();
-  let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
-  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
-  })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))?;
+  scope_ast_source(&elab.ast.source.clone(), || {
+    let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+    })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))
+  })?;
   // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
   Ok(())
 }

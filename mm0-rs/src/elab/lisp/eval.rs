@@ -13,7 +13,7 @@ use num::{BigInt, Signed, ToPrimitive, Zero};
 use crate::{ast::SExpr, ArcString, AtomData, AtomId, BoxError, DeclKey, ElabError,
   Elaborator, Environment, ErrorLevel, FileRef, FileSpan, LispData,
   MergeStrategy, MergeStrategyInner, ObjectKind, SliceExt, Span, StmtTrace,
-  ExprNode, ProofNode, TermKind, ThmKind, ThmId};
+  TermKind, ThmKind, ThmId};
 use crate::elab::local_context::{try_get_span, try_get_span_from, AwaitingProof, InferSort};
 use crate::elab::{
   refine::{RStack, RState, RefineResult},
@@ -352,56 +352,16 @@ impl Elaborator {
     })
   }
 
-  fn proof_node(&self, hyps: &[(Option<AtomId>, ExprNode)],
-    heap: &[LispVal], ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
-    match *p {
-      ProofNode::Ref(n) => heap[n].clone(),
-      ProofNode::Dummy(a, s) => {
-        let a = LispVal::atom(a);
-        ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.env.sorts[s].atom)]));
-        a
-      }
-      ProofNode::Term {term, args: ref es} |
-      ProofNode::Cong {term, args: ref es, ..} => {
-        let mut args = vec![LispVal::atom(self.terms[term].atom)];
-        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
-        LispVal::list(args)
-      }
-      ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
-      ProofNode::Thm {thm, args: ref es, ..} => {
-        let mut args = vec![LispVal::atom(self.thms[thm].atom)];
-        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
-        LispVal::list(args)
-      }
-      ProofNode::Conv(ref es) => {
-        let (t, c, p) = &**es;
-        LispVal::list(vec![LispVal::atom(AtomId::CONV),
-          self.proof_node(hyps, heap, ds, t),
-          self.proof_node(hyps, heap, ds, c),
-          self.proof_node(hyps, heap, ds, p),
-        ])
-      }
-      ProofNode::Refl(ref p) => self.proof_node(hyps, heap, ds, p),
-      ProofNode::Sym(ref p) =>
-        LispVal::list(vec![LispVal::atom(AtomId::SYM), self.proof_node(hyps, heap, ds, p)]),
-      ProofNode::Unfold {term, ref args, ref res} =>
-        LispVal::list(vec![LispVal::atom(AtomId::UNFOLD),
-          LispVal::atom(self.terms[term].atom),
-          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect::<Vec<_>>()),
-          self.proof_node(hyps, heap, ds, &res.1)]),
-    }
-  }
-
   fn get_proof(&self, t: ThmId, mut heap: Vec<LispVal>) -> LispVal {
     let tdata = &self.thms[t];
     match &tdata.kind {
       ThmKind::Thm(Some(pr)) => {
         let mut ds = Vec::new();
         for e in &pr.heap[heap.len()..] {
-          let e = self.proof_node(&tdata.hyps, &heap, &mut ds, e);
+          let e = self.proof_node(&[], &heap, &mut Some(&mut ds), e);
           heap.push(e)
         }
-        let ret = self.proof_node(&tdata.hyps, &heap, &mut ds, &pr.head);
+        let ret = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.head);
         LispVal::list(vec![LispVal::list(ds), ret])
       }
       _ => LispVal::atom(AtomId::SORRY),

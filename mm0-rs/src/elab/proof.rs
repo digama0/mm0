@@ -565,6 +565,51 @@ impl Environment {
       }
     }
   }
+
+  /// Convert a [`ProofNode`] object to a [`LispVal`], under a context `heap`. If
+  /// `ds` is set, it will accumulate any [`Dummy`](ExprNode::Dummy)
+  /// nodes that are encountered.
+  pub fn proof_node(&self, hyps: &[(Option<AtomId>, ExprNode)],
+    heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, p: &ProofNode) -> LispVal {
+    match *p {
+      ProofNode::Ref(n) => heap[n].clone(),
+      ProofNode::Dummy(a, s) => {
+        let a = LispVal::atom(a);
+        if let Some(ds) = ds {
+          ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.sorts[s].atom)]));
+        }
+        a
+      }
+      ProofNode::Term {term, args: ref es} |
+      ProofNode::Cong {term, args: ref es, ..} => {
+        let mut args = vec![LispVal::atom(self.terms[term].atom)];
+        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
+        LispVal::list(args)
+      }
+      ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
+      ProofNode::Thm {thm, args: ref es, ..} => {
+        let mut args = vec![LispVal::atom(self.thms[thm].atom)];
+        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
+        LispVal::list(args)
+      }
+      ProofNode::Conv(ref es) => {
+        let (t, c, p) = &**es;
+        LispVal::list(vec![LispVal::atom(AtomId::CONV),
+          self.proof_node(hyps, heap, ds, t),
+          self.proof_node(hyps, heap, ds, c),
+          self.proof_node(hyps, heap, ds, p),
+        ])
+      }
+      ProofNode::Refl(ref p) => self.proof_node(hyps, heap, ds, p),
+      ProofNode::Sym(ref p) =>
+        LispVal::list(vec![LispVal::atom(AtomId::SYM), self.proof_node(hyps, heap, ds, p)]),
+      ProofNode::Unfold {term, ref args, ref res} =>
+        LispVal::list(vec![LispVal::atom(AtomId::UNFOLD),
+          LispVal::atom(self.terms[term].atom),
+          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect::<Vec<_>>()),
+          self.proof_node(hyps, heap, ds, &res.1)]),
+    }
+  }
 }
 
 /// The [`NodeHash`] version of [`ProofNode`]. It has the same structure except that

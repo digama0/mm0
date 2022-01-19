@@ -223,7 +223,7 @@ impl std::fmt::Debug for GoalListener {
 #[derive(Debug)]
 pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
-  ast: Arc<Ast>,
+  pub(crate) ast: Arc<Ast>,
   /// The location and name of the currently elaborating file
   pub(crate) path: FileRef,
   /// A flag that will be flipped from another thread to signal that this elaboration

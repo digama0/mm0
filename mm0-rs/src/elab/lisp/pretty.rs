@@ -300,9 +300,14 @@ impl<'a> Pretty<'a> {
     self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1
   }
 
+  /// Pretty-prints a math formula without delimiters, as in `2 + 2 = 4`.
+  pub fn expr_no_delim(&'a self, e: &LispVal) -> RefDoc<'a> {
+    self.expr_paren(e, Prec::Prec(0)).doc
+  }
+
   /// Pretty-prints a math formula surrounded by delimiters.
   pub fn expr_delimited(&'a self, e: &LispVal, left: &'a str, right: &'a str) -> RefDoc<'a> {
-    let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
+    let mut doc = self.expr_no_delim(e);
     if let Doc::Group(doc2) = *doc {doc = doc2}
     let doc = self.append_doc(self.alloc(Doc::text(left)),
       self.append_doc(doc, self.alloc(Doc::text(right))));
@@ -658,11 +663,11 @@ impl<'a> Pretty<'a> {
   /// Pretty-prints a unification error, as `failed to unify: e1 =?= e2`.
   pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a> {
     let doc = self.append_doc(s!("failed to unify:"), Self::line());
-    let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)));
+    let doc = self.append_doc(doc, self.expr_no_delim(e1));
     let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
       self.append_doc(Self::line(), s!("=?=")))));
     let doc = self.append_doc(doc, Pretty::line());
-    let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)));
+    let doc = self.append_doc(doc, self.expr_no_delim(e2));
     self.alloc(Doc::Group(doc))
   }
 }
