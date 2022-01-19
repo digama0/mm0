@@ -956,14 +956,15 @@ impl Debug for Inst {
     impl Display for PrintOperand {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use regalloc2::{OperandKind, OperandConstraint};
+        let vreg = VReg(self.0.vreg());
         match self.0.kind() {
-          OperandKind::Def => write!(f, "def ")?,
+          OperandKind::Def => write!(f, "out ")?,
+          OperandKind::Mod => write!(f, "inout ")?,
           OperandKind::Use => {}
-          _ => unreachable!(),
         }
         match self.0.constraint() {
-          OperandConstraint::FixedReg(r) => write!(f, "{} @ {}", self.0.vreg(), PReg(r)),
-          OperandConstraint::Reg => write!(f, "{}", self.0.vreg()),
+          OperandConstraint::FixedReg(r) => write!(f, "{} @ {}", vreg, PReg(r)),
+          OperandConstraint::Reg => write!(f, "{}", vreg),
           _ => unreachable!(),
         }
       }
@@ -971,7 +972,7 @@ impl Debug for Inst {
     match self {
       Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
       Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
-      Self::BlockParam { var, val } => write!(f, "param {} @ {}", var, val),
+      Self::BlockParam { var, val } => write!(f, "param {:?} @ {}", var, val),
       Self::Binop { op, sz, dst, src1, src2 } =>
         write!(f, "{} <- {:?}.{} {}, {}", dst, op, sz.bits0(), src1, src2),
       Self::Unop { op, sz, dst, src } =>
@@ -1444,7 +1445,7 @@ pub enum PInst {
 impl Debug for PInst {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
+      Self::Fallthrough { dst } => write!(f, "fallthrough -> vb{}", dst.0),
       Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
       Self::Binop { op, sz, dst, src } =>
         write!(f, "{} <- {:?}.{} {0}, {}", dst, op, sz.bits0(), src),
@@ -1479,9 +1480,9 @@ impl Debug for PInst {
       Self::CallKnown { f: func } => write!(f, "call {:?}", func),
       Self::SysCall => write!(f, "syscall"),
       Self::Ret => write!(f, "ret"),
-      Self::JmpKnown { dst, .. } => write!(f, "jump -> bb{}", dst.0),
-      Self::JmpCond { cc, dst, .. } => write!(f, "j{} -> bb{}", cc, dst.0),
-      Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
+      Self::JmpKnown { dst, .. } => write!(f, "jump -> vb{}", dst.0),
+      Self::JmpCond { cc, dst, .. } => write!(f, "j{} -> vb{}", cc, dst.0),
+      Self::Assert { cc, dst } => write!(f, "assert{} -> vb{}", cc, dst.0),
       Self::Ud2 => write!(f, "ud2"),
     }
   }

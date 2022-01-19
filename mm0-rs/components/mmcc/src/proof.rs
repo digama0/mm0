@@ -376,7 +376,6 @@ impl<'a> VBlock<'a> {
   fn new(ctx: &'a Proc<'a>, id: usize) -> Self {
     let start = ctx.proc.block_addr.0[id];
     let end = ctx.proc.block_addr.0.get(id+1).copied().unwrap_or(ctx.proc.len);
-    let (inst_start, inst_end) = ctx.proc.blocks.0[id];
     let id = VBlockId::from_usize(id);
     Self {
       ctx,
@@ -384,7 +383,7 @@ impl<'a> VBlock<'a> {
       start,
       content: &ctx.content[start as usize..end as usize],
       block_params: &ctx.proc.block_params[id],
-      insts: &ctx.proc.insts[inst_start..inst_end],
+      insts: ctx.proc.block_insts(id),
     }
   }
 
@@ -422,7 +421,7 @@ impl ExactSizeIterator for InstIter<'_> {
 }
 
 /// A reference to a physical instruction.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Inst<'a> {
   ctx: &'a Proc<'a>,
   /// The address of the instruction relative to the function start.

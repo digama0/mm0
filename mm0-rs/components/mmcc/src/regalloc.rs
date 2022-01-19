@@ -99,7 +99,6 @@ mk_id! {
   PInstId(Debug("pi"))
 }
 
-#[derive(Debug)]
 pub(crate) struct PCode {
   pub(crate) insts: IdxVec<PInstId, PInst>,
   pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
@@ -109,6 +108,29 @@ pub(crate) struct PCode {
   pub(crate) stack_size: u32,
   pub(crate) saved_regs: Vec<PReg>,
   pub(crate) len: u32,
+}
+
+impl PCode {
+  pub(crate) fn block_insts(&self, id: BlockId) -> &[PInst] {
+    let (inst_start, inst_end) = self.blocks[id];
+    &self.insts[inst_start..inst_end]
+  }
+}
+
+impl std::fmt::Debug for PCode {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    for (bl, &(start, end)) in self.blocks.enum_iter() {
+      write!(f, "vb{}(", bl.index())?;
+      let mut first = true;
+      for (v, m) in &self.block_params[bl] {
+        if !std::mem::take(&mut first) { write!(f, ", ")? }
+        write!(f, "{:?} @ {:?}", v, m)?;
+      }
+      writeln!(f, "):")?;
+      for inst in &self.insts[start..end] { writeln!(f, "    {:?};", inst)? }
+    }
+    Ok(())
+  }
 }
 
 #[derive(Debug)]

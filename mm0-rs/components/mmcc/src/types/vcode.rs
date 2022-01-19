@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt::{Debug, Display}, iter::FromIterator};
 
-use crate::{Idx, types::{IdxVec, mir}, arch::{PReg, RegMem as VRegMem}};
+use crate::{Idx, types::{IdxVec, mir}, arch::PReg};
 
 use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
@@ -41,9 +41,9 @@ impl Debug for VReg {
 impl Display for VReg {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if self.is_valid() {
-      Display::fmt(&self.0, f)
+      write!(f, "%{}", self.0.vreg())
     } else {
-      write!(f, "v-")
+      write!(f, "%-")
     }
   }
 }
@@ -248,7 +248,6 @@ pub struct VCode<I> {
   pub(crate) block_preds: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_params: ChunkVec<BlockId, VReg>,
-  pub(crate) vblock_args: ChunkVec<BlockId, VRegMem>,
   pub(crate) operands: ChunkVec<InstId, Operand>,
   pub(crate) num_vregs: usize,
   pub(crate) spills: IdxVec<SpillId, u32>,
@@ -264,7 +263,6 @@ impl<I> Default for VCode<I> {
       block_preds: Default::default(),
       block_succs: Default::default(),
       block_params: Default::default(),
-      vblock_args: Default::default(),
       operands: Default::default(),
       num_vregs: 0,
       spills: vec![0, 0].into(), // INCOMING, OUTGOING
