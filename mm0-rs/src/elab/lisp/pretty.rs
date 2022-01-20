@@ -13,7 +13,7 @@ use itertools::Itertools;
 use crate::{LispVal, LispKind, Uncons, FormatEnv,
   Prec, DeclKey, Literal, TermKind, ThmKind, Modifiers,
   Environment, NotaInfo, AtomData, AtomId, TermId, ThmId, SortId, Thm, Type,
-  APP_PREC};
+  APP_PREC, ExprNode};
 
 /// The possible annotations around subparts of a pretty printed display.
 /// These are ignored under usual printing settings, but they are used in
@@ -666,9 +666,49 @@ impl<'a> Pretty<'a> {
     let doc = self.append_doc(doc, self.expr_no_delim(e1));
     let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
       self.append_doc(Self::line(), s!("=?=")))));
-    let doc = self.append_doc(doc, Pretty::line());
+    let doc = self.append_doc(doc, Self::line());
     let doc = self.append_doc(doc, self.expr_no_delim(e2));
     self.alloc(Doc::Group(doc))
+  }
+
+  /// Pretty prints a verification error that looks like:
+  /// ```text
+  /// Subproof 2 of
+  ///   (foo x y): $ A $ > $ B $ > $ C $
+  /// proved
+  ///   $ B' $
+  /// but was supposed to prove
+  ///   $ B $
+  /// ```
+  pub fn verify_subst_err(&'a self,
+    i: Option<usize>, lisp_args: &[LispVal], proved: &LispVal, td: &Thm,
+    mut subst: impl FnMut(&ExprNode) -> LispVal,
+  ) -> RefDoc<'a> {
+    let mut args1 = vec![LispVal::atom(td.atom)];
+    args1.extend(lisp_args.iter().cloned());
+    let subst_hyps = td.hyps.iter()
+      .map(|(_, e)| self.expr(&subst(e))).collect::<Box<[_]>>();
+    let subst_ret = self.expr(&subst(&td.ret));
+    let (msg1, e1, e2) = if let Some(i) = i {
+      (self.alloc(Doc::text(format!("Subproof {} of", i+1))), self.expr(proved), subst_hyps[i])
+    } else {
+      (s!("Theorem application"), subst_ret, self.expr(proved))
+    };
+
+    let doc = self.expr_no_delim(&LispVal::list(args1));
+    let doc = self.append_doc(self.alloc(Doc::Group(doc)), s!(":"));
+    let mut doc = self.append_doc(doc, Self::line());
+    for &e in &*subst_hyps {
+      doc = self.append_doc(doc, self.append_doc(e, self.append_doc(s!(" >"), Self::line())));
+    }
+    let doc = self.alloc(Doc::Group(self.append_doc(doc, subst_ret)));
+    let msg = self.alloc(Doc::Nest(2, self.append_doc(msg1, self.append_doc(Self::line(), doc))));
+    let msg1 = s!("proved");
+    let msg = self.append_doc(self.append_doc(msg, Self::line()),
+      self.alloc(Doc::Nest(2, self.append_doc(msg1, self.append_doc(Self::line(), e1)))));
+    let msg1 = s!("but was supposed to prove");
+    self.append_doc(self.append_doc(msg, Self::line()),
+      self.alloc(Doc::Nest(2, self.append_doc(msg1, self.append_doc(Self::line(), e2)))))
   }
 }
 

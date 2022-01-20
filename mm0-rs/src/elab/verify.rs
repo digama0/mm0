@@ -2,13 +2,11 @@
 
 use std::{collections::HashMap, fmt::Write, cell::Cell};
 
-use pretty::Doc;
-
 use mm0_util::{AtomId, Modifiers, SortId, TermId, ThmId, LinedString};
 use mm0b_parser::MAX_BOUND_VARS;
 
 use crate::{DeclKey, Environment, Expr, ExprNode, Proof, ProofNode, Term, TermKind,
-  Thm, ThmKind, Type, LispVal, FormatEnv};
+  Thm, ThmKind, Type, FormatEnv};
 use super::proof::Subst;
 
 /// If true, environment additions will be verified before going in the environmenst.
@@ -156,37 +154,21 @@ impl ProofVerifyError<'_> {
       Self::TermArgMismatch(n1, n2) => write!(w, "Expected {} args, got {}", n1, n2),
       Self::DisjointVariableViolation => write!(w,
         "Disjoint variable violation when applying theorem"),
-      Self::UnifyFailure(i, proved) => {
-        SCOPED_SRC.with(|k| if let Some(source) = unsafe { k.get().as_ref() } {
-          let_unchecked!((thm, args) as Some(ProofNode::Thm {thm, args, ..}) = parent);
-          let td = &env.thms[*thm];
-          let lisp_heap = build_heap();
-          let args = &args[..td.args.len()];
-          let lisp_args = args.iter()
-            .map(|e| env.proof_node(&[], &lisp_heap, &mut None, e)).collect::<Vec<_>>();
-          let mut args1 = vec![LispVal::atom(td.atom)];
-          args1.extend(lisp_args.iter().cloned());
-          let proved = env.proof_node(&[], &lisp_heap, &mut None, proved);
-          let mut subst = Subst::new(env, &td.heap, lisp_args);
-          FormatEnv {source, env}.pretty(|pp| if let Some(i) = i {
-            write!(w, "Subproof {} of\n  ", i+1)?;
-            pp.alloc(Doc::Nest(2, pp.expr_no_delim(&LispVal::list(args1)))).render_fmt(80, w)?;
-            write!(w, "\nproved\n  ")?;
-            pp.alloc(Doc::Nest(2, pp.expr(&proved))).render_fmt(80, w)?;
-            write!(w, "\nbut was supposed to prove\n  ")?;
-            pp.alloc(Doc::Nest(2, pp.expr(&subst.subst(&td.hyps[i].1)))).render_fmt(80, w)
-          } else {
-            write!(w, "Theorem application\n  ")?;
-            pp.alloc(Doc::Nest(2, pp.expr_no_delim(&LispVal::list(args1)))).render_fmt(80, w)?;
-            write!(w, "\nproved\n  ")?;
-            pp.alloc(Doc::Nest(2, pp.expr(&subst.subst(&td.ret)))).render_fmt(80, w)?;
-            write!(w, "\nbut was supposed to prove\n  ")?;
-            pp.alloc(Doc::Nest(2, pp.expr(&proved))).render_fmt(80, w)
-          })
-        } else {
-          write!(w, "Subproof {:?} failed to prove what it should", i)
+      Self::UnifyFailure(i, proved) => with_format_env(env, |fe| if let Some(fe) = fe {
+        let_unchecked!((thm, args) as Some(ProofNode::Thm {thm, args, ..}) = parent);
+        let td = &env.thms[*thm];
+        let lisp_heap = build_heap();
+        let args = &args[..td.args.len()];
+        let lisp_args = args.iter()
+          .map(|e| env.proof_node(&[], &lisp_heap, &mut None, e)).collect::<Vec<_>>();
+        let proved = env.proof_node(&[], &lisp_heap, &mut None, proved);
+        let mut subst = Subst::new(env, &td.heap, lisp_args.clone());
+        fe.pretty(|pp| {
+          pp.verify_subst_err(i, &lisp_args, &proved, td, |e| subst.subst(e)).render_fmt(80, w)
         })
-      },
+      } else {
+        write!(w, "Subproof {:?} failed to prove what it should", i)
+      }),
       Self::ExpectedExpr(_) => write!(w, "Expected expression, got proof or conv"),
       Self::ExpectedProof(_) => write!(w, "Expected proof, got expr or conv"),
       Self::ExpectedConv(_) => write!(w, "Expected conv, got expr or proof"),
@@ -241,7 +223,7 @@ impl VerifyError<'_> {
   }
 }
 
-/// Adds a side channel parameter to `render_to_string`.
+/// Adds a side-channel parameter to `render_to_string`.
 pub fn scope_ast_source<R>(source: &LinedString, f: impl FnOnce() -> R) -> R {
   // We use a drop guard for panic safety
   struct ResetOnDrop(*const LinedString);
@@ -254,8 +236,17 @@ pub fn scope_ast_source<R>(source: &LinedString, f: impl FnOnce() -> R) -> R {
   r
 }
 
+/// Get a [`FormatEnv`] within the scope of a `scope_ast_source` call.
+pub fn with_format_env<R>(env: &Environment, f: impl FnOnce(Option<FormatEnv<'_>>) -> R) -> R {
+  // Safety: SCOPED_SRC is only non-null within the scope of a `scope_ast_source` call, which
+  // ensures that the value is still alive. We tie this to the lifetime of the `FormatEnv<'a>`
+  // passed to `f`, so this function does not need to be unsafe.
+  SCOPED_SRC.with(|k| f(unsafe { k.get().as_ref() }.map(|source| FormatEnv {source, env})))
+}
+
 thread_local! {
-  /// super hacky way to avoid passing parameters
+  /// A side-channel parameter passed through a thread local.
+  /// See [`scope_ast_source`] and [`with_format_env`].
   static SCOPED_SRC: Cell<*const LinedString> = Cell::new(std::ptr::null());
 }
 
