@@ -259,20 +259,20 @@ macro_rules! norm_split_bits {
     ([$($out),*], thm!($de, splitBitsn[$a][$x](): (splitBits[$a]) $($stk)* {$e}))
   };
   (@unsplit_push ($($params:ident)*) ($($vals:tt)*) $n:literal $($rest:tt)*) => {
-    norm_split_bits!{@unsplit_push ($($params)* a) ((a $n) $($vals)*) $($rest)*}
+    norm_split_bits!{@unsplit_push ($($params)* a) ($($vals)* (a $n)) $($rest)*}
   };
-  (@unsplit_push ($f:ident $g:ident $($params:ident)*) ($($args:tt)*)) => {
+  (@unsplit_push ($f:ident $g:ident $($params:ident)*) ($($vals:tt)*)) => {
     #[allow(unused)]
     pub(super) fn $g(&self, de: &mut ProofDedup<'_>,
       $($params: u8,)*
     ) -> ((u8, ProofId), ProofId) {
-      let x = norm_split_bits!(@unsplit_build $($args)*);
+      let x = norm_split_bits!(@unsplit_build $($vals)*);
       ((x, self.hex[usize::from(x)]), self.$f(de, x).1)
     }
   };
   (@unsplit_build ($a:ident $n:literal)) => { $a };
-  (@unsplit_build ($a:ident $n:literal) ($b:ident $m:literal) $($rest:tt)*) => {
-    ($a << $m) | norm_split_bits!(@unsplit_build ($b $m) $($rest)*)
+  (@unsplit_build ($a:ident $n:literal) $($rest:tt)*) => {
+    (norm_split_bits!(@unsplit_build $($rest)*) << $n) | $a
   };
   ($(fn $f:ident, fn $g:ident ($a:ident: $($n:literal),*);)*) => {
     impl HexCache {

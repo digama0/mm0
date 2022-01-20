@@ -163,6 +163,10 @@ $ obind (asI64 off) (\ q, immRM_rm (RM_mem si base q)) $;
 @mmc-th @_ local def IRM_imm32 (imm: nat): nat = $ obind (asI32 imm) (\ x, suc (immRM_imm x)) $;
 @mmc-th @_ local def IRM_imm64 (imm: nat): nat = $ obind (asI64 imm) (\ x, suc (immRM_imm x)) $;
 
+@mmc-th local def consStr (c: char) (l l2: string): wff = $ c ': l = l2 $;
+@mmc-th theorem consStr0: $ consStr c s0 (s1 c) $ = 's2nscons0;
+@mmc-th theorem consStrS: $ consStr c l (c ': l) $ = 'eqid;
+
 @mmc-th local def parseUBytes (k n: nat) (s: string): wff =
 $ n e. Bits (8 * suc k) /\ s = toBytes (suc k) n $;
 
@@ -240,8 +244,16 @@ theorem parseImmNS_N_I (h: $ parseImmN_N k imm t $) (h2: $ s = t ++ s2 $):
   $ parseImmNS_N k imm s s2 $ =
 (focus '(iexe _ @ iani h2 h) eqtac);
 
+theorem parseImmNS_N_0 (h: $ parseImmN_N k imm s $): $ parseImmNS_N k imm s s0 $ =
+'(parseImmNS_N_I h @ eqtr2 (appendeq2 s2ns0) append02);
+
 @mmc-th local def parseImm8S (imm) (s s2: string): wff = $ parseImmNS_N 0 imm s s2 $;
 @mmc-th local def parseImm32S (imm) (s s2: string): wff = $ parseImmNS_N ,(sucs 3) imm s s2 $;
+
+@mmc-th theorem parseImm8S_0 (h: $ parseImmN 0 imm s $): $ parseImm8S imm s s0 $ =
+'(parseImmNS_N_0 h);
+@mmc-th theorem parseImm32S_0 (h: $ parseImmN ,(sucs 3) imm s $): $ parseImm32S imm s s0 $ =
+'(parseImmNS_N_0 h);
 
 @mmc-th theorem parseImm8S_I (h: $ parseImmN 0 imm (s1 c1) $):
   $ parseImm8S imm (c1 ': s) s $ =
@@ -357,8 +369,9 @@ $ E. l1 (l = l1 ++ l2 /\ guarded rm {x | readModRM2 rex x rm2 mod l}) $;
   (h6: $ REX_B rex = rb $)
   (h7: $ splitBits31 bs rb base $)
   (h8: $ sibSideCond base md $)
-  (h9: $ parseDisplacement md a l l2 $):
-  $ parseModRM2 rex (IRM_mem osi (base_reg base) a) 4 md (ch x y ': l) l2 $ = 'sorry;
+  (h9: $ parseDisplacement md a l2 l3 $)
+  (h10: $ consStr (ch x y) l2 l $):
+  $ parseModRM2 rex (IRM_mem osi (base_reg base) a) 4 md l l3 $ = 'sorry;
 @mmc-th theorem parseModRM2_disp
   (h1: $ REX_B rex = b $)
   (h2: $ splitBits31 rm2 b r $)
@@ -372,22 +385,14 @@ $ E. l1 (l = l1 ++ l2 /\ readModRM rex rn rm l) $;
 @mmc-th local def parseModRM (rex: nat) (rn: hex) (rm: nat) (l l2: string): wff =
 $ parseModRM_N rex rn rm l l2 $;
 
-@mmc-th theorem parseModRM_S
+@mmc-th theorem parseModRM_I
   (h1: $ splitBits31 rm2 o y $)
   (h2: $ splitBits22 pc md x $)
   (h3: $ REX_R rex = r $)
   (h4: $ splitBits121 o pc r rn $)
-  (h5: $ parseModRM2 rex rm rm2 md l l2 $):
-  $ parseModRM rex rn rm (ch x y ': l) l2 $ = 'sorry;
-
-@mmc-th theorem parseModRM_1
-  (h1: $ splitBits31 rm2 o y $)
-  (h2: $ splitBits22 pc md x $)
-  (h3: $ REX_R rex = r $)
-  (h4: $ splitBits121 o pc r rn $)
-  (h5: $ parseModRM2 rex rm rm2 md s0 l2 $):
-  $ parseModRM rex rn rm (s1 (ch x y)) l2 $ =
-'(mpbi (parseModRM_Neq4 s2nscons0) @ parseModRM_S h1 h2 h3 h4 h5);
+  (h5: $ parseModRM2 rex rm rm2 md l l2 $)
+  (h6: $ consStr (ch x y) l s $):
+  $ parseModRM rex rn rm s l2 $ = 'sorry;
 
 local def mkRegRMI (dst src ds): wff =
 $ ds e. DestSrc /\ destRM ds = IRM_reg dst /\ src = suc (srcIRM ds) $;
@@ -643,7 +648,7 @@ $ S\ p, S\ s, {x | tgt e. u64 -> decode (xastCall (immRM_imm (tgt -_64 (p + x + 
 @mmc-th theorem parseCQO (h1: $ REX_W rex = 1 $):
   $ parseOpc p ip s0 rex (ch x9 x9) (instCDX wSz64) $ = 'sorry;
 
-@mmc-th local def instLea (sz dst si base off: nat): set =
+@mmc-th local def instLea (sz: nat) (dst: hex) (si base off: nat): set =
 $ S\ p, S\ s, {x | guarded (asI64 off) {q |
   decode (xastLea sz (R_rm dst (RM_mem si base q))) s}} $;
 

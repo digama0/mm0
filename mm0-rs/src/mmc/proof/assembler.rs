@@ -118,6 +118,20 @@ impl BuildAssemblyProc<'_> {
     }
   }
 
+  /// Proves `[s2, |- consStr c s s2]`
+  fn cons_str(&mut self, c: ProofId, s: ProofId) -> [ProofId; 2] {
+    app_match!(self.thm, s => {
+      (s0) => {
+        let s2 = app!(self.thm, (s1 c));
+        [s2, thm!(self.thm, consStr0(c): (consStr c s s2))]
+      }
+      _ => {
+        let s2 = app!(self.thm, (scons c s));
+        [s2, thm!(self.thm, consStrS(c, s): (consStr c s s2))]
+      }
+    })
+  }
+
   /// Proves `[k, n, s, |- parseIBytesPos k n s]`.
   /// The bytes to parse come from the first `k+1` bytes of `p`.
   fn parse_ibytes_pos(&mut self, p: &mut &[u8], k: u8) -> [ProofId; 4] {
@@ -280,12 +294,20 @@ impl BuildAssemblyProc<'_> {
   fn parse_imm_8_then<R>(&mut self, p: &mut &[u8],
     f: impl FnOnce(&mut Self, &mut &[u8]) -> (ProofId, R)
   ) -> ([ProofId; 4], R) {
-    let [_, imm, s, th] = self.parse_imm_n(p, 3);
-    let c1 = app_match!(self.thm, s => { (s1 c1) => c1, ! });
+    let [_, imm, s, th] = self.parse_imm_n(p, 0);
     let (s2, ret) = f(self, p);
-    let s = app!(self.thm, (scons c1 s2));
-    let th = thm!(self.thm, parseImm8S_I(c1, imm, s2, th): (parseImm8S imm s s2));
-    ([imm, s, s2, th], ret)
+    app_match!(self.thm, s2 => {
+      (s0) => {
+        let th = thm!(self.thm, parseImm8S_0(imm, s, th): (parseImm8S imm s s2));
+        ([imm, s, s2, th], ret)
+      },
+      _ => {
+        let c1 = app_match!(self.thm, s => { (s1 c1) => c1, ! });
+        let s = app!(self.thm, (scons c1 s2));
+        let th = thm!(self.thm, parseImm8S_I(c1, imm, s2, th): (parseImm8S imm s s2));
+        ([imm, s, s2, th], ret)
+      }
+    })
   }
 
   /// Proves `([imm, s, s2, |- parseImm32S imm s s2], r)`
@@ -293,15 +315,23 @@ impl BuildAssemblyProc<'_> {
   fn parse_imm_32_then<R>(&mut self, p: &mut &[u8],
     f: impl FnOnce(&mut Self, &mut &[u8]) -> (ProofId, R)
   ) -> ([ProofId; 4], R) {
-    let [_, imm, s, th] = self.parse_imm_n(p, 0);
-    let (c1, c2, c3, c4) = app_match!(self.thm, s => {
-      (scons c1 (scons c2 (scons c3 (s1 c4)))) => (c1, c2, c3, c4),
-      !
-    });
+    let [_, imm, s, th] = self.parse_imm_n(p, 3);
     let (s2, ret) = f(self, p);
-    let s = app!(self.thm, (scons c1 (scons c2 (scons c3 (scons c4 s2)))));
-    let th = thm!(self.thm, parseImm8S_I(c1, c2, c3, c4, imm, s2, th): (parseImm8S imm s s2));
-    ([imm, s, s2, th], ret)
+    app_match!(self.thm, s2 => {
+      (s0) => {
+        let th = thm!(self.thm, parseImm32S_0(imm, s, th): (parseImm32S imm s s2));
+        ([imm, s, s2, th], ret)
+      },
+      _ => {
+        let (c1, c2, c3, c4) = app_match!(self.thm, s => {
+          (scons c1 (scons c2 (scons c3 (s1 c4)))) => (c1, c2, c3, c4),
+          !
+        });
+        let s = app!(self.thm, (scons c1 (scons c2 (scons c3 (scons c4 s2)))));
+        let th = thm!(self.thm, parseImm32S_I(c1, c2, c3, c4, imm, s2, th): (parseImm32S imm s s2));
+        ([imm, s, s2, th], ret)
+      }
+    })
   }
 
   /// Proves `([disp, l, l2, |- parseDisplacement md disp l l2], r)`
@@ -402,17 +432,17 @@ impl BuildAssemblyProc<'_> {
         // `mmooo100 + ssiiibbb + disp0/8/32` where `rn = o` and `rm = [reg(b) + sc*ix + disp]`
         // we have to prove a side condition saying we aren't in any of the other cases
         let h8 = if base.0 == 5 {
-          thm!(self, sibSideCond_M[md.0](base.1): (sibSideCond {rm2.1} {md.1}))
+          thm!(self, sibSideCond_M[md.0](base.1): (sibSideCond {base.1} {md.1}))
         } else {
-          thm!(self, sibSideCond_B[base.0](md.1): (sibSideCond {rm2.1} {md.1}))
+          thm!(self, sibSideCond_B[base.0](md.1): (sibSideCond {base.1} {md.1}))
         };
-        let ([a, l, l2, h9], ret) = self.parse_displacement_then(p, md, f);
-        let rm = app!(self.thm, (IRM_mem osi (base_reg {base.1}) a));
-        let l_ = app!(self.thm, (scons sibch l));
-        (rm, l_, l2, ret, thm!(self, (parseModRM2[rex.1, rm, rm2.1, md.1, l_, l2]) =>
-          parseModRM2_sibReg(a, base.1, bs.1, index.1, ixh.1, ixl.1, l, l2,
+        let ([a, l2, l3, h9], ret) = self.parse_displacement_then(p, md, f);
+        let rm = app!(self.thm, (IRM_mem osi (base_reg (h2n {base.1})) a));
+        let [l, h10] = self.cons_str(sibch, l2);
+        (rm, l, l3, ret, thm!(self, (parseModRM2[rex.1, rm, rm2.1, md.1, l, l3]) =>
+          parseModRM2_sibReg(a, base.1, bs.1, index.1, ixh.1, ixl.1, l, l2, l3,
             md.1, osi, rb.1, rex.1, rx.1, sc.1, self.hex[x], self.hex[y],
-            h1, h2, h3, h4, h5, h6, h7, h8, h9)))
+            h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)))
       }
 
     } else {
@@ -426,24 +456,16 @@ impl BuildAssemblyProc<'_> {
         thm!(self, modrmSideCond_n[rm2.0](): (modrmSideCond {rm2.1} {md.1}))
       };
       let ([a, l, l2, h4], ret) = self.parse_displacement_then(p, md, f);
-      let rm = app!(self.thm, (IRM_mem (d0) (base_reg {r.1}) a));
+      let rm = app!(self.thm, (IRM_mem (d0) (base_reg (h2n {r.1})) a));
       (rm, l, l2, ret, thm!(self, (parseModRM2[rex.1, rm, rm2.1, md.1, l, l2]) =>
         parseModRM2_disp(b.1, a, l, l2, md.1, r.1, rex.1, rm2.1, h1, h2, h3, h4)))
     }; // finished parseModRM2
 
-    // We have a final fixup if the ModRM byte had no following bytes,
-    // since we don't want to end an instruction with `c ': s0`
-    let (s, th) = if app_match!(self.thm, l => { (s0) => true, _ => false }) {
-      let s = app!(self.thm, (s1 modrmch));
-      (s, thm!(self, (parseModRM[rex.1, rn.1, rm, s, l2]) =>
-        parseModRM_1(l2, md.1, o.1, pc.1, r.1, rex.1, rm, rm2.1,
-          rn.1, self.hex[x], self.hex[y], h1, h2, h3, h4, h5)))
-    } else {
-      let s = app!(self.thm, (scons modrmch l));
-      (s, thm!(self, (parseModRM[rex.1, rn.1, rm, s, l2]) =>
-        parseModRM_S(l, l2, md.1, o.1, pc.1, r.1, rex.1, rm, rm2.1,
-          rn.1, self.hex[x], self.hex[y], h1, h2, h3, h4, h5)))
-    };
+    // Construct the parseModRM result
+    let [s, h6] = self.cons_str(modrmch, l);
+    let th = thm!(self, (parseModRM[rex.1, rn.1, rm, s, l2]) =>
+      parseModRM_I(l, l2, md.1, o.1, pc.1, r.1, rex.1, rm, rm2.1,
+        rn.1, s, self.hex[x], self.hex[y], h1, h2, h3, h4, h5, h6));
     ([rn.1, rm, s, l2, th], ret)
   }
 
@@ -538,8 +560,8 @@ impl BuildAssemblyProc<'_> {
         let esrc = app!(self.thm, (IRM_imm32 src));
         let [inst, h4] = self.parse_binop(pinst, opc, sz, dst, esrc);
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
-          parseBinopImm(inst, dst, *ip, l1, l2, opc, *self.start,
-            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
+          parseBinopImm8(inst, dst, *ip, l1, l2, opc, *self.start,
+            rex.1, src, sz, h1, h2, h3, h4));
         [l1, opch, inst, th]
       }
       OpcodeLayout::BinopReg(_) => {

@@ -329,9 +329,11 @@ make_predefs! {
   parseImm64_I: ThmId => "parseImm64_I";
   /// `parseImm8S (imm: nat) (s s2: string): wff`
   parseImm8S: TermId => "parseImm8S";
+  parseImm8S_0: ThmId => "parseImm8S_0";
   parseImm8S_I: ThmId => "parseImm8S_I";
   /// `parseImm32S (imm: nat) (s s2: string): wff`
   parseImm32S: TermId => "parseImm32S";
+  parseImm32S_0: ThmId => "parseImm32S_0";
   parseImm32S_I: ThmId => "parseImm32S_I";
 
   /// `parseImm (sz imm: nat) (s: string): wff`
@@ -342,6 +344,11 @@ make_predefs! {
 
   splitBits[i: 5]: TermId => format!("splitBits{}", SPLIT_BITS_NAMES[i]);
   splitBitsn[i: 5][n: 16]: ThmId => format!("splitBits{}_{:x}", SPLIT_BITS_NAMES[i], n);
+
+  /// `consStr (c: char) (l l2: nat): wff`
+  consStr: TermId => "consStr";
+  consStr0: ThmId => "consStr0";
+  consStrS: ThmId => "consStrS";
 
   /// `parseDisplacement (mod q: nat) (l l2: string): wff`
   parseDisplacement: TermId => "parseDisplacement";
@@ -376,8 +383,7 @@ make_predefs! {
 
   /// `parseModRM (rex: nat) (rn: hex) (rm: nat) (l l2: string): wff`
   parseModRM: TermId => "parseModRM";
-  parseModRM_S: ThmId => "parseModRM_S";
-  parseModRM_1: ThmId => "parseModRM_1";
+  parseModRM_I: ThmId => "parseModRM_I";
 
   /// `parseBinop (op: hex) (sz: nat) (dst: hex) (src: nat) (I: set): wff`
   parseBinop: TermId => "parseBinop";
