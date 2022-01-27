@@ -141,6 +141,7 @@ impl ProofDedup<'_> {
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
 
+  /// Apply a theorem `name` with no arguments or hypotheses, returning `(concl, |- concl)`
   fn thm0(&mut self, env: &Environment, name: ThmId) -> (ProofId, ProofId) {
     let thd = &env.thms[name];
     assert!(thd.args.is_empty() && thd.hyps.is_empty());
@@ -149,6 +150,8 @@ impl ProofDedup<'_> {
     (concl, self.thm(name, &[], concl))
   }
 
+  /// Unfold a definition `name` with no arguments, returning the unfolded definition.
+  /// (It does not construct a proof, but this expression can be used in an `Unfold` proof.)
   fn get_def0(&mut self, env: &Environment, name: TermId) -> ProofId {
     let td = &env.terms[name];
     assert!(td.args.is_empty());
@@ -160,10 +163,15 @@ impl ProofDedup<'_> {
     self.add(proof::ProofHash::Refl(e.into_usize()))
   }
 
+  fn sym(&mut self, conv: ProofId) -> ProofId {
+    self.add(proof::ProofHash::Sym(conv.into_usize()))
+  }
+
   fn cong(&mut self, t: TermId, args: &[ProofId]) -> ProofId {
     self.add(proof::ProofHash::Cong(t, args.iter().map(|x| x.into_usize()).collect()))
   }
 
+  /// `conv(tgt, conv, th)` is a proof of `|- tgt` if `th: src` and `conv: tgt = src`.
   fn conv(&mut self, tgt: ProofId, conv: ProofId, th: ProofId) -> ProofId {
     self.add(proof::ProofHash::Conv(tgt.into_usize(), conv.into_usize(), th.into_usize()))
   }

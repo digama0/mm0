@@ -1,8 +1,8 @@
 import "compiler-old.mm1";
 
 -- inductive epilogue
--- | free : nat → epilogue → epilogue
--- | pop : regnum → epilogue → epilogue
+-- | free : nat -> epilogue -> epilogue
+-- | pop : regnum -> epilogue -> epilogue
 -- | ret : epilogue
 @mmc-th local def epiFree (n: nat) (epi: nat): nat = $ 0 $; -- TODO
 @mmc-th local def epiPop (reg: hex) (epi: nat): nat = $ 0 $; -- TODO
@@ -47,10 +47,10 @@ notation labelGroup (var: nat) (ls labs: set): set = ($LG($:85) var ($,$:0) ls (
 @mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
   $ findLabels (LG(var1, ls1); labs) var ls $ = 'sorry;
 
---| `labels.and : labels → labels → labels`
+--| `labels.and : labels -> labels -> labels`
 @mmc-th local def labelA (A B: set): set = $ 0 $; -- TODO
 infixl labelA: $+L$ prec 20;
---| `labels.one : option block_loc → tctx → labels`
+--| `labels.one : option block_loc -> tctx -> labels`
 @mmc-th local def label1 (x: nat) (tctx: set): set = $ 0 $; -- TODO
 
 @mmc-th local def findLabel (ls: set) (x: nat) (A: set): wff = $ F. $; -- TODO

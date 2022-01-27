@@ -37,12 +37,7 @@ struct Ctx {
 }
 
 impl Ctx {
-  fn new(
-    de: &mut ProofDedup<'_>,
-    hex: &HexCache,
-    proc: &Proc<'_>,
-    gctx: TermId,
-  ) -> Ctx {
+  fn new(de: &mut ProofDedup<'_>, hex: &HexCache, proc: &Proc<'_>, gctx: TermId) -> Ctx {
     let gctx = app!(de, ({gctx}));
     let start = hex.from_u32(de, proc.start);
     let args = app!(de, (ok0)); // todo!();
@@ -54,7 +49,7 @@ impl Ctx {
     }
     let sp_max = hex.from_u32(de, proc.stack_size());
     if sp_max.val != 0 { epi = app!(de, epiFree[*sp_max, epi]) }
-    let pctx1 = app!(de, mkPCtx1[*start, ret, epi, *sp_max]);
+    let pctx1 = app!(de, mkPCtx1[*start, ret, epi]);
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
@@ -168,9 +163,8 @@ impl VCtx {
     self.vars.push(VCtxVar {var, e: v});
     let old = self.e;
     let len = self.vars.len() as u32;
-    let mut th;
-    let mut new;
-    if self.parent == VCtxId::ROOT && len == 0 {
+    let (mut th, mut new);
+    if self.parent == VCtxId::ROOT && len == 1 {
       self.e = v; new = v;
       th = thm!(de, okVCtxPush_1(v): (okVCtxPush old v new))
     } else {
@@ -211,7 +205,6 @@ impl VCtx {
   fn get(&self,
     de: &mut ProofDedup<'_>, vctxs: &IdxVec<VCtxId, VCtx>, v: VarId
   ) -> (u32, ProofId, ProofId) {
-
     fn build_cut(de: &mut ProofDedup<'_>,
       [base, src, tgt, cut]: [u32; 4], [l, r, v, th]: [ProofId; 4]) -> ProofId {
       debug_assert!(src < tgt && cut > 0);
@@ -296,7 +289,7 @@ struct Prologue<'a> {
   sp: Num,
   iter: std::slice::Iter<'a, PReg>,
   ok_epi: ProofId,
-  tctx: PTCtx<'a>
+  tctx: PTCtx<'a>,
 }
 
 enum LCtx<'a> {
@@ -573,13 +566,15 @@ impl<'a> ProcProver<'a> {
 
   /// Returns `(lctx', |- okCode bctx lctx code lctx')` or `(lctx', |- okWeak bctx lctx lctx')`,
   /// where `code` is atomic.
-  fn ok_code1(&mut self, (lctx, l1): P<&mut LCtx<'a>>, code: Option<ProofId>) -> (ProofId, ProofId) {
+  fn ok_code1(&mut self,
+    (lctx, l1): P<&mut LCtx<'a>>, code: Option<ProofId>
+  ) -> (ProofId, ProofId) {
     match (&mut *lctx, code) {
       (LCtx::Dead, None) =>
         (l1, thm!(self.thm, okWeak_id(self.bctx, l1): okWeak[self.bctx, l1, l1])),
       (LCtx::Dead, Some(code)) =>
         (l1, thm!(self.thm, okCode_0(self.bctx, code): okCode[self.bctx, l1, code, l1])),
-      (LCtx::Prologue(p), None) => unreachable!("entry block must have code"),
+      (LCtx::Prologue(_), None) => unreachable!("entry block must have code"),
       (LCtx::Prologue(p), Some(code)) => if let Some(&reg) = p.iter.next() {
         let Prologue {epi, sp, ref tctx, ..} = **p;
         let r = self.hex[reg.index()];
@@ -624,7 +619,9 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns `(lctx', |- okCode bctx lctx code lctx')` or `(lctx', |- okWeak bctx lctx lctx')`
-  fn ok_code(&mut self, (lctx, l1): P<&mut LCtx<'a>>, mut code: Option<ProofId>) -> (ProofId, ProofId) {
+  fn ok_code(&mut self,
+    (lctx, l1): P<&mut LCtx<'a>>, mut code: Option<ProofId>
+  ) -> (ProofId, ProofId) {
     if !matches!(lctx, LCtx::Dead) {
       if let Some(code) = code {
         app_match!(self.thm, code => {
@@ -656,7 +653,7 @@ impl<'a> ProcProver<'a> {
         let th = thm!(self.thm, okAssembledI(a, g, self.pctx1, p, th): okAssembled[self.pctx, a]);
         let a2 = self.thm.get_def0(self.elab, asm);
         let th = thm!(self.thm, (okAssembled[self.pctx, a2]) =>
-          CONV({th} => (okAssembled {self.pctx} (UNFOLD({asm}); a2))));
+          CONV({th} => SYM (okAssembled (REFL {self.pctx}) (UNFOLD({asm}); a2))));
         self.prove_vblock_asm(&mut self.proc.assembly_blocks(), a2, th)
       }
       !

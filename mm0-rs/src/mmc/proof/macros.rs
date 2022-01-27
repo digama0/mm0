@@ -50,6 +50,10 @@ macro_rules! conv {
     let e = app!($de, $($e)*);
     $de.refl_conv(e)
   }};
+  ($de:expr, SYM $($e:tt)*) => {{
+    let conv = conv!($de, $($e)*);
+    $de.sym(conv)
+  }};
   ($de:expr, ($id:ident $($e:tt)*)) => {{
     let t = $de.$id;
     let args = &[$(conv!($de, $e)),*];
