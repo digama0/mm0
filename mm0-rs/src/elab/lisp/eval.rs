@@ -496,7 +496,7 @@ pub struct Evaluator<'a> {
   /// The span of the statement we were originally asked to evaluate. This does
   /// not change during elaboration, and we use it to avoid reporting spans in random
   /// locations if an error is thrown in "library code".
-  orig_span: Span,
+  orig: FileSpan,
   /// The evaluation stack. This is a structured object containing a stack of continuations
   /// each of which represent a context which awaiting a value from a sub-computation.
   stack: Vec<Stack>,
@@ -529,8 +529,8 @@ impl<'a> Evaluator<'a> {
     Evaluator {
       elab,
       ctx: vec![],
-      file,
-      orig_span,
+      file: file.clone(),
+      orig: FileSpan { file, span: orig_span },
       code,
       ip: 0,
       stack: vec![],
@@ -565,7 +565,7 @@ impl<'a> Evaluator<'a> {
       }
     }
     ElabError {
-      pos: old.map_or(self.orig_span, |(sp, _, _)| sp.span),
+      pos: try_get_span_from(&self.orig, old.as_ref().map(|(sp, _, _)| sp)),
       level,
       kind: ElabErrorKind::Boxed(err.into(),
         if self.backtrace.active(level) {Some(info)} else {None})
@@ -1291,8 +1291,7 @@ impl<'a> Evaluator<'a> {
   }
 
   fn try_get_span(&self, fsp: Option<&FileSpan>) -> Span {
-    let orig = FileSpan {file: self.path.clone(), span: self.orig_span};
-    try_get_span_from(&orig, fsp)
+    try_get_span_from(&self.orig, fsp)
   }
 
   #[allow(unused)]
@@ -1474,7 +1473,7 @@ impl<'a> Evaluator<'a> {
   fn call_refine(&mut self, tail: bool, state: RState) -> Result<()> {
     let val = self.stack.last_mut().expect("underflow");
     stack_match!(let sp, stack as Stack::Refine(sp, ref mut stack) = *val);
-    match self.elab.run_refine(self.orig_span, stack, state) {
+    match self.elab.run_refine(self.orig.span, stack, state) {
       Err(e) => return Err(self.err(Some((e.pos, true)), e.kind.msg())),
       Ok(RefineResult::Ret(e)) => {
         self.elab.lc.clean_mvars();
