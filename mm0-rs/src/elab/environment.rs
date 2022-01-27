@@ -1133,7 +1133,11 @@ impl Environment {
       if VERIFY_ON_ADD {
         match self.verify_termdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
-          Err(e) => return Err(AddItemError::Verify(e.render_to_string(self))),
+          Err(e) => {
+            let mut msg = format!("while adding {}: ", data.name);
+            e.render(self, &mut msg).expect("impossible");
+            return Err(AddItemError::Verify(msg))
+          }
         }
       }
       self.data[a].decl = Some(DeclKey::Term(new_id));
@@ -1173,7 +1177,11 @@ impl Environment {
       if VERIFY_ON_ADD {
         match self.verify_thmdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
-          Err(e) => return Err(AddItemError::Verify(e.render_to_string(self))),
+          Err(e) => {
+            let mut msg = format!("while adding {}: ", data.name);
+            e.render(self, &mut msg).expect("impossible");
+            return Err(AddItemError::Verify(msg))
+          }
         }
       }
       self.data[a].decl = Some(DeclKey::Thm(new_id));

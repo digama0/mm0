@@ -1744,9 +1744,10 @@ impl std::fmt::Debug for Terminator {
       },
       Self::Jump1(bl) => write!(f, "jump {:?}", bl),
       Self::Return(outs, args) => {
-        write!(f, "return ")?;
-        for &v in &**outs { write!(f, "out {:?}, ", v)? }
-        write!(f, "{:?}", args.iter().map(DebugArg).format(", "))
+        write!(f, "return")?;
+        for &v in &**outs { write!(f, " out {:?},", v)? }
+        if !args.is_empty() { write!(f, " {:?}", args.iter().map(DebugArg).format(", "))? }
+        Ok(())
       }
       Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
       Self::If(cond, [(v1, bl1), (v2, bl2)]) => write!(f,
@@ -1764,8 +1765,8 @@ impl std::fmt::Debug for Terminator {
         }
         write!(f, ") -> ")?;
         if *reach {
-          for &(r, v) in &**rets { write!(f, "{}{:?}.", if r {""} else {"ghost "}, v)? }
-          write!(f, " {:?}", tgt)
+          for &(r, v) in &**rets { write!(f, "{}{:?}. ", if r {""} else {"ghost "}, v)? }
+          write!(f, "{:?}", tgt)
         } else {
           write!(f, "!")
         }

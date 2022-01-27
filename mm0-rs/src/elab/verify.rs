@@ -124,7 +124,9 @@ fn proof_head(heap: &[ProofNode], e: &ProofNode) -> Option<DeclKey> {
   match *e {
     ProofNode::Ref(i) if i < heap.len() => proof_head(&heap[..i], &heap[i]),
     ProofNode::Thm {thm, ..} => Some(DeclKey::Thm(thm)),
-    ProofNode::Term {term, ..} => Some(DeclKey::Term(term)),
+    ProofNode::Term {term, ..} |
+    ProofNode::Cong {term, ..} |
+    ProofNode::Unfold {term, ..} => Some(DeclKey::Term(term)),
     _ => None
   }
 }
