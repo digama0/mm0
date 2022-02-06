@@ -43,4 +43,4 @@ theorem or_left: $ a -> a \/ b $ = 'absurdr;
 -- * from mm0-c/
 --   run: gcc main.c -o mm0-c
 -- * go back to examples/tutorial/
---   run: ../../mm0-c/mm0-c 03-mm1-intro.mm1 < 03-mm1-intro.mmb
+--   run: ../../mm0-c/mm0-c 03-mm1-intro.mmb < 02-mm0-intro.mm0
