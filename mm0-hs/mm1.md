@@ -137,9 +137,9 @@ Annotations are uninterpreted markers that may be applied to statements. They ca
 Do blocks
 ---
 
-    do-stmt ::= 'do' '{' (sexpr)* '}' ';'
+    do-stmt ::= 'do' ('{' (sexpr)* '}' | sexpr) ';'
 
-This command executes some lisp code at the top level, meaning that any definitions `(def x foo)` will not go out of scope at the end of the block but will instead define a global variable which will be visible in later theorem proofs and `do` blocks. See [Evaluation](#evaluation) for more on lisp code.
+This command executes some lisp code at the top level, meaning that any definitions `(def x foo)` will not go out of scope at the end of the block but will instead define a global variable which will be visible in later theorem proofs and `do` blocks. See [Evaluation](#evaluation) for more on lisp code. `do` can also take a single s-expression, but the do-block interpretation of curly braces as a list of s-expressions takes precedence over the curly list transformation.
 
 S-expressions
 ---
