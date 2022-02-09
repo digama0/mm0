@@ -3,6 +3,7 @@
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
+use mm0b_parser::MAX_BOUND_VARS;
 use zerocopy::{AsBytes, U32, U64};
 use crate::{
   Type, Expr, Proof, SortId, AtomId, AtomVec, TermKind, ThmKind,
@@ -307,7 +308,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     for (_, ty) in args {
       match *ty {
         Type::Bound(s) => {
-          if bv >= (1 << 55) {panic!("more than 55 bound variables")}
+          assert!(bv < (1 << MAX_BOUND_VARS), "more than {} bound variables", MAX_BOUND_VARS);
           self.write_sort_deps(true, s, bv)?;
           bv *= 2;
         }

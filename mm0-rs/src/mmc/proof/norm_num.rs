@@ -36,6 +36,7 @@ macro_rules! mk_from_int {($($num:ident, $f:ident: $ty:ty,)*) => {
       (<$ty>::BITS - n.leading_zeros()).saturating_sub(1) >> 2
     }
   )*
+  #[allow(clippy::wrong_self_convention)]
   impl<Id: Idx> HexCache<Id> {
     $(pub(super) fn $f<'a, D: Dedup<'a, Id=Id>>(&self, de: &mut D, n: $ty) -> Num<Id> {
       let size = $num(n);

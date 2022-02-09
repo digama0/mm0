@@ -298,13 +298,13 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       send_diagnostics(path.url().clone(), version, errs)?;
 
       let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-      if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
-      if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
-      if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
+      if n_warns != 0 { write!(log_msg, ", {} warnings", n_warns).unwrap() }
+      if n_infos != 0 { write!(log_msg, ", {} infos", n_infos).unwrap() }
+      if n_hints != 0 { write!(log_msg, ", {} hints", n_hints).unwrap() }
       if SERVER.options.ulock().log_errors.unwrap_or(true) {
         for e in &errors {
           let Position {line, character: col} = source.ascii().to_pos(e.pos.start);
-          write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
+          write!(log_msg, "\n\n{}: {}:{}:{}:\n{}",
             e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
         }
       }

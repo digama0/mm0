@@ -70,7 +70,7 @@ impl ElabErrorKind {
       &ElabErrorKind::Upstream(ref file, ref e, n) => {
         let mut s = format!("file contains errors:\n{}:{:#x}: {}",
           file, e.pos.start, e.kind.raw_msg());
-        if n != 0 { write!(&mut s, "\n + {} more", n).unwrap() }
+        if n != 0 { write!(s, "\n + {} more", n).unwrap() }
         s
       }
     }
@@ -750,7 +750,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                 Ok(ElabResult::ImportCycle(cyc2)) => {
                   use std::fmt::Write;
                   let mut s = format!("import cycle: {}", p.clone());
-                  for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
+                  for p2 in &cyc2 { write!(s, " -> {}", p2).unwrap() }
                   elab.report(ElabError::new_e(*sp, s));
                   if cyc.is_none() { *cyc = Some(cyc2) }
                 }

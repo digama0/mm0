@@ -1295,7 +1295,7 @@ impl<'a, C> Parser<'a, C> {
     } else {
       match self.as_keyword(&head) {
         Some(Keyword::If) => {
-          let [c, t, e]: &[_; 3] = (&*args).try_into().map_err(|_|
+          let [c, t, e]: &[_; 3] = (*args).try_into().map_err(|_|
             ElabError::new_e(try_get_span(base, &head), "unexpected number of arguments"))?;
           TypeKind::If(expr!(c), ty!(t), ty!(e))
         }

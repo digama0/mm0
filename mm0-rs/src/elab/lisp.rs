@@ -1497,6 +1497,7 @@ impl Iterator for Uncons {
           let mut temp: LispVal;
           let mut inner: &LispVal = e;
           loop {
+            #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
             match &**inner {
               LispKind::Ref(m) => {temp = m.unref(); inner = &temp}
               LispKind::Annot(_, v) => inner = v,
@@ -1505,14 +1506,14 @@ impl Iterator for Uncons {
                   // Safety: The lifetime of this value is tied to the original
                   // `e` (or clones made via `temp`), while the provided value
                   // `_` is a clone of it, which has the same lifetime.
-                  unsafe { &*(&**es as *const _) }
+                  unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
                 ));
                 continue 'l
               }
               LispKind::DottedList(es, r) => {
                 *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_|
                   // Safety: same as above
-                  unsafe { &*(&**es as *const _) }
+                  unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
                 ), r.clone());
                 continue 'l
               }

@@ -1389,7 +1389,8 @@ impl<'a> Evaluator<'a> {
           // ir (which is borrowed from f). We solve the problem by storing an Arc of
           // the IR inside the Ret instruction above, so that it won't get deallocated
           // while in use. Rust doesn't reason about other owners of an Arc though, so...
-          let code2 = unsafe { &*(&**code as *const [Ir]) };
+          #[allow(clippy::useless_transmute)]
+          let code2 = unsafe { std::mem::transmute::<&[Ir], &[Ir]>(&**code) };
           let fsp = self.fspan(sp.0);
           self.call(tail, code2, Some(code.clone()), fsp, pos.clone(), (**env).into());
           match spec {

@@ -513,7 +513,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(prev) = prev {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, prev, |thm, mangled|
-        write!(&mut nav, r#"<a href="{}.html" title="{}">&#8810;</a> | "#, mangled, thm)
+        write!(nav, r#"<a href="{}.html" title="{}">&#8810;</a> | "#, mangled, thm)
           .expect("writing to a string"));
     }
     nav.push_str("<a href=\"../index.html#");
@@ -522,18 +522,18 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(base) = &self.base_url {
       use std::fmt::Write;
       let url = base.join(filename).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-      write!(&mut nav, " | <a href=\"{}", url).expect("writing to a string");
+      write!(nav, " | <a href=\"{}", url).expect("writing to a string");
       let range = self.source.to_range(td.full);
       if range.start.line == range.end.line {
-        write!(&mut nav, "#L{}\">src</a>", range.start.line + 1)
+        write!(nav, "#L{}\">src</a>", range.start.line + 1)
       } else {
-        write!(&mut nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
+        write!(nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
       }.expect("writing to a string");
     }
     if let Some(next) = next {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, next, |thm, mangled|
-        write!(&mut nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
+        write!(nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
           .expect("writing to a string"));
     }
     let (kind, kindclass) = if let ThmKind::Axiom = td.kind {("Axiom", "ax")} else {("Theorem", "thm")};

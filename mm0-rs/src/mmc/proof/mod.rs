@@ -32,22 +32,34 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
   type Node;
   type Hash;
   type Id: Idx;
+
   fn new(pd: &'a Predefs, args: &[(Option<AtomId>, Type)]) -> Self;
+
   fn add(&mut self, h: Self::Hash) -> Self::Id;
+
   fn get(&self, i: Self::Id) -> &Self::Hash;
+
   fn build0(&mut self, i: Self::Id) -> (Box<[Self::Node]>, Self::Node);
+
   const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash;
+
   fn ref_(&mut self, k: ProofKind, i: usize) -> Self::Id;
+
   fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id;
+
   fn app(&mut self, t: TermId, args: &[Self::Id]) -> Self::Id {
     self.add(Self::APP(t, args.iter().map(|x| x.into_usize()).collect()))
   }
+
   fn is_app_of(&self, i: Self::Id, t: TermId) -> Option<&[usize]>;
+
   #[inline] fn mk_eq(&mut self, a: Self::Id, b: Self::Id) -> Self::Id {
     app!(self, a = b)
   }
+
   #[inline] fn do_from_usize(&self, i: usize) -> Self::Id { Idx::from_usize(i) }
 
+  #[allow(clippy::wrong_self_convention)]
   fn from_expr_node(&mut self, e: &ExprNode, refs: &[Self::Id]) -> Self::Id {
     match *e {
       ExprNode::Ref(i) if i < refs.len() => refs[i],
@@ -59,6 +71,8 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
       }
     }
   }
+
+  #[allow(clippy::wrong_self_convention)]
   fn from_expr_nodes(&mut self, heap: &[ExprNode]) -> Vec<Self::Id> {
     let mut refs = Vec::with_capacity(heap.len());
     for node in heap {
@@ -67,11 +81,15 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
     }
     refs
   }
+
+  #[allow(clippy::wrong_self_convention)]
   fn from_expr(&mut self, e: &Expr) -> Self::Id {
     let refs = self.from_expr_nodes(&e.heap);
     self.from_expr_node(&e.head, &refs)
   }
+
   fn to_lisp(&self, env: &mut Environment, i: Self::Id) -> LispVal;
+
   fn pp(&self,
     elab: &mut Elaborator, i: Self::Id, f: &mut impl std::fmt::Write
   ) -> std::fmt::Result {
