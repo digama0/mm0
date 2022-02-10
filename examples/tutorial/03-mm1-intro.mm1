@@ -1,12 +1,23 @@
+-- This is the MM1 file that produces proofs to be verified against the
+-- declarations in the MM0 file 02-mm0-intro.mm0.
+
+-- Declare delimiters that don't require whitespace
 delimiter $ ( ~ $  $ ) $;
 
+-- Declare wff as the sort of provable well-formed formulas
 provable sort wff;
 
+--| implication
 term imp: wff > wff > wff;
+-- infix syntax, right-associative
 infixr imp: $->$ prec 25;
 
+--| negation
 term not: wff > wff;
+-- prefix syntax
 prefix not: $~$ prec 100;
+
+-- Lukasiewicz axiom system for propositional calculus
 
 axiom ax_1 (a b: wff): $ a -> b -> a $;
 
@@ -16,8 +27,13 @@ axiom ax_3 (a b: wff): $ (~a -> ~b) -> (b -> a) $;
 
 axiom ax_mp (a b: wff): $ a -> b $ > $ a $ > $ b $;
 
+-- Theorems are local by default in MM1. `pub` tells the verifier to expect
+-- to see the theorem in the MM0 file. The `!` in front of `ax_1` allows
+-- values to be explicitly passed for variables (which are normally inferred).
+-- Passing `_` as a variable value means to infer it again.
 pub theorem id (a: wff): $ a -> a $ = '(ax_mp (ax_mp ax_2 ax_1) (! ax_1 _ $~a$));
 
+-- Definitions are public by default, but can be declared `local`.
 local def and (a b) = $ ~(a -> ~b) $;
 infixl and: $/\$ prec 35;
 
@@ -25,6 +41,8 @@ local def or (a b) = $ ~a -> b $;
 infixl or: $\/$ prec 30;
 
 theorem or_right: $ b -> a \/ b $ = '{ax_1 : $ _ -> _ -> _ $};
+
+-- useful theorems
 
 theorem a1i (h: $ b $): $ a -> b $ = '(ax_mp ax_1 h);
 theorem a2i (h: $ a -> b -> c $): $ (a -> b) -> (a -> c) $ = '(ax_mp ax_2 h);
@@ -44,3 +62,5 @@ theorem or_left: $ a -> a \/ b $ = 'absurdr;
 --   run: gcc main.c -o mm0-c
 -- * go back to examples/tutorial/
 --   run: ../../mm0-c/mm0-c 03-mm1-intro.mmb < 02-mm0-intro.mm0
+--   This runs the verifier on the binary proof script `03-mm1-intro.mmb`
+--   and tells it that the declarations are in `02-mm0-intro.mm0`.
