@@ -2,8 +2,8 @@
 import "03-mm1-intro.mm1";
 
 -- A `do` block contains lisp code to be evaluated at the top level.
--- The curly braces are syntactic sugar to use infix syntax for operators.
 do {
+  -- The curly braces are syntactic sugar to use infix syntax for operators.
   {2 + 2}
 };
 
@@ -36,7 +36,8 @@ do {
 do (for 1 6 (fn (x) (print x)));
 
 -- A quoted atom, but the language server also shows the definition of
--- the theorem
+-- the theorem if you hover over the word "absurd",
+-- and ctrl-clicking takes you to the definition.
 do 'absurd;
 
 -- Example of using `foldl` to repeatedy apply the `ax_mp` axiom
@@ -126,6 +127,22 @@ theorem _: $ b -> b $ = conj-prove;
 -- Call `conj-prove` with `dbg` in place of `refine` to see the script that
 -- it produces
 do (conj-prove dbg $ a /\ b /\ (e /\ d) /\ f /\ g -> d $);
+
+-- You can also print the proof of a theorem after the fact using the `get-proof`
+-- function, which shows the fully elaborated proof term.
+
+-- you have to give it a name to call `get-proof`
+theorem foo: $ a /\ b /\ (e /\ d) /\ f /\ g -> d $ = conj-prove;
+
+do {
+  -- borrowed from peano.mm1
+  (def (get-proof x) (nth 1 @ @ nth 6 @ get-decl x))
+
+  (display @ pp @ get-proof 'foo)
+  -- (anwl (a /\ b /\ (e /\ d) /\ f) g d
+  --   (anwl (a /\ b /\ (e /\ d)) f d
+  --     (anwr (a /\ b) (e /\ d) d (anwr e d d (id d)))))
+};
 
 -- Some examples of explicitly applying the resulting scripts using `focus`,
 -- to help visualize the effects of the proof steps
