@@ -1,15 +1,20 @@
+-- Include the contents of the previous tutorial file
 import "03-mm1-intro.mm1";
 
+-- A `do` block contains lisp code to be evaluated at the top level.
+-- The curly braces are syntactic sugar to use infix syntax for operators.
 do {
   {2 + 2}
 };
 
+-- A simple factorial function
 do {
   (def (fact x)
     (if {x = 0} 1 {x * (fact {x - 1})}))
   (fact 100)
 };
 
+-- Utility functions to help make proof scripts more compact
 do {
   (def (id x) x)
   (def (ignore . _))
@@ -27,26 +32,36 @@ do {
   (def (verb e) (copy-span e (list ':verb e)))
 };
 
+-- A simple `for` loop
 do (for 1 6 (fn (x) (print x)));
 
+-- A quoted atom, but the language server also shows the definition of
+-- the theorem
 do 'absurd;
 
+-- Example of using `foldl` to repeatedy apply the `ax_mp` axiom
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 (foldl '(h2 h1) 'ax_2 @ fn (x y) '(ax_mp ,x ,y));
 -- '(ax_mp (ax_mp ax_2 h2) h1);
 
+-- `refine-extra-args` is a hook called when applying an axiom or theorem to
+-- too many arguments. This example repeatedly applies `ax_mp` as needed.
 do {
   (def (refine-extra-args refine tgt e . ps)
     @ refine tgt (foldl ps (verb e) @ fn (acc p2) @ copy-span e '(ax_mp ,acc ,p2)))
 };
 
+-- Example use of `refine-extra-args` to chain `ax_mp`
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 '(ax_2 h2 h1);
 
+-- Example of calling `refine` explicitly
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 (refine '(ax_2 h2 h1));
 
-
+-- Example of using the `focus` tactic. Try inserting calls to `(stat)`
+-- to visualize how the goals change. The `_` in a proof pre-expression
+-- means to create a new goal.
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 (focus
   '(ax_2 _ _)
@@ -54,11 +69,14 @@ theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
   'h1
 );
 
+-- Example of using `have` to declare a subproof as a named local hypothesis
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 (focus
   (have 'H $ a -> a $ 'id)
   '(ax_2 h2 h1)
 );
+
+-- Additional useful theorems from `peano.mm1`
 
 theorem a1d (h: $ a -> b $): $ a -> c -> b $ = '(syl ax_1 h);
 theorem a2d (h: $ a -> b -> c -> d $): $ a -> (b -> c) -> (b -> d) $ = '(syl ax_2 h);
@@ -78,6 +96,8 @@ theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
 theorem anwl (h: $ a -> c $): $ a /\ b -> c $ = '(syl h anl);
 theorem anwr (h: $ b -> c $): $ a /\ b -> c $ = '(syl h anr);
 
+-- Function to repeatedly apply `anwl` and `anwr` to prove an implication
+-- where the antecedent is a chain of conjunctions
 do (def (conj-prove refine t)
   @ match t @ $ ,lhs -> ,rhs $
   @ letrec (
@@ -94,9 +114,21 @@ do (def (conj-prove refine t)
   )
   @ refine t (f lhs));
 
+-- Examples of using `conj-prove`
+
 theorem _: $ a /\ b /\ c /\ (d /\ e) -> d $ = conj-prove;
 theorem _: $ a /\ b /\ (d /\ e) -> d $ = conj-prove;
 theorem _: $ a /\ b /\ (e /\ d) -> d $ = conj-prove;
 theorem _: $ d /\ b /\ (e /\ d) -> d $ = conj-prove;
 theorem _: $ d /\ b /\ (e /\ d) -> b $ = conj-prove;
 theorem _: $ b -> b $ = conj-prove;
+
+-- Call `conj-prove` with `dbg` in place of `refine` to see the script that
+-- it produces
+do (conj-prove dbg $ a /\ b /\ (e /\ d) /\ f /\ g -> d $);
+
+-- Some examples of explicitly applying the resulting scripts using `focus`,
+-- to help visualize the effects of the proof steps
+
+theorem _: $ a /\ b /\ (e /\ d) /\ f /\ g -> d $ = (focus 'anwl 'anwl 'anwr 'anwr 'id);
+theorem _: $ a /\ b /\ c /\ (d /\ e) -> d $ = (focus 'anwr 'anwl 'id);
