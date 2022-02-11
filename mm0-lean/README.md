@@ -4,7 +4,7 @@ This is not a particular product, but rather a collection of scratch files and f
 
 ## Compilation
 
-This has not been set up with a `leanpkg.toml` file, because I'm not sure how well `leanpkg` deals with projects that don't live at the root of the repo. Instead, I just use a `leanpkg.path` file. This file is not versioned, so if you want to compile the lean files, you should create a `leanpkg.lean` file at the root of the repo, containing:
+This has not been set up with a `leanpkg.toml` file, because I'm not sure how well `leanpkg` deals with projects that don't live at the root of the repo. Instead, I just use a `leanpkg.path` file. This file is not versioned, so if you want to compile the lean files, you should create a `leanpkg.path` file at the root of the repo, containing:
 
     builtin_path
     path mm0-lean
