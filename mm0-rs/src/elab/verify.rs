@@ -562,6 +562,7 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
           }
           uheap.push((e2, d));
         }
+        let res = self.verify_proof_node(res)?.as_expr(self.orig_heap, Some(node))?.0;
         for ((e, _), o) in uheap.into_iter().zip(&mut unify.tr) { *o = Some(e) }
         let res = unify.unify_expr(&td.ret, self.orig_heap, res).map_err(|_| {
           VerifyError::ProofVerifyError(self.orig_heap, Some(node),

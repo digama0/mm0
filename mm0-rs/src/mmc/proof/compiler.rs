@@ -826,7 +826,7 @@ impl<'a> ProcProver<'a> {
         if self.sp_max.val == 0 {
           *lctx = LCtx::Reg(tctx);
           let (l3, th) = self.ok_code1((lctx, l2), Some(code));
-          (l3, thm!(self.thm, (okCode[self.bctx, l1, code]) =>
+          (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
             okPrologue_alloc0(self.bctx, code, epi, l3, *sp, l2, ok_epi, th)))
         } else {
           tctx.piter.as_mut().expect("impossible").next();
@@ -834,7 +834,7 @@ impl<'a> ProcProver<'a> {
           let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
           let max = self.hex.from_u32(&mut self.thm, 1 << 12);
           let h3 = self.hex.lt(&mut self.thm, m, max);
-          (l2, thm!(self.thm, (okCode[self.bctx, l1, code]) =>
+          (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
             okPrologue_alloc(self.bctx, epi, *m, *self.sp_max, *sp, l2, ok_epi, h2, h3)))
         }
       }
