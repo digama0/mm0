@@ -290,6 +290,7 @@ struct TCtx<'a> {
   stmts: std::slice::Iter<'a, Statement>,
   term: Option<&'a Terminator>,
   piter: Option<std::iter::Peekable<InstIter<'a>>>,
+  vctx: VCtx,
 }
 
 type PTCtx<'a> = P<Box<TCtx<'a>>>;
@@ -388,100 +389,22 @@ impl<'a> ProcProver<'a> {
     })
   }
 
-  // fn get_ctx(&mut self, id: CtxId) -> ProofId {
-  //   if let Some(&e) = self.ctxs.get(&id) { return e }
-  //   let buf = &self.proc.cfg.ctxs[id.0];
-  //   let (i, e) = (0..id.1)
-  //     .filter_map(|i| Some((i, *self.ctxs.get(&CtxId(id.0, i))?)))
-  //     .next_back()
-  //     .unwrap_or_else(|| (0, if id.0 == CtxBufId::ROOT {
-
-  //     } else {
-  //       self.get_ctx(buf.parent)
-  //     }))
-  //      {
-  //       Some((i, e)) => {
-
-  //       }
-  //       None => todo!(),
-  //   }
-  // }
-
   /// Returns the `tctx` type state for the entry of a block.
   fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx) -> PTCtx<'a> {
     let tctx = Box::new(TCtx {
       stmts: bl.block().stmts.iter(),
       term: Some(bl.block().terminator()),
       piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
+      vctx,
     });
 
     let l = app!(self.thm, (ok0)); // TODO
     (tctx, l)
   }
 
-  /// Returns `(id, [ip, lctx, |- okBlock bctx ip lctx])`
-  fn ok_code_block(&mut self,
-    mut tree: BlockProofTree<'a>
-  ) -> (BlockId, [ProofId; 3]) {
-    loop {
-      match tree {
-        BlockProofTree::Induction(labs, seq) => {
-          let var = todo!();
-          let ls = todo!();
-          let old@[labs, bctx] = self.push_label_group(var, ls);
-          for tree in seq.deps() { self.add_block(tree) }
-          let (id, [ip, lctx, th]) = self.ok_code_block(seq.main());
-          let th = todo!();//thm!(self.thm, ((okBlock bctx ip lctx)) =>
-            //okBlock_loop(labs, ip, lctx, ls, self.pctx, var, th));
-          self.pop_label_group(old);
-          return (id, [ip, lctx, th])
-        }
-        BlockProofTree::Seq(seq) => {
-          for tree in seq.deps() { self.add_block(tree) }
-          tree = seq.main()
-        }
-        BlockProofTree::One(bl) => {
-          let (tctx, l1) = self.block_tctx(bl, todo!());
-          return (bl.id, match bl.vblock() {
-            None => {
-              let th = self.ok_code0((LCtx::Reg(tctx), l1), None);
-              let ip = app!(self.thm, (d0));
-              let th = thm!(self.thm, okBlock0(self.labs, l1, self.pctx, th):
-                okBlock[self.bctx, ip, l1]);
-              [ip, l1, th]
-            }
-            Some(vbl) => {
-              let (a, h1) = self.vblock_asm[&vbl.id];
-              let (ip, code) = app_match!(self.thm, a => { (asmAt ip code) => (ip, code), ! });
-              let h2 = self.ok_code0((LCtx::Reg(tctx), l1), Some(code));
-              let th = thm!(self.thm, okBlockI(self.labs, code, ip, l1, self.pctx, h1, h2):
-                okBlock[self.bctx, ip, l1]);
-              [ip, l1, th]
-            }
-          })
-        }
-      }
-    }
-  }
-
-  fn add_block(&mut self, tree: BlockProofTree<'a>) {
-    let (id, [ip, lctx, th]) = self.ok_code_block(tree);
-    assert!(self.block_proof.insert(id, [self.labs, ip, lctx, th]).is_none())
-  }
-
   /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret tctx)`
-  fn build_proc(&mut self, vctx: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
-    let mut tree = self.proc.proof_tree();
-    let tctx = loop {
-      match tree {
-        BlockProofTree::Induction(_, _) => unreachable!("entry block cannot be an induction"),
-        BlockProofTree::Seq(seq) => {
-          for tree in seq.deps() { self.add_block(tree) }
-          tree = seq.main()
-        }
-        BlockProofTree::One(pf) => break self.block_tctx(pf, vctx),
-      }
-    };
+  fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
+    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root);
     let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
     let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, tctx.1]);
     (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO
