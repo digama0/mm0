@@ -68,7 +68,12 @@ impl<'a> ElfProof<'a> {
   #[must_use] pub fn bss(&self) -> u64 { self.p_memsz() - self.p_filesz() }
 
   /// The mapping from IDs to function names.
-  #[must_use] pub fn func_names(&self) -> &'a IdxVec<ProcId, Symbol> { &self.code.func_names }
+  #[must_use] pub fn func_names(&self) -> &'a IdxVec<ProcId, Symbol> { &self.code.func_names.1 }
+
+  /// The mapping from IDs to function names.
+  #[must_use] pub fn get_func(&self, f: Symbol) -> Option<ProcId> {
+    self.code.func_names.0.get(&f).copied()
+  }
 
   /// Get the ABI (calling convention) of a function.
   #[must_use] pub fn proc_abi(&self, id: ProcId) -> &'a ProcAbi { &self.code.func_abi[id] }
@@ -178,7 +183,7 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
             self.state = AssemblyItemState::Proc(ProcId(n.0 + 1));
             return Some(AssemblyItem::Proc(Proc {
               code: self.code,
-              cfg: &self.code.mir[&self.code.func_names[n]].body,
+              cfg: &self.code.mir[&self.code.func_names.1[n]].body,
               proc,
               id: Some(n),
               start,
@@ -276,7 +281,7 @@ impl LinkedCode {
     let (start, cfg, proc) = match id {
       Some(f) => {
         let (start, ref pc) = self.funcs[f];
-        (start, &self.mir[&self.func_names[f]].body, pc)
+        (start, &self.mir[&self.func_names.1[f]].body, pc)
       }
       None => (TEXT_START, &self.init.0, &self.init.1)
     };
@@ -290,7 +295,7 @@ impl LinkedCode {
 impl<'a> Proc<'a> {
   /// The name of the function, or `None` for the init function.
   #[must_use] pub fn name(&self) -> Option<Symbol> {
-    self.id.map(|id| self.code.func_names[id])
+    self.id.map(|id| self.code.func_names.1[id])
   }
 
   /// The size of the procedure with padding omitted.
