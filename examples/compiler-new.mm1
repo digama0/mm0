@@ -92,6 +92,10 @@ infixl vctxA: $*V$ prec 20;
 --| and the second part is the machine context where variables are assigned to memory locations.
 @mmc-th local def mkTCtx (vctx: set) (vctx_sz mctx: nat): set = $ 0 $; -- TODO
 
+--| `ty_unit: ty`:
+--| The type `()`, the unit type.
+@mmc-th local def ty_unit: set = $ 0 $; -- TODO
+
 --| `vVar: nat -> ty -> vctx`:
 --| A variable record in a variable context. This asserts that `v_n: ty`.
 @mmc-th local def vVar (n: nat) (ty: set): set = $ 0 $; -- TODO
@@ -113,6 +117,23 @@ infixl vctxA: $*V$ prec 20;
 @mmc-th theorem okPushHypI
   (h1: $ okVCtxPush vctx (vHyp ty) vctx2 $):
   $ okPushHyp (mkTCtx vctx n mctx) ty (mkTCtx vctx2 n mctx) $ = 'sorry;
+
+@mmc-th local def okReadHyp (tctx ty: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okReadHypTCtx
+  (h1: $ okReadHyp vctx ty $):
+  $ okReadHyp (mkTCtx vctx n mctx) ty $ = 'sorry;
+
+@mmc-th theorem okReadHypI
+  (h1: $ okVCtxGet vctx (vHyp ty) $):
+  $ okReadHyp vctx ty $ = 'sorry;
+
+@mmc-th theorem okReadHypVar
+  (h1: $ okVCtxGet vctx (vVar v ty) $):
+  $ okReadHyp vctx ty $ = 'sorry;
+
+@mmc-th theorem okReadHyp_unit:
+  $ okReadHyp tctx ty_unit $ = 'sorry;
 
 local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
 local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO
@@ -272,16 +293,16 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th theorem ok_jcc
   (h1: $ flagCond f c ty $)
-  (h2: $ okPushVar tctx ty tctx1 $)
-  (h3: $ okPushVar tctx (ty_not ty) tctx2 $)
+  (h2: $ okPushHyp tctx ty tctx1 $)
+  (h3: $ okPushHyp tctx (ty_not ty) tctx2 $)
   (h4: $ okBlock bctx tgt tctx1 $):
   $ okCode bctx (withFlags f tctx) (instJCC c tgt) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_jcc_invert
   (h0: $ invertCond notc c $)
   (h1: $ flagCond f c ty $)
-  (h2: $ okPushVar tctx ty tctx1 $)
-  (h3: $ okPushVar tctx (ty_not ty) tctx2 $)
+  (h2: $ okPushHyp tctx ty tctx1 $)
+  (h3: $ okPushHyp tctx (ty_not ty) tctx2 $)
   (h4: $ okBlock bctx tgt tctx2 $):
   $ okCode bctx (withFlags f tctx) (instJCC notc tgt) tctx1 $ = 'sorry;
 
@@ -289,11 +310,21 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th theorem ok_assert
   (h1: $ flagCond f c ty $)
-  (h2: $ okPushVar tctx ty tctx2 $)
+  (h2: $ okPushHyp tctx ty tctx2 $)
   (h3: $ okBlock bctx tgt tctx2 $):
   $ okCode bctx (withFlags f tctx) (instAssert c tgt) ok0 $ = 'sorry;
 
 @mmc-th local def okDefer (P A: set): set = $ 0 $; -- TODO
 
 @mmc-th theorem okDeferI:
-  $ okCode G P A (okDefer P A) $ = 'sorry;
+  $ okCode bctx tctx code (okDefer tctx code) $ = 'sorry;
+
+@mmc-th theorem ok_exit
+  (h1: $ okResult gctx T $)
+  (h2: $ okReadHyp tctx T $):
+  $ okCode (mkBCtx (mkPCtx gctx pctx1) labs)
+    (okDefer (okDefer tctx
+      (instImm wSz32 x0 (posZ ,0x3c)))
+      (instImm wSz64 x7 (posZ x0)))
+    instSysCall ok0 $ =
+'sorry;

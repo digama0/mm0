@@ -260,6 +260,9 @@ make_predefs! {
   assembled_l: ThmId => "assembled_l";
   assembled_r: ThmId => "assembled_r";
 
+  okResult: TermId => "okResult";
+  okResultGI: ThmId => "okResultGI";
+
   /// `strlen (s: string) (n: nat): wff`
   strlen: TermId => "strlen";
   strlenn[i: 16]: ThmId => format!("strlen{:x}", i);
@@ -501,6 +504,8 @@ make_predefs! {
 
   ok0: TermId => "ok0";
 
+  ty_unit: TermId => "ty_unit";
+
   labelGroup0: TermId => "labelGroup0";
   labelGroup: TermId => "labelGroup";
 
@@ -527,6 +532,12 @@ make_predefs! {
 
   okPushHyp: TermId => "okPushHyp";
   okPushHypI: ThmId => "okPushHypI";
+
+  okReadHyp: TermId => "okReadHyp";
+  okReadHypTCtx: ThmId => "okReadHypTCtx";
+  okReadHypI: ThmId => "okReadHypI";
+  okReadHypVar: ThmId => "okReadHypVar";
+  okReadHyp_unit: ThmId => "okReadHyp_unit";
 
   okAssembled: TermId => "okAssembled";
   okAssembledI: ThmId => "okAssembledI";
@@ -571,9 +582,14 @@ make_predefs! {
 
   spillslot: TermId => "spillslot";
 
+  okDefer: TermId => "okDefer";
+  okDeferI: ThmId => "okDeferI";
+
   ok_movRR: ThmId => "ok_movRR";
   ok_spill: ThmId => "ok_spill";
   ok_unspill: ThmId => "ok_unspill";
+
+  ok_exit: ThmId => "ok_exit";
 
   // basicElf_ok: ThmId => "basicElf_ok";
 

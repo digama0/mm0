@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use mmcc::Idx;
 use mmcc::types::IdxVec;
-use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId};
+use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId,
+  Operand, Place, ConstKind};
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
@@ -18,12 +19,13 @@ use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
 pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D::Id {
-  app!(de, (ok0)) // TODO
+  app!(de, (ty_unit)) // TODO
 }
 
 type P<A> = (A, ProofId);
 
 struct Ctx {
+  t_gctx: TermId,
   gctx: ProofId,
   start: Num,
   args: ProofId,
@@ -34,11 +36,13 @@ struct Ctx {
   pctx: ProofId,
   labs: ProofId,
   bctx: ProofId,
+  ok0: ProofId,
 }
 
 impl Ctx {
-  fn new(de: &mut ProofDedup<'_>, hex: &HexCache, proc: &Proc<'_>, gctx: TermId) -> Ctx {
-    let gctx = app!(de, ({gctx}));
+  fn new(de: &mut ProofDedup<'_>, hex: &HexCache, proc: &Proc<'_>, t_gctx: TermId) -> Ctx {
+    let ok0 = app!(de, (ok0));
+    let gctx = app!(de, ({t_gctx}));
     let start = hex.from_u32(de, proc.start);
     let args = app!(de, (ok0)); // todo!();
     let ret = app!(de, (ok0)); // todo!();
@@ -53,7 +57,7 @@ impl Ctx {
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
-    Ctx { gctx, start, args, ret, epi, sp_max, pctx1, pctx, labs, bctx }
+    Ctx { t_gctx, gctx, start, args, ret, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
   }
 }
 
@@ -286,14 +290,19 @@ impl VCtx {
   }
 }
 
-enum StatementIterKind {
+enum DeferredKind<'a> {
+  Exit(&'a Operand)
+}
+
+enum StatementIterKind<'a> {
   Start,
+  Defer(u8, ProofId, DeferredKind<'a>),
 }
 
 struct StatementIter<'a> {
   stmts: std::slice::Iter<'a, Statement>,
   term: Option<&'a Terminator>,
-  kind: StatementIterKind,
+  kind: StatementIterKind<'a>,
 }
 
 struct TCtx<'a> {
@@ -469,6 +478,63 @@ impl<'a> ProcProver<'a> {
     (tctx, l)
   }
 
+  /// Returns `|- okReadHyp tctx ty2` if `th: |- okReadHyp tctx ty`
+  fn read_hyp_coerce(&mut self, ty: ProofId, th: ProofId, ty2: ProofId) -> ProofId {
+    // TODO
+    assert!(ty == ty2, "failed to coerce {} to {}", self.pp(ty), self.pp(ty2));
+    th
+  }
+
+  /// Returns `(ty, |- okReadHyp vctx ty)`
+  fn read_hyp_var(&mut self, vctx: &VCtx, v: VarId) -> (ProofId, ProofId) {
+    let (_, val, h1) = vctx.get(&mut self.thm, &self.vctxs, v);
+    app_match!(self.thm, val => {
+      (vHyp ty) => (ty, thm!(self.thm, okReadHypI(ty, vctx.e, h1): okReadHyp[vctx.e, ty])),
+      (vVar v ty) => (ty, thm!(self.thm, okReadHypVar(ty, v, vctx.e, h1): okReadHyp[vctx.e, ty])),
+      !
+    })
+  }
+
+  /// Returns `(ty, |- okReadHyp vctx ty)`
+  fn read_hyp_place(&mut self, vctx: &VCtx, p: &Place) -> (ProofId, ProofId) {
+    assert!(p.proj.is_empty()); // TODO
+    self.read_hyp_var(vctx, p.local)
+  }
+
+  /// Returns `|- okReadHyp tctx ty`
+  fn read_hyp_wrapper(&mut self, (tctx, l1): P<&TCtx<'a>>, ty: ProofId, th: ProofId) -> ProofId {
+    app_match!(self.thm, l1 => {
+      (mkTCtx vctx n mctx) => thm!(self.thm,
+        okReadHypTCtx(mctx, n, ty, vctx, th): okReadHyp[l1, ty]),
+      !
+    })
+  }
+
+  /// Returns `(ty, |- okReadHyp tctx ty)`
+  fn read_hyp_operand(&mut self, (tctx, l1): P<&TCtx<'a>>, op: &Operand) -> (ProofId, ProofId) {
+    match op.place() {
+      Ok(p) => {
+        let (ty, th) = self.read_hyp_place(&tctx.vctx, p);
+        (ty, self.read_hyp_wrapper((tctx, l1), ty, th))
+      }
+      Err(c) => match c.k {
+        ConstKind::Unit => {
+          let ty = app!(self.thm, (ty_unit));
+          (ty, thm!(self.thm, okReadHyp_unit(l1): okReadHyp[l1, ty]))
+        }
+        ConstKind::ITrue => todo!(),
+        ConstKind::Bool => todo!(),
+        ConstKind::Int => todo!(),
+        ConstKind::Uninit => todo!(),
+        ConstKind::Const(_) => todo!(),
+        ConstKind::Sizeof => todo!(),
+        ConstKind::Mm0Proof(_) => todo!(),
+        ConstKind::Contra(_, _) => todo!(),
+        ConstKind::As(_) => todo!(),
+      }
+    }
+  }
+
   /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret tctx)`
   fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
     let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
@@ -550,7 +616,7 @@ impl<'a> ProcProver<'a> {
     let tctx = if let LCtx::Reg(tctx) = lctx { &mut **tctx } else { unreachable!() };
     // println!("ok_code_reg");
     // dbg!(self.pp(l1), code.map(|code| self.pp(code)));
-    #[allow(clippy::never_loop)] loop {
+    loop {
       return match tctx.viter.kind {
         StatementIterKind::Start => if let Some(stmt) = tctx.viter.stmts.next() {
           // dbg!(stmt);
@@ -575,11 +641,34 @@ impl<'a> ProcProver<'a> {
             Terminator::If(_, _) => todo!(),
             Terminator::Assert(_, _, _, _) => todo!(),
             Terminator::Call { f, se, tys, args, reach, tgt, rets } => todo!(),
-            Terminator::Exit(_) => todo!(),
+            Terminator::Exit(op) => {
+              tctx.viter.kind = StatementIterKind::Defer(2, l1, DeferredKind::Exit(op));
+              continue
+            }
             Terminator::Dead => unreachable!(),
           }
         } else {
           todo!()
+        }
+        StatementIterKind::Defer(0, l0, DeferredKind::Exit(op)) => {
+          let code = code.expect("defer requires code");
+          let u_gctx = self.thm.get_def0(self.elab, self.t_gctx);
+          let (c, ty) = app_match!(self.thm, u_gctx => { (mkGCtx c t) => (c, t), ! });
+          let th = thm!(self.thm, okResultGI(ty, c): okResult[u_gctx, ty]);
+          let h1 = thm!(self.thm, (okResult[self.gctx, ty]) =>
+            CONV({th} => (okResult (UNFOLD({self.t_gctx}); u_gctx) ty)));
+          let (ty2, h2) = self.read_hyp_operand((tctx, l0), op);
+          let h2 = self.read_hyp_coerce(ty2, h2, ty);
+          *lctx = LCtx::Dead;
+          (self.ok0, thm!(self.thm, (okCode[self.bctx, l1, code, self.ok0]) =>
+            ok_exit(ty, self.gctx, self.labs, self.pctx1, l0, h1, h2)))
+        }
+        StatementIterKind::Defer(ref mut n, _, _) => {
+          let code = code.expect("defer requires code");
+          tctx.piter.as_mut().and_then(Iterator::next).expect("defer requires code");
+          *n -= 1;
+          let l2 = app!(self.thm, (okDefer l1 code));
+          (l2, thm!(self.thm, okDeferI(self.bctx, code, l1): okCode[self.bctx, l1, code, l2]))
         }
       }
     }
