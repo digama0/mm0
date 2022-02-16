@@ -549,7 +549,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastMov sz ds) s)} $;
   (h3: $ splitBits31 r rb dst $)
   (h4: $ REX_W rex = 0 $)
   (h5: $ parseImm32 src l $):
-  $ parseOpc p ip l rex (ch xb y) (instMov wSz32 (IRM_reg dst) (IRM_imm32 src)) $ = 'sorry;
+  $ parseOpc p ip l rex (ch xb y) (instImm wSz32 dst src) $ = 'sorry;
 
 @mmc-th theorem parseMov64
   (h1: $ splitBits31 r 1 y $)
@@ -557,14 +557,21 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastMov sz ds) s)} $;
   (h3: $ splitBits31 r rb dst $)
   (h4: $ REX_W rex = 1 $)
   (h5: $ parseImm64 src l $):
-  $ parseOpc p ip l rex (ch xb y) (instMov wSz64 (IRM_reg dst) (IRM_imm64 src)) $ = 'sorry;
+  $ parseOpc p ip l rex (ch xb y) (instImm wSz64 dst src) $ = 'sorry;
 
-@mmc-th theorem parseMovImm
+@mmc-th theorem parseMovImmM
   (h1: $ splitBits13 v 3 y $)
   (h2: $ opSizeW rex v = sz $)
   (h3: $ parseModRM rex x0 dst l1 l2 $)
   (h4: $ parseImm sz src l2 $):
   $ parseOpc p ip l1 rex (ch xc y) (instMov sz dst (IRM_imm32 src)) $ = 'sorry;
+
+@mmc-th theorem parseMovImmI
+  (h1: $ splitBits13 v 3 y $)
+  (h2: $ opSizeW rex v = sz $)
+  (h3: $ parseModRM rex x0 (IRM_reg dst) l1 l2 $)
+  (h4: $ parseImm sz src l2 $):
+  $ parseOpc p ip l1 rex (ch xc y) (instImm sz dst src) $ = 'sorry;
 
 @mmc-th local def instPush (src: nat): set =
 $ S\ p, S\ s, {x | guarded src {src2 | decode (xastPush src2) s}} $;

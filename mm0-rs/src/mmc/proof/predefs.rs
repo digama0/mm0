@@ -461,7 +461,8 @@ make_predefs! {
   parseMovZLQ: ThmId => "parseMovZLQ";
   parseMov32: ThmId => "parseMov32";
   parseMov64: ThmId => "parseMov64";
-  parseMovImm: ThmId => "parseMovImm";
+  parseMovImmM: ThmId => "parseMovImmM";
+  parseMovImmI: ThmId => "parseMovImmI";
   parsePushImm8: ThmId => "parsePushImm8";
   parsePushImm32: ThmId => "parsePushImm32";
   parsePushReg: ThmId => "parsePushReg";
