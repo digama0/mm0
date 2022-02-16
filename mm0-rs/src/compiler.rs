@@ -175,7 +175,7 @@ fn mk_to_range() -> impl FnMut(&FileSpan) -> Option<Range> {
   let mut srcs = HashMap::new();
   move |fsp: &FileSpan| -> Option<Range> {
     srcs.entry(fsp.file.ptr())
-      .or_insert_with(|| VFS.0.ulock().get(&fsp.file).unwrap().text.clone())
+      .or_insert_with(|| VFS.0.ulock()[&fsp.file].text.clone())
       .try_ascii().map(|f| f.to_range(fsp.span))
   }
 }
