@@ -298,14 +298,14 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       send_diagnostics(path.url().clone(), version, errs)?;
 
       let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-      if n_warns != 0 { write!(log_msg, ", {} warnings", n_warns).unwrap() }
-      if n_infos != 0 { write!(log_msg, ", {} infos", n_infos).unwrap() }
-      if n_hints != 0 { write!(log_msg, ", {} hints", n_hints).unwrap() }
+      if n_warns != 0 { write!(log_msg, ", {} warnings", n_warns).expect("impossible") }
+      if n_infos != 0 { write!(log_msg, ", {} infos", n_infos).expect("impossible") }
+      if n_hints != 0 { write!(log_msg, ", {} hints", n_hints).expect("impossible") }
       if SERVER.options.ulock().log_errors.unwrap_or(true) {
         for e in &errors {
           let Position {line, character: col} = source.ascii().to_pos(e.pos.start);
           write!(log_msg, "\n\n{}: {}:{}:{}:\n{}",
-            e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+            e.level, path.rel(), line+1, col+1, e.kind.msg()).expect("impossible");
         }
       }
       log(log_msg);
@@ -425,7 +425,7 @@ impl Vfs {
   }
 
   fn source(&self, file: &FileRef) -> Arc<LinedString> {
-    self.0.ulock().get(file).unwrap().text.ulock().1.ascii().clone()
+    self.0.ulock()[file].text.ulock().1.ascii().clone()
   }
 
   fn open_virt(&self, path: FileRef, version: i32, text: String) -> Arc<VirtualFile> {
@@ -463,13 +463,13 @@ impl Vfs {
   fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
     for from in old_deps {
       if !deps.contains(from) {
-        let file = self.0.ulock().get(from).unwrap().clone();
+        let file = self.0.ulock()[from].clone();
         file.downstream.ulock().remove(to);
       }
     }
     for from in deps {
       if !old_deps.contains(from) {
-        let file = self.0.ulock().get(from).unwrap().clone();
+        let file = self.0.ulock()[from].clone();
         file.downstream.ulock().insert(to.clone());
       }
     }
@@ -975,7 +975,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
           value: doc.to_string(),
         })
       }),
-      data: Some(to_value((path.url(), tk)).unwrap()),
+      data: Some(to_value((path.url(), tk)).expect("serialization error")),
       ..Default::default()
     }
   }}
