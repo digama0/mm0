@@ -29,7 +29,7 @@ mmc = ["mmcc", "im"]
 debug = true
 
 [profile.dev]
-opt-level = 1
+opt-level = 2
 
 [dependencies]
 either = "1.6"
