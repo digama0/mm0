@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::regalloc::PCode;
+use crate::types::vcode::ProcAbi;
 use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
 use crate::codegen::FUNCTION_ALIGN;
 use crate::types::{mir::{self, Cfg, BlockTree}, vcode::ConstRef};
@@ -68,6 +69,9 @@ impl<'a> ElfProof<'a> {
 
   /// The mapping from IDs to function names.
   #[must_use] pub fn func_names(&self) -> &'a IdxVec<ProcId, Symbol> { &self.code.func_names }
+
+  /// Get the ABI (calling convention) of a function.
+  #[must_use] pub fn proc_abi(&self, id: ProcId) -> &'a ProcAbi { &self.code.func_abi[id] }
 
   /// An iterator over the assembled items (procedures and constants).
   #[must_use] pub fn assembly(&self) -> AssemblyItemIter<'_> {

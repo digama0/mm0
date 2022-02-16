@@ -189,7 +189,7 @@ impl<I: Idx, T, A: IntoIterator<Item = T>> FromIterator<A> for ChunkVec<I, T> {
 /// The calling convention of a single argument.
 #[allow(variant_size_differences)]
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ArgAbi {
+pub enum ArgAbi {
   /// The value is not passed.
   Ghost,
   /// The value is passed in the given physical register.
@@ -225,16 +225,16 @@ pub(crate) enum ArgAbi {
 
 /// The representation of a monomorphized function's calling convention.
 #[derive(Default, Debug)]
-pub(crate) struct ProcAbi {
+pub struct ProcAbi {
   /// The arguments of the procedure.
-  pub(crate) args: Box<[ArgAbi]>,
+  pub args: Box<[ArgAbi]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
   /// If None, then the function does not return.
-  pub(crate) rets: Option<Box<[ArgAbi]>>,
+  pub rets: Option<Box<[ArgAbi]>>,
   /// The total size of the stack-allocated incoming arguments in bytes
-  pub(crate) args_space: u32,
+  pub args_space: u32,
   /// The registers that are clobbered by the call.
-  pub(crate) clobbers: Box<[PReg]>,
+  pub clobbers: Box<[PReg]>,
 }
 
 /// A low level representation of a function, after instruction selection but before

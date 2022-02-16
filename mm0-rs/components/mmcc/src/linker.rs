@@ -10,7 +10,7 @@ use crate::types::global::{TyKind, ExprKind};
 use crate::types::entity::{ConstTc, Entity, ProcTc};
 use crate::types::mir::{
   Cfg, ConstKind, Constant, Place, Proc, Terminator, Ty, VarId, Visitor};
-use crate::types::vcode::{GlobalId, ProcId, ConstRef};
+use crate::types::vcode::{GlobalId, ProcId, ConstRef, ProcAbi};
 use crate::types::{IdxVec, Size};
 use crate::Symbol;
 
@@ -224,6 +224,7 @@ pub struct LinkedCode {
   pub(crate) global_size: u32,
   pub(crate) init: (Cfg, Box<PCode>),
   pub(crate) func_names: IdxVec<ProcId, Symbol>,
+  pub(crate) func_abi: IdxVec<ProcId, ProcAbi>,
   pub(crate) funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
   pub(crate) postorder: Vec<ProcId>,
   pub(crate) text_size: u32,
@@ -283,6 +284,7 @@ impl LinkedCode {
       global_size,
       init: (init, init_code),
       func_names: coll.funcs.1,
+      func_abi,
       funcs,
       postorder: coll.postorder,
       text_size: pos - TEXT_START,
