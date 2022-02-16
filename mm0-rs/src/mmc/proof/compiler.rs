@@ -30,6 +30,7 @@ struct Ctx {
   start: Num,
   args: ProofId,
   ret: ProofId,
+  clob: ProofId,
   epi: ProofId,
   sp_max: Num,
   pctx1: ProofId,
@@ -46,6 +47,7 @@ impl Ctx {
     let start = hex.from_u32(de, proc.start);
     let args = app!(de, (ok0)); // todo!();
     let ret = app!(de, (ok0)); // todo!();
+    let clob = app!(de, (d0)); // todo!();
     let mut epi = app!(de, (epiRet));
     #[allow(clippy::cast_possible_truncation)]
     for &reg in proc.saved_regs() {
@@ -57,7 +59,7 @@ impl Ctx {
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
-    Ctx { t_gctx, gctx, start, args, ret, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
+    Ctx { t_gctx, gctx, start, args, ret, clob, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
   }
 }
 
@@ -547,11 +549,11 @@ impl<'a> ProcProver<'a> {
     }
   }
 
-  /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret tctx)`
+  /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret clob tctx)`
   fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
     let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
     let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
-    let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, tctx.1]);
+    let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, self.clob, tctx.1]);
     (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO
   }
 
@@ -866,8 +868,9 @@ impl<'a> ProcProver<'a> {
       let iter = self.proc.saved_regs().iter();
       let prol = Box::new(Prologue { epi: epi0, sp, iter, ok_epi, tctx });
       let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
-      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret]) =>
-        okProcI(self.args, code, self.gctx, self.pctx1, self.ret, *self.start, l1, h1, h2, h3))
+      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret, self.clob]) =>
+        okProcI(self.args, self.clob, code, self.gctx, self.pctx1, self.ret,
+          *self.start, l1, h1, h2, h3))
     } else {
       let ((tctx, l1), h2) = self.build_start(root);
       let mut sp = self.hex.h2n(&mut self.thm, 0);

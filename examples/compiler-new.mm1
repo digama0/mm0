@@ -190,7 +190,8 @@ $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
   (h2: $ okWeak bctx lctx2 lctx3 $):
   $ okCode bctx lctx1 code lctx3 $ = 'sorry;
 
-@mmc-th local def okProc (gctx: set) (start: nat) (args ret: set): wff = $ F. $; -- TODO
+@mmc-th local def okProc (gctx: set) (start: nat)
+  (args ret: set) (clob: nat): wff = $ F. $; -- TODO
 
 @mmc-th local def okPrologue (epi sp: nat) (lctx: set): set =
 $ Sum (suc (epi <> sp)) (Snd lctx) $;
@@ -208,13 +209,13 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 @mmc-th theorem okAssembled_r
   (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code2 $ = 'sorry;
 
-@mmc-th local def buildProc (pctx args ret lctx: set): wff = $ F. $; -- TODO
+@mmc-th local def buildProc (pctx args ret: set) (clob: nat) (lctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okProcI
   (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry start code) $)
-  (h2: $ buildProc (mkPCtx gctx pctx1) args ret tctx $)
+  (h2: $ buildProc (mkPCtx gctx pctx1) args ret clob tctx $)
   (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) (okPrologue epiRet x0 tctx) code ok0 $):
-  $ okProc gctx start args ret $ = 'sorry;
+  $ okProc gctx start args ret clob $ = 'sorry;
 
 @mmc-th local def buildStart (pctx lctx: set): wff = $ F. $; -- TODO
 @mmc-th local def okStart (gctx: set) (start: nat): wff = $ F. $; -- TODO
