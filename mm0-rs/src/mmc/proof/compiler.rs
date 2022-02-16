@@ -279,7 +279,7 @@ impl VCtx {
 struct TCtx<'a> {
   stmts: std::slice::Iter<'a, Statement>,
   term: Option<&'a Terminator>,
-  iter: Option<std::iter::Peekable<InstIter<'a>>>,
+  piter: Option<std::iter::Peekable<InstIter<'a>>>,
 }
 
 type PTCtx<'a> = P<Box<TCtx<'a>>>;
@@ -576,24 +576,27 @@ impl<'a> ProcProver<'a> {
         (l1, thm!(self.thm, okCode_0(self.bctx, code): okCode[self.bctx, l1, code, l1])),
       (LCtx::Prologue(_), None) => unreachable!("entry block must have code"),
       (LCtx::Prologue(p), Some(code)) => if let Some(&reg) = p.iter.next() {
-        let Prologue {epi, sp, ref tctx, ..} = **p;
+        let Prologue { epi, sp, ref mut tctx, .. } = **p;
         let r = self.hex[reg.index()];
         let n = self.hex.h2n(&mut self.thm, 8);
         let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
         p.epi = app!(self.thm, epiPop[r, epi]);
         p.sp = sp2;
+        tctx.0.piter.as_mut().expect("impossible").next();
         let l2 = app!(self.thm, okPrologue[p.epi, *sp2, tctx.1]);
         (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
           okPrologue_push(self.bctx, epi, r, *sp, *sp2, tctx.1, h1)))
       } else {
-        let Prologue {epi, sp, tctx: (mut tctx, l2), ok_epi, ..} =
+        let Prologue { epi, sp, tctx: (mut tctx, l2), ok_epi, .. } =
           *let_unchecked!(LCtx::Prologue(p) = std::mem::take(lctx), p);
-        *lctx = LCtx::Reg(tctx);
         if self.sp_max.val == 0 {
+          *lctx = LCtx::Reg(tctx);
           let (l3, th) = self.ok_code1((lctx, l2), Some(code));
           (l3, thm!(self.thm, (okCode[self.bctx, l1, code]) =>
-            okPrologue_alloc0(self.bctx, code, epi, l2, *sp, l3, ok_epi)))
+            okPrologue_alloc0(self.bctx, code, epi, l3, *sp, l2, ok_epi, th)))
         } else {
+          tctx.piter.as_mut().expect("impossible").next();
+          *lctx = LCtx::Reg(tctx);
           let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
           let max = self.hex.from_u32(&mut self.thm, 1 << 12);
           let h3 = self.hex.lt(&mut self.thm, m, max);
@@ -603,7 +606,7 @@ impl<'a> ProcProver<'a> {
       }
       (LCtx::Reg(tctx), code) => {
         if_chain! {
-          if let Some(iter) = &mut tctx.iter;
+          if let Some(iter) = &mut tctx.piter;
           if let Some(code) = code;
           if let Some(inst) = iter.peek();
           if matches!(inst.inst, PInst::MovRR { .. } |
