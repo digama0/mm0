@@ -7,6 +7,7 @@ use mmcc::Idx;
 use mmcc::types::IdxVec;
 use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId,
   Operand, Place, ConstKind};
+use mmcc::types::vcode::ProcAbi;
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
@@ -31,6 +32,7 @@ struct Ctx {
   args: ProofId,
   ret: ProofId,
   clob: ProofId,
+  se: ProofId,
   epi: ProofId,
   sp_max: Num,
   pctx1: ProofId,
@@ -48,6 +50,7 @@ impl Ctx {
     let args = app!(de, (ok0)); // todo!();
     let ret = app!(de, (ok0)); // todo!();
     let clob = app!(de, (d0)); // todo!();
+    let se = app!(de, (tru)); // todo!();
     let mut epi = app!(de, (epiRet));
     #[allow(clippy::cast_possible_truncation)]
     for &reg in proc.saved_regs() {
@@ -55,11 +58,11 @@ impl Ctx {
     }
     let sp_max = hex.from_u32(de, proc.stack_size());
     if sp_max.val != 0 { epi = app!(de, epiFree[*sp_max, epi]) }
-    let pctx1 = app!(de, mkPCtx1[*start, ret, epi]);
+    let pctx1 = app!(de, mkPCtx1[*start, ret, epi, se]);
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
-    Ctx { t_gctx, gctx, start, args, ret, clob, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
+    Ctx { t_gctx, gctx, start, args, ret, clob, se, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
   }
 }
 
@@ -298,6 +301,7 @@ enum DeferredKind<'a> {
 
 enum StatementIterKind<'a> {
   Start,
+  PostCall(BlockId, &'a [(bool, VarId)]),
   Jump1(BlockId),
   Defer(u8, ProofId, DeferredKind<'a>),
 }
@@ -383,6 +387,7 @@ impl Default for LCtx<'_> {
 }
 
 struct ProcProver<'a> {
+  elf_proof: &'a ElfProof<'a>,
   proc: &'a Proc<'a>,
   proc_asm: &'a HashMap<Option<ProcId>, (TermId, ThmId)>,
   proc_proof: &'a mut HashMap<Option<ProcId>, ThmId>,
@@ -549,11 +554,11 @@ impl<'a> ProcProver<'a> {
     }
   }
 
-  /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret clob tctx)`
+  /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret clob se tctx)`
   fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
     let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
     let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
-    let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, self.clob, tctx.1]);
+    let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, self.clob, self.se, tctx.1]);
     (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO
   }
 
@@ -633,7 +638,7 @@ impl<'a> ProcProver<'a> {
   /// Returns `|- getEpi bctx ret epi`
   fn get_epi(&mut self) -> ProofId {
     thm!(self.thm, (getEpi[self.bctx, self.ret, self.epi]) =>
-      getEpiI(self.epi, self.gctx, self.labs, self.ret, *self.start))
+      getEpiI(self.epi, self.gctx, self.labs, self.ret, self.se, *self.start))
   }
 
   /// Returns `|- checkRet bctx tctx ret`
@@ -643,6 +648,27 @@ impl<'a> ProcProver<'a> {
     drop(tctx.0);
     thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
       checkRetI(self.bctx, self.ret, tctx.1))
+  }
+
+  /// Returns `(tctx2, |- applyCall tctx1 args ret clob tctx2)`,
+  /// or `(tctx2, |- applyCallG tctx1 args ret tctx2)` if `rel` is false
+  #[allow(clippy::too_many_arguments)]
+  fn apply_call(&mut self,
+    (tctx, l1): P<&mut TCtx<'a>>,
+    abi: &'a ProcAbi,
+    args: ProofId,
+    ret: ProofId,
+    clob: ProofId,
+    rel: bool,
+  ) -> (ProofId, ProofId) {
+    let l2 = l1;
+    if rel {
+      let ret = app!(self.thm, applyCall[l1, args, ret, clob, l2]);
+      (l2, thm!(self.thm, sorry(ret): ret)) // TODO
+    } else {
+      let ret = app!(self.thm, applyCallG[l1, args, ret, l2]);
+      (l2, thm!(self.thm, sorry(ret): ret)) // TODO
+    }
   }
 
   /// Returns `(lctx', |- okCode bctx tctx code lctx')`
@@ -689,7 +715,35 @@ impl<'a> ProcProver<'a> {
             Terminator::Unreachable(_) => todo!(),
             Terminator::If(_, _) => todo!(),
             Terminator::Assert(_, _, _, _) => todo!(),
-            Terminator::Call { f, se, tys, args, reach, tgt, rets } => todo!(),
+            &Terminator::Call { f, se, ref tys, ref args, reach, tgt: block, ref rets } => {
+              let f = self.elf_proof.get_func(f).expect("missing function");
+              let abi = self.elf_proof.proc_abi(f);
+              let proc_thm = *self.proc_proof.get(&Some(f))
+                .unwrap_or_else(|| unimplemented!("recursive function"));
+              let (x, h1) = self.thm.thm0(self.elab, proc_thm);
+              let (tgt, args, ret, clob) = app_match!(self.thm, x => {
+                (okProc _ tgt args ret clob _) => (tgt, args, ret, clob),
+                !
+              });
+              let (l2, h2) = self.apply_call((tctx, l1), abi, args, ret, clob, code.is_some());
+              if reach {
+                tctx.viter.kind = StatementIterKind::PostCall(block, rets);
+              } else {
+                *lctx = LCtx::Dead
+              }
+              match (code, se) {
+                (Some(code), true) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
+                  ok_call_proc(args, clob, self.epi, self.gctx, self.labs, ret, self.ret,
+                    *self.start, l1, l2, tgt, h1, h2))),
+                (Some(code), false) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
+                  ok_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
+                    l1, l2, tgt, h1, h2))),
+                (None, false) => (l2, thm!(self.thm, (okWeak[self.bctx, l1, l2]) =>
+                  okWeak_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
+                    l1, l2, tgt, h1, h2))),
+                (None, true) => unreachable!("side effecting function must have control flow"),
+              }
+            }
             Terminator::Exit(op) => {
               tctx.viter.kind = StatementIterKind::Defer(2, l1, DeferredKind::Exit(op));
               continue
@@ -698,6 +752,11 @@ impl<'a> ProcProver<'a> {
           }
         } else {
           todo!()
+        }
+        StatementIterKind::PostCall(tgt, rets) => {
+          assert!(rets.is_empty()); // TODO
+          tctx.viter.kind = StatementIterKind::Jump1(tgt);
+          continue
         }
         StatementIterKind::Jump1(tgt) => {
           tctx.retarget(self.proc.block(tgt));
@@ -868,8 +927,8 @@ impl<'a> ProcProver<'a> {
       let iter = self.proc.saved_regs().iter();
       let prol = Box::new(Prologue { epi: epi0, sp, iter, ok_epi, tctx });
       let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
-      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret, self.clob]) =>
-        okProcI(self.args, self.clob, code, self.gctx, self.pctx1, self.ret,
+      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret, self.clob, self.se]) =>
+        okProcI(self.args, self.clob, code, self.gctx, self.pctx1, self.ret, self.se,
           *self.start, l1, h1, h2, h3))
     } else {
       let ((tctx, l1), h2) = self.build_start(root);
@@ -898,6 +957,7 @@ pub(super) fn compile_proof(
     let hex = HexCache::new(&mut thm);
     let root = VCtx::root(&mut thm, &hex);
     let mut build = ProcProver {
+      elf_proof: proof,
       proc: &proc,
       proc_asm,
       proc_proof: &mut proc_proof,

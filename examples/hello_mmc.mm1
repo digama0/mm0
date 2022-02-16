@@ -4,13 +4,29 @@ do {
   (mmc-add '(
     (proc (adder {x : u32} {y : u32} : {ret : (sn {(cast {x + y}) : u64})})
       (sn {(cast {x + y}) : u64}))
+  ))
 
-    (proc (main : (pure $ 2 + 2 = 4 $))
-      {(four h) := (adder 2 2)}
-      -- h: $ 2 + 2 = four $
-      {h2 := (assert {four = 4})}
-      -- h: $ 2 + 2 = four $, h2: $ four = 4 $
-      (return (entail h h2 eqtr)))
+  -- (mmc-add '(
+  --   (proc (main : (pure $ 2 + 2 = 4 $))
+  --     -- (begin . ,(rmap (range 0 20) @ fn (i) '(,(atom-app 'adder i) 2 2)))
+  --     {(four h) := (adder 2 2)}
+  --     -- h: $ 2 + 2 = four $
+  --     {h2 := (assert {four = 4})}
+  --     -- h: $ 2 + 2 = four $, h2: $ four = 4 $
+  --     (entail h h2 eqtr))
+  -- ))
+  -- (mmc-add '(
+  --   (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+  --     (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+  --   (proc (main)
+  --     {{hello : (array u8 11)} := (list . ,(string->list "hello world"))}
+  --     {x := (sys_write 1 11 hello (& hello))}
+  --     )
+  -- ))
+  (mmc-add '(
+    (proc (main))
   ))
   (mmc-finish 'test)
+  '_mmc_test_main_ok
 };

@@ -12,8 +12,9 @@ import "compiler-old.mm1";
 --| * `start`: the address of the procedure entry point
 --| * `ret`: the return ABI
 --| * `epi: epilogue`: the epilogue sequence
-@mmc-th local def mkPCtx1 (start: nat) (ret: set) (epi: nat): set =
-$ Sum ret (start <> epi) $;
+--| * `se: bool`: true if this procedure is allowed to perform side effects
+@mmc-th local def mkPCtx1 (start: nat) (ret: set) (epi: nat) (se: wff): set =
+$ Sum ret (start <> epi <> nat se) $;
 
 --| Procedure-global context, constructor for `pctx := gctx * pctx1` type.
 --| We write it in such a way that `pctx` extends `gctx`,
@@ -191,7 +192,7 @@ $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
   $ okCode bctx lctx1 code lctx3 $ = 'sorry;
 
 @mmc-th local def okProc (gctx: set) (start: nat)
-  (args ret: set) (clob: nat): wff = $ F. $; -- TODO
+  (args ret: set) (clob: nat) (se: wff): wff = $ F. $; -- TODO
 
 @mmc-th local def okPrologue (epi sp: nat) (lctx: set): set =
 $ Sum (suc (epi <> sp)) (Snd lctx) $;
@@ -209,13 +210,14 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 @mmc-th theorem okAssembled_r
   (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code2 $ = 'sorry;
 
-@mmc-th local def buildProc (pctx args ret: set) (clob: nat) (lctx: set): wff = $ F. $; -- TODO
+@mmc-th local def buildProc
+  (pctx args ret: set) (clob: nat) (se: wff) (lctx: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem okProcI
   (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry start code) $)
-  (h2: $ buildProc (mkPCtx gctx pctx1) args ret clob tctx $)
+  (h2: $ buildProc (mkPCtx gctx pctx1) args ret clob se tctx $)
   (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) (okPrologue epiRet x0 tctx) code ok0 $):
-  $ okProc gctx start args ret clob $ = 'sorry;
+  $ okProc gctx start args ret clob se $ = 'sorry;
 
 @mmc-th local def buildStart (pctx lctx: set): wff = $ F. $; -- TODO
 @mmc-th local def okStart (gctx: set) (start: nat): wff = $ F. $; -- TODO
@@ -361,6 +363,25 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 
 @mmc-th theorem okDeferI:
   $ okCode bctx tctx code (okDefer tctx code) $ = 'sorry;
+
+@mmc-th local def applyCall (tctx1 args ret: set) (clob: nat) (tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def applyCallG (tctx1 args ret: set) (tctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem ok_call_func
+  (h1: $ okProc gctx tgt args ret clob F. $)
+  (h2: $ applyCall tctx args ret clob tctx2 $):
+  $ okCode (mkBCtx (mkPCtx gctx pctx1) labs) tctx (instCall tgt) tctx2 $ = 'sorry;
+
+@mmc-th theorem okWeak_call_func
+  (h1: $ okProc gctx tgt args ret clob F. $)
+  (h2: $ applyCallG tctx args ret tctx2 $):
+  $ okWeak (mkBCtx (mkPCtx gctx pctx1) labs) tctx tctx2 $ = 'sorry;
+
+@mmc-th theorem ok_call_proc
+  (h1: $ okProc gctx tgt args ret clob T. $)
+  (h2: $ applyCall tctx args ret clob tctx2 $):
+  $ okCode (mkBCtx (mkPCtx gctx (mkPCtx1 start ret2 epi T.)) labs) tctx (instCall tgt) tctx2 $ =
+'sorry;
 
 @mmc-th theorem ok_exit
   (h1: $ okResult gctx T $)

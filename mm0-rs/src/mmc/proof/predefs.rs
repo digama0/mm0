@@ -569,7 +569,6 @@ make_predefs! {
   okBlock_weak: ThmId => "okBlock_weak";
   okBlockI: ThmId => "okBlockI";
   okBlock0: ThmId => "okBlock0";
-  okBlock_loop: ThmId => "okBlock_loop";
 
   okEpi: TermId => "okEpi";
 
@@ -607,6 +606,11 @@ make_predefs! {
   ok_unspill: ThmId => "ok_unspill";
   ok_jump: ThmId => "ok_jump";
 
+  applyCall: TermId => "applyCall";
+  applyCallG: TermId => "applyCallG";
+  ok_call_func: ThmId => "ok_call_func";
+  okWeak_call_func: ThmId => "okWeak_call_func";
+  ok_call_proc: ThmId => "ok_call_proc";
   ok_exit: ThmId => "ok_exit";
 
   // basicElf_ok: ThmId => "basicElf_ok";
