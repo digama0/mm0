@@ -281,6 +281,11 @@ enum Name {
   AsmdThmLemma(u32),
   /// `foo_asmd: assembled foo_gctx (asmProc <foo_start> foo_asm)`: the completed assembly proof
   ProcAsmdThm(Option<Symbol>),
+  /// `foo_ok: okProc foo_gctx <foo_start> <foo_args> <foo_ret>`:
+  /// the correctness proof for a regular function
+  ProcOkThm(Symbol),
+  /// `_start_ok: okStart foo_gctx`: the correctness proof for the `_start` entry point
+  StartOkThm,
 }
 
 impl std::fmt::Display for Name {
@@ -294,6 +299,8 @@ impl std::fmt::Display for Name {
       Name::ProcAsmThm(Some(proc)) => write!(f, "{}_asms", proc),
       Name::ProcAsmdThm(None) => write!(f, "_start_asmd"),
       Name::ProcAsmdThm(Some(proc)) => write!(f, "{}_asmd", proc),
+      Name::ProcOkThm(proc) => write!(f, "{}_ok", proc),
+      Name::StartOkThm => write!(f, "_start_ok"),
       Name::Content => write!(f, "content"),
       Name::GCtx => write!(f, "gctx"),
       Name::AsmdThm => write!(f, "asmd"),

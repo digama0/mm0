@@ -702,7 +702,7 @@ pub(super) fn compile_proof(
     };
     let th = build.prove_proc();
     let ctx = &build.ctx;
-    let ok_thm = mangler.mangle(build.elab, Name::AsmdThm);
+    let ok_thm = mangler.mangle(build.elab, proc.name().map_or(Name::StartOkThm, Name::ProcOkThm));
     let ok_thm = build.elab.env
       .add_thm(build.thm.build_thm0(ok_thm, Modifiers::empty(), span.clone(), full, th))
       .map_err(|e| e.into_elab_error(full))?;
