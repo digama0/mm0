@@ -9,7 +9,7 @@ use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Term
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
-  BlockProofTree, BlockTreeIter, ElfProof, Inst, InstIter, PReg, Proc, VBlockId};
+  BlockProofTree, BlockTreeIter, ElfProof, Inst, InstIter, PReg, Proc, VBlockId, ProcId};
 use crate::LispVal;
 use crate::lisp::print::Print;
 use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, mmc::proof::Name};
@@ -63,10 +63,14 @@ impl VCtxId {
   const ROOT: Self = Self(0);
 }
 
+#[derive(Clone, Copy)]
+enum VarKind { Var, Hyp, Typed }
+
 #[derive(Clone)]
 struct VCtxVar {
   var: VarId,
   e: ProofId,
+  kind: VarKind,
 }
 
 /// This function produces the following sequence:
@@ -122,17 +126,21 @@ struct VCtx {
   e: ProofId,
   base: u32,
   vars: Vec<VCtxVar>,
+  nvars: Num,
   access_cache: RefCell<HashMap<VarId, VarCache>>,
   parent: VCtxId,
 }
 
 impl VCtx {
   /// Build the root context. Note that variables can be added to the root context with `add`
-  fn root(de: &mut ProofDedup<'_>) -> Self {
-    Self {
-      e: app!(de, (vctx0)),
+  fn root(de: &mut ProofDedup<'_>, hex: &HexCache) -> impl Fn() -> Self + Copy {
+    let e = app!(de, (vctx0));
+    let nvars = hex.h2n(de, 0);
+    move || Self {
+      e,
       base: 0,
       vars: vec![],
+      nvars,
       access_cache: Default::default(),
       parent: VCtxId::ROOT,
     }
@@ -142,15 +150,17 @@ impl VCtx {
   /// `self` is modified to derive from the new context. This is roughly equivalent to
   /// `clone()`, but it moves the data into `vctxs` instead of doing a deep copy.
   fn share(&mut self, vctxs: &mut IdxVec<VCtxId, VCtx>) -> impl Fn() -> Self + Copy {
-    let parent = vctxs.peek();
-    let Self { e, mut base, ref vars, .. } = *self;
-    base += vars.len() as u32;
+    let Self { e, base, ref vars, nvars, parent, .. } = *self;
+    let (push, parent, base) = match vars.len() as u32 {
+      0 => (false, parent, base),
+      len => (true, vctxs.peek(), base + len),
+    };
     let f = move || VCtx {
-      e, base, vars: vec![],
+      e, base, vars: vec![], nvars,
       access_cache: Default::default(),
       parent
     };
-    vctxs.push(std::mem::replace(self, f()));
+    if push { vctxs.push(std::mem::replace(self, f())); }
     f
   }
 
@@ -159,8 +169,8 @@ impl VCtx {
 
   /// Push a new variable to the context. Returns a proof of `|- okVCtxPush old v new`,
   /// where `old` is the original `self.e` and `new` is `self.e` after the modification.
-  fn push(&mut self, de: &mut ProofDedup<'_>, var: VarId, v: ProofId) -> ProofId {
-    self.vars.push(VCtxVar {var, e: v});
+  fn push(&mut self, de: &mut ProofDedup<'_>, var: VarId, kind: VarKind, v: ProofId) -> ProofId {
+    self.vars.push(VCtxVar { var, e: v, kind });
     let old = self.e;
     let len = self.vars.len() as u32;
     let (mut th, mut new);
@@ -398,11 +408,11 @@ impl<'a> ProcProver<'a> {
   // }
 
   /// Returns the `tctx` type state for the entry of a block.
-  fn block_tctx(&mut self, bl: BlockProof<'a>) -> PTCtx<'a> {
+  fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx) -> PTCtx<'a> {
     let tctx = Box::new(TCtx {
       stmts: bl.block().stmts.iter(),
       term: Some(bl.block().terminator()),
-      iter: bl.vblock().map(|vbl| vbl.insts().peekable()),
+      piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
     });
 
     let l = app!(self.thm, (ok0)); // TODO
@@ -421,8 +431,8 @@ impl<'a> ProcProver<'a> {
           let old@[labs, bctx] = self.push_label_group(var, ls);
           for tree in seq.deps() { self.add_block(tree) }
           let (id, [ip, lctx, th]) = self.ok_code_block(seq.main());
-          let th = thm!(self.thm, ((okBlock bctx ip lctx)) =>
-            okBlock_loop(labs, ip, lctx, ls, self.pctx, var, th));
+          let th = todo!();//thm!(self.thm, ((okBlock bctx ip lctx)) =>
+            //okBlock_loop(labs, ip, lctx, ls, self.pctx, var, th));
           self.pop_label_group(old);
           return (id, [ip, lctx, th])
         }
@@ -431,7 +441,7 @@ impl<'a> ProcProver<'a> {
           tree = seq.main()
         }
         BlockProofTree::One(bl) => {
-          let (tctx, l1) = self.block_tctx(bl);
+          let (tctx, l1) = self.block_tctx(bl, todo!());
           return (bl.id, match bl.vblock() {
             None => {
               let th = self.ok_code0((LCtx::Reg(tctx), l1), None);
@@ -460,7 +470,7 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret tctx)`
-  fn build_proc(&mut self) -> (PTCtx<'a>, ProofId, ProofId) {
+  fn build_proc(&mut self, vctx: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
     let mut tree = self.proc.proof_tree();
     let tctx = loop {
       match tree {
@@ -469,7 +479,7 @@ impl<'a> ProcProver<'a> {
           for tree in seq.deps() { self.add_block(tree) }
           tree = seq.main()
         }
-        BlockProofTree::One(pf) => break self.block_tctx(pf),
+        BlockProofTree::One(pf) => break self.block_tctx(pf, vctx),
       }
     };
     let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
@@ -648,7 +658,7 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Proves `|- buildProc gctx start args ret`
-  fn prove_proc(&mut self) -> ProofId {
+  fn prove_proc(&mut self, root: VCtx) -> ProofId {
     let name = self.proc.name();
     let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
     let (x, th) = self.thm.thm0(self.elab, asmd_thm);
@@ -664,7 +674,7 @@ impl<'a> ProcProver<'a> {
     });
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
     let code = app_match!(self.thm, a => { (asmEntry _ code) => code, ! });
-    let (tctx@(_, l1), ok_epi, h2) = self.build_proc();
+    let (tctx@(_, l1), ok_epi, h2) = self.build_proc(root);
     let mut sp = self.hex.h2n(&mut self.thm, 0);
     let mut epi = app!(self.thm, (epiRet));
     let lctx = app!(self.thm, okPrologue[epi, *sp, l1]);
@@ -691,6 +701,7 @@ pub(super) fn compile_proof(
   for proc in proof.proc_proofs() {
     let mut thm = ProofDedup::new(pd, &[]);
     let hex = HexCache::new(&mut thm);
+    let root = VCtx::root(&mut thm, &hex);
     let mut build = ProcProver {
       proc: &proc,
       proc_asm,
@@ -699,11 +710,11 @@ pub(super) fn compile_proof(
       block_proof: Default::default(),
       elab,
       ctx: Ctx::new(&mut thm, &hex, &proc, gctx),
-      vctxs: vec![VCtx::root(&mut thm)].into(),
+      vctxs: vec![root()].into(),
       hex,
       thm,
     };
-    let th = build.prove_proc();
+    let th = build.prove_proc(root());
     let ctx = &build.ctx;
     let ok_thm = mangler.mangle(build.elab, proc.name().map_or(Name::StartOkThm, Name::ProcOkThm));
     let ok_thm = build.elab.env
