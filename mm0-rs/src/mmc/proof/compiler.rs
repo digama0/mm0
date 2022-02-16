@@ -291,9 +291,46 @@ struct TCtx<'a> {
   term: Option<&'a Terminator>,
   piter: Option<std::iter::Peekable<InstIter<'a>>>,
   vctx: VCtx,
+  mctx: ProofId,
 }
 
 type PTCtx<'a> = P<Box<TCtx<'a>>>;
+
+impl<'a> TCtx<'a> {
+  /// Given `ty`, returns `(n, (tctx2, |- okPushVar tctx ty tctx2))`,
+  /// where `tctx2` is the result of adding `vVar n ty` to `tctx`
+  fn push_var(
+    &mut self, tctx: ProofId, de: &mut ProofDedup<'_>, hex: &HexCache, var: VarId, ty: ProofId,
+  ) -> (Num, (ProofId, ProofId)) {
+    let n = self.vctx.nvars;
+    let e = app!(de, (vVar {*n} ty));
+    let old = self.vctx.e;
+    let h1 = self.vctx.push(de, var, VarKind::Var, e);
+    let (n2, h2) = hex.suc(de, n);
+    self.vctx.nvars = n2;
+    let tctx2 = self.mk(de);
+    (n, (tctx2, thm!(de, ((okPushVar tctx {*n2} tctx2)) =>
+      okPushVarI(self.mctx, self.mctx, *n, *n2, ty, old, self.vctx.e))))
+  }
+
+  /// Given `ty`, returns `(tctx2, |- okPushVar tctx ty tctx2)`,
+  /// where `tctx2` is the result of adding `vHyp ty` to `tctx`
+  fn push_hyp(
+    &mut self, tctx: ProofId, de: &mut ProofDedup<'_>, hex: &HexCache, var: VarId, kind: VarKind,
+    ty: ProofId,
+  ) -> (ProofId, ProofId) {
+    let e = app!(de, (vHyp ty));
+    let old = self.vctx.e;
+    let h1 = self.vctx.push(de, var, kind, e);
+    let tctx2 = self.mk(de);
+    (tctx2, thm!(de, ((okPushVar tctx {*self.vctx.nvars} tctx2)) =>
+      okPushVarI(self.mctx, *self.vctx.nvars, ty, old, self.vctx.e)))
+  }
+
+  fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
+    app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx])
+  }
+}
 
 struct Prologue<'a> {
   epi: ProofId,
@@ -390,21 +427,38 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns the `tctx` type state for the entry of a block.
-  fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx) -> PTCtx<'a> {
-    let tctx = Box::new(TCtx {
+  fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx, base: CtxId) -> PTCtx<'a> {
+    let mut tctx = Box::new(TCtx {
       stmts: bl.block().stmts.iter(),
       term: Some(bl.block().terminator()),
       piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
       vctx,
+      mctx: app!(self.thm, (d0)), // TODO
     });
-
-    let l = app!(self.thm, (ok0)); // TODO
+    let mut l = tctx.mk(&mut self.thm);
+    for &(v, _, (ref e, ref ty)) in self.proc.cfg.ctxs.iter_range(base..bl.block().ctx) {
+      let (l2, th) = match e {
+        Some(e) if match **e {
+          ExprKind::Var(u) if u == v => false,
+          ExprKind::Unit => false,
+          _ => true,
+        } => {
+          let ty = app!(self.thm, (ok0)); // TODO
+          tctx.push_hyp(l, &mut self.thm, &self.hex, v, VarKind::Typed, ty)
+        }
+        _ => {
+          let ty = app!(self.thm, (ok0)); // TODO
+          tctx.push_var(l, &mut self.thm, &self.hex, v, ty).1
+        }
+      };
+      l = l2;
+    }
     (tctx, l)
   }
 
   /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret tctx)`
   fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
-    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root);
+    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
     let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
     let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, tctx.1]);
     (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO

@@ -92,6 +92,28 @@ infixl vctxA: $*V$ prec 20;
 --| and the second part is the machine context where variables are assigned to memory locations.
 @mmc-th local def mkTCtx (vctx: set) (vctx_sz mctx: nat): set = $ 0 $; -- TODO
 
+--| `vVar: nat -> ty -> vctx`:
+--| A variable record in a variable context. This asserts that `v_n: ty`.
+@mmc-th local def vVar (n: nat) (ty: set): set = $ 0 $; -- TODO
+
+--| `vHyp: ty -> vctx`:
+--| A hypothesis, or unnamed variable. This asserts that `(): ty`.
+@mmc-th local def vHyp (ty: set): set = $ 0 $; -- TODO
+
+@mmc-th local def okPushVar (tctx ty tctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okPushVarI
+  (h1: $ okVCtxPush vctx (vVar n ty) vctx2 $)
+  -- TODO: something about mctx
+  (h2: $ suc n = n2 $):
+  $ okPushVar (mkTCtx vctx n mctx) ty (mkTCtx vctx2 n2 mctx2) $ = 'sorry;
+
+@mmc-th local def okPushHyp (tctx ty tctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okPushHypI
+  (h1: $ okVCtxPush vctx (vHyp ty) vctx2 $):
+  $ okPushHyp (mkTCtx vctx n mctx) ty (mkTCtx vctx2 n mctx) $ = 'sorry;
+
 local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
 local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO
 local def soLayout (lctx: set): set = $ 0 $; -- TODO

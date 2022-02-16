@@ -497,6 +497,7 @@ make_predefs! {
   mkPCtx1: TermId => "mkPCtx1";
   mkPCtx: TermId => "mkPCtx";
   mkBCtx: TermId => "mkBCtx";
+  mkTCtx: TermId => "mkTCtx";
 
   ok0: TermId => "ok0";
 
@@ -517,6 +518,15 @@ make_predefs! {
   okVCtxGet_R: ThmId => "okVCtxGet_R";
   okVCtxGet_l: ThmId => "okVCtxGet_l";
   okVCtxGet_r: ThmId => "okVCtxGet_r";
+
+  vVar: TermId => "vVar";
+  vHyp: TermId => "vHyp";
+
+  okPushVar: TermId => "okPushVar";
+  okPushVarI: ThmId => "okPushVarI";
+
+  okPushHyp: TermId => "okPushHyp";
+  okPushHypI: ThmId => "okPushHypI";
 
   okAssembled: TermId => "okAssembled";
   okAssembledI: ThmId => "okAssembledI";
