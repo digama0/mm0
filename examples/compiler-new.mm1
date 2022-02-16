@@ -90,6 +90,8 @@ infixl vctxA: $*V$ prec 20;
 --| Type context, or type state.
 --| The first part is the logical context, where variables and their types are stored,
 --| and the second part is the machine context where variables are assigned to memory locations.
+--| We write it in such a way that `tctx` extends `vctx` and `mctx`,
+--| so `vctx` extraction functions also work on `tctx`.
 @mmc-th local def mkTCtx (vctx: set) (vctx_sz mctx: nat): set = $ 0 $; -- TODO
 
 --| `ty_unit: ty`:
@@ -158,6 +160,15 @@ local def okAsmd (bctx code: set) (x y: nat): wff =
 $ E. s (y = x + len s /\ okStartN bctx + y e. u64 /\
   contentAt (okStartN bctx + x) (okContentN bctx) s /\ okStartN bctx <> s <> x e. code) $;
 
+@mmc-th local def okWeak (bctx lctx1 lctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem okWeak_id: $ okWeak bctx lctx lctx $ = 'sorry;
+
+@mmc-th theorem okWeak_tr
+  (h1: $ okWeak bctx lctx1 lctx2 $)
+  (h2: $ okWeak bctx lctx2 lctx3 $):
+  $ okWeak bctx lctx1 lctx3 $ = 'sorry;
+
 @mmc-th local def okCode (bctx lctx1 code lctx2: set): wff =
 $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
   okCodeN bctx lctx2 fr y -> okCodeN bctx lctx1 fr x) $;
@@ -168,6 +179,16 @@ $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
   (h1: $ okCode bctx lctx1 code1 lctx2 $)
   (h2: $ okCode bctx lctx2 code2 lctx3 $):
   $ okCode bctx lctx1 (code1 +asm code2) lctx3 $ = 'sorry;
+
+@mmc-th theorem okCode_weak1
+  (h1: $ okWeak bctx lctx1 lctx2 $)
+  (h2: $ okCode bctx lctx2 code lctx3 $):
+  $ okCode bctx lctx1 code lctx3 $ = 'sorry;
+
+@mmc-th theorem okCode_weak2
+  (h1: $ okCode bctx lctx1 code lctx2 $)
+  (h2: $ okWeak bctx lctx2 lctx3 $):
+  $ okCode bctx lctx1 code lctx3 $ = 'sorry;
 
 @mmc-th local def okProc (gctx: set) (start: nat) (args ret: set): wff = $ F. $; -- TODO
 
@@ -195,9 +216,14 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
   (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) (okPrologue epiRet x0 tctx) code ok0 $):
   $ okProc gctx start args ret $ = 'sorry;
 
-@mmc-th local def okWeak (bctx lctx1 lctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def buildStart (pctx lctx: set): wff = $ F. $; -- TODO
+@mmc-th local def okStart (gctx: set) (start: nat): wff = $ F. $; -- TODO
 
-@mmc-th theorem okWeak_id: $ okWeak bctx lctx lctx $ = 'sorry;
+@mmc-th theorem okStartI
+  (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry start code) $)
+  (h2: $ buildStart (mkPCtx gctx pctx1) tctx $)
+  (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) tctx code ok0 $):
+  $ okStart gctx start $ = 'sorry;
 
 @mmc-th local def okBlock (bctx: set) (ip: nat) (lctx: set): wff = $ F. $; -- TODO
 

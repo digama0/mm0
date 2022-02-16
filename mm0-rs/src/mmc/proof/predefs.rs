@@ -548,6 +548,9 @@ make_predefs! {
   okAssembled_l: ThmId => "okAssembled_l";
   okAssembled_r: ThmId => "okAssembled_r";
 
+  okWeak: TermId => "okWeak";
+  okWeak_id: ThmId => "okWeak_id";
+
   okCode: TermId => "okCode";
   okCode_0: ThmId => "okCode_0";
   okCode_A: ThmId => "okCode_A";
@@ -557,8 +560,10 @@ make_predefs! {
   okProc: TermId => "okProc";
   okProcI: ThmId => "okProcI";
 
-  okWeak: TermId => "okWeak";
-  okWeak_id: ThmId => "okWeak_id";
+  buildStart: TermId => "buildStart";
+
+  okStart: TermId => "okStart";
+  okStartI: ThmId => "okStartI";
 
   okBlock: TermId => "okBlock";
   okBlock_weak: ThmId => "okBlock_weak";

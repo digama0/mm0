@@ -555,6 +555,13 @@ impl<'a> ProcProver<'a> {
     (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO
   }
 
+  /// Returns `(tctx, |- buildStart pctx tctx)`
+  fn build_start(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId) {
+    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
+    let bproc = app!(self.thm, buildStart[self.pctx, tctx.1]);
+    (tctx, thm!(self.thm, sorry(bproc): bproc)) // TODO
+  }
+
   /// Returns `(v, |- okRead tctx loc v)`
   fn read(&mut self, tctx: P<&TCtx<'a>>, loc: &P<Loc>) -> (P<Value>, ProofId) {
     let v = app!(self.thm, (d0)); // TODO
@@ -833,7 +840,8 @@ impl<'a> ProcProver<'a> {
     if let LCtx::Dead = lctx { th } else { panic!("incomplete block") }
   }
 
-  /// Proves `|- buildProc gctx start args ret`
+  /// Proves `|- okProc gctx start args ret clob se`,
+  /// or `|- okStart gctx start` for the start procedure
   fn prove_proc(&mut self, root: VCtx) -> ProofId {
     let name = self.proc.name();
     let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
@@ -850,15 +858,23 @@ impl<'a> ProcProver<'a> {
     });
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
     let code = app_match!(self.thm, a => { (asmEntry _ code) => code, ! });
-    let (tctx@(_, l1), ok_epi, h2) = self.build_proc(root);
-    let mut sp = self.hex.h2n(&mut self.thm, 0);
-    let mut epi = app!(self.thm, (epiRet));
-    let lctx = app!(self.thm, okPrologue[epi, *sp, l1]);
-    let iter = self.proc.saved_regs().iter();
-    let prol = Box::new(Prologue { epi, sp, iter, ok_epi, tctx });
-    let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
-    thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret]) =>
-      okProcI(self.args, code, self.gctx, self.pctx1, self.ret, *self.start, l1, h1, h2, h3))
+    if name.is_some() {
+      let (tctx@(_, l1), ok_epi, h2) = self.build_proc(root);
+      let mut sp = self.hex.h2n(&mut self.thm, 0);
+      let epi0 = app!(self.thm, (epiRet));
+      let lctx = app!(self.thm, okPrologue[epi0, *sp, l1]);
+      let iter = self.proc.saved_regs().iter();
+      let prol = Box::new(Prologue { epi: epi0, sp, iter, ok_epi, tctx });
+      let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
+      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret]) =>
+        okProcI(self.args, code, self.gctx, self.pctx1, self.ret, *self.start, l1, h1, h2, h3))
+    } else {
+      let ((tctx, l1), h2) = self.build_start(root);
+      let mut sp = self.hex.h2n(&mut self.thm, 0);
+      let h3 = self.ok_code0((LCtx::Reg(tctx), l1), Some(code));
+      thm!(self.thm, (okStart[self.gctx, *self.start]) =>
+        okStartI(code, self.gctx, self.pctx1, *self.start, l1, h1, h2, h3))
+    }
   }
 }
 
