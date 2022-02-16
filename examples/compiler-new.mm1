@@ -246,7 +246,24 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
   (h2: $ okCode bctx tctx code lctx2 $):
   $ okCode bctx (okPrologue epi sp tctx) code lctx2 $ = 'sorry;
 
+@mmc-th local def getEpi (bctx ret: set) (epi: nat): wff = $ F. $; -- TODO
+
+@mmc-th theorem getEpiI:
+ $ getEpi (mkBCtx (mkPCtx gctx (mkPCtx1 start ret epi se)) labs) ret epi $ = 'sorry; -- TODO
+
+@mmc-th local def checkRet (bctx tctx ret: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem checkRetI:
+  $ checkRet bctx tctx ret $ = 'sorry; -- TODO
+
 @mmc-th local def okEpilogue (epi: nat): set = $ 0 $; -- TODO
+
+@mmc-th theorem okEpilogue_code
+  (h1: $ getEpi bctx ret epi $)
+  (h2: $ checkRet bctx tctx ret $)
+  (h3: $ okCode bctx (okEpilogue epi) code tctx2 $):
+  $ okCode bctx tctx code tctx2 $ =
+'sorry;
 
 @mmc-th theorem okEpilogue_free:
   $ okCode bctx (okEpilogue (epiFree n E)) ,(instAdd 'wSz64 RSP '(IRM_imm32 n)) (okEpilogue E) $ =

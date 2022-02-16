@@ -362,6 +362,7 @@ enum LCtx<'a> {
   Dead,
   Prologue(Box<Prologue<'a>>),
   Reg(Box<TCtx<'a>>),
+  Epilogue(ProofId),
 }
 
 impl Default for LCtx<'_> {
@@ -609,6 +610,21 @@ impl<'a> ProcProver<'a> {
     }
   }
 
+  /// Returns `|- getEpi bctx ret epi`
+  fn get_epi(&mut self) -> ProofId {
+    thm!(self.thm, (getEpi[self.bctx, self.ret, self.epi]) =>
+      getEpiI(self.epi, self.gctx, self.labs, self.ret, *self.start))
+  }
+
+  /// Returns `|- checkRet bctx tctx ret`
+  fn check_ret(&mut self,
+    tctx: PTCtx<'a>, out: &[VarId], args: &[(VarId, bool, Operand)]
+  ) -> ProofId {
+    drop(tctx.0);
+    thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
+      checkRetI(self.bctx, self.ret, tctx.1))
+  }
+
   /// Returns `(lctx', |- okCode bctx tctx code lctx')`
   /// or `(lctx', |- okWeak bctx lctx lctx')` in the regular case, assuming
   /// regalloc moves have already been handled and `code` is atomic.
@@ -636,7 +652,17 @@ impl<'a> ProcProver<'a> {
           match x {
             Terminator::Jump(_, _, _) => todo!(),
             Terminator::Jump1(_) => todo!(),
-            Terminator::Return(_, _) => todo!(),
+            Terminator::Return(out, args) => {
+              let h1 = self.get_epi();
+              let_unchecked!(tctx as LCtx::Reg(tctx) =
+                std::mem::replace(lctx, LCtx::Epilogue(self.epi)));
+              let h2 = self.check_ret((tctx, l1), out, args);
+              let l2 = app!(self.thm, okEpilogue[self.epi]);
+              let (l3, h3) = self.ok_code1((lctx, l2), code);
+              let code = code.expect("ghost return not allowed, I think");
+              (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
+                okEpilogue_code(self.bctx, code, self.epi, self.ret, l1, l3, h1, h2, h3)))
+            }
             Terminator::Unreachable(_) => todo!(),
             Terminator::If(_, _) => todo!(),
             Terminator::Assert(_, _, _, _) => todo!(),
@@ -728,6 +754,26 @@ impl<'a> ProcProver<'a> {
         }
         self.ok_code_reg((lctx, l1), code)
       }
+      (LCtx::Epilogue(_), None) => unreachable!("epilogue must have code"),
+      (LCtx::Epilogue(epi), Some(code)) => app_match!(self.thm, *epi => {
+        (epiFree n epi2) => {
+          let l2 = app!(self.thm, (okEpilogue epi2));
+          *epi = epi2;
+          (l2, thm!(self.thm,
+            okEpilogue_free(epi2, self.bctx, n): (okCode {self.bctx} l1 code l2)))
+        }
+        (epiPop r epi2) => {
+          let l2 = app!(self.thm, (okEpilogue epi2));
+          *epi = epi2;
+          (l2, thm!(self.thm, okEpilogue_pop(epi2, self.bctx, r): (okCode {self.bctx} l1 code l2)))
+        }
+        (epiRet) => {
+          let l2 = app!(self.thm, (ok0));
+          *lctx = LCtx::Dead;
+          (l2, thm!(self.thm, okEpilogue_ret(self.bctx): (okCode {self.bctx} l1 code l2)))
+        }
+        !
+      })
     }
   }
 

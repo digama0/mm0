@@ -496,6 +496,10 @@ make_predefs! {
   parseUD2: ThmId => "parseUD2";
   parseAssert: ThmId => "parseAssert";
 
+  epiRet: TermId => "epiRet";
+  epiFree: TermId => "epiFree";
+  epiPop: TermId => "epiPop";
+
   mkGCtx: TermId => "mkGCtx";
   mkPCtx1: TermId => "mkPCtx1";
   mkPCtx: TermId => "mkPCtx";
@@ -562,16 +566,24 @@ make_predefs! {
   okBlock0: ThmId => "okBlock0";
   okBlock_loop: ThmId => "okBlock_loop";
 
+  okEpi: TermId => "okEpi";
+
   okPrologue: TermId => "okPrologue";
   okPrologue_push: ThmId => "okPrologue_push";
   okPrologue_alloc: ThmId => "okPrologue_alloc";
   okPrologue_alloc0: ThmId => "okPrologue_alloc0";
 
-  okEpi: TermId => "okEpi";
+  getEpi: TermId => "getEpi";
+  getEpiI: ThmId => "getEpiI";
 
-  epiRet: TermId => "epiRet";
-  epiFree: TermId => "epiFree";
-  epiPop: TermId => "epiPop";
+  checkRet: TermId => "checkRet";
+  checkRetI: ThmId => "checkRetI";
+
+  okEpilogue: TermId => "okEpilogue";
+  okEpilogue_code: ThmId => "okEpilogue_code";
+  okEpilogue_free: ThmId => "okEpilogue_free";
+  okEpilogue_pop: ThmId => "okEpilogue_pop";
+  okEpilogue_ret: ThmId => "okEpilogue_ret";
 
   Loc_reg: TermId => "Loc_reg";
   Loc_local: TermId => "Loc_local";
