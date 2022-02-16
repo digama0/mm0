@@ -296,6 +296,7 @@ enum DeferredKind<'a> {
 
 enum StatementIterKind<'a> {
   Start,
+  Jump1(BlockId),
   Defer(u8, ProofId, DeferredKind<'a>),
 }
 
@@ -347,6 +348,16 @@ impl<'a> TCtx<'a> {
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
     app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx])
+  }
+
+  /// Resets the iterators to point at a new block, without changing the variable context.
+  fn retarget(&mut self, bl: BlockProof<'a>) {
+    self.viter = StatementIter {
+      stmts: bl.block().stmts.iter(),
+      term: Some(bl.block().terminator()),
+      kind: StatementIterKind::Start,
+    };
+    self.piter = bl.vblock().map(|vbl| vbl.insts().peekable());
   }
 }
 
@@ -651,7 +662,10 @@ impl<'a> ProcProver<'a> {
         } else if let Some(x) = tctx.viter.term.take() {
           match x {
             Terminator::Jump(_, _, _) => todo!(),
-            Terminator::Jump1(_) => todo!(),
+            &Terminator::Jump1(tgt) => {
+              tctx.viter.kind = StatementIterKind::Jump1(tgt);
+              continue
+            }
             Terminator::Return(out, args) => {
               let h1 = self.get_epi();
               let_unchecked!(tctx as LCtx::Reg(tctx) =
@@ -675,6 +689,22 @@ impl<'a> ProcProver<'a> {
           }
         } else {
           todo!()
+        }
+        StatementIterKind::Jump1(tgt) => {
+          tctx.retarget(self.proc.block(tgt));
+          let lctx = std::mem::take(lctx);
+          if let Some(vid) = self.proc.vblock_id(tgt) {
+            let code = code.expect("jumping to a real block requires code");
+            let (a, h1) = self.vblock_asm[&vid];
+            let (ip, code1) = app_match!(self.thm, a => { (asmAt ip code) => (ip, code), ! });
+            let h2 = self.ok_code0((lctx, l1), Some(code1));
+            let th = thm!(self.thm, (okBlock[self.bctx, ip, l1]) =>
+              okBlockI(self.labs, code1, ip, l1, self.pctx, h1, h2));
+            (self.ok0, thm!(self.thm, (okCode[self.bctx, l1, code, self.ok0]) =>
+              ok_jump(self.bctx, l1, ip, th)))
+          } else {
+            (self.ok0, self.ok_code0((lctx, l1), None))
+          }
         }
         StatementIterKind::Defer(0, l0, DeferredKind::Exit(op)) => {
           let code = code.expect("defer requires code");

@@ -600,6 +600,7 @@ make_predefs! {
   ok_movRR: ThmId => "ok_movRR";
   ok_spill: ThmId => "ok_spill";
   ok_unspill: ThmId => "ok_unspill";
+  ok_jump: ThmId => "ok_jump";
 
   ok_exit: ThmId => "ok_exit";
 

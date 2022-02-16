@@ -305,7 +305,6 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 @mmc-th local def withFlags (f: nat) (tctx: set): set = $ 0 $; -- TODO
 @mmc-th local def invertCond (c d: hex): wff = $ F. $; -- TODO
 @mmc-th local def flagCond (f: nat) (c: hex) (ty: set): wff = $ F. $; -- TODO
-@mmc-th local def okPushVar (tctx1 code tctx2: set): wff = $ F. $; -- TODO
 @mmc-th local def ty_not (ty: set): set = $ 0 $; -- TODO
 
 @mmc-th theorem ok_jcc
