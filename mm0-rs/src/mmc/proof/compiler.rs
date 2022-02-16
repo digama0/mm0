@@ -286,9 +286,18 @@ impl VCtx {
   }
 }
 
-struct TCtx<'a> {
+enum StatementIterKind {
+  Start,
+}
+
+struct StatementIter<'a> {
   stmts: std::slice::Iter<'a, Statement>,
   term: Option<&'a Terminator>,
+  kind: StatementIterKind,
+}
+
+struct TCtx<'a> {
+  viter: StatementIter<'a>,
   piter: Option<std::iter::Peekable<InstIter<'a>>>,
   vctx: VCtx,
   mctx: ProofId,
@@ -354,6 +363,7 @@ struct ProcProver<'a> {
   proc: &'a Proc<'a>,
   proc_asm: &'a HashMap<Option<ProcId>, (TermId, ThmId)>,
   proc_proof: &'a mut HashMap<Option<ProcId>, ThmId>,
+  /// Contains a map from a vblock id to `(asm, |- okAssembled pctx asm)`
   vblock_asm: HashMap<VBlockId, (ProofId, ProofId)>,
   /// Contains a map from a block id to
   /// `[labs, ip, lctx, |- okBlock (mkBCtx pctx labs) ip lctx]`
@@ -429,8 +439,11 @@ impl<'a> ProcProver<'a> {
   /// Returns the `tctx` type state for the entry of a block.
   fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx, base: CtxId) -> PTCtx<'a> {
     let mut tctx = Box::new(TCtx {
-      stmts: bl.block().stmts.iter(),
-      term: Some(bl.block().terminator()),
+      viter: StatementIter {
+        stmts: bl.block().stmts.iter(),
+        term: Some(bl.block().terminator()),
+        kind: StatementIterKind::Start,
+      },
       piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
       vctx,
       mctx: app!(self.thm, (d0)), // TODO
@@ -535,19 +548,40 @@ impl<'a> ProcProver<'a> {
   /// regalloc moves have already been handled and `code` is atomic.
   fn ok_code_reg(&mut self, (lctx, l1): P<&mut LCtx<'a>>, code: Option<ProofId>) -> (ProofId, ProofId) {
     let tctx = if let LCtx::Reg(tctx) = lctx { &mut **tctx } else { unreachable!() };
-    println!("ok_code_reg");
-    dbg!(self.pp(l1), code.map(|code| self.pp(code)));
-    if let Some(stmt) = tctx.stmts.next() {
-      match stmt {
-        Statement::Let(lk, r, ty, rv) => todo!(),
-        Statement::Assign(_, _, _, _) => todo!(),
-        Statement::LabelGroup(..) => todo!(),
-        Statement::PopLabelGroup => todo!(),
-        Statement::DominatedBlock(_, _) => todo!(),
-    }
-      dbg!(stmt);
-    } else {
-      todo!()
+    // println!("ok_code_reg");
+    // dbg!(self.pp(l1), code.map(|code| self.pp(code)));
+    #[allow(clippy::never_loop)] loop {
+      return match tctx.viter.kind {
+        StatementIterKind::Start => if let Some(stmt) = tctx.viter.stmts.next() {
+          // dbg!(stmt);
+          // if let Some(iter) = &mut tctx.piter {
+          //   if let Some(inst) = iter.peek() {
+          //     dbg!(inst.inst);
+          //   }
+          // }
+          match stmt {
+            Statement::Let(lk, r, ty, rv) => todo!(),
+            Statement::Assign(_, _, _, _) => todo!(),
+            Statement::LabelGroup(..) => todo!(),
+            Statement::PopLabelGroup => todo!(),
+            Statement::DominatedBlock(_, _) => todo!(),
+          }
+        } else if let Some(x) = tctx.viter.term.take() {
+          match x {
+            Terminator::Jump(_, _, _) => todo!(),
+            Terminator::Jump1(_) => todo!(),
+            Terminator::Return(_, _) => todo!(),
+            Terminator::Unreachable(_) => todo!(),
+            Terminator::If(_, _) => todo!(),
+            Terminator::Assert(_, _, _, _) => todo!(),
+            Terminator::Call { f, se, tys, args, reach, tgt, rets } => todo!(),
+            Terminator::Exit(_) => todo!(),
+            Terminator::Dead => unreachable!(),
+          }
+        } else {
+          todo!()
+        }
+      }
     }
   }
 
