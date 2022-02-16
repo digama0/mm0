@@ -304,8 +304,8 @@ impl Default for LCtx<'_> {
 
 struct ProcProver<'a> {
   proc: &'a Proc<'a>,
-  proc_asm: &'a HashMap<Option<Symbol>, (TermId, ThmId)>,
-  proc_proof: &'a mut HashMap<Option<Symbol>, ThmId>,
+  proc_asm: &'a HashMap<Option<ProcId>, (TermId, ThmId)>,
+  proc_proof: &'a mut HashMap<Option<ProcId>, ThmId>,
   vblock_asm: HashMap<VBlockId, (ProofId, ProofId)>,
   /// Contains a map from a block id to
   /// `[labs, ip, lctx, |- okBlock (mkBCtx pctx labs) ip lctx]`
@@ -646,7 +646,8 @@ impl<'a> ProcProver<'a> {
 
   /// Proves `|- buildProc gctx start args ret`
   fn prove_proc(&mut self) -> ProofId {
-    let (asm, asmd_thm) = self.proc_asm[&self.proc.name()];
+    let name = self.proc.name();
+    let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
     let (x, th) = self.thm.thm0(self.elab, asmd_thm);
     app_match!(self.thm, x => {
       (assembled g (asmProc p a)) => {
@@ -676,7 +677,7 @@ impl<'a> ProcProver<'a> {
 pub(super) fn compile_proof(
   elab: &mut Elaborator,
   pd: &Predefs,
-  proc_asm: &HashMap<Option<Symbol>, (TermId, ThmId)>,
+  proc_asm: &HashMap<Option<ProcId>, (TermId, ThmId)>,
   mangler: &Mangler,
   proof: &ElfProof<'_>,
   span: &FileSpan,
@@ -705,7 +706,7 @@ pub(super) fn compile_proof(
     let ok_thm = build.elab.env
       .add_thm(build.thm.build_thm0(ok_thm, Modifiers::empty(), span.clone(), full, th))
       .map_err(|e| e.into_elab_error(full))?;
-    proc_proof.insert(proc.name(), ok_thm);
+    proc_proof.insert(proc.id, ok_thm);
   }
   Ok(())
 }

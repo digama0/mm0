@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
-use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc};
+use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc, ProcId};
 use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, mmc::proof::Name};
 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
@@ -1106,7 +1106,7 @@ impl BuildAssemblyProc<'_> {
 }
 
 struct BuildAssembly<'a> {
-  proc_asm: &'a mut HashMap<Option<Symbol>, (TermId, ThmId)>,
+  proc_asm: &'a mut HashMap<Option<ProcId>, (TermId, ThmId)>,
   mangler: &'a Mangler,
   elab: &'a mut Elaborator,
   pd: &'a Predefs,
@@ -1185,7 +1185,7 @@ impl<'a> BuildAssembly<'a> {
     let asm_thm = self.elab.env
       .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(), self.span.clone(), self.full, th))
       .map_err(|e| e.into_elab_error(self.full))?;
-    self.proc_asm.insert(proc.name(), (asm, ThmId(0)));
+    self.proc_asm.insert(proc.id, (asm, ThmId(0)));
 
     // Import into the context of the global (Name::Content) proof
     let s = app!(self.thm, ({code}));
@@ -1261,7 +1261,7 @@ impl<'a> BuildAssembly<'a> {
           let asmd_thm = self.elab.env
             .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
             .map_err(|e| e.into_elab_error(self.full))?;
-          self.proc_asm.get_mut(&proc.name()).expect("impossible").1 = asmd_thm;
+          self.proc_asm.get_mut(&proc.id).expect("impossible").1 = asmd_thm;
         }
         AssemblyItem::Const(_) => todo!(),
       }
@@ -1304,7 +1304,7 @@ impl<'a> BuildAssembly<'a> {
 pub(super) fn assemble_proof(
   elab: &mut Elaborator,
   pd: &Predefs,
-  proc_asm: &mut HashMap<Option<Symbol>, (TermId, ThmId)>,
+  proc_asm: &mut HashMap<Option<ProcId>, (TermId, ThmId)>,
   mangler: &Mangler,
   proof: &ElfProof<'_>,
   span: &FileSpan,
