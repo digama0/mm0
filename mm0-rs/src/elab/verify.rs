@@ -174,7 +174,17 @@ impl ProofVerifyError<'_> {
       Self::ExpectedExpr(_) => write!(w, "Expected expression, got proof or conv"),
       Self::ExpectedProof(_) => write!(w, "Expected proof, got expr or conv"),
       Self::ExpectedConv(_) => write!(w, "Expected conv, got expr or proof"),
-      Self::ExpectedConvSides(_, _) => write!(w, "Conv proved the wrong thing"),
+      Self::ExpectedConvSides(lhs, rhs) => with_format_env(env, |fe| if let Some(fe) = fe {
+        let lisp_heap = build_heap();
+        fe.pretty(|pp| {
+          writeln!(w, "Conv proved the wrong thing: expected")?;
+          pp.expr(&env.proof_node(&[], &lisp_heap, &mut None, lhs)).render_fmt(80, w)?;
+          writeln!(w, "\n  =")?;
+          pp.expr(&env.proof_node(&[], &lisp_heap, &mut None, rhs)).render_fmt(80, w)
+        })
+      } else {
+        write!(w, "Conv proved the wrong thing")
+      }),
       Self::UnfoldNonDef => write!(w, "Cannot unfold a non-definition"),
     }
   }
