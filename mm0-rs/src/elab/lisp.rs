@@ -1318,6 +1318,18 @@ str_enum! {
     /// * `(add-thm! x bis hyps ret vis vtask)` is the same as
     ///   `(add-decl! 'theorem x bis hyps ret vis vtask)`.
     AddThm: "add-thm!",
+    /// * `(get-doc 'sort x)` returns the documentation comment on sort `x`.
+    /// * `(get-doc 'term x)` returns the documentation comment on term/def/axiom/theorem `x`.
+    /// * `(get-doc 'lisp x)` returns the documentation comment on lisp declaration `x`.
+    /// * `(get-doc x)` returns the documentation comment on an item named `x`
+    ///   (prefers lisp items, then declarations, then sorts).
+    GetDoc: "get-doc",
+    /// * `(set-doc! x "doc")` sets the documentation comment on item `x` to `"doc"`
+    ///   (prefers lisp items, then declarations, then sorts).
+    /// * `(set-doc 'sort x "doc")` sets the documentation comment on sort `x`.
+    /// * `(set-doc 'term x "doc")` sets the documentation comment on term/def/axiom/theorem `x`.
+    /// * `(set-doc 'lisp x "doc")` sets the documentation comment on lisp declaration `x`.
+    SetDoc: "set-doc!",
     /// * `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`;
     /// * `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
     NewDummy: "dummy!",

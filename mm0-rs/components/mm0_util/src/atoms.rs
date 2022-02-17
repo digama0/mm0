@@ -62,6 +62,10 @@ make_atoms! {
   LOCAL: "local",
   /// `:sorry` is an atom used by `get-decl` to print missing proofs
   SORRY: ":sorry",
+  /// `sort` is a namespace recognized by `get-doc` and `set-doc!`
+  SORT: "sort",
+  /// `lisp` is a namespace recognized by `get-doc` and `set-doc!`
+  LISP: "lisp",
   /// `error` is an error level recognized by `set-reporting`
   ERROR: "error",
   /// `warn` is an error level recognized by `set-reporting`

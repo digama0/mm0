@@ -81,6 +81,7 @@ do {
       @ if (null? bs) (map rec xs)
       @ cons (hd xs) @ args (tl bs) (tl xs)]
     [rec @ match-fn
+      [(':conv tgt _ p) '{,(rec p) : ,tgt}]
       [(f . xs)
         (cons '! f @ args (nth 2 @ get-decl f) xs)]
       [e e]])

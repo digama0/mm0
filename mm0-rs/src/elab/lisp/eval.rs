@@ -1236,6 +1236,74 @@ make_builtins! { self, tail, sp1, sp2, args,
     let fsp = self.fspan_base(sp1);
     return self.add_thm(tail, fsp, &args)
   },
+  GetDoc: AtLeast(1) => {
+    let (k, a) = match args.len() {
+      1 => (AtomId::UNDER, &args[0]),
+      2 => (try1!(args[0].as_atom().ok_or("expected an atom")), &args[1]),
+      _ => try1!(Err("invalid arguments")),
+    };
+    let a = try1!(a.as_atom().ok_or("expected an atom"));
+    let doc = match k {
+      AtomId::SORT => self.data[a].sort.and_then(|s| self.sorts[s].doc.as_ref()),
+      AtomId::TERM | AtomId::DEF | AtomId::AXIOM | AtomId::THM => {
+        self.data[a].decl.and_then(|dk| match dk {
+          DeclKey::Term(tid) => self.terms[tid].doc.as_ref(),
+          DeclKey::Thm(tid) => self.thms[tid].doc.as_ref(),
+        })
+      },
+      AtomId::LISP => self.data[a].lisp.as_ref().and_then(|data| data.doc.as_ref()),
+      AtomId::UNDER => self.data[a].lisp.as_ref().and_then(|data| data.doc.as_ref())
+        .or_else(|| self.data[a].decl.and_then(|dk| match dk {
+          DeclKey::Term(tid) => self.terms[tid].doc.as_ref(),
+          DeclKey::Thm(tid) => self.thms[tid].doc.as_ref(),
+        }))
+        .or_else(|| self.data[a].sort.and_then(|s| self.sorts[s].doc.as_ref())),
+      _ => try1!(Err("invalid arguments")),
+    };
+    match doc {
+      Some(doc) => Stack::Val(LispVal::string(doc.as_bytes().into())),
+      None => Stack::Undef
+    }
+  },
+  SetDoc: AtLeast(2) => {
+    let (k, args) = match args.len() {
+      2 => (AtomId::UNDER, &*args),
+      3 => (try1!(args[0].as_atom().ok_or("expected an atom")), &args[1..]),
+      _ => try1!(Err("invalid arguments")),
+    };
+    let a = try1!(args[0].as_atom().ok_or("expected an atom"));
+    let val = if args[1].is_def() { Some(try1!(self.as_string(&args[1]))) } else { None };
+    let doc = match k {
+      AtomId::SORT => self.data[a].sort.map(|s| &mut self.sorts[s].doc),
+      AtomId::TERM | AtomId::DEF | AtomId::AXIOM | AtomId::THM => {
+        self.data[a].decl.map(|dk| match dk {
+          DeclKey::Term(tid) => &mut self.terms[tid].doc,
+          DeclKey::Thm(tid) => &mut self.thms[tid].doc,
+        })
+      },
+      AtomId::LISP => self.data[a].lisp.as_mut().map(|data| &mut data.doc),
+      AtomId::UNDER => {
+        #[allow(clippy::never_loop)] loop {
+          let o = self.data[a].lisp.as_mut().map(|data| &mut data.doc);
+          if o.is_some() { break o }
+          let o = self.data[a].decl.map(|dk| match dk {
+            DeclKey::Term(tid) => &mut self.terms[tid].doc,
+            DeclKey::Thm(tid) => &mut self.thms[tid].doc,
+          });
+          if o.is_some() { break o }
+          break self.data[a].sort.map(|s| &mut self.sorts[s].doc)
+        }
+      },
+      _ => try1!(Err("invalid arguments")),
+    };
+    if let Some(doc) = doc {
+      *doc = val.map(|val| String::from_utf8_lossy(&val.0).into())
+    } else {
+      try1!(Err(format!("could not find declaration named {} in namespace {}",
+        self.data[a].name, self.data[k].name)))
+    }
+    Stack::Undef
+  },
   NewDummy: AtLeast(1) => {
     if args.len() > 2 {try1!(Err("expected 1 or 2 armuments"))}
     let (x, s) = match args.get(1) {

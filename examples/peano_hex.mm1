@@ -95,6 +95,23 @@ infixr scons: $':$ prec 53;
 @(add-eval 15) def d15: nat = $suc 14$; prefix d15: $15$ prec max;
 @(add-eval 16) def d16: nat = $suc 15$; prefix d16: $16$ prec max;
 
+do {
+  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
+  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
+    (if {n < 8}
+      (if {n < 4}
+        (match n [0 v0] [1 v1] [2 v2] [3 v3])
+        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
+      (if {n < 12}
+        (match n [8 v8] [9 v9] [10 va] [11 vb])
+        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
+  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
+  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
+  (def hexstring @ on-hexstrings @ fn (s) s)
+  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
+  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
+};
+
 --| `h2n a`, the coercion `hex > nat`, embeds a hex digit to a natural number.
 --| Because we cannot define functions by case distinction on `hex`, we must
 --| axiomatize the value of this coercion on each digit.
@@ -111,6 +128,19 @@ term h2n: hex > nat; coercion h2n: hex > nat;
 @eval-check axiom h2na: $ xa = 10 $;  @eval-check axiom h2nb: $ xb = 11 $;
 @eval-check axiom h2nc: $ xc = 12 $;  @eval-check axiom h2nd: $ xd = 13 $;
 @eval-check axiom h2ne: $ xe = 14 $;  @eval-check axiom h2nf: $ xf = 15 $;
+
+do {
+  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
+  (for 0 16 @ fn (i)
+    (set-doc! (h2nn i) @ string-append "Evaluation of the `h2n` function at " i ".\n"
+      "(This has to be an axiom because `h2n` is a primitive term constructor.\n"
+      "It is trivial to prove this axiom is conservative by interpreting `hex` as\n"
+      "the natural numbers less than 16.)"))
+  (def (->hex n)
+    (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
+      '(h2n @ ,(hexdigit n))))
+  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
+};
 
 --| This allows us to prove facts about hex digits by case analysis.
 --| It is not provable from the above axioms because the fact that the "hex"
@@ -214,25 +244,6 @@ theorem mulx11: $ x1 * a = a $ = '(eqtr (muleq1 h2n1) mul11);
 theorem mulx12: $ a * x1 = a $ = '(eqtr (muleq2 h2n1) mul12);
 theorem h2n10: $ 16 = x1 :x x0 $ = '(eqtr2 hex02 mulx11);
 do {
-  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
-  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
-    (if {n < 8}
-      (if {n < 4}
-        (match n [0 v0] [1 v1] [2 v2] [3 v3])
-        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
-      (if {n < 12}
-        (match n [8 v8] [9 v9] [10 va] [11 vb])
-        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
-  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
-  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
-  (def hexstring @ on-hexstrings @ fn (s) s)
-  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
-  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
-  (def (->hex n)
-    (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
-      '(h2n @ ,(hexdigit n))))
-  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
-  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
   (def hex->number @ match-fn
     [('c2n e) (hex->number e)]
     [('h2n (e)) (hexdigit->number e)]

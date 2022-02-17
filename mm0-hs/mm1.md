@@ -616,6 +616,13 @@ MM0-specific builtin functions
   * `(add-thm! x bis hyps ret)` is the same as `(add-decl! 'axiom x bis hyps ret)`.
   * `(add-thm! x bis hyps ret vis vtask)` is the same as `(add-decl! 'theorem x bis hyps ret vis vtask)`.
 
+* `(get-doc k x)` returns the documentation comment on item `x` in namespace `k`. The namespace can be:
+  * `'lisp`: the namespace for lisp values
+  * `'term`/`'def`/`'axiom`/`'theorem`: the namespace for terms and theorems
+  * `'sort`: the namespace for sorts
+  * `_` or omitted: tries all of the above in order
+* `(set-doc! k x "doc")` sets the documentation comment on item `x` in namspace `k` to `"doc"`.
+
 * `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`; `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
 
 * `(eval-string s1 ... sn)` will elaborate expressions `s1` ... `sn` as type `string`, assuming the string preamble has been set up (see the spec for [`output string`](https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#string-io)), returning a string containing the result of evaluating the string expressions. This has exactly the same effect as `output string: s1 ... sn;`, except the string is returned to the caller instead of output by the verifier.
