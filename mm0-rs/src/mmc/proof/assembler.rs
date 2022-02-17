@@ -1174,25 +1174,28 @@ impl<'a> BuildAssembly<'a> {
       (st, z, th)
     };
 
-    let code = self.mangler.mangle(self.elab, Name::ProcContent(proc.name()));
+    let (code, doc) = self.mangler.get_data(self.elab, Name::ProcContent(proc.name()));
     let code = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, s);
-      de.build_def0(code, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.string)
+      de.build_def0(code, Modifiers::LOCAL,
+        self.span.clone(), self.full, Some(doc), e, self.pd.string)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
-    let asm = self.mangler.mangle(self.elab, Name::ProcAsm(proc.name()));
+    let (asm, doc) = self.mangler.get_data(self.elab, Name::ProcAsm(proc.name()));
     let asm = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, a);
-      de.build_def0(asm, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.set)
+      de.build_def0(asm, Modifiers::LOCAL,
+        self.span.clone(), self.full, Some(doc), e, self.pd.set)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
     let th = thm!(build.thm, ((assemble ({code}) start end (asmProc start ({asm})))) =>
       CONV({th} => (assemble (UNFOLD({code}); s) start end (asmProc start (UNFOLD({asm}); a)))));
-    let asm_thm = self.mangler.mangle(self.elab, Name::ProcAsmThm(proc.name()));
+    let (asm_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmThm(proc.name()));
     let asm_thm = self.elab.env
-      .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+      .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(),
+        self.span.clone(), self.full, Some(doc), th))
       .map_err(|e| e.into_elab_error(self.full))?;
     self.proc_asm.insert(proc.id, (asm, ThmId(0)));
 
@@ -1216,26 +1219,29 @@ impl<'a> BuildAssembly<'a> {
     let res = super::compiler::mk_result(&mut self.thm, proof);
     let th = thm!(self.thm, assembledI(a, res, c, *y, h1, h2): (assembled (mkGCtx c res) a));
 
-    let content = self.mangler.mangle(self.elab, Name::Content);
+    let (content, doc) = self.mangler.get_data(self.elab, Name::Content);
     let content = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = self.thm.to_expr(&mut de, c);
-      de.build_def0(content, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.string)
+      de.build_def0(content, Modifiers::LOCAL,
+        self.span.clone(), self.full, Some(doc), e, self.pd.string)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
-    let gctx = self.mangler.mangle(self.elab, Name::GCtx);
+    let (gctx, doc) = self.mangler.get_data(self.elab, Name::GCtx);
     let gctx = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let res = self.thm.to_expr(&mut de, res);
       let e = app!(de, (mkGCtx ({content}) res));
-      de.build_def0(gctx, Modifiers::LOCAL, self.span.clone(), self.full, e, self.pd.set)
+      de.build_def0(gctx, Modifiers::LOCAL,
+        self.span.clone(), self.full, Some(doc), e, self.pd.set)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
     let th = thm!(self.thm, ((assembled ({gctx}) a)) =>
       CONV({th} => (assembled (UNFOLD({gctx}); (mkGCtx (UNFOLD({content}); c) res)) a)));
-    let asmd_thm = self.mangler.mangle(self.elab, Name::AsmdThm);
+    let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::AsmdThm);
     let asmd_thm = self.elab.env
-      .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+      .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(),
+        self.span.clone(), self.full, Some(doc), th))
       .map_err(|e| e.into_elab_error(self.full))?;
 
     let mut iter = proof.assembly();
@@ -1248,10 +1254,11 @@ impl<'a> BuildAssembly<'a> {
   ) -> Result<ThmId> {
     let mut de = ProofDedup::new(self.pd, &[]);
     let th = mk_proof(self, &mut de).1;
-    let lem = self.mangler.mangle(self.elab, Name::AsmdThmLemma(self.asmd_lemmas));
+    let (lem, doc) = self.mangler.get_data(self.elab, Name::AsmdThmLemma(self.asmd_lemmas));
     self.asmd_lemmas += 1;
     self.elab.env
-      .add_thm(de.build_thm0(lem, Modifiers::empty(), self.span.clone(), self.full, th))
+      .add_thm(de.build_thm0(lem, Modifiers::empty(),
+        self.span.clone(), self.full, Some(doc), th))
       .map_err(|e| e.into_elab_error(self.full))
   }
 
@@ -1266,9 +1273,10 @@ impl<'a> BuildAssembly<'a> {
       let th = mk_proof(self, &mut de).1;
       match item {
         AssemblyItem::Proc(proc) => {
-          let asmd_thm = self.mangler.mangle(self.elab, Name::ProcAsmdThm(proc.name()));
+          let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmdThm(proc.name()));
           let asmd_thm = self.elab.env
-            .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(), self.span.clone(), self.full, th))
+            .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(),
+              self.span.clone(), self.full, Some(doc), th))
             .map_err(|e| e.into_elab_error(self.full))?;
           self.proc_asm.get_mut(&proc.id).expect("impossible").1 = asmd_thm;
         }

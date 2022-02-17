@@ -16,6 +16,8 @@ mod assembler;
 mod compiler;
 
 use std::collections::HashMap;
+use std::fmt::Display;
+use std::sync::Arc;
 use mm0_util::{ArcString, AtomId, FileSpan, Modifiers, SortId, Span, TermId, ThmId};
 use mmcc::{Idx, Symbol};
 use mmcc::proof::ElfProof;
@@ -233,14 +235,14 @@ impl ProofDedup<'_> {
 
   /// Constructs a theorem with no free variables or hypotheses.
   fn build_thm0(&mut self,
-    atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, thm: ProofId,
+    atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, doc: Option<Arc<str>>, thm: ProofId,
   ) -> Thm {
     let mut de = ExprDedup::new(self.pd, &[]);
     let concl = self.to_expr(&mut de, self.concl(thm));
     let (eheap, ret) = de.build0(concl);
     let (heap, head) = self.build0(thm);
     Thm {
-      atom, span, full, doc: None, vis,
+      atom, span, full, doc, vis,
       args: Box::new([]), hyps: Box::new([]), heap: eheap, ret,
       kind: ThmKind::Thm(Some(Proof { heap, hyps: Box::new([]), head })),
     }
@@ -249,12 +251,14 @@ impl ProofDedup<'_> {
 
 impl ExprDedup<'_> {
   /// Constructs a definition with no parameters or dummy variables.
+  #[allow(clippy::too_many_arguments)]
   fn build_def0(&mut self,
-    atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, e: ExprId, ret: SortId,
+    atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, doc: Option<Arc<str>>,
+    e: ExprId, ret: SortId,
   ) -> Term {
     let (heap, head) = self.build0(e);
     Term {
-      atom, span, vis, full, doc: None, args: Box::new([]), ret: (ret, 0),
+      atom, span, vis, full, doc, args: Box::new([]), ret: (ret, 0),
       kind: TermKind::Def(Some(Expr { heap, head })),
     }
   }
@@ -281,14 +285,14 @@ enum Name {
   AsmdThmLemma(u32),
   /// `foo_asmd: assembled foo_gctx (asmProc <foo_start> foo_asm)`: the completed assembly proof
   ProcAsmdThm(Option<Symbol>),
-  /// `foo_ok: okProc foo_gctx <foo_start> <foo_args> <foo_ret>`:
+  /// `foo_ok: okProc foo_gctx <foo_start> <foo_args> <foo_ret> <foo_clob> <foo_se>`:
   /// the correctness proof for a regular function
   ProcOkThm(Symbol),
-  /// `_start_ok: okStart foo_gctx`: the correctness proof for the `_start` entry point
+  /// `_start_ok: okStart foo_gctx <foo_start>`: the correctness proof for the `_start` entry point
   StartOkThm,
 }
 
-impl std::fmt::Display for Name {
+impl Display for Name {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       Name::ProcContent(None) => write!(f, "_start_content"),
@@ -314,8 +318,87 @@ struct Mangler {
 }
 
 impl Mangler {
-  fn mangle(&self, env: &mut Environment, name: Name) -> AtomId {
-    env.get_atom(format!("_mmc_{}_{}", self.module.as_str(), name).as_bytes())
+  fn get_data(&self, env: &mut Environment, name: Name) -> (AtomId, Arc<str>) {
+    (env.get_atom(format!("{}", self.mangle(name)).as_bytes()), self.as_doc(name).into())
+  }
+
+  fn mangle(&self, name: Name) -> impl Display + '_ {
+    struct S<'a>(&'a str, Name);
+    impl Display for S<'_> {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "_mmc_{}_{}", self.0, self.1)
+      }
+    }
+    S(self.module.as_str(), name)
+  }
+
+  fn as_doc(&self, name: Name) -> String {
+    struct ProcName(Option<Symbol>);
+    impl Display for ProcName {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+          None => write!(f, "the start procedure"),
+          Some(proc) => write!(f, "the procedure `{}`", proc)
+        }
+      }
+    }
+    match name {
+      Name::ProcContent(proc) => format!("The machine code for {}.", ProcName(proc)),
+      Name::ProcAsm(proc) => format!("The assembly listing for {}.", ProcName(proc)),
+      Name::ProcAsmThm(proc) => format!("The incomplete assembly proof for {}. \
+        This theorem has the form `assemble content start end (asmProc start asm)`, \
+        and it asserts that `content` is a string of length exactly `end - start`, \
+        and (assuming `end e. u64`) the string is the result of assembling `asm` at `start..end`. \
+        The assumption `end e. u64` will later be discharged in `{}`.",
+        ProcName(proc), self.mangle(Name::ProcAsmdThm(proc))),
+      Name::Content => "The full machine code string for the executable.".to_owned(),
+      Name::GCtx => "The global context, which contains data used by every procedure. \
+        It has the form `mkGCtx content result`, where `content` is the assembled binary and \
+        `result` is the exit proposition, \
+        i.e. the property that must be true on any successful run.".to_owned(),
+      Name::AsmdThm => format!("This theorem has the form `assembled gctx asm`, where:\n\n\
+        * `gctx` is the global context (`{}` in this case)\n\
+        * `asm` is the collection of all assembled procedures, connected by `++asm`.\n\n\
+        It asserts that all procedures assemble to their final location.",
+        self.mangle(Name::GCtx)),
+      Name::AsmdThmLemma(_) => format!("A lemma in the derivation of the assembly theorems \
+        for the procedures. It has the same form as {} but for a subset of the procedures.",
+        Name::AsmdThm),
+      Name::ProcAsmdThm(proc) => format!("The completed assembly proof for {}. \
+        This theorem has the form `assembled gctx (asmProc start asm)`, where:\n\n\
+        * `gctx` is the global context (`{}` in this case)\n\
+        * `start` is the entry point of the function\n\
+        * `asm` is the assembly for this procedure.",
+        ProcName(proc), self.mangle(Name::GCtx)),
+      Name::ProcOkThm(proc) => format!("The correctness theorem for {}. \
+        This theorem has the form `okProc gctx start args ret clob se`, where:\n\
+        \n\
+        * `gctx` is the global context (`{}` in this case)\n\
+        * `start` is the entry point of the function\n\
+        * `args` is the specification of the function arguments\n\
+        * `ret` is the specification of the function returns\n\
+        * `clob` is the specification of the function clobbers\n\
+        * `se` is `T.` if the function has side effects, else `F.`\n\
+        \n\
+        It asserts that (in the context of executing the binary specified by `gctx`), \
+        if the program jumps to location `start`, and the arguments `args` are loaded \
+        according to the specification, then the program will safely execute and return \
+        output according to the specification `ret`, \
+        possibly also clobbering registers in `clob`. \
+        If `se` is false then the function does not perform any side-effects, which means \
+        that it can even be executed in a 'ghost' context to derive logical propositions.",
+        ProcName(Some(proc)), self.mangle(Name::GCtx)),
+      Name::StartOkThm => format!("The correctness theorem for {}. \
+        This theorem has the form `okStart gctx start`, where:\n\
+        \n\
+        * `gctx` is the global context (`{}` in this case)\n\
+        * `start` is the entry point of the function\n\
+        \n\
+        It asserts that (in the context of executing the binary specified by `gctx`), \
+        if the program jumps to location `start`, then the program will safely execute \
+        and satisfy the global exit proposition (or fail).",
+        ProcName(None), self.mangle(Name::GCtx)),
+    }
   }
 }
 
