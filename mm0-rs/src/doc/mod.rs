@@ -9,7 +9,7 @@ use std::io::{self, BufWriter, Write};
 use std::mem;
 use crate::{lisp::pretty::Annot, ArcString, AtomData, AtomId, DeclKey, DocComment, EnvMergeIter,
   Environment, ExprNode, FileRef, FormatEnv, LinedString, LispVal, Proof, ProofNode, SliceUninit,
-  StmtTrace, TermId, Thm, ThmId, ThmKind, Type};
+  StmtTrace, TermId, Thm, ThmId, ThmKind, Type, LispKind, Uncons};
 
 const PP_WIDTH: usize = 160;
 
@@ -99,11 +99,14 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
   }
 }
 
-struct AxiomUse(HashMap<ThmId, BitSet>);
+struct AxiomUse {
+  axiom_use: HashMap<ThmId, BitSet>,
+  axiom_sets: Vec<(AtomId, String, BitSet)>,
+}
 
 impl AxiomUse {
   fn new(env: &Environment) -> (Vec<ThmId>, Self) {
-    let mut axuse = HashMap::new();
+    let mut axiom_use = HashMap::new();
     let mut to_tid = vec![ThmId(u32::MAX)];
     for (tid, td) in env.thms.enum_iter() {
       if let ThmKind::Axiom = td.kind {
@@ -111,10 +114,35 @@ impl AxiomUse {
         to_tid.push(tid);
         let mut bs = BitSet::new();
         bs.insert(axid);
-        axuse.insert(tid, bs);
+        axiom_use.insert(tid, bs);
       }
     }
-    (to_tid, AxiomUse(axuse))
+    let mut axiom_sets = vec![];
+    if let Some(data) = &env.data[AtomId::AXIOM_SETS].lisp {
+      data.val.unwrapped(|e| if let LispKind::AtomMap(m) = e {
+        for (&a, u) in m {
+          let mut axiom_set = BitSet::new();
+          let mut it = Uncons::New(u.clone()).peekable();
+          let doc = it.peek().and_then(|s| s.unwrapped(|s| match s {
+            LispKind::String(s) => Some(format!("{}", s)),
+            _ => None
+          }));
+          if doc.is_some() { it.next(); }
+          for e in it {
+            if let Some(a) = e.as_atom() {
+              if let Some(DeclKey::Thm(tid)) = env.data[a].decl {
+                if let Some(bs) = axiom_use.get(&tid) { axiom_set.union_with(bs) }
+              }
+            }
+          }
+          if !axiom_set.is_empty() {
+            axiom_sets.push((a, doc.unwrap_or_default(), axiom_set))
+          }
+        }
+      })
+    }
+    axiom_sets.sort_by_cached_key(|set| set.2.iter().map(|i| to_tid[i].0).max());
+    (to_tid, AxiomUse { axiom_use, axiom_sets })
   }
 
   fn accumulate(&mut self, env: &Environment, bs: &mut BitSet, node: &ProofNode) {
@@ -136,7 +164,7 @@ impl AxiomUse {
   }
 
   fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmId) -> &'a BitSet {
-    if let Some(bs) = self.0.get(&tid) {
+    if let Some(bs) = self.axiom_use.get(&tid) {
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
@@ -153,7 +181,7 @@ impl AxiomUse {
         self.accumulate(env, &mut bs, head)
       }
     }
-    self.0.entry(tid).or_insert(bs)
+    self.axiom_use.entry(tid).or_insert(bs)
   }
 }
 
@@ -557,15 +585,38 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     }
     if let ThmKind::Thm(_) = td.kind {
       writeln!(file, "    <h2 class=\"axioms\">Axiom use</h2>")?;
+      let mut axioms = self.axuse.1.get(&self.env, tid).clone();
       let mut first = true;
-      for i in self.axuse.1.get(&self.env, tid) {
+      if axioms.remove(0) {
         if !mem::take(&mut first) { writeln!(file, ",")? }
-        if i == 0 {
-          write!(file, "<i>sorry</i>")?
-        } else {
-          self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-            write!(file, r#"    <a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
+        write!(file, "<i>sorry</i>")?
+      }
+      for &(name, ref doc, ref set) in &self.axuse.1.axiom_sets {
+        if !axioms.is_disjoint(set) {
+          if !mem::take(&mut first) { writeln!(file, ",")? }
+          first = true;
+          write!(file, "    <span class=\"axs\"")?;
+          if !doc.is_empty() {
+            write!(file, " title=\"")?;
+            pulldown_cmark::escape::escape_html(WriteWrapper(&mut file), doc)?;
+            write!(file, "\"")?;
+          }
+          write!(file, ">{}</span><span class=\"axm\">\n     (",
+            self.env.data[name].name.as_str())?;
+          for i in set {
+            if axioms.remove(i) {
+              if !mem::take(&mut first) { write!(file, ",\n      ")? }
+              self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
+                write!(file, r#"<a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
+            }
+          }
+          write!(file, ")</span>")?;
         }
+      }
+      for i in &axioms {
+        if !mem::take(&mut first) { writeln!(file, ",")? }
+        self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
+          write!(file, r#"    <a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
       }
       writeln!(file)?
     }

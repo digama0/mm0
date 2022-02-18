@@ -133,16 +133,18 @@ a, a .pre {
 }
 
 a.sort, a.sortname, span.sort {color:#c08b30;}
-a.ax {color:#c94922;}
-a.def {color: #22a2c9;}
+a.ax { color:#ce3434; }
+a.def { color: #22a2c9; }
 a.thm { color: #6679cc; }
-a.term {color: #9c637a;}
+a.term { color: #9c637a; }
+.axs { color:#c87a00; }
+.axs-hint { color:#909090; }
 
 a:hover, a:hover .pre {
     text-decoration: underline;
 }
 
-a.term, a.def, a.thm, a.ax {
+a.term, a.def, a.thm, a.ax, .axs {
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
     font-size: 0.9em;
 }
@@ -297,11 +299,13 @@ h1.title span.nav a {
         text-decoration: none;
     }
 
-    a.sort, a.sortname, span.sort {color:#c08b30;}
-    a.ax {color:#c94922;}
-    a.def {color: #22a2c9;}
+    a.sort, a.sortname, span.sort { color:#c08b30; }
+    a.ax { color:#c94922; }
+    a.def { color: #22a2c9; }
     a.thm { color: #6679cc; }
-    a.term {color: #9c637a;}
+    a.term { color: #9c637a; }
+    .axs { color:#db8b12; }
+    .axs-hint { color:#666; }
 
     div.body h1,
     div.body h2,

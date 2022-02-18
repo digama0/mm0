@@ -87,6 +87,12 @@ do {
       [e e]])
     rec)
 
+  --| This is a special variable used by `mm0-rs doc` to shorten axiom list printouts.
+  --| It is an atom map from a name for the axiom list to a list of axioms.
+  (def axiom-sets (atom-map!))
+  --| Declare a new axiom set, which is used by the docgen tool to shorten axiom lists.
+  (def (add-axiom-set! x doc xs) (insert! axiom-sets x (cons doc xs)))
+
   --| `(named pf)` wraps a proof script `pf`, runs it, then gathers all
   --| unassigned metavariables and assigns them to dummies.
   --| `(named x1 ... xn pf)` is the same but names the first `n` variables `x1,...,xn`.
@@ -772,6 +778,8 @@ axiom itru: $ T. $;
 --| The constant `false`.
 @(add-eval) def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
+do (add-axiom-set! 'axs_prop_calc "Propositional calculus" '(ax_1 ax_2 ax_3 ax_mp itru));
+
 theorem trud (h: $ T. -> a $): $ a $ = '(h itru);
 theorem eqtru: $ (a <-> T.) <-> a $ =
 '(ibii (mpbiri itru id) @ bithd id (a1i itru));
@@ -846,6 +854,9 @@ theorem alcom {x y: nat} (p: wff x y): $ A. x A. y p -> A. y A. x p $ = 'ax_11;
 --| express this without changing `p`,
 --| because we haven't defined proper substitution yet.
 axiom ax_12 {x: nat} (a: nat) (p: wff x): $ x = a -> p -> A. x (x = a -> p) $;
+
+do (add-axiom-set! 'axs_pred_calc "Predicate calculus"
+  '(ax_gen ax_4 ax_5 ax_6 ax_7 ax_10 ax_11 ax_12));
 
 theorem alimi (a b: wff x) (h: $ a -> b $): $ A. x a -> A. x b $ = '(ax_4 (ax_gen h));
 theorem iald (a: wff) (b: wff x) (h: $ a -> b $): $ a -> A. x b $ = '(syl (alimi h) ax_5);
@@ -1459,6 +1470,8 @@ axiom elab (a: nat) {x: nat} (p: wff x): $ a e. {x | p} <-> [a / x] p $;
 --| primitive predicate in the language).
 axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 
+do (add-axiom-set! 'axs_set "Sets and elements" '(elab ax_8));
+
 --| `A == B` is equality for sets. Two sets are equal if they have the
 --| same elements.
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
@@ -1820,6 +1833,8 @@ axiom theid {x: nat} (A: set) (a: nat): $ A == {x | x = a} -> the A = a $;
 --| The negative case of definite description: if `A` is not a singleton then `the A = 0`.
 axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 
+do (add-axiom-set! 'axs_the "Definite description" '(theid the0));
+
 @(register-eqd 'the) theorem theeqd (G A B)
   (h: $ G -> A == B $): $ G -> the A = the B $ =
 '(! casesd _ $ E. y A == {x | x = y} $ _
@@ -1974,6 +1989,9 @@ axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
 axiom mul0 (a: nat): $ a * 0 = 0 $;
 --| The successor case in the definition of multiplication.
 axiom mulS (a b: nat): $ a * suc b = a * b + a $;
+
+do (add-axiom-set! 'axs_peano "Peano arithmetic"
+  '(peano1 peano2 peano5 addeq muleq add0 addS mul0 mulS));
 
 @(register-eqd 'add) theorem addeqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
   $ G -> a + c = b + d $ = '(sylc addeq h1 h2);

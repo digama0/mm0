@@ -177,6 +177,10 @@ axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
 --| are numbers less than 256.
 axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
 
+do (add-axiom-set! 'axs_string "String axioms" '(
+  h2n0 h2n1 h2n2 h2n3 h2n4 h2n5 h2n6 h2n7 h2n8 h2n9 h2na h2nb h2nc h2nd h2ne h2nf
+  h2nlt c2nch c2nlt s2ns0 s2ns1 s2nsadd s2nlt));
+
 theorem s2nscons: $ c ': s = c : s $ =
 '(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
 theorem s2nscons0: $ c ': s0 = s1 c $ =

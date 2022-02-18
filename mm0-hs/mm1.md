@@ -627,6 +627,10 @@ MM0-specific builtin functions
 
 * `(eval-string s1 ... sn)` will elaborate expressions `s1` ... `sn` as type `string`, assuming the string preamble has been set up (see the spec for [`output string`](https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#string-io)), returning a string containing the result of evaluating the string expressions. This has exactly the same effect as `output string: s1 ... sn;`, except the string is returned to the caller instead of output by the verifier.
 
+* `axiom-sets` is not a defined value, but the documentation generator will look for a global definition by this name. It should be assigned to an atom map, where each key is the identifier of an axiom set and the value is a list `("doc" ax1 ax2 ... axn)`, where `"doc"` is a short description of the axiom set and `ax1 ... axn` are the axioms in the set.
+
+  The interpretation of these sets is that in the "Axiom Use" section of a theorem, if the theorem uses one or more axioms from the set then all axioms in the set will be grouped under this set as heading. (The detailed breakdown of axioms used in the set is hidden by default but can still be displayed.)
+
 Compilation
 ===
 

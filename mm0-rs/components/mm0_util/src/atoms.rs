@@ -80,4 +80,6 @@ make_atoms! {
   REFINE_EXTRA_ARGS: "refine-extra-args",
   /// `to-expr-fallback` is called when elaborating a term that is not otherwise recognized
   TO_EXPR_FALLBACK: "to-expr-fallback",
+  /// `axiom-sets` is a map defined in user code and used by docgen
+  AXIOM_SETS: "axiom-sets",
 }
