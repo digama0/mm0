@@ -515,7 +515,7 @@ impl LispWeak {
     match self {
       LispWeak::Strong(e) => LispWeak::Strong(f(e)),
       LispWeak::Weak(e) if e.strong_count() == 0 => LispWeak::Weak(Weak::new()),
-      LispWeak::Weak(e) => LispWeak::Weak(Rc::downgrade(&f(&*e.as_ptr()).0)),
+      LispWeak::Weak(e) => LispWeak::Weak(Rc::downgrade(&f(unsafe { &*e.as_ptr() }).0)),
     }
   }
 }
@@ -572,13 +572,13 @@ impl LispRef {
   ///
   /// [`FrozenLispRef::get`]: super::frozen::FrozenLispRef::get
   pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
-    match self.0.try_borrow_unguarded().unwrap_or_else(|_| {
+    match unsafe { self.0.try_borrow_unguarded() }.unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
-      self.0.try_borrow_unguarded().expect("could not deref refcell")
+      unsafe { self.0.try_borrow_unguarded() }.expect("could not deref refcell")
     }) {
       LispWeak::Strong(e) => Some(e),
       LispWeak::Weak(e) if e.strong_count() == 0 => None,
-      LispWeak::Weak(e) => Some(&*e.as_ptr())
+      LispWeak::Weak(e) => Some(unsafe { &*e.as_ptr() })
     }
   }
 }

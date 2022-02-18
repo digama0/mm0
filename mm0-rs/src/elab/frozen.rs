@@ -66,7 +66,7 @@ impl FrozenEnv {
   /// # Safety
   /// TODO: this gives out an `&Environment`, even though it is frozen. Don't abuse it
   #[must_use] pub unsafe fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
-    FormatEnv {source, env: self.thaw()}
+    FormatEnv { source, env: unsafe { self.thaw() } }
   }
 
   /// Get the list of [`Spans`] in the environment.
@@ -174,7 +174,7 @@ impl LispKind {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispKind {
-    &*<*const _>::cast(self)
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 
@@ -183,7 +183,7 @@ impl LispVal {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispVal {
-    &*<*const _>::cast(self)
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 
@@ -192,7 +192,7 @@ impl LispRef {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
-    &*<*const _>::cast(self)
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 
@@ -200,7 +200,7 @@ impl LispRef {
 /// # Safety
 /// The data structure should not be modified, even via clones, while this reference is alive.
 #[must_use] pub unsafe fn freeze_merge_strategy(this: &MergeStrategy) -> &FrozenMergeStrategy {
-  &*<*const _>::cast(this)
+  unsafe { &*<*const _>::cast(this) }
 }
 
 impl MergeStrategyInner {
@@ -208,7 +208,7 @@ impl MergeStrategyInner {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenMergeStrategyInner {
-    &*<*const _>::cast(self)
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 
@@ -217,7 +217,7 @@ impl Proc {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenProc {
-    &*<*const _>::cast(self)
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 

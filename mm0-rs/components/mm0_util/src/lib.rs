@@ -17,6 +17,7 @@
   unused,
   missing_docs
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
@@ -155,7 +156,11 @@ macro_rules! let_unchecked {
     let ($($q),*) = let_unchecked!($p = $e, ($($q),*));
   };
   ($p:pat = $e:expr, $bl:expr) => {
-    if let $p = $e { $bl } else { unsafe { std::hint::unreachable_unchecked() } }
+    if let $p = $e { $bl } else if cfg!(debug_assertions) {
+      unreachable!()
+    } else {
+      unsafe { std::hint::unreachable_unchecked() }
+    }
   };
 }
 
@@ -399,7 +404,7 @@ impl<T> SliceUninit<T> {
   ///
   /// This causes undefined behavior if the content is not fully initialized.
   #[must_use]
-  pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
+  pub unsafe fn assume_init(self) -> Box<[T]> { unsafe { mem::transmute(self.0) } }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
