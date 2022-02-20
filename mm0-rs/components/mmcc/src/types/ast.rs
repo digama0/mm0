@@ -787,7 +787,8 @@ impl Expr {
   #[must_use] pub fn list(span: &FileSpan, args: Vec<Expr>) -> Expr {
     match args.len() {
       0 => Spanned {span: span.clone(), k: ExprKind::Unit},
-      1 => unwrap_unchecked!(args.into_iter().next()),
+      // Safety: it's not empty
+      1 => unsafe { args.into_iter().next().unwrap_unchecked() },
       _ => Spanned {span: span.clone(), k: ExprKind::List(args)},
     }
   }

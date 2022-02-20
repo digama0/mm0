@@ -132,7 +132,8 @@ impl<T, R> VecPatch<T, R> {
     self.insert.sort_by_key(|p| p.0);
     vec.reserve(self.insert.len());
     let mut end = vec.len();
-    assert!(unwrap_unchecked!(self.insert.last()).0 <= end, "index out of bounds");
+    // Safety: we checked that `self.insert` is not empty
+    assert!(unsafe { self.insert.last().unwrap_unchecked() }.0 <= end, "index out of bounds");
     let mut diff = self.insert.len();
     let new_len = end + diff;
     for (i, val) in self.insert.into_iter().rev() {

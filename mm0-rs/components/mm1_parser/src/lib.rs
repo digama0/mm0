@@ -64,9 +64,7 @@ use ast::{
   Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal, LocalKind,
   SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
 };
-use mm0_util::{
-  let_unchecked, unwrap_unchecked, BoxError, LinedString, Modifiers, Position, Prec, Span,
-};
+use mm0_util::{BoxError, LinedString, Modifiers, Position, Prec, Span};
 use num::cast::ToPrimitive;
 use num::BigUint;
 use std::mem;
@@ -772,7 +770,8 @@ impl<'a> Parser<'a> {
         }
       }
       Some(b'$') => {
-        let f = unwrap_unchecked!(self.formula()?);
+        // Safety: `formula()` only returns `Ok(None)` on non-`$` input
+        let f = unsafe { self.formula()?.unwrap_unchecked() };
         Ok(SExpr { span: f.0, k: SExprKind::Formula(f) })
       }
       Some(c) if (b'0'..=b'9').contains(&c) => {

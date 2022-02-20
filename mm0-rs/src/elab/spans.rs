@@ -119,7 +119,8 @@ impl<T> Spans<T> {
     }
     let v = & /* 'c */ mut *v;
     v.push((sp, val));
-    &mut unwrap_unchecked!(v.last_mut()).1
+    // Safety: We just pushed, so the last_mut() exists
+    unsafe { &mut v.last_mut().unwrap_unchecked().1 }
   }
 
   /// Insert a data element at a given span, if it lies within the current statement's extent.

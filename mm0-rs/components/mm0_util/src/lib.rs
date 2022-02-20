@@ -165,17 +165,6 @@ macro_rules! let_unchecked {
   };
 }
 
-/// Like `unwrap`, but invokes undefined behavior instead of panicking.
-///
-/// # Safety
-/// This function must not be called on a [`None`] value.
-#[macro_export]
-macro_rules! unwrap_unchecked {
-  ($e:expr) => {
-    let_unchecked!(Some(x) = $e, x)
-  };
-}
-
 /// Does the same as `panic!` but works in a `const fn`.
 #[macro_export]
 macro_rules! const_panic {

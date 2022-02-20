@@ -1371,12 +1371,14 @@ impl TupleMatchKind {
       Self::List | Self::Struct => {
         if exprs.iter().any(Option::is_none) {return None}
         intern!(ctx, ExprKind::List(ctx.alloc.alloc_slice_fill_iter(
-          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+          // Safety: we checked that all the options are Some
+          exprs.into_iter().map(|e| unsafe { e.unwrap_unchecked() }))))
       }
       Self::Array => {
         if exprs.iter().any(Option::is_none) {return None}
         intern!(ctx, ExprKind::Array(ctx.alloc.alloc_slice_fill_iter(
-          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+          // Safety: we checked that all the options are Some
+          exprs.into_iter().map(|e| unsafe { e.unwrap_unchecked() }))))
       }
       Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
       Self::Own => (*exprs.get(1)?)?,

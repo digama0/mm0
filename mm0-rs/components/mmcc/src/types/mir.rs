@@ -705,7 +705,8 @@ impl Contexts {
       let size = ctx.size;
       let buf_id = self.0.push(CtxBuf {parent: *id, size: size + id.1, vars: vec![]});
       *id = CtxId(buf_id, 0);
-      unwrap_unchecked!(self.0 .0.last_mut())
+      // Safety: We just pushed so it's not empty
+      unsafe { self.0 .0.last_mut().unwrap_unchecked() }
     }
   }
 

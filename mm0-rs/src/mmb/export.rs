@@ -561,7 +561,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   NameData {name: a, p_proof: self.pos},
                   VarData {p_vars: 0, vars}
                 ));
-                &mut unwrap_unchecked!(temp.term_names.last_mut()).1.vars
+                // Safety: we just pushed to term_names
+                unsafe { &mut temp.term_names.last_mut().unwrap_unchecked().1.vars }
               });
               match &td.kind {
                 TermKind::Term => write_cmd_bytes(self, STMT_TERM, &[])?,
@@ -588,7 +589,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   VarData {p_vars: 0, vars: td.hyps.iter()
                     .map(|p| p.0.unwrap_or(AtomId::UNDER)).collect()},
                 ));
-                &mut unwrap_unchecked!(temp.thm_names.last_mut()).1.vars
+                // Safety: we just pushed to thm_names
+                unsafe { &mut temp.thm_names.last_mut().unwrap_unchecked().1.vars }
               });
               #[allow(clippy::cast_possible_truncation)] // no truncation
               let nargs = td.args.len() as u32;

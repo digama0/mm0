@@ -1112,7 +1112,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     for arg in args.into_vec() {
       match arg.1 {
         hir::ArgKind::Lam(pat) => {
-          let v = unwrap_unchecked!(it.next()).0;
+          // In push_args_raw we push exactly one element for every Lam(..) in args
+          let v = unsafe { it.next().unwrap_unchecked().0 };
           self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
           self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
           pats.push(pat);
