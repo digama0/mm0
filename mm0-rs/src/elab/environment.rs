@@ -539,14 +539,16 @@ impl ObjectKind {
   /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn expr(e: LispVal) -> ObjectKind {
-    ObjectKind::Expr(unsafe {FrozenLispVal::new(e)})
+    // Safety: ObjectKind objects are write-only during the construction phase
+    ObjectKind::Expr(unsafe { FrozenLispVal::new(e) })
   }
   /// Create an [`ObjectKind`] for a [`Proof`].
   /// # Safety
   /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn proof(e: LispVal) -> ObjectKind {
-    ObjectKind::Proof(unsafe {FrozenLispVal::new(e)})
+    // Safety: ObjectKind objects are write-only during the construction phase
+    ObjectKind::Proof(unsafe { FrozenLispVal::new(e) })
   }
 }
 
@@ -678,6 +680,7 @@ impl<A: Remap, const N: usize> Remap for [A; N] {
   type Target = [A::Target; N];
   fn remap(&self, r: &mut Remapper) -> Self::Target {
     let arr = self.iter().map(|e| e.remap(r)).collect::<arrayvec::ArrayVec<_, N>>();
+    // Safety: We are collecting an iterator with exactly N elements, so it is initialized
     unsafe { arr.into_inner_unchecked() }
   }
 }

@@ -623,9 +623,10 @@ fn trim_margin(s: &str) -> String {
   for (i, &c) in s.iter().enumerate() {
     if c == b'\n' {
       if nonempty {
-        out.push_str(unsafe {
-          std::str::from_utf8_unchecked(&s[last + margin ..= i])
-        });
+        // Safety: last + margin is at a valid utf8 location
+        // because it is some number of spaces after a newline,
+        // and i+1 is because c == b'\n' is a one byte char
+        unsafe { out.push_str(std::str::from_utf8_unchecked(&s[last + margin ..= i])) }
         nonempty = false;
       } else {
         out.push('\n')
@@ -678,6 +679,9 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
   let env = or!(Ok(None), env.into_response_error()?).1;
+  // Safety: This is actually unsafe, but the issue is unlikely to come up in practice.
+  // We are promising here to not Rc::clone the data, but we do below,
+  // meaning that we could potentially race on the reference count.
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
@@ -721,6 +725,7 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           (spans.lc.as_ref()?.vars.get(&a)?.1.sort()?, None)
         };
         let mut out = String::new();
+        // Safety: render_fmt doesn't clone the expression
         fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).expect("impossible"));
         { use std::fmt::Write; write!(out, ": {}", fe.to(&s)).expect("impossible"); }
         ((sp1, mk_mm0(out)), doc)
@@ -743,7 +748,11 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
             out.push((sp, mk_mm0(format!("{}", fe.to(td)))));
             let mut args = vec![];
             for _ in 0..td.args.len() {
-              args.push(unsafe {u.next()?.thaw()}.clone());
+              // Safety: FIXME this is actually unsafe. `Subst` both requires cloned expressions
+              // and also clones expressions itself, but `FrozenEnv` does not permit us to do so,
+              // and there can potentially be a data race if multiple threads attempt to do this
+              // printing at the same time. But this is a hover output so this seems unlikely.
+              args.push(unsafe { u.next()?.thaw() }.clone());
             }
             let mut subst = Subst::new(env, &td.heap, args);
             let mut out = String::new();
@@ -888,6 +897,7 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
       Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
     }
   };
+  // Safety: We don't use the env field on `fe` for anything other than printing
   let fe = unsafe { env.format_env(&text) };
   let f = |sp, name: &ArcString, desc, full, kind| DocumentSymbol {
     name: String::from_utf8_lossy(name).into(),
@@ -927,8 +937,10 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
         if let Some(ld) = ad.lisp() {
+          #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
           if let Some((ref fsp, full)) = *ld.src() {
             let e = &**ld;
+            // Safety: We only use the expression for printing and don't Rc::clone it
             push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
               match (|| Some(match e.unwrap() {
                 FrozenLispKind::Atom(_) |
@@ -988,9 +1000,11 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
       DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor, td.doc)}
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method, td.doc)}
     }),
+    #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
     TraceKind::Global => {
       let e = ad.lisp().as_ref()?;
-      Some(done!(format!("{}", fe.to(unsafe {e.thaw()})), match *e.unwrap() {
+      // Safety: We only use the expression for printing and don't Rc::clone it
+      Some(done!(format!("{}", fe.to(unsafe { e.thaw() })), match *e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
         FrozenLispKind::Goal(_) => CompletionItemKind::Constant,
@@ -1027,6 +1041,7 @@ async fn completion(path: FileRef, _pos: Position) -> Result<CompletionResponse,
     }
   };
   let text = text.ascii().clone();
+  // Safety: We don't use the env field on `fe` for anything other than printing
   let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
   BuiltinProc::for_each(|_, s| {
@@ -1077,6 +1092,7 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
     (text, env)
   };
 
+  // Safety: We don't use the env field on `fe` for anything other than printing
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))

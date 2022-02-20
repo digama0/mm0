@@ -34,6 +34,7 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
+  clippy::undocumented_unsafe_blocks,
   clippy::unwrap_used,
   clippy::wrong_pub_self_convention
 )]

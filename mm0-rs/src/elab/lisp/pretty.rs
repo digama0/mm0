@@ -124,7 +124,11 @@ const SOFTLINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE_));
 
 fn covariant<'a>(from: RefDoc<'static>) -> RefDoc<'a> {
   #[allow(clippy::useless_transmute)]
-  unsafe {mem::transmute(from)}
+  // Safety: `RefDoc` is actually covariant. Rust is unable to prove this because of the
+  // Doc::Column and Doc::Nesting variants, which contain
+  // &'a (dyn Fn(usize) -> RefDoc<'a, _> + 'a), which is covariant
+  // in 'a even though rust doesn't try to reason about the changing return type.
+  unsafe { mem::transmute(from) }
 }
 
 impl<'a> Pretty<'a> {
@@ -146,10 +150,12 @@ impl<'a> Pretty<'a> {
   }
 
   fn token(&'a self, tk: &'a [u8]) -> Pp<'a> {
-    Pp::token(self.alloc, &self.fe, unsafe {std::str::from_utf8_unchecked(tk)})
+    // Safety: Tokens come from the ASCII text
+    Pp::token(self.alloc, &self.fe, unsafe { std::str::from_utf8_unchecked(tk) })
   }
   fn word(&'a self, data: &'a [u8]) -> Pp<'a> {
-    Pp::word(self.alloc, unsafe {std::str::from_utf8_unchecked(data)})
+    // Safety: Words come from the ASCII text
+    Pp::word(self.alloc, unsafe { std::str::from_utf8_unchecked(data) })
   }
 
   pub(crate) fn alloc(&'a self, doc: Doc<'a>) -> RefDoc<'a> {

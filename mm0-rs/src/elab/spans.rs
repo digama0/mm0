@@ -75,7 +75,10 @@ impl<T> Spans<T> {
   /// This function must only be called if [`set_stmt`](Self::set_stmt) has previously
   /// been called. We ensure that this is the case for any [`Spans`] object put into
   /// [`Environment.spans`].
-  #[must_use] pub fn stmt(&self) -> Span { unsafe { self.stmt.assume_init() } }
+  #[must_use] pub fn stmt(&self) -> Span {
+    // Safety: by assumption
+    unsafe { self.stmt.assume_init() }
+  }
 
   /// Get the `decl` field of a [`Spans`].
   ///
@@ -84,7 +87,10 @@ impl<T> Spans<T> {
   /// been called. We ensure that this is the case for any [`Spans`] object put into
   /// [`Environment.spans`], but only for declarations that actually have names.
   /// (This function is also currently unused.)
-  #[must_use] pub fn decl(&self) -> AtomId { unsafe { self.decl.assume_init() } }
+  #[must_use] pub fn decl(&self) -> AtomId {
+    // Safety: by assumption
+    unsafe { self.decl.assume_init() }
+  }
 
   /// Insert a new data element at a given span.
   pub fn insert<'a>(&'a mut self, sp: Span, val: T) -> &'a mut T {
@@ -107,9 +113,8 @@ impl<T> Spans<T> {
       if sp == *sp1 {
         // return k; // we would like to write this
         #[allow(clippy::useless_transmute)]
-        return unsafe { // safety, see above. We know we are in the first case, so 'b = 'a
-          std::mem::transmute::<&/* 'b */ mut T, &/* 'a */ mut T>(k)
-        }
+        // Safety: see above. We know we are in the first case, so 'b = 'a
+        return unsafe { std::mem::transmute::<&/* 'b */ mut T, &/* 'a */ mut T>(k) }
       }
     }
     let v = & /* 'c */ mut *v;

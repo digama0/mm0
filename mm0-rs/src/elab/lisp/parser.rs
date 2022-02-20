@@ -321,6 +321,7 @@ impl Remap for Ir {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &Ir::Global(sp, a) => Ir::Global(sp, a.remap(r)),
+      // Safety: The input Ir is already frozen
       Ir::Const(v) => Ir::Const(unsafe { v.freeze() }.remap(r)),
       &Ir::SetMergeStrategy(sp, a) => Ir::SetMergeStrategy(sp, a.remap(r)),
       &Ir::GlobalDef(sp, sp2, a) => Ir::GlobalDef(sp, sp2, a.remap(r)),

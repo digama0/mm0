@@ -66,11 +66,15 @@ impl FrozenEnv {
   /// # Safety
   /// TODO: this gives out an `&Environment`, even though it is frozen. Don't abuse it
   #[must_use] pub unsafe fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
+    // Safety: ensured by caller
     FormatEnv { source, env: unsafe { self.thaw() } }
   }
 
   /// Get the list of [`Spans`] in the environment.
-  #[must_use] pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
+  #[must_use] pub fn spans(&self) -> &[Spans<ObjectKind>] {
+    // Safety: ObjectKind only contains frozen data
+    &unsafe { self.thaw() }.spans
+  }
 
   /// Get the [`Spans`] object corresponding to the statement that contains the given position,
   /// if one exists.
@@ -80,27 +84,46 @@ impl FrozenEnv {
 
   /// Accessor for [`Environment::data`]
   #[must_use] pub fn data(&self) -> &AtomVec<FrozenAtomData> {
+    // Safety: Data is re-frozen, and the cast is safe because FrozenAtomData is repr(transparent)
     unsafe { &*<*const _>::cast(&self.thaw().data) }
   }
 
   /// Accessor for [`Environment::sorts`]
-  #[must_use] pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
+  #[must_use] pub fn sorts(&self) -> &SortVec<Sort> {
+    // Safety: `Sort` does not have any `LispVal`s
+    &unsafe { self.thaw() }.sorts
+  }
   /// Accessor for [`Environment::sorts`]
   #[must_use] pub fn sort(&self, s: SortId) -> &Sort { &self.sorts()[s] }
   /// Accessor for [`Environment::terms`]
-  #[must_use] pub fn terms(&self) -> &TermVec<Term> { &unsafe { self.thaw() }.terms }
+  #[must_use] pub fn terms(&self) -> &TermVec<Term> {
+    // Safety: `Term` does not have any `LispVal`s
+    &unsafe { self.thaw() }.terms
+  }
   /// Accessor for [`Environment::terms`]
   #[must_use] pub fn term(&self, t: TermId) -> &Term { &self.terms()[t] }
   /// Accessor for [`Environment::thms`]
-  #[must_use] pub fn thms(&self) -> &ThmVec<Thm> { &unsafe { self.thaw() }.thms }
+  #[must_use] pub fn thms(&self) -> &ThmVec<Thm> {
+    // Safety: `Thm` does not have any `LispVal`s
+    &unsafe { self.thaw() }.thms
+  }
   /// Accessor for [`Environment::thms`]
   #[must_use] pub fn thm(&self, t: ThmId) -> &Thm { &self.thms()[t] }
   /// Accessor for [`Environment::stmts`]
-  #[must_use] pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
+  #[must_use] pub fn stmts(&self) -> &[StmtTrace] {
+    // Safety: `StmtTrace` does not have any `LispVal`s
+    &unsafe { self.thaw() }.stmts
+  }
   /// Parse a string into an atom.
-  #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomId> { unsafe { self.thaw() }.atoms.get(s).copied() }
+  #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomId> {
+    // Safety: we don't read any `LispVal`s
+    unsafe { self.thaw() }.atoms.get(s).copied()
+  }
   /// Accessor for [`Environment::pe`]
-  #[must_use] pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
+  #[must_use] pub fn pe(&self) -> &ParserEnv {
+    // Safety: `ParserEnv` does not have any `LispVal`s
+    &unsafe { self.thaw() }.pe
+  }
 }
 
 /// A wrapper around an [`AtomData`] that is frozen.
@@ -117,6 +140,7 @@ impl FrozenAtomData {
   #[must_use] pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`]
   #[must_use] pub fn lisp(&self) -> &Option<FrozenLispData> {
+    // Safety: Data is re-frozen, and the cast is safe because FrozenLispData is repr(transparent)
     unsafe { &*<*const _>::cast(&self.0.lisp) }
   }
   /// Accessor for [`AtomData::graveyard`]
@@ -127,7 +151,8 @@ impl FrozenAtomData {
 #[derive(Debug)]
 pub struct FrozenMergeStrategyInner(MergeStrategyInner);
 /// A wrapper around a [`MergeStrategy`] that is frozen.
-pub type FrozenMergeStrategy = Option<Rc<FrozenMergeStrategyInner>>;
+#[derive(Debug)]
+pub struct FrozenMergeStrategy(MergeStrategy);
 
 /// A wrapper around a [`LispData`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
@@ -141,12 +166,16 @@ impl FrozenLispData {
   #[must_use] pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
   /// Accessor for [`LispData::doc`]
   #[must_use] pub fn merge(&self) -> &FrozenMergeStrategy {
+    // Safety: Input is frozen already
     unsafe { freeze_merge_strategy(&self.0.merge) }
   }
 }
 impl Deref for FrozenLispData {
   type Target = FrozenLispVal;
-  fn deref(&self) -> &FrozenLispVal { unsafe { self.0.val.freeze() } }
+  fn deref(&self) -> &FrozenLispVal {
+    // Safety: Input is frozen already
+    unsafe { self.0.val.freeze() }
+  }
 }
 
 /// A wrapper around a [`LispVal`] that is frozen.
@@ -174,6 +203,7 @@ impl LispKind {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispKind {
+    // Safety: The cast is safe because FrozenLispKind is repr(transparent)
     unsafe { &*<*const _>::cast(self) }
   }
 }
@@ -183,6 +213,7 @@ impl LispVal {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispVal {
+    // Safety: The cast is safe because FrozenLispVal is repr(transparent)
     unsafe { &*<*const _>::cast(self) }
   }
 }
@@ -192,6 +223,7 @@ impl LispRef {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
+    // Safety: The cast is safe because FrozenLispRef is repr(transparent)
     unsafe { &*<*const _>::cast(self) }
   }
 }
@@ -200,6 +232,7 @@ impl LispRef {
 /// # Safety
 /// The data structure should not be modified, even via clones, while this reference is alive.
 #[must_use] pub unsafe fn freeze_merge_strategy(this: &MergeStrategy) -> &FrozenMergeStrategy {
+  // Safety: The cast is safe because FrozenMergeStrategy is repr(transparent)
   unsafe { &*<*const _>::cast(this) }
 }
 
@@ -208,6 +241,7 @@ impl MergeStrategyInner {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenMergeStrategyInner {
+  // Safety: The cast is safe because FrozenMergeStrategyInner is repr(transparent)
     unsafe { &*<*const _>::cast(self) }
   }
 }
@@ -217,6 +251,7 @@ impl Proc {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenProc {
+    // Safety: The cast is safe because FrozenProc is repr(transparent)
     unsafe { &*<*const _>::cast(self) }
   }
 }
@@ -320,12 +355,16 @@ impl FrozenLispKind {
 
 impl Deref for FrozenLispVal {
   type Target = FrozenLispKind;
-  fn deref(&self) -> &FrozenLispKind { unsafe { self.thaw().deref().freeze() } }
+  fn deref(&self) -> &FrozenLispKind {
+    // Safety: Input is frozen already
+    unsafe { self.thaw().deref().freeze() }
+  }
 }
 
 impl Remap for FrozenMergeStrategyInner {
   type Target = MergeStrategyInner;
   fn remap(&self, r: &mut Remapper) -> MergeStrategyInner {
+    // Safety: Input is frozen already
     unsafe {
       match &self.0 {
         MergeStrategyInner::AtomMap(m) =>
@@ -334,6 +373,14 @@ impl Remap for FrozenMergeStrategyInner {
           MergeStrategyInner::Custom(f.freeze().remap(r))
       }
     }
+  }
+}
+
+impl Remap for FrozenMergeStrategy {
+  type Target = MergeStrategy;
+  fn remap(&self, r: &mut Remapper) -> MergeStrategy {
+    // Safety: Input is frozen already
+    self.0.as_ref().map(|m| Rc::new(unsafe { m.freeze() }.remap(r)))
   }
 }
 
@@ -392,6 +439,7 @@ impl Remap for FrozenLispKind {
 impl Remap for FrozenLispRef {
   type Target = LispWeak;
   fn remap(&self, r: &mut Remapper) -> LispWeak {
+    // Safety: We ensure `LispWeak` are valid pointers or null, so they are safe to read
     unsafe { self.thaw().get_weak().map_unsafe(|e| e.freeze().remap(r)) }
   }
 }
@@ -405,8 +453,10 @@ impl Remap for FrozenProc {
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
       Proc::MatchCont(_) => Proc::MatchCont(Rc::new(Cell::new(false))),
       Proc::RefineCallback => Proc::RefineCallback,
+      // Safety: the merge strategy is already frozen
       Proc::MergeMap(m) => Proc::MergeMap(unsafe {freeze_merge_strategy(m)}.remap(r)),
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), RefCell::new(
+        // Safety: the cell is frozen, so we must not change the borrow flag
         match &*unsafe { m.try_borrow_unguarded() }.expect("failed to deref ref") {
           Ok(e) => Ok(e.remap(r)),
           Err(v) => Err(v.remap(r)),
@@ -428,6 +478,7 @@ impl FrozenLispRef {
   /// Dereference a [`FrozenLispRef`]. This can fail if the reference
   /// is a weak reference and the target is gone.
   #[must_use] pub fn get(&self) -> Option<&FrozenLispKind> {
+    // Safety: We ensure `LispWeak` are valid pointers or null, so they are safe to read
     unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
   }
 }

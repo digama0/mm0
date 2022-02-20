@@ -70,16 +70,26 @@ impl LinedString {
     lines
   }
 
+  /// Returns the index of the start of the line, and the line number.
+  #[must_use]
+  pub fn get_line(&self, line: usize) -> Option<usize> { self.lines.get(line).copied() }
+
+  /// Returns the index of the start of the line, and the line number.
+  #[must_use]
+  pub fn line_start(&self, idx: usize) -> (usize, usize) {
+    match self.lines.binary_search(&idx) {
+      Ok(n) => (idx, n + 1),
+      Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n),
+    }
+  }
+
   /// Turn a byte index into an LSP [`Position`]
   ///
   /// # Safety
   /// `idx` must be a valid index in the string.
   #[must_use]
   pub fn to_pos(&self, idx: usize) -> Position {
-    let (pos, line) = match self.lines.binary_search(&idx) {
-      Ok(n) => (idx, n + 1),
-      Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n),
-    };
+    let (pos, line) = self.line_start(idx);
     Position {
       line: line.try_into().expect("too many lines"),
       character: if self.unicode {

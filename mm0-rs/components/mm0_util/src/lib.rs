@@ -30,6 +30,7 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
+  clippy::undocumented_unsafe_blocks,
   clippy::unwrap_used
 )]
 // all the clippy lints we don't want
@@ -384,10 +385,11 @@ pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
 impl<T> SliceUninit<T> {
   /// Create a new uninitialized slice of length `size`.
+  #[inline]
   #[must_use]
   pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
-    // safety: the newly constructed elements have type MaybeUninit<T>
+    // Safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
     unsafe { res.set_len(size) };
     Self(res.into_boxed_slice())
@@ -396,6 +398,7 @@ impl<T> SliceUninit<T> {
   /// Assign the value `val` to location `i` of the slice. Warning: this does not
   /// call the destructor for `T` on the previous value, so this should be used only
   /// once per location unless `T` has no `Drop` impl.
+  #[inline]
   pub fn set(&mut self, i: usize, val: T) { self.0[i] = MaybeUninit::new(val) }
 
   /// Finalizes the construction, returning an initialized `Box<[T]>`.
@@ -403,6 +406,7 @@ impl<T> SliceUninit<T> {
   /// # Safety
   ///
   /// This causes undefined behavior if the content is not fully initialized.
+  #[inline]
   #[must_use]
   pub unsafe fn assume_init(self) -> Box<[T]> { unsafe { mem::transmute(self.0) } }
 }

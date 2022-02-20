@@ -58,10 +58,11 @@ macro_rules! str_enum {
         }
       }
       #[doc=$from_bytes]
+      #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
       #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
         // Safety: the function we defined just above doesn't do anything
         // dangerous with the &str
-        Self::from_str(unsafe {std::str::from_utf8_unchecked(s)})
+        Self::from_str(unsafe { std::str::from_utf8_unchecked(s) })
       }
 
       /// Iterate over all the elements in the enum.
@@ -511,10 +512,14 @@ impl LispWeak {
       Self::Strong(e) => e
     }
   }
+
+  /// # Safety
+  /// If the pointer is a weak pointer it must point to valid memory
   pub(crate) unsafe fn map_unsafe(&self, f: impl FnOnce(&LispKind) -> LispVal) -> LispWeak {
     match self {
       LispWeak::Strong(e) => LispWeak::Strong(f(e)),
       LispWeak::Weak(e) if e.strong_count() == 0 => LispWeak::Weak(Weak::new()),
+      // Safety: The pointer must be valid
       LispWeak::Weak(e) => LispWeak::Weak(Rc::downgrade(&f(unsafe { &*e.as_ptr() }).0)),
     }
   }
@@ -572,12 +577,15 @@ impl LispRef {
   ///
   /// [`FrozenLispRef::get`]: super::frozen::FrozenLispRef::get
   pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
+    // Safety: we can't modify the borrow flag because the data is frozen
     match unsafe { self.0.try_borrow_unguarded() }.unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+      // Safety: we can't modify the borrow flag because the data is frozen
       unsafe { self.0.try_borrow_unguarded() }.expect("could not deref refcell")
     }) {
       LispWeak::Strong(e) => Some(e),
       LispWeak::Weak(e) if e.strong_count() == 0 => None,
+      // Safety: `LispWeak` are null or valid so `as_ptr` is safe
       LispWeak::Weak(e) => Some(unsafe { &*e.as_ptr() })
     }
   }
@@ -1562,7 +1570,10 @@ impl<A: Remap> Remap for Mutex<A> {
 }
 impl Remap for LispVal {
   type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self { unsafe { self.freeze() }.remap(r) }
+  fn remap(&self, r: &mut Remapper) -> Self {
+    // Safety: Remapping is only done to frozen databases
+    unsafe { self.freeze() }.remap(r)
+  }
 }
 
 impl Remap for InferTarget {
@@ -1589,5 +1600,8 @@ impl Remap for ProcPos {
 
 impl Remap for Proc {
   type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self { unsafe { self.freeze() }.remap(r) }
+  fn remap(&self, r: &mut Remapper) -> Self {
+    // Safety: Remapping is only done to frozen databases
+    unsafe { self.freeze() }.remap(r)
+  }
 }

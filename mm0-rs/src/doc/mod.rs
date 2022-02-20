@@ -289,6 +289,7 @@ impl<'a> LayoutProof<'a> {
       ProofNode::Thm {thm, ref args, ref res} => {
         let td = &self.env.thms[thm];
         let mut hyps = SliceUninit::new(td.hyps.len());
+        assert!(td.args.len() + td.hyps.len() == args.len());
         if self.rev {
           for (i, e) in args[td.args.len()..].iter().enumerate().rev() {
             hyps.set(i, self.layout(e).into_proof())
@@ -299,7 +300,9 @@ impl<'a> LayoutProof<'a> {
           }
         }
         let res = self.layout(res).into_expr();
-        LayoutResult::Proof(self.push_line(unsafe {hyps.assume_init()}, LineKind::Thm(thm), res))
+        // Safety: We checked that the length matches, and we initialize
+        // every element exactly once in forward or reverse order.
+        LayoutResult::Proof(self.push_line(unsafe { hyps.assume_init() }, LineKind::Thm(thm), res))
       }
       ProofNode::Conv(ref p) => {
         let n = self.layout(&p.2).into_proof();
@@ -405,7 +408,10 @@ struct CaseInsensitiveName(ArcString);
 
 impl<'a> From<&'a ArcString> for &'a CaseInsensitiveName {
   #[allow(clippy::transmute_ptr_to_ptr)]
-  fn from(s: &'a ArcString) -> Self { unsafe { mem::transmute(s) } }
+  fn from(s: &'a ArcString) -> Self {
+    // Safety: CaseInsensitiveName is repr(transparent)
+    unsafe { mem::transmute(s) }
+  }
 }
 impl Hash for CaseInsensitiveName {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -531,6 +537,9 @@ impl<'a, W: Write> BuildDoc<'a, W> {
   ) -> io::Result<std::path::PathBuf> {
     let mut path = self.thm_folder.clone();
     #[allow(clippy::useless_transmute)]
+    // Safety: This is a lifetime hack. We need to pass a mutable Environment to render_proof
+    // because LayoutProof::layout calls Environment::get_atom which mutates the env.data field.
+    // This is disjoint from the reference to env.thms that we retain here, so it's okay.
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
     self.mangler.mangle(&self.env, tid, |_, s| path.push(&format!("{}.html", s)));
     let mut file = BufWriter::new(File::create(&path)?);
@@ -545,7 +554,9 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           .expect("writing to a string"));
     }
     nav.push_str("<a href=\"../index.html#");
-    disambiguated_anchor(unsafe {nav.as_mut_vec()}, ad, true)?;
+    // Safety: disambiguated_anchor writes a theorem name,
+    // which is ASCII and so can safely be written to a String.
+    disambiguated_anchor(unsafe { nav.as_mut_vec() }, ad, true)?;
     nav.push_str("\">index</a>");
     if let Some(base) = &self.base_url {
       use std::fmt::Write;
@@ -579,6 +590,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         \n        <tr class=\"proof-head\">\
                     <th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th>\
                   </tr>")?;
+      // double borrow here, see safety comment
       render_proof(self.source, &mut self.env, &mut self.mangler,
         &mut file, self.order, &td.args, &td.hyps, pf)?;
       writeln!(file, "      </tbody>\n    </table>")?;

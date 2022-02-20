@@ -696,6 +696,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
     impl<T> Future for ElabFuture<T> {
       type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
       fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Safety: We don't move `this` out of the pin
         let this = &mut unsafe { self.get_unchecked_mut() }.0;
         let ElabFutureInner {
           elab: FrozenElaborator(elab),
@@ -706,6 +707,8 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
           match progress {
             UnfinishedStmt::None => {},
             UnfinishedStmt::Import(sp, p, other) => {
+              // Safety: `other` is pinned because it is projected from
+              // `this.progress` which is pinned
               match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
                 Ok(ElabResult::Ok(t, errors, env)) => {
                   toks.push(t);

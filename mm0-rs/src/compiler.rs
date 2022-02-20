@@ -84,6 +84,10 @@ impl FileContents {
   pub(crate) fn new_bin_from_file(path: &std::path::Path) -> io::Result<Self> {
     #[cfg(not(target_arch = "wasm32"))] {
       let file = fs::File::open(path)?;
+      // Safety: Well, memory mapping files is never totally safe, but we're assuming
+      // some reasonableness assumptions on the part of the user here.
+      // If they delete the file from under us then interesting things will happen.
+      // (I blame linux for not having a sensible locking model.)
       Ok(Self::new_mmap(unsafe { memmap::MmapOptions::new().map(&file)? }))
     }
     #[cfg(target_arch = "wasm32")] {
@@ -223,10 +227,13 @@ impl ElabErrorKind {
 fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
     msg: &'a str, level: ErrorLevel, footer: Vec<Annotation<'a>>) -> Snippet<'a> {
   let annotation_type = level.to_annotation_type();
-  let Range {start, end} = file.to_range(pos);
-  let start2 = pos.start - start.character as usize;
+  let (start, start_line) = file.line_start(pos.start);
+  let (_, end_line) = file.line_start(pos.end);
   #[allow(clippy::or_fun_call)]
-  let end2 = file.to_idx(Position {line: end.line + 1, character: 0}).unwrap_or(file.len());
+  let end = file.to_idx(Position {
+    line: u32::try_from(end_line).expect("too many lines") + 1,
+    character: 0
+  }).unwrap_or(file.len());
   Snippet {
     title: Some(Annotation {
       id: None,
@@ -234,12 +241,15 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
       annotation_type,
     }),
     slices: vec![Slice {
-      source: unsafe {std::str::from_utf8_unchecked(&file[(start2..end2).into()])},
-      line_start: start.line as usize + 1,
+      source: {
+        // Safety: We assume `Span` is coming from the correct file,
+        unsafe { std::str::from_utf8_unchecked(&file[(start..end).into()]) }
+      },
+      line_start: start_line + 1,
       origin: Some(path.rel()),
-      fold: end.line - start.line >= 5,
+      fold: end_line - start_line >= 5,
       annotations: vec![SourceAnnotation {
-        range: (pos.start - start2, pos.end - start2),
+        range: (pos.start - start, pos.end - start),
         label: "",
         annotation_type,
       }],

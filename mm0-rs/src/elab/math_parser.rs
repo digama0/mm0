@@ -196,10 +196,10 @@ impl<'a> MathParser<'a> {
           let end = self.literals(&mut args, &info.lits, &mut consts, sp.end)?;
           let span = (start..end).into();
           for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
-          return Ok(QExpr {
-            span,
-            k: QExprKind::App(sp, info.term, unsafe { args.assume_init() })
-          })
+          // Safety: We checked in elab_gen_nota that the lits array contains every index,
+          // so every item in `args` gets initialized exactly once by the literals() call
+          let k = QExprKind::App(sp, info.term, unsafe { args.assume_init() });
+          return Ok(QExpr { span, k })
         }
       }
     } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
@@ -256,8 +256,13 @@ impl<'a> MathParser<'a> {
         tok_end = self.peek_token();
       };
       let span = (start..end).into();
-      for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
-      lhs = QExpr { span, k: QExprKind::App(tk, info.term, unsafe { args.assume_init() }) };
+      for sp in consts { self.spans.insert(sp, ObjectKind::Term(info.term, span)); }
+      // Safety: We checked in elab_gen_nota that the lits array contains every index,
+      // and also lits[1] must be Const(..) since lits[0] is Var(..), so even though
+      // we skip lits[1] in the cases above, every item in `args` gets initialized
+      // exactly once by the literals() call, because all the indices are in Var(..) entries
+      let k = QExprKind::App(tk, info.term, unsafe { args.assume_init() });
+      lhs = QExpr { span, k };
     }
     Ok(lhs)
   }

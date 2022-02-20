@@ -29,7 +29,9 @@
 #![warn(clippy::float_arithmetic,
   clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
   clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
-  clippy::string_add, clippy::unwrap_used)]
+  clippy::string_add,
+  // clippy::undocumented_unsafe_blocks, // disabled because of ICE on 1.58.1 stable
+  clippy::unwrap_used)]
 // all the clippy lints we don't want
 #![allow(clippy::cognitive_complexity, clippy::comparison_chain,
   clippy::default_trait_access, clippy::enum_glob_use, clippy::inline_always,

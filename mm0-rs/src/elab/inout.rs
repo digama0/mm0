@@ -412,14 +412,14 @@ impl FrozenEnv {
   pub fn run_output(&self, w: impl io::Write) -> Result<(), (FileSpan, OutputError)> {
     let mut handler = None;
     let mut w = StringWriter {w, hex: None};
-    let env = unsafe {self.thaw()};
+    // Safety: We only use this environment to read non-lisp data.
+    let env = unsafe { self.thaw() };
     for s in self.stmts() {
       if let StmtTrace::OutputString(os) = s {
         let OutputString {span, heap, exprs} = &**os;
         (|| -> Result<(), OutputError> {
           let terms = {
-            handler = Some(unsafe {self.thaw()}.new_string_handler()
-              .map_err(OutputError::String)?);
+            handler = Some(env.new_string_handler().map_err(OutputError::String)?);
             let_unchecked!(Some((_, t)) = &handler, t)
           };
         env.write_output_string(terms, &mut w, heap, exprs)

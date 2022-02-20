@@ -261,7 +261,8 @@ impl EnvDisplay for SExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
       &SExprKind::Atom(a) => {
-        unsafe {std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a))}.fmt(f)
+        // Safety: Atoms are ASCII
+        unsafe { std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a)) }.fmt(f)
       }
       SExprKind::List(es) => {
         let mut it = es.iter();

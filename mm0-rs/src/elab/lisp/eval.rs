@@ -1449,7 +1449,7 @@ impl<'a> Evaluator<'a> {
       match func {
         &Proc::Builtin(func) => self.evaluate_builtin(tail, sp, func, args)?,
         Proc::Lambda {pos, env, code, ..} => {
-          // Unfortunately we're fighting the borrow checker here. The problem is that
+          // Safety: Unfortunately we're fighting the borrow checker here. The problem is that
           // ir is borrowed in the Stack type, with most IR being owned outside the
           // function, but when you apply a lambda, the Proc::LambdaExact constructor
           // stores an Arc to the code to execute, hence it comes under our control,
