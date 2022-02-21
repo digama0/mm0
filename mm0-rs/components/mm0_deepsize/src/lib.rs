@@ -269,6 +269,7 @@ deep_size_0!(
     {T: ?Sized} &T,
     {!Copy T} std::cell::Cell<T>,
     {!Copy T} std::rc::Weak<T>,
+    {!Copy T} std::sync::Weak<T>,
     {!Copy T} std::mem::MaybeUninit<T>,
     {T: ?Sized} core::marker::PhantomData<T>,
     {!Copy} dyn std::error::Error + Send + Sync
@@ -337,7 +338,7 @@ impl DeepSizeOf for std::path::PathBuf {
 #[cfg(feature = "num")]
 impl DeepSizeOf for num::BigUint {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
-        unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity()
+        unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity() * size_of::<u32>()
     }
 }
 
