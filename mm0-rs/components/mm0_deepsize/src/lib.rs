@@ -87,8 +87,6 @@ pub trait DeepSizeOf {
 /// recursing, so that references are not double-counted.
 #[derive(Debug, Default)]
 pub struct Context {
-    /// A set of all `Arcs` that have already been counted
-    arcs: HashSet<usize>,
     /// A set of all `Rcs` that have already been counted
     rcs: HashSet<usize>,
 }
@@ -99,12 +97,12 @@ impl Context {
         // Somewhat unsafe way of getting a pointer to the inner `ArcInner`
         // object without changing the count
         let pointer: usize = unsafe { *<*const _>::cast(arc) };
-        self.arcs.insert(pointer);
+        self.rcs.insert(pointer);
     }
     /// Checks if an `Arc` is in the list visited `Arc`s
     fn contains_arc<T: ?Sized>(&self, arc: &Arc<T>) -> bool {
         let pointer: usize = unsafe { *<*const _>::cast(arc) };
-        self.arcs.contains(&pointer)
+        self.rcs.contains(&pointer)
     }
 
     /// Adds an `Rc` to the list of visited `Rc`s
@@ -116,6 +114,36 @@ impl Context {
     }
     /// Checks if an `Rc` is in the list visited `Rc`s
     fn contains_rc<T: ?Sized>(&self, rc: &Rc<T>) -> bool {
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
+        self.rcs.contains(&pointer)
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    /// Adds an `Arc` to the list of visited `Arc`s
+    fn add_hybrid_arc<T: ?Sized>(&mut self, arc: &hybrid_rc::Arc<T>) {
+        // Somewhat unsafe way of getting a pointer to the inner `RcBox`
+        // object without changing the count
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
+        self.rcs.insert(pointer);
+    }
+    #[cfg(feature = "hybrid-rc")]
+    /// Checks if an `Arc` is in the list visited `Arc`s
+    fn contains_hybrid_arc<T: ?Sized>(&self, arc: &hybrid_rc::Arc<T>) -> bool {
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
+        self.rcs.contains(&pointer)
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    /// Adds an `Rc` to the list of visited `Rc`s
+    fn add_hybrid_rc<T: ?Sized>(&mut self, rc: &hybrid_rc::Rc<T>) {
+        // Somewhat unsafe way of getting a pointer to the inner `RcBox`
+        // object without changing the count
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
+        self.rcs.insert(pointer);
+    }
+    #[cfg(feature = "hybrid-rc")]
+    /// Checks if an `Rc` is in the list visited `Rc`s
+    fn contains_hybrid_rc<T: ?Sized>(&self, rc: &hybrid_rc::Rc<T>) -> bool {
         let pointer: usize = unsafe { *<*const _>::cast(rc) };
         self.rcs.contains(&pointer)
     }
@@ -134,6 +162,26 @@ impl Context {
             0
         } else {
             self.add_rc(rc);
+            f(&*rc, self)
+        }
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    fn deep_size_of_hybrid_arc<T: ?Sized>(&mut self, arc: &hybrid_rc::Arc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+        if self.contains_hybrid_arc(arc) {
+            0
+        } else {
+            self.add_hybrid_arc(arc);
+            f(&*arc, self)
+        }
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    fn deep_size_of_hybrid_rc<T: ?Sized>(&mut self, rc: &hybrid_rc::Rc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+        if self.contains_hybrid_rc(rc) {
+            0
+        } else {
+            self.add_hybrid_rc(rc);
             f(&*rc, self)
         }
     }
@@ -220,6 +268,20 @@ impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Rc<T> {
     }
 }
 
+#[cfg(feature = "hybrid-rc")]
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for hybrid_rc::Arc<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        context.deep_size_of_hybrid_arc(self, |val, context| val.deep_size_of_with(context))
+    }
+}
+
+#[cfg(feature = "hybrid-rc")]
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for hybrid_rc::Rc<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        context.deep_size_of_hybrid_rc(self, |val, context| val.deep_size_of_with(context))
+    }
+}
+
 impl<T: DeepSizeOf> DeepSizeOf for [T] {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.iter().map(|child| child.deep_size_of_children(context)).sum()
@@ -277,6 +339,9 @@ deep_size_0!(
 
 #[cfg(feature = "futures")]
 deep_size_0!({!Copy T} futures::channel::oneshot::Sender<T>);
+
+#[cfg(feature = "hybrid-rc")]
+deep_size_0!({!Copy T} hybrid_rc::Weak<T>);
 
 impl DeepSizeOf for String {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { self.capacity() }
