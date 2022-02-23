@@ -1114,7 +1114,7 @@ impl Environment {
 
   /// Add a term declaration to the environment. The [`Term`] is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
-  pub fn try_add_term(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
+  pub fn try_add_term(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
     let new_id = TermId(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &self.data[a];
     if let Some(key) = data.decl {
@@ -1133,7 +1133,7 @@ impl Environment {
       }))
     } else {
       let t = t();
-      if VERIFY_ON_ADD {
+      if verify {
         match self.verify_termdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
           Err(e) => {
@@ -1153,12 +1153,12 @@ impl Environment {
   /// Specialization of [`try_add_term`](Self::try_add_term) when the term is constructed already.
   pub fn add_term(&mut self, t: Term) -> AddItemResult<TermId> {
     let fsp = t.span.clone();
-    self.try_add_term(t.atom, &fsp, || t)
+    self.try_add_term(VERIFY_ON_ADD, t.atom, &fsp, || t)
   }
 
   /// Add a theorem declaration to the environment. The [`Thm`] is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn try_add_thm(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
+  pub fn try_add_thm(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
     let new_id = ThmId(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &self.data[a];
     if let Some(key) = data.decl {
@@ -1177,7 +1177,7 @@ impl Environment {
       }))
     } else {
       let t = t();
-      if VERIFY_ON_ADD {
+      if verify {
         match self.verify_thmdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
           Err(e) => {
@@ -1197,7 +1197,7 @@ impl Environment {
   /// Specialization of [`try_add_thm`](Self::try_add_thm) when the term is constructed already.
   pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId> {
     let fsp = t.span.clone();
-    self.try_add_thm(t.atom, &fsp, || t)
+    self.try_add_thm(VERIFY_ON_ADD, t.atom, &fsp, || t)
   }
 
   /// Add a coercion declaration to the environment.
@@ -1260,7 +1260,7 @@ impl Environment {
       StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
         DeclKey::Term(tid) => {
           let otd: &Term = other.term(tid);
-          let id = match self.try_add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
+          let id = match self.try_add_term(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
               let e = ElabError::with_info(sp, r.msg.into(), vec![
@@ -1276,7 +1276,7 @@ impl Environment {
         }
         DeclKey::Thm(tid) => {
           let otd: &Thm = other.thm(tid);
-          let id = match self.try_add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
+          let id = match self.try_add_thm(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
               let e = ElabError::with_info(sp, r.msg.into(), vec![
