@@ -498,6 +498,8 @@ make_predefs! {
 
   tyUnit: TermId => "tyUnit";
 
+  eVar: TermId => "eVar";
+
   epiRet: TermId => "epiRet";
   epiFree: TermId => "epiFree";
   epiPop: TermId => "epiPop";
@@ -529,6 +531,9 @@ make_predefs! {
   okVCtxGet_r: ThmId => "okVCtxGet_r";
 
   mctx0: TermId => "mctx0";
+  FREE: TermId => "FREE";
+  stkFREE: TermId => "stkFREE";
+  REG: TermId => "REG";
   mctxA: TermId => "mctxA";
 
   pushMCtx: TermId => "pushMCtx";

@@ -595,6 +595,57 @@ impl<N: NodeKind> NodeInsert<N> for NoProof {
   fn double_right(_: &mut ProofDedup<'_>, _: [ProofId; 7]) -> ProofId { ProofId::INVALID }
 }
 
+enum Expr {
+  Var(VarId),
+}
+
+enum MCtxRegValue {
+  Free,
+  Expr(P<Expr>),
+}
+
+enum MCtxStkValue {
+  Free
+}
+
+type MCtxRegKind = RegKind<MCtxRegValue>;
+type MCtxStkKind = StackKind<MCtxStkValue>;
+struct MCtx {
+  regs: P<MCtxNode<MCtxRegKind>>,
+  stack: Option<P<MCtxNode<MCtxStkKind>>>,
+}
+
+impl MCtx {
+  fn new(de: &mut ProofDedup<'_>) -> P<Self> {
+    let a = app!(de, (mctx0));
+    (Self { regs: (MCtxNode::Zero, a), stack: None }, a)
+  }
+
+  fn push_reg<I: NodeInsert<MCtxRegKind>>(this: &mut P<Self>, de: &mut ProofDedup<'_>,
+    ((reg, value), t): P<(u8, MCtxRegValue)>
+  ) -> ProofId {
+    let a = this.1;
+    let (_, th) = I::insert(de, &mut this.0.regs, (), &reg, ((reg, value), t));
+    match this.0.stack {
+      Some((_, stk)) => I::node_lt(de, [a, stk, t, this.1, th]),
+      None => th
+    }
+  }
+
+  fn add_stack(this: &mut P<Self>, de: &mut ProofDedup<'_>, n: Num) {
+    let e = app!(de, (stkFREE {*n}));
+    assert!(this.0.stack.replace((MCtxNode::One((n.val as u32, MCtxStkValue::Free)), e)).is_none());
+    this.1 = app!(de, mctxA[this.1, e]);
+  }
+
+  fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
+    match self.stack {
+      Some((_, stk)) => app!(de, (mctxA {self.regs.1} stk)),
+      None => self.regs.1,
+    }
+  }
+}
+
 enum DeferredKind<'a> {
   Exit(&'a Operand)
 }
@@ -616,7 +667,7 @@ struct TCtx<'a> {
   viter: StatementIter<'a>,
   piter: Option<std::iter::Peekable<InstIter<'a>>>,
   vctx: VCtx,
-  mctx: ProofId,
+  mctx: P<MCtx>,
 }
 
 type PTCtx<'a> = P<Box<TCtx<'a>>>;
@@ -635,7 +686,7 @@ impl<'a> TCtx<'a> {
     self.vctx.nvars = n2;
     let tctx2 = self.mk(de);
     (n, (tctx2, thm!(de, ((okPushVar tctx {*n2} tctx2)) =>
-      okPushVarI(self.mctx, self.mctx, *n, *n2, ty, old, self.vctx.e))))
+      okPushVarI(self.mctx.1, self.mctx.1, *n, *n2, ty, old, self.vctx.e))))
   }
 
   /// Given `ty`, returns `(tctx2, |- okPushVar tctx ty tctx2)`,
@@ -649,11 +700,11 @@ impl<'a> TCtx<'a> {
     let h1 = self.vctx.push(de, var, kind, e);
     let tctx2 = self.mk(de);
     (tctx2, thm!(de, ((okPushVar tctx {*self.vctx.nvars} tctx2)) =>
-      okPushVarI(self.mctx, *self.vctx.nvars, ty, old, self.vctx.e)))
+      okPushVarI(self.mctx.1, *self.vctx.nvars, ty, old, self.vctx.e)))
   }
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
-    app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx])
+    app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx.1])
   }
 
   /// Resets the iterators to point at a new block, without changing the variable context.
@@ -774,7 +825,7 @@ impl<'a> ProcProver<'a> {
       },
       piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
       vctx,
-      mctx: app!(self.thm, (d0)), // TODO
+      mctx: MCtx::new(&mut self.thm), // TODO
     });
     let mut l = tctx.mk(&mut self.thm);
     for &(v, _, (ref e, ref ty)) in self.proc.cfg.ctxs.iter_range(base..bl.block().ctx) {
@@ -938,7 +989,7 @@ impl<'a> ProcProver<'a> {
   /// Returns `|- getEpi bctx ret epi`
   fn get_epi(&mut self) -> ProofId {
     thm!(self.thm, (getEpi[self.bctx, self.ret, self.epi]) =>
-      getEpiI(self.epi, self.gctx, self.labs, self.ret, self.se, *self.start))
+      getEpiI(self.epi, self.gctx, self.labs, self.ret, self.se))
   }
 
   /// Returns `|- checkRet bctx tctx ret`

@@ -4,6 +4,9 @@ import "compiler-old.mm1";
 --| The type `()`, the unit type.
 @mmc-th local def tyUnit: set = $ 0 $; -- TODO
 
+--| `eVar: var -> expr`: An expression denoting a variable
+@mmc-th local def eVar (v: nat): set = $ 0 $; -- TODO
+
 -- inductive epilogue
 -- | free : nat -> epilogue -> epilogue
 -- | pop : regnum -> epilogue -> epilogue
@@ -94,6 +97,16 @@ infixl vctxA: $*V$ prec 20;
 
 --| `mctx0: mctx`: the empty machine context.
 @mmc-th local def mctx0: set = $ 0 $; -- TODO
+
+--| `FREE: reg -> mctx`: indicates that the named register is available for use
+@mmc-th local def FREE (r: hex): set = $ 0 $; -- TODO
+
+--| `stkFREE (n: nat): mctx`: This represents a piece of free stack space of size `n` bytes.
+@mmc-th local def stkFREE (n: nat): set = $ 0 $; -- TODO
+
+--| `REG (r: reg) (val: expr): mctx`: This represents a register which holds the given expression.
+@mmc-th local def REG (r: hex) (val: set): set = $ 0 $; -- TODO
+notation REG (r val): nat = ($r[$:20) r ($]:$:0) val;
 
 @mmc-th local def mctxA (A B: set): set = $ 0 $; -- TODO
 infixl mctxA: $+M$ prec 20;
