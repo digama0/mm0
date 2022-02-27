@@ -286,7 +286,17 @@ infixl argS: $|>A$ prec 90;
 
 @mmc-th local def mkArgs (args mctx: set): set = $ 0 $; -- TODO
 
+@mmc-th local def clob0: nat = $ d0 $;
+@mmc-th local def clobS (r: hex) (clob: nat): nat = $ r : clob $;
+infixr clobS: $:C$ prec 91;
+
 @mmc-th local def accumClob (clob: nat) (mctx1 mctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem accumClob0: $ accumClob clob0 mctx mctx $ = 'sorry;
+@mmc-th theorem accumClobS
+  (h1: $ pushMCtx mctx1 (FREE r) mctx2 $)
+  (h2: $ accumClob clob mctx2 mctx3 $):
+  $ accumClob (r :C clob) mctx1 mctx3 $ = 'sorry;
 
 @mmc-th local def okProc (gctx: set) (start: nat)
   (args ret: set) (clob: nat) (se: wff): wff = $ F. $; -- TODO

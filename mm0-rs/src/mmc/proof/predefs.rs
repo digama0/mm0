@@ -593,7 +593,12 @@ make_predefs! {
 
   mkArgs: TermId => "mkArgs";
 
+  clob0: TermId => "clob0";
+  clobS: TermId => "clobS";
+
   accumClob: TermId => "accumClob";
+  accumClob0: ThmId => "accumClob0";
+  accumClobS: ThmId => "accumClobS";
 
   okProc: TermId => "okProc";
   okProcI: ThmId => "okProcI";

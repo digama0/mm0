@@ -1004,7 +1004,20 @@ impl<'a> ProcProver<'a> {
   fn accum_clob(&mut self, mctx: &mut P<MCtx>,
     mut iter: impl Iterator<Item=u8>
   ) -> (ProofId, ProofId) {
-    todo!()
+    if let Some(r) = iter.next() {
+      let mctx1 = mctx.1;
+      let er = self.hex[r];
+      let t = ((r, MCtxRegValue::Free), app!(self.thm, (FREE er)));
+      let h1 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
+      let mctx2 = mctx.1;
+      let (clob, h2) = self.accum_clob(mctx, iter);
+      let clob2 = app!(self.thm, (clobS er clob));
+      (clob2, thm!(self.thm, (accumClob[clob2, mctx1, mctx.1]) =>
+        accumClobS(clob, mctx1, mctx2, mctx.1, h1, h2)))
+    } else {
+      let clob = app!(self.thm, (clob0));
+      (clob, thm!(self.thm, accumClob0(mctx.1): accumClob[clob, mctx.1, mctx.1]))
+    }
   }
 
   /// Returns `(tctx, |- buildStart pctx tctx)`
