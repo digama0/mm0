@@ -536,6 +536,15 @@ make_predefs! {
   REG: TermId => "REG";
   mctxA: TermId => "mctxA";
 
+  bddMCtx: TermId => "bddMCtx";
+  bddMCtx_FREE: ThmId => "bddMCtx_FREE";
+  bddMCtx_REG: ThmId => "bddMCtx_REG";
+  bddMCtx_A: ThmId => "bddMCtx_A";
+
+  okMCtx: TermId => "okMCtx";
+  okMCtx0: ThmId => "okMCtx0";
+  okMCtxS: ThmId => "okMCtxS";
+
   pushMCtx: TermId => "pushMCtx";
   pushMCtx0: ThmId => "pushMCtx0";
   pushMCtx1L: ThmId => "pushMCtx1L";

@@ -615,6 +615,40 @@ struct MCtx {
   stack: Option<P<MCtxNode<MCtxStkKind>>>,
 }
 
+impl MCtxNode<MCtxRegKind> {
+  /// Returns `(a, b, |- bddMCtx mctx a b)`
+  fn bdd(this: &P<Self>, de: &mut ProofDedup<'_>) -> (P<u8>, P<u8>, ProofId) {
+    match this.0 {
+      MCtxNode::Zero => unreachable!(),
+      MCtxNode::One((k, _)) => {
+        app_match!(de, this.1 => {
+          (FREE r) => ((k, r), (k, r), thm!(de, bddMCtx_FREE(r): bddMCtx[this.1, r, r])),
+          (REG r v) => ((k, r), (k, r), thm!(de, bddMCtx_REG(r): bddMCtx[this.1, r, r])),
+          !
+        })
+      }
+      MCtxNode::Node(_, _, ref ns) => {
+        let (n1, n2) = &**ns;
+        let (a, b, h1) = Self::bdd(n1, de);
+        let (c, d, h2) = Self::bdd(n2, de);
+        let h3 = thm!(de, decltn[b.0][c.0](): {b.1} < {c.1});
+        (a, d, thm!(de, (bddMCtx[this.1, a.1, d.1]) =>
+          bddMCtx_A(n1.1, n2.1, a.1, b.1, c.1, d.1, h1, h2, h3)))
+      }
+    }
+  }
+
+  /// Returns `|- okMCtx mctx`
+  fn ok(this: &P<Self>, de: &mut ProofDedup<'_>) -> ProofId {
+    if let MCtxNode::Zero = this.0 {
+      thm!(de, okMCtx0(): (okMCtx (mctx0)))
+    } else {
+      let (a, b, th) = Self::bdd(this, de);
+      thm!(de, okMCtxS(a.1, b.1, this.1, th): okMCtx[this.1])
+    }
+  }
+}
+
 impl MCtx {
   fn new(de: &mut ProofDedup<'_>) -> P<Self> {
     let a = app!(de, (mctx0));
@@ -643,6 +677,12 @@ impl MCtx {
       Some((_, stk)) => app!(de, (mctxA {self.regs.1} stk)),
       None => self.regs.1,
     }
+  }
+
+  /// Returns `|- okMCtx mctx`
+  fn ok(&self, de: &mut ProofDedup<'_>) -> ProofId {
+    assert!(self.stack.is_none());
+    MCtxNode::ok(&self.regs, de)
   }
 }
 

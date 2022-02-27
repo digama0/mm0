@@ -111,6 +111,16 @@ notation REG (r val): nat = ($r[$:20) r ($]:$:0) val;
 @mmc-th local def mctxA (A B: set): set = $ 0 $; -- TODO
 infixl mctxA: $+M$ prec 20;
 
+@mmc-th local def bddMCtx (mctx: set) (lo hi: hex): wff = $ F. $; -- TODO
+@mmc-th theorem bddMCtx_FREE: $ bddMCtx (FREE r) r r $ = 'sorry;
+@mmc-th theorem bddMCtx_REG: $ bddMCtx (r[r]: v) r r $ = 'sorry;
+@mmc-th theorem bddMCtx_A (h1: $ bddMCtx A a b $) (h2: $ bddMCtx B c d $) (h3: $ b < c $):
+  $ bddMCtx (A +M B) a d $ = 'sorry;
+
+@mmc-th local def okMCtx (mctx: set): wff = $ F. $; -- TODO
+@mmc-th theorem okMCtx0: $ okMCtx mctx0 $ = 'sorry;
+@mmc-th theorem okMCtxS (h: $ bddMCtx mctx a b $): $ okMCtx mctx $ = 'sorry;
+
 @mmc-th local def pushMCtx (mctx1 val mctx2: set): wff = $ F. $; -- TODO
 
 @mmc-th theorem pushMCtx0: $ pushMCtx mctx0 val val $ = 'sorry;
