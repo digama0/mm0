@@ -12,7 +12,7 @@ macro_rules! id_wrapper {
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]
-    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
+    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
     pub struct $id(pub $ty);
     #[cfg(feature = "memory")]
     mm0_deepsize::deep_size_0!($id);
@@ -21,6 +21,11 @@ macro_rules! id_wrapper {
       /// Convert this newtyped integer into its underlying integer.
       #[must_use]
       pub fn into_inner(self) -> $ty { self.0 }
+      /// An invalid ID value.
+      pub const INVALID: Self = Self(<$ty>::MAX);
+    }
+    impl Default for $id {
+      fn default() -> Self { Self::INVALID }
     }
 
     impl fmt::Debug for $id {

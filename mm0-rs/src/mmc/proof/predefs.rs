@@ -47,7 +47,7 @@ macro_rules! make_predefs {
     mk_array(|$i| make_predefs!(@new $ty $env, ($($is,)*) $cond $e))
   };
   (@new $ty:ident $env:expr, () ($cond:expr) $e:expr) => {
-    if $cond { make_predefs!(@new $ty $env, () () $e) } else { $ty(0) }
+    if $cond { make_predefs!(@new $ty $env, () () $e) } else { $ty::INVALID }
   };
   (@new AtomId $env:expr, () () $e:expr) => { $env.get_atom($e) };
   (@new SortId $env:expr, () () $e:expr) => { get_sort($env, $e) };
@@ -57,7 +57,7 @@ macro_rules! make_predefs {
     mk_remap($self, |$i, this| make_predefs!(@remap $ty this, $r, ($($is,)*) $cond))
   };
   (@remap $ty:ident $self:expr, $r:expr, () ($cond:expr)) => {
-    if $cond { make_predefs!(@remap $ty $self, $r, () ()) } else { $ty(0) }
+    if $cond { make_predefs!(@remap $ty $self, $r, () ()) } else { $ty::INVALID }
   };
   (@remap $ty:ident $self:expr, $r:expr, () ()) => {$self.remap($r)};
   {$($(#[$attr:meta])* $x:ident $([$i:ident: $n:expr])*:

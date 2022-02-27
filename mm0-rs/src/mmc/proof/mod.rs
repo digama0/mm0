@@ -108,6 +108,12 @@ macro_rules! make_dedup {
       fn into_usize(self) -> usize { self.0 as usize }
       fn from_usize(n: usize) -> Self { Self(n as u32) }
     }
+    impl $id {
+      const INVALID: Self = Self(u32::MAX);
+    }
+    impl Default for $id {
+      fn default() -> Self { Self::INVALID }
+    }
     struct $dedup<'a> {
       pd: &'a Predefs,
       de: proof::Dedup<proof::$hash>,
@@ -344,32 +350,40 @@ impl Mangler {
     }
     match name {
       Name::ProcContent(proc) => format!("The machine code for {}.", ProcName(proc)),
+
       Name::ProcAsm(proc) => format!("The assembly listing for {}.", ProcName(proc)),
+
       Name::ProcAsmThm(proc) => format!("The incomplete assembly proof for {}. \
         This theorem has the form `assemble content start end (asmProc start asm)`, \
         and it asserts that `content` is a string of length exactly `end - start`, \
         and (assuming `end e. u64`) the string is the result of assembling `asm` at `start..end`. \
         The assumption `end e. u64` will later be discharged in `{}`.",
         ProcName(proc), self.mangle(Name::ProcAsmdThm(proc))),
+
       Name::Content => "The full machine code string for the executable.".to_owned(),
+
       Name::GCtx => "The global context, which contains data used by every procedure. \
         It has the form `mkGCtx content result`, where `content` is the assembled binary and \
         `result` is the exit proposition, \
         i.e. the property that must be true on any successful run.".to_owned(),
+
       Name::AsmdThm => format!("This theorem has the form `assembled gctx asm`, where:\n\n\
         * `gctx` is the global context (`{}` in this case)\n\
         * `asm` is the collection of all assembled procedures, connected by `++asm`.\n\n\
         It asserts that all procedures assemble to their final location.",
         self.mangle(Name::GCtx)),
+
       Name::AsmdThmLemma(_) => format!("A lemma in the derivation of the assembly theorems \
         for the procedures. It has the same form as {} but for a subset of the procedures.",
         Name::AsmdThm),
+
       Name::ProcAsmdThm(proc) => format!("The completed assembly proof for {}. \
         This theorem has the form `assembled gctx (asmProc start asm)`, where:\n\n\
         * `gctx` is the global context (`{}` in this case)\n\
         * `start` is the entry point of the function\n\
         * `asm` is the assembly for this procedure.",
         ProcName(proc), self.mangle(Name::GCtx)),
+
       Name::ProcOkThm(proc) => format!("The correctness theorem for {}. \
         This theorem has the form `okProc gctx start args ret clob se`, where:\n\
         \n\
@@ -388,6 +402,7 @@ impl Mangler {
         If `se` is false then the function does not perform any side-effects, which means \
         that it can even be executed in a 'ghost' context to derive logical propositions.",
         ProcName(Some(proc)), self.mangle(Name::GCtx)),
+
       Name::StartOkThm => format!("The correctness theorem for {}. \
         This theorem has the form `okStart gctx start`, where:\n\
         \n\
