@@ -761,9 +761,12 @@ impl<'a> TCtx<'a> {
 struct Prologue<'a> {
   epi: ProofId,
   sp: Num,
+  mctx: P<MCtx>,
   iter: std::slice::Iter<'a, PReg>,
-  ok_epi: ProofId,
-  tctx: PTCtx<'a>,
+  prol: ProofId,
+  viter: StatementIter<'a>,
+  piter: InstIter<'a>,
+  vctx: VCtx,
 }
 
 enum LCtx<'a> {
@@ -945,12 +948,18 @@ impl<'a> ProcProver<'a> {
     }
   }
 
-  /// Returns `(tctx, |- okEpi bctx epi sp_max tctx, |- buildProc pctx args ret clob se tctx)`
-  fn build_proc(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId, ProofId) {
-    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
-    let ok_epi = app!(self.thm, okEpi[self.bctx, self.epi, *self.sp_max, tctx.1]);
-    let bproc = app!(self.thm, buildProc[self.pctx, self.args, self.ret, self.clob, self.se, tctx.1]);
-    (tctx, thm!(self.thm, sorry(ok_epi): ok_epi), thm!(self.thm, sorry(bproc): bproc)) // TODO
+  /// Returns `(args, mctx, |- accumArgs args vctx n)`
+  fn accum_args(&mut self, vctx: &mut VCtx,
+    bl_ctx: CtxId, abi: &[ArgAbi]
+  ) -> (ProofId, P<MCtx>, ProofId) {
+    todo!()
+  }
+
+  /// Returns `(clob, |- accumClob clob mctx mctx2)`
+  fn accum_clob(&mut self, mctx: &mut P<MCtx>,
+    mut iter: impl Iterator<Item=u8>
+  ) -> (ProofId, ProofId) {
+    todo!()
   }
 
   /// Returns `(tctx, |- buildStart pctx tctx)`
@@ -1201,32 +1210,43 @@ impl<'a> ProcProver<'a> {
         (l1, thm!(self.thm, okCode_0(self.bctx, code): okCode[self.bctx, l1, code, l1])),
       (LCtx::Prologue(_), None) => unreachable!("entry block must have code"),
       (LCtx::Prologue(p), Some(code)) => if let Some(&reg) = p.iter.next() {
-        let Prologue { epi, sp, ref mut tctx, .. } = **p;
-        let r = self.hex[reg.index()];
+        let Prologue { epi, sp, ref mut mctx, prol, ref mut piter, .. } = **p;
+        let r = reg.index(); let er = self.hex[r];
         let n = self.hex.h2n(&mut self.thm, 8);
         let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
-        p.epi = app!(self.thm, epiPop[r, epi]);
+        let mctx1 = mctx.1;
+        let t = ((r, MCtxRegValue::Free), app!(self.thm, (FREE er)));
+        let h2 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
+        p.epi = app!(self.thm, epiPop[er, epi]);
         p.sp = sp2;
-        tctx.0.piter.as_mut().expect("impossible").next();
-        let l2 = app!(self.thm, okPrologue[p.epi, *sp2, tctx.1]);
+        piter.next();
+        let l2 = app!(self.thm, okPrologue[p.epi, *sp2, mctx.1, prol]);
         (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-          okPrologue_push(self.bctx, epi, r, *sp, *sp2, tctx.1, h1)))
+          okPrologue_push(self.bctx, epi, mctx1, mctx.1, prol, er, *sp, *sp2, h1, h2)))
       } else {
-        let Prologue { epi, sp, tctx: (mut tctx, l2), ok_epi, .. } =
+        let Prologue { epi, sp, mut mctx, viter, mut piter, vctx, .. } =
           *let_unchecked!(LCtx::Prologue(p) = std::mem::take(lctx), p);
+        let h1 = mctx.0.ok(&mut self.thm);
+        let mctx1 = mctx.1;
+        if self.sp_max.val != 0 {
+          piter.next();
+          MCtx::add_stack(&mut mctx, &mut self.thm, self.ctx.sp_max);
+        }
+        let (vctx1, sz1) = (vctx.e, *vctx.nvars);
+        let tctx = Box::new(TCtx { viter, piter: Some(piter.peekable()), vctx, mctx });
+        let l2 = tctx.mk(&mut self.thm);
+        *lctx = LCtx::Reg(tctx);
         if self.sp_max.val == 0 {
-          *lctx = LCtx::Reg(tctx);
-          let (l3, th) = self.ok_code1((lctx, l2), Some(code));
+          let (l3, h2) = self.ok_code1((lctx, l2), Some(code));
           (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
-            okPrologue_alloc0(self.bctx, code, epi, l3, *sp, l2, ok_epi, th)))
+            okPrologue_alloc0(self.bctx, code, epi, l3, mctx1, *sp, sz1, vctx1, h1, h2)))
         } else {
-          tctx.piter.as_mut().expect("impossible").next();
-          *lctx = LCtx::Reg(tctx);
           let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
           let max = self.hex.from_u32(&mut self.thm, 1 << 12);
           let h3 = self.hex.lt(&mut self.thm, m, max);
           (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-            okPrologue_alloc(self.bctx, epi, *m, *self.sp_max, *sp, l2, ok_epi, h2, h3)))
+            okPrologue_alloc(self.bctx, epi, *m, mctx1, *self.sp_max, *sp,
+              sz1, vctx1, h1, h2, h3)))
         }
       }
       (LCtx::Reg(tctx), code) => {
@@ -1311,18 +1331,31 @@ impl<'a> ProcProver<'a> {
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
     let (start, code) = app_match!(self.thm, a => { (asmEntry start code) => (start, code), ! });
     if name.is_some() {
-      let args = app!(de, (ok0)); // TODO
-      let clob = app!(de, (d0)); // TODO
-      let (tctx@(_, l1), ok_epi, h2) = self.build_proc(root);
+      let bl = self.proc.block(BlockId::ENTRY);
+      let abi = self.elf_proof.proc_abi(self.proc.id.expect("not start"));
+      let mut vctx = root;
+      let (args, mut mctx, h2) = self.accum_args(&mut vctx, bl.block().ctx, &abi.args);
+      let mctx1 = mctx.1;
+      let args2 = app!(self.thm, (mkArgs args mctx1));
+      let (clob, h3) = self.accum_clob(&mut mctx, abi.clobbers.iter().map(|r| r.index()));
+      let mctx2 = mctx.1;
+      let viter = StatementIter {
+        stmts: bl.block().stmts.iter(),
+        term: Some(bl.block().terminator()),
+        kind: StatementIterKind::Start,
+      };
+      let piter = bl.vblock().expect("entry block must have code").insts();
       let mut sp = self.hex.h2n(&mut self.thm, 0);
       let epi0 = app!(self.thm, (epiRet));
-      let lctx = app!(self.thm, okPrologue[epi0, *sp, l1]);
       let iter = self.proc.saved_regs().iter();
-      let prol = Box::new(Prologue { epi: epi0, sp, iter, ok_epi, tctx });
-      let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
-      thm!(self.thm, (okProc[self.gctx, start, args, self.ret, clob, self.se]) =>
-        okProcI(args, clob, code, self.gctx, self.pctx1, self.ret, self.se,
-          start, l1, h1, h2, h3))
+      let (vctx1, sz1) = (vctx.e, *vctx.nvars);
+      let prol = app!(self.thm, mkPrologue[vctx1, sz1, self.epi]);
+      let lctx = app!(self.thm, okPrologue[epi0, *sp, mctx2, prol]);
+      let prol = Box::new(Prologue { epi: epi0, sp, mctx, iter, prol, viter, piter, vctx });
+      let h4 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
+      thm!(self.thm, (okProc[self.gctx, start, args2, self.ret, clob, self.se]) =>
+        okProcI(args, clob, code, self.epi, self.gctx, mctx1, mctx2, self.ret, self.se,
+          start, sz1, vctx1, h1, h2, h3, h4))
     } else {
       let ((tctx, l1), h2) = self.build_start(root);
       let mut sp = self.hex.h2n(&mut self.thm, 0);

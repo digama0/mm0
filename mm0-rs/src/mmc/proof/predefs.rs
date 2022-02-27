@@ -581,7 +581,11 @@ make_predefs! {
   okCode_0: ThmId => "okCode_0";
   okCode_A: ThmId => "okCode_A";
 
-  buildProc: TermId => "buildProc";
+  accumArgs: TermId => "accumArgs";
+
+  mkArgs: TermId => "mkArgs";
+
+  accumClob: TermId => "accumClob";
 
   okProc: TermId => "okProc";
   okProcI: ThmId => "okProcI";
@@ -596,8 +600,7 @@ make_predefs! {
   okBlockI: ThmId => "okBlockI";
   okBlock0: ThmId => "okBlock0";
 
-  okEpi: TermId => "okEpi";
-
+  mkPrologue: TermId => "mkPrologue";
   okPrologue: TermId => "okPrologue";
   okPrologue_push: ThmId => "okPrologue_push";
   okPrologue_alloc: ThmId => "okPrologue_alloc";
