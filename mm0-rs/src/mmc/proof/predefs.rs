@@ -528,6 +528,18 @@ make_predefs! {
   okVCtxGet_l: ThmId => "okVCtxGet_l";
   okVCtxGet_r: ThmId => "okVCtxGet_r";
 
+  mctx0: TermId => "mctx0";
+  mctxA: TermId => "mctxA";
+
+  pushMCtx: TermId => "pushMCtx";
+  pushMCtx0: ThmId => "pushMCtx0";
+  pushMCtx1L: ThmId => "pushMCtx1L";
+  pushMCtx1R: ThmId => "pushMCtx1R";
+  pushMCtxL: ThmId => "pushMCtxL";
+  pushMCtxR: ThmId => "pushMCtxR";
+  pushMCtxRotL: ThmId => "pushMCtxRotL";
+  pushMCtxRotR: ThmId => "pushMCtxRotR";
+
   vVar: TermId => "vVar";
   vHyp: TermId => "vHyp";
 

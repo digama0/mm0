@@ -88,12 +88,37 @@ infixl vctxA: $*V$ prec 20;
 @mmc-th theorem okVCtxGet_l (h: $ okVCtxGet A ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
 @mmc-th theorem okVCtxGet_r (h: $ okVCtxGet B ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
 
+--| `mctx0: mctx`: the empty machine context.
+@mmc-th local def mctx0: set = $ 0 $; -- TODO
+
+@mmc-th local def mctxA (A B: set): set = $ 0 $; -- TODO
+infixl mctxA: $+M$ prec 20;
+
+@mmc-th local def pushMCtx (mctx1 val mctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem pushMCtx0: $ pushMCtx mctx0 val val $ = 'sorry;
+
+@mmc-th theorem pushMCtx1L: $ pushMCtx A val (val +M A) $ = 'sorry;
+
+@mmc-th theorem pushMCtx1R: $ pushMCtx A val (A +M val) $ = 'sorry;
+
+@mmc-th theorem pushMCtxL (h: $ pushMCtx A val B $): $ pushMCtx (A +M C) val (B +M C) $ = 'sorry;
+
+@mmc-th theorem pushMCtxR (h: $ pushMCtx B val C $): $ pushMCtx (A +M B) val (A +M C) $ = 'sorry;
+
+@mmc-th theorem pushMCtxRotL
+  (h: $ pushMCtx mctx val (A +M (B +M C)) $):
+  $ pushMCtx mctx val ((A +M B) +M C) $ = 'sorry;
+@mmc-th theorem pushMCtxRotR
+  (h: $ pushMCtx mctx val ((A +M B) +M C) $):
+  $ pushMCtx mctx val (A +M (B +M C)) $ = 'sorry;
+
 --| Type context, or type state.
 --| The first part is the logical context, where variables and their types are stored,
 --| and the second part is the machine context where variables are assigned to memory locations.
 --| We write it in such a way that `tctx` extends `vctx` and `mctx`,
 --| so `vctx` extraction functions also work on `tctx`.
-@mmc-th local def mkTCtx (vctx: set) (vctx_sz mctx: nat): set = $ 0 $; -- TODO
+@mmc-th local def mkTCtx (vctx: set) (vctx_sz: nat) (mctx: set): set = $ 0 $; -- TODO
 
 --| `ty_unit: ty`:
 --| The type `()`, the unit type.

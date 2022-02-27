@@ -295,6 +295,310 @@ impl VCtx {
   }
 }
 
+trait NodeKind: Sized {
+  type Context;
+  type Key: Ord;
+  type Node;
+  type Leaf;
+  fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node;
+  fn p_node(de: &mut ProofDedup<'_>, bal: Ordering,
+    a: P<MCtxNode<Self>>, b: P<MCtxNode<Self>>
+  ) -> P<MCtxNode<Self>> {
+    let e = Self::mk(de, a.1, b.1);
+    (MCtxNode::Node(bal, Self::node(de, &a, &b), Box::new((a, b))), e)
+  }
+  fn leaf_key(ctx: &Self::Context, k: &Self::Leaf) -> Self::Key;
+  fn node_key(ctx: &Self::Context, k: &Self::Node) -> Self::Key;
+  fn key(ctx: &Self::Context, k: &MCtxNode<Self>) -> Self::Key {
+    match k {
+      MCtxNode::Zero => unreachable!(),
+      MCtxNode::One(l) => Self::leaf_key(ctx, l),
+      MCtxNode::Node(_, n, _) => Self::node_key(ctx, n),
+    }
+  }
+  fn ctx_left(
+    ctx: Self::Context, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>
+  ) -> Self::Context { ctx }
+  fn ctx_right(
+    ctx: Self::Context, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>
+  ) -> Self::Context { ctx }
+
+  /// Constructs a node `(a, b)`
+  fn mk(de: &mut ProofDedup<'_>, a: ProofId, b: ProofId) -> ProofId { app!(de, (mctxA a b)) }
+}
+
+#[allow(clippy::type_complexity)]
+enum MCtxNode<N: NodeKind> {
+  Zero,
+  One(N::Leaf),
+  Node(Ordering, N::Node, Box<(P<MCtxNode<N>>, P<MCtxNode<N>>)>),
+}
+
+impl<N: NodeKind> Default for MCtxNode<N> {
+  fn default() -> Self { Self::Zero }
+}
+
+struct RegKind<L>(PhantomData<L>);
+impl<L> NodeKind for RegKind<L> {
+  type Context = ();
+  type Key = u8;
+  type Node = u8;
+  type Leaf = (u8, L);
+  fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node {
+    match a.0 {
+      MCtxNode::Zero => unreachable!(),
+      MCtxNode::One((k, _)) | MCtxNode::Node(_, k, _) => k
+    }
+  }
+  fn leaf_key(_: &(), k: &(u8, L)) -> u8 { k.0 }
+  fn node_key(_: &(), k: &u8) -> u8 { *k }
+}
+
+struct StackKind<L>(PhantomData<L>);
+impl<L> StackKind<L> {
+  fn get_key(node: &MCtxNode<Self>) -> u32 {
+    match *node {
+      MCtxNode::Zero => unreachable!(),
+      MCtxNode::One((k, _)) | MCtxNode::Node(_, k, _) => k
+    }
+  }
+}
+impl<L> NodeKind for StackKind<L> {
+  type Context = u32;
+  type Key = u32;
+  type Node = u32;
+  type Leaf = (u32, L);
+  fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node {
+    Self::get_key(&a.0)
+  }
+  fn leaf_key(ctx: &u32, _: &(u32, L)) -> u32 { *ctx }
+  fn node_key(ctx: &u32, _: &u32) -> u32 { *ctx }
+  fn ctx_right(ctx: u32, a: &P<MCtxNode<Self>>, _: &P<MCtxNode<Self>>) -> u32 {
+    ctx + Self::get_key(&a.0)
+  }
+}
+
+trait NodeInsert<N: NodeKind> {
+  /// Proves `|- insert mctx0 t = t`
+  fn zero(de: &mut ProofDedup<'_>, t: ProofId) -> ProofId;
+  /// Proves `|- insert a t = (t, a)`
+  fn one_lt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId;
+  /// Proves `|- insert a t = t`
+  fn one_eq(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId;
+  /// Proves `|- insert a t = (a, t)`
+  fn one_gt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId;
+  /// Given `|- insert a t = a2` proves `|- insert (a, b) t = (a2, b)`
+  fn node_lt(de: &mut ProofDedup<'_>, a_b_t_a2_th: [ProofId; 5]) -> ProofId;
+  /// Given `|- insert b t = b2` proves `|- insert (a, b) t = (a, b2)`
+  fn node_gt(de: &mut ProofDedup<'_>, a_b_t_b2_th: [ProofId; 5]) -> ProofId;
+
+  /// Given `|- insert x t = (a, (b, c))` proves `|- insert x t = ((a, b), c)`
+  fn rotate_left(de: &mut ProofDedup<'_>, x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
+  /// Given `|- insert x t = ((a, b), c)` proves `|- insert x t = (a, (b, c))`
+  fn rotate_right(de: &mut ProofDedup<'_>, x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
+
+  /// Given `|- insert x t = (b, c)` proves `|- insert (a, x) t = ((a, b), c)`
+  fn single_left(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
+    let bc = N::mk(de, b, c);
+    let th = Self::node_gt(de, [a, x, t, bc, th]); // insert (a, x) t = (a, (b, c))
+    let ax = N::mk(de, a, x);
+    Self::rotate_left(de, [ax, t, a, b, c, th]) // insert (a, x) t = ((a, b), c)
+  }
+
+  /// Given `|- insert x t = (a, b)` proves `|- insert (x, c) t = (a, (b, c))`
+  fn single_right(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
+    let ab = N::mk(de, a, b);
+    let th = Self::node_lt(de, [x, c, t, ab, th]); // insert (x, c) t = ((a, b), c)
+    let xc = N::mk(de, x, c);
+    Self::rotate_right(de, [xc, t, a, b, c, th]) // insert (x, c) t = (a, (b, c))
+  }
+
+  /// Given `|- insert x t = ((b, c), d)` proves `|- insert (a, x) t = ((a, b), (c, d))`
+  fn double_left(de: &mut ProofDedup<'_>, [x, t, a, b, c, d, th]: [ProofId; 7]) -> ProofId {
+    let th = Self::rotate_right(de, [x, t, b, c, d, th]); // insert x t = (b, (c, d))
+    let cd = N::mk(de, c, d); let bcd = N::mk(de, b, cd);
+    let th = Self::node_gt(de, [a, x, t, bcd, th]); // insert (a, x) t = (a, (b, (c, d)))
+    let ax = N::mk(de, a, x);
+    Self::rotate_left(de, [ax, t, a, b, cd, th]) // insert (a, x) t = ((a, b), (c, d))
+  }
+
+  /// Given `|- insert x t = (a, (b, c))` proves `|- insert (x, d) t = ((a, b), (c, d))`
+  fn double_right(de: &mut ProofDedup<'_>, [x, t, a, b, c, d, th]: [ProofId; 7]) -> ProofId {
+    let th = Self::rotate_left(de, [x, t, a, b, c, th]); // insert x t = ((a, b), c)
+    let ab = N::mk(de, a, b); let abc = N::mk(de, ab, c);
+    let th = Self::node_lt(de, [x, d, t, abc, th]); // insert (x, d) t = (((a, b), c), d)
+    let xd = N::mk(de, x, d);
+    Self::rotate_right(de, [xd, t, ab, c, d, th]) // insert (x, d) t = ((a, b), (c, d))
+  }
+
+  fn insert(de: &mut ProofDedup<'_>, node: &mut P<MCtxNode<N>>,
+    ctx: N::Context, key: &N::Key, t: P<N::Leaf>
+  ) -> P<bool> {
+    macro_rules! a {() => {(std::mem::take(&mut node.0), node.1)}}
+    macro_rules! b {() => {(MCtxNode::One(t.0), t.1)}}
+    match &mut node.0 {
+      MCtxNode::Zero => { *node = b!(); (true, Self::zero(de, node.1)) }
+      MCtxNode::One(l) => match key.cmp(&N::leaf_key(&ctx, l)) {
+        Ordering::Less => {
+          let th = Self::one_lt(de, node.1, t.1);
+          *node = N::p_node(de, Ordering::Equal, b!(), a!()); (true, th)
+        }
+        Ordering::Equal => {
+          let th = Self::one_eq(de, node.1, t.1);
+          *node = b!(); (false, th)
+        }
+        Ordering::Greater => {
+          let th = Self::one_gt(de, node.1, t.1);
+          *node = N::p_node(de, Ordering::Equal, a!(), b!()); (true, th)
+        }
+      }
+      MCtxNode::Node(bal, n, ns) => {
+        let ns = &mut **ns; let ((_, a), (_, b)) = *ns; let et = t.1;
+        if *key < N::key(&ctx, &ns.1 .0) {
+          let ctx = N::ctx_left(ctx, &ns.0, &ns.1);
+          let (grew, th) = Self::insert(de, &mut ns.0, ctx, key, t);
+          let rotate_right = grew && match bal {
+            Ordering::Less => { *bal = Ordering::Equal; false }
+            Ordering::Equal => { *bal = Ordering::Greater; false }
+            Ordering::Greater => true
+          };
+          if rotate_right {
+            let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
+              std::mem::take(&mut ns.0 .0));
+            let nb = std::mem::take(&mut ns.1 .0);
+            let (al, ar) = *ns1;
+            match bal1 {
+              Ordering::Less => {
+                let th = Self::single_right(de, [a, et, al.1, ar.1, b, th]);
+                let n = N::p_node(de, Ordering::Equal, ar, (nb, b));
+                *node = N::p_node(de, Ordering::Equal, al, n);
+                (false, th)
+              }
+              Ordering::Equal => {
+                let th = Self::single_right(de, [a, et, al.1, ar.1, b, th]);
+                let n = N::p_node(de, Ordering::Less, ar, (nb, b));
+                *node = N::p_node(de, Ordering::Greater, al, n);
+                (true, th)
+              }
+              Ordering::Greater => {
+                let_unchecked!((bal2, ns2) as MCtxNode::Node(bal2, _, ns2) = ar.0);
+                let (arl, arr) = *ns2;
+                let (bal_new, bal2_new) = match bal2 {
+                  Ordering::Less => (Ordering::Equal, Ordering::Greater),
+                  Ordering::Equal => (Ordering::Equal, Ordering::Equal),
+                  Ordering::Greater => (Ordering::Less, Ordering::Equal),
+                };
+                let th = Self::double_right(de, [a, et, al.1, arl.1, arr.1, b, th]);
+                let n1 = N::p_node(de, bal_new, al, arl);
+                let n2 = N::p_node(de, bal2_new, arr, (nb, b));
+                *node = N::p_node(de, Ordering::Equal, n1, n2);
+                (false, th)
+              }
+            }
+          } else {
+            let th = Self::node_lt(de, [a, b, et, ns.0 .1, th]);
+            *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Greater, th)
+          }
+        } else {
+          let ctx = N::ctx_right(ctx, &ns.0, &ns.1);
+          let (grew, th) = Self::insert(de, &mut ns.1, ctx, key, t);
+          let rotate_left = grew && match bal {
+            Ordering::Less => true,
+            Ordering::Equal => { *bal = Ordering::Less; false }
+            Ordering::Greater => { *bal = Ordering::Equal; false }
+          };
+          if rotate_left {
+            let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
+              std::mem::take(&mut ns.1 .0));
+            let na = std::mem::take(&mut ns.0 .0);
+            let (bl, br) = *ns1;
+            match bal1 {
+              Ordering::Greater => {
+                let th = Self::single_left(de, [b, et, a, bl.1, br.1, th]);
+                let n = N::p_node(de, Ordering::Equal, (na, a), bl);
+                *node = N::p_node(de, Ordering::Equal, n, br);
+                (false, th)
+              }
+              Ordering::Equal => {
+                let th = Self::single_left(de, [b, et, a, bl.1, br.1, th]);
+                let n = N::p_node(de, Ordering::Greater, (na, a), bl);
+                *node = N::p_node(de, Ordering::Less, n, br);
+                (true, th)
+              }
+              Ordering::Less => {
+                let_unchecked!((bal2, ns2) as MCtxNode::Node(bal2, _, ns2) = bl.0);
+                let (bll, blr) = *ns2;
+                let (bal_new, bal2_new) = match bal2 {
+                  Ordering::Less => (Ordering::Equal, Ordering::Greater),
+                  Ordering::Equal => (Ordering::Equal, Ordering::Equal),
+                  Ordering::Greater => (Ordering::Less, Ordering::Equal),
+                };
+                let th = Self::double_left(de, [b, et, a, bll.1, blr.1, br.1, th]);
+                let n1 = N::p_node(de, bal_new, (na, a), bll);
+                let n2 = N::p_node(de, bal2_new, blr, br);
+                *node = N::p_node(de, Ordering::Equal, n1, n2);
+                (false, th)
+              }
+            }
+          } else {
+            let th = Self::node_lt(de, [a, b, et, ns.0 .1, th]);
+            *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Less, th)
+          }
+        }
+      }
+    }
+  }
+}
+
+struct PushMCtx;
+impl<N: NodeKind> NodeInsert<N> for PushMCtx {
+  fn zero(de: &mut ProofDedup<'_>, t: ProofId) -> ProofId {
+    thm!(de, pushMCtx0(t): (pushMCtx (mctx0) t t))
+  }
+
+  fn one_lt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId {
+    thm!(de, pushMCtx1L(a, t): (pushMCtx a t (mctxA t a)))
+  }
+
+  fn one_eq(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId { unreachable!() }
+
+  fn one_gt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId {
+    thm!(de, pushMCtx1R(a, t): (pushMCtx a t (mctxA a t)))
+  }
+
+  fn node_lt(de: &mut ProofDedup<'_>, [a, b, t, a2, th]: [ProofId; 5]) -> ProofId {
+    thm!(de, pushMCtxL(a, a2, b, t, th): (pushMCtx (mctxA a b) t (mctxA a2 b)))
+  }
+
+  fn node_gt(de: &mut ProofDedup<'_>, [a, b, t, b2, th]: [ProofId; 5]) -> ProofId {
+    thm!(de, pushMCtxR(a, b, b2, t, th): (pushMCtx (mctxA a b) t (mctxA a b2)))
+  }
+
+  fn rotate_left(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
+    thm!(de, pushMCtxRotL(a, b, c, x, t, th): (pushMCtx x t (mctxA (mctxA a b) c)))
+  }
+
+  fn rotate_right(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
+    thm!(de, pushMCtxRotR(a, b, c, x, t, th): (pushMCtx x t (mctxA a (mctxA b c))))
+  }
+}
+
+struct NoProof;
+impl<N: NodeKind> NodeInsert<N> for NoProof {
+  fn zero(_: &mut ProofDedup<'_>, _: ProofId) -> ProofId { ProofId::INVALID }
+  fn one_lt(_: &mut ProofDedup<'_>, _: ProofId, _: ProofId) -> ProofId { ProofId::INVALID }
+  fn one_eq(_: &mut ProofDedup<'_>, _: ProofId, _: ProofId) -> ProofId { ProofId::INVALID }
+  fn one_gt(_: &mut ProofDedup<'_>, _: ProofId, _: ProofId) -> ProofId { ProofId::INVALID }
+  fn node_lt(_: &mut ProofDedup<'_>, _: [ProofId; 5]) -> ProofId { ProofId::INVALID }
+  fn node_gt(_: &mut ProofDedup<'_>, _: [ProofId; 5]) -> ProofId { ProofId::INVALID }
+  fn rotate_left(_: &mut ProofDedup<'_>, _: [ProofId; 6]) -> ProofId { ProofId::INVALID }
+  fn rotate_right(_: &mut ProofDedup<'_>, _: [ProofId; 6]) -> ProofId { ProofId::INVALID }
+  fn single_left(_: &mut ProofDedup<'_>, _: [ProofId; 6]) -> ProofId { ProofId::INVALID }
+  fn single_right(_: &mut ProofDedup<'_>, _: [ProofId; 6]) -> ProofId { ProofId::INVALID }
+  fn double_left(_: &mut ProofDedup<'_>, _: [ProofId; 7]) -> ProofId { ProofId::INVALID }
+  fn double_right(_: &mut ProofDedup<'_>, _: [ProofId; 7]) -> ProofId { ProofId::INVALID }
+}
+
 enum DeferredKind<'a> {
   Exit(&'a Operand)
 }
