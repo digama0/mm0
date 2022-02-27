@@ -257,7 +257,32 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 @mmc-th theorem okAssembled_r
   (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code2 $ = 'sorry;
 
+--| `arg0: List Arg`: the empty list of arguments.
+@mmc-th local def arg0: set = $ 0 $; -- TODO
+
+--| `argS: List Arg -> Arg -> List Arg`: append an argument to the end of the list.
+@mmc-th local def argS (args arg: set): set = $ 0 $; -- TODO
+infixl argS: $|>A$ prec 90;
+
+--| `aVar: Ty -> Arg`: A variable declaration (which corresponds to a numbered variable).
+@mmc-th local def aVar (ty: set): set = $ 0 $; -- TODO
+--| `aHyp: Ty -> Arg`: A hypothesis declaration (no value, just a propositional assertion).
+@mmc-th local def aHyp (ty: set): set = $ 0 $; -- TODO
+
 @mmc-th local def accumArgs (args vctx: set) (sz: nat): wff = $ F. $; -- TODO
+
+@mmc-th theorem accumArgs0: $ accumArgs arg0 vctx0 x0 $ = 'sorry;
+
+@mmc-th theorem accumArgsVar
+  (h1: $ accumArgs args vctx n $)
+  (h2: $ okVCtxPush vctx (vVar n ty) vctx2 $)
+  (h3: $ suc n = n2 $):
+  $ accumArgs (args |>A aVar ty) vctx2 n2 $ = 'sorry;
+
+@mmc-th theorem accumArgsHyp
+  (h1: $ accumArgs args vctx n $)
+  (h2: $ okVCtxPush vctx (vHyp ty) vctx2 $):
+  $ accumArgs (args |>A aHyp ty) vctx2 n $ = 'sorry;
 
 @mmc-th local def mkArgs (args mctx: set): set = $ 0 $; -- TODO
 

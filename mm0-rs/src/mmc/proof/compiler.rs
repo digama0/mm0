@@ -9,7 +9,7 @@ use mmcc::Idx;
 use mmcc::types::IdxVec;
 use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId,
   Operand, Place, ConstKind};
-use mmcc::types::vcode::ProcAbi;
+use mmcc::types::vcode::{ProcAbi, ArgAbi};
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
@@ -952,7 +952,52 @@ impl<'a> ProcProver<'a> {
   fn accum_args(&mut self, vctx: &mut VCtx,
     bl_ctx: CtxId, abi: &[ArgAbi]
   ) -> (ProofId, P<MCtx>, ProofId) {
-    todo!()
+    let mut args = app!(self.thm, (arg0));
+    let mut th = thm!(self.thm, accumArgs0(): (accumArgs args {vctx.e} {*vctx.nvars}));
+    let mut mctx = MCtx::new(&mut self.thm);
+    for (&(v, _, (ref e, ref ty)), abi) in self.proc.cfg.ctxs.iter(..bl_ctx).zip(abi) {
+      let (vctx1, n1) = (vctx.e, vctx.nvars);
+      let args2;
+      th = match e {
+        Some(e) if match **e {
+          ExprKind::Var(u) if u == v => false,
+          ExprKind::Unit => false,
+          _ => true,
+        } => {
+          let ty = app!(self.thm, (ok0)); // TODO
+          let e = app!(self.thm, (vHyp ty));
+          let h2 = vctx.push(&mut self.thm, v, VarKind::Hyp, e);
+          args2 = app!(self.thm, (argS args (aHyp ty)));
+          thm!(self.thm, ((accumArgs args2 {vctx.e} {*vctx.nvars})) =>
+            accumArgsHyp(args, *n1, ty, vctx1, vctx.e, th, h2))
+        }
+        _ => {
+          match abi {
+            ArgAbi::Ghost => {}
+            ArgAbi::Reg(r, _) => {
+              let r = r.index();
+              let var = app!(self.thm, (eVar {*n1}));
+              let value = MCtxRegValue::Expr((Expr::Var(v), var));
+              let t = app!(self.thm, REG[self.hex[r], var]);
+              MCtx::push_reg::<NoProof>(&mut mctx, &mut self.thm, ((r, value), t));
+            }
+            ArgAbi::Mem { .. } => todo!(),
+            ArgAbi::Boxed { .. } => todo!(),
+            ArgAbi::BoxedMem { .. } => todo!(),
+          }
+          let ty = app!(self.thm, (ok0)); // TODO
+          let e = app!(self.thm, (vVar {*n1} ty));
+          let h2 = vctx.push(&mut self.thm, v, VarKind::Var, e);
+          let (n2, h3) = self.hex.suc(&mut self.thm, n1);
+          vctx.nvars = n2;
+          args2 = app!(self.thm, (argS args (aVar {*n1} ty)));
+          thm!(self.thm, ((accumArgs args2 {vctx.e} {*vctx.nvars})) =>
+            accumArgsVar(args, *n1, *vctx.nvars, ty, vctx1, vctx.e, th, h2, h3))
+        }
+      };
+      args = args2;
+    }
+    (args, mctx, th)
   }
 
   /// Returns `(clob, |- accumClob clob mctx mctx2)`

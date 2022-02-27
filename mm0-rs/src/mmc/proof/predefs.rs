@@ -581,7 +581,15 @@ make_predefs! {
   okCode_0: ThmId => "okCode_0";
   okCode_A: ThmId => "okCode_A";
 
+  arg0: TermId => "arg0";
+  argS: TermId => "argS";
+  aVar: TermId => "aVar";
+  aHyp: TermId => "aHyp";
+
   accumArgs: TermId => "accumArgs";
+  accumArgs0: ThmId => "accumArgs0";
+  accumArgsVar: ThmId => "accumArgsVar";
+  accumArgsHyp: ThmId => "accumArgsHyp";
 
   mkArgs: TermId => "mkArgs";
 
