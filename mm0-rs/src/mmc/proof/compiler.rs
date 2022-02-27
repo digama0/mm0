@@ -1,7 +1,9 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 use mmcc::Idx;
 use mmcc::types::IdxVec;
@@ -20,7 +22,7 @@ use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
 pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D::Id {
-  app!(de, (ty_unit)) // TODO
+  app!(de, (tyUnit)) // TODO
 }
 
 type P<A> = (A, ProofId);
@@ -28,10 +30,7 @@ type P<A> = (A, ProofId);
 struct Ctx {
   t_gctx: TermId,
   gctx: ProofId,
-  start: Num,
-  args: ProofId,
   ret: ProofId,
-  clob: ProofId,
   se: ProofId,
   epi: ProofId,
   sp_max: Num,
@@ -46,11 +45,8 @@ impl Ctx {
   fn new(de: &mut ProofDedup<'_>, hex: &HexCache, proc: &Proc<'_>, t_gctx: TermId) -> Ctx {
     let ok0 = app!(de, (ok0));
     let gctx = app!(de, ({t_gctx}));
-    let start = hex.from_u32(de, proc.start);
-    let args = app!(de, (ok0)); // todo!();
-    let ret = app!(de, (ok0)); // todo!();
-    let clob = app!(de, (d0)); // todo!();
-    let se = app!(de, (tru)); // todo!();
+    let ret = app!(de, (ok0)); // TODO
+    let se = app!(de, (tru)); // TODO
     let mut epi = app!(de, (epiRet));
     #[allow(clippy::cast_possible_truncation)]
     for &reg in proc.saved_regs() {
@@ -58,11 +54,11 @@ impl Ctx {
     }
     let sp_max = hex.from_u32(de, proc.stack_size());
     if sp_max.val != 0 { epi = app!(de, epiFree[*sp_max, epi]) }
-    let pctx1 = app!(de, mkPCtx1[*start, ret, epi, se]);
+    let pctx1 = app!(de, mkPCtx1[ret, epi, se]);
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
-    Ctx { t_gctx, gctx, start, args, ret, clob, se, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
+    Ctx { t_gctx, gctx, ret, se, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
   }
 }
 
@@ -842,7 +838,7 @@ impl<'a> ProcProver<'a> {
       }
       Err(c) => match c.k {
         ConstKind::Unit => {
-          let ty = app!(self.thm, (ty_unit));
+          let ty = app!(self.thm, (tyUnit));
           (ty, thm!(self.thm, okReadHyp_unit(l1): okReadHyp[l1, ty]))
         }
         ConstKind::ITrue => todo!(),
@@ -1038,7 +1034,7 @@ impl<'a> ProcProver<'a> {
               match (code, se) {
                 (Some(code), true) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
                   ok_call_proc(args, clob, self.epi, self.gctx, self.labs, ret, self.ret,
-                    *self.start, l1, l2, tgt, h1, h2))),
+                    l1, l2, tgt, h1, h2))),
                 (Some(code), false) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
                   ok_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
                     l1, l2, tgt, h1, h2))),
@@ -1222,8 +1218,10 @@ impl<'a> ProcProver<'a> {
       !
     });
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
-    let code = app_match!(self.thm, a => { (asmEntry _ code) => code, ! });
+    let (start, code) = app_match!(self.thm, a => { (asmEntry start code) => (start, code), ! });
     if name.is_some() {
+      let args = app!(de, (ok0)); // TODO
+      let clob = app!(de, (d0)); // TODO
       let (tctx@(_, l1), ok_epi, h2) = self.build_proc(root);
       let mut sp = self.hex.h2n(&mut self.thm, 0);
       let epi0 = app!(self.thm, (epiRet));
@@ -1231,15 +1229,15 @@ impl<'a> ProcProver<'a> {
       let iter = self.proc.saved_regs().iter();
       let prol = Box::new(Prologue { epi: epi0, sp, iter, ok_epi, tctx });
       let h3 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
-      thm!(self.thm, (okProc[self.gctx, *self.start, self.args, self.ret, self.clob, self.se]) =>
-        okProcI(self.args, self.clob, code, self.gctx, self.pctx1, self.ret, self.se,
-          *self.start, l1, h1, h2, h3))
+      thm!(self.thm, (okProc[self.gctx, start, args, self.ret, clob, self.se]) =>
+        okProcI(args, clob, code, self.gctx, self.pctx1, self.ret, self.se,
+          start, l1, h1, h2, h3))
     } else {
       let ((tctx, l1), h2) = self.build_start(root);
       let mut sp = self.hex.h2n(&mut self.thm, 0);
       let h3 = self.ok_code0((LCtx::Reg(tctx), l1), Some(code));
-      thm!(self.thm, (okStart[self.gctx, *self.start]) =>
-        okStartI(code, self.gctx, self.pctx1, *self.start, l1, h1, h2, h3))
+      thm!(self.thm, (okStart[self.gctx, start]) =>
+        okStartI(code, self.gctx, self.pctx1, start, l1, h1, h2, h3))
     }
   }
 }

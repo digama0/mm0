@@ -496,6 +496,8 @@ make_predefs! {
   parseUD2: ThmId => "parseUD2";
   parseAssert: ThmId => "parseAssert";
 
+  tyUnit: TermId => "tyUnit";
+
   epiRet: TermId => "epiRet";
   epiFree: TermId => "epiFree";
   epiPop: TermId => "epiPop";
@@ -507,8 +509,6 @@ make_predefs! {
   mkTCtx: TermId => "mkTCtx";
 
   ok0: TermId => "ok0";
-
-  ty_unit: TermId => "ty_unit";
 
   labelGroup0: TermId => "labelGroup0";
   labelGroup: TermId => "labelGroup";

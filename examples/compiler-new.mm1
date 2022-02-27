@@ -1,5 +1,9 @@
 import "compiler-old.mm1";
 
+--| `tyUnit: ty`:
+--| The type `()`, the unit type.
+@mmc-th local def tyUnit: set = $ 0 $; -- TODO
+
 -- inductive epilogue
 -- | free : nat -> epilogue -> epilogue
 -- | pop : regnum -> epilogue -> epilogue
@@ -13,8 +17,8 @@ import "compiler-old.mm1";
 --| * `ret`: the return ABI
 --| * `epi: epilogue`: the epilogue sequence
 --| * `se: bool`: true if this procedure is allowed to perform side effects
-@mmc-th local def mkPCtx1 (start: nat) (ret: set) (epi: nat) (se: wff): set =
-$ Sum ret (start <> epi <> nat se) $;
+@mmc-th local def mkPCtx1 (ret: set) (epi: nat) (se: wff): set =
+$ Sum ret (epi <> nat se) $;
 
 --| Procedure-global context, constructor for `pctx := gctx * pctx1` type.
 --| We write it in such a way that `pctx` extends `gctx`,
@@ -120,10 +124,6 @@ infixl mctxA: $+M$ prec 20;
 --| so `vctx` extraction functions also work on `tctx`.
 @mmc-th local def mkTCtx (vctx: set) (vctx_sz: nat) (mctx: set): set = $ 0 $; -- TODO
 
---| `ty_unit: ty`:
---| The type `()`, the unit type.
-@mmc-th local def ty_unit: set = $ 0 $; -- TODO
-
 --| `vVar: nat -> ty -> vctx`:
 --| A variable record in a variable context. This asserts that `v_n: ty`.
 @mmc-th local def vVar (n: nat) (ty: set): set = $ 0 $; -- TODO
@@ -161,7 +161,7 @@ infixl mctxA: $+M$ prec 20;
   $ okReadHyp vctx ty $ = 'sorry;
 
 @mmc-th theorem okReadHyp_unit:
-  $ okReadHyp tctx ty_unit $ = 'sorry;
+  $ okReadHyp tctx tyUnit $ = 'sorry;
 
 local def okSP (bctx lctx: set): nat = $ 0 $; -- TODO
 local def okFreeBytes (bctx lctx: set): nat = $ 0 $; -- TODO
@@ -245,6 +245,12 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
   $ okProc gctx start args ret clob se $ = 'sorry;
 
 @mmc-th local def buildStart (pctx lctx: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem buildStartI
+  (h1: $ okAssembled pctx (asmAt ip code) $)
+  (h2: $ okCode (mkBCtx pctx L) lctx code ok0 $):
+  $ buildStart pctx lctx $ = 'sorry;
+
 @mmc-th local def okStart (gctx: set) (start: nat): wff = $ F. $; -- TODO
 
 @mmc-th theorem okStartI
@@ -405,7 +411,7 @@ $ E. p assembledN (okContentN pctx) (code @' p) $;
 @mmc-th theorem ok_call_proc
   (h1: $ okProc gctx tgt args ret clob T. $)
   (h2: $ applyCall tctx args ret clob tctx2 $):
-  $ okCode (mkBCtx (mkPCtx gctx (mkPCtx1 start ret2 epi T.)) labs) tctx (instCall tgt) tctx2 $ =
+  $ okCode (mkBCtx (mkPCtx gctx (mkPCtx1 ret2 epi T.)) labs) tctx (instCall tgt) tctx2 $ =
 'sorry;
 
 @mmc-th theorem ok_exit
