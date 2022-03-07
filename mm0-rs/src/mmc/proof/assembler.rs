@@ -1109,6 +1109,7 @@ impl BuildAssemblyProc<'_> {
         })
       }
     });
+    #[allow(clippy::ok_expect)]
     let (s, th) = th.ok().expect("empty procedure");
     (s, y, a, th)
   }

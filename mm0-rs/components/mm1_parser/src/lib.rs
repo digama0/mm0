@@ -101,9 +101,9 @@ impl ErrorLevel {
   #[must_use]
   pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
-      ErrorLevel::Info => DiagnosticSeverity::Information,
-      ErrorLevel::Warning => DiagnosticSeverity::Warning,
-      ErrorLevel::Error => DiagnosticSeverity::Error,
+      ErrorLevel::Info => DiagnosticSeverity::INFORMATION,
+      ErrorLevel::Warning => DiagnosticSeverity::WARNING,
+      ErrorLevel::Error => DiagnosticSeverity::ERROR,
     }
   }
 

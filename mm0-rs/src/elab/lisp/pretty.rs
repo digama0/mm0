@@ -60,7 +60,7 @@ impl<'a> Pp<'a> {
       left: env.pe.delims_r.get(*tk.as_bytes().first().expect("empty delimiter")),
       right: env.pe.delims_l.get(*tk.as_bytes().last().expect("empty delimiter")),
       small: true,
-      doc: alloc.alloc(Doc::text(tk)),
+      doc: alloc.alloc(Doc::BorrowedText(tk)),
     }
   }
 
@@ -69,7 +69,7 @@ impl<'a> Pp<'a> {
       left: false,
       right: false,
       small: true,
-      doc: alloc.alloc(Doc::text(data)),
+      doc: alloc.text(data).into_doc(),
     }
   }
 }
@@ -115,7 +115,7 @@ impl fmt::Debug for Pretty<'_> {
 macro_rules! s {($s:expr) => {pretty::RefDoc(&pretty::Doc::BorrowedText($s))}}
 
 const NIL: RefDoc<'static> = pretty::RefDoc(&Doc::Nil);
-const HARDLINE: RefDoc<'static> = pretty::RefDoc(&Doc::Line);
+const HARDLINE: RefDoc<'static> = pretty::RefDoc(&Doc::Hardline);
 const SPACE: RefDoc<'static> = s!(" ");
 const LINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, SPACE));
 const LINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, NIL));
@@ -160,6 +160,10 @@ impl<'a> Pretty<'a> {
 
   pub(crate) fn alloc(&'a self, doc: Doc<'a>) -> RefDoc<'a> {
     self.alloc.alloc(doc)
+  }
+
+  pub(crate) fn text(&'a self, data: impl Into<Cow<'a, str>>) -> RefDoc<'a> {
+    self.alloc.text(data).into_doc()
   }
 
   pub(crate) fn append_doc(&'a self, a: impl Into<RefDoc<'a>>, b: impl Into<RefDoc<'a>>) -> RefDoc<'a> {
@@ -315,8 +319,7 @@ impl<'a> Pretty<'a> {
   pub fn expr_delimited(&'a self, e: &LispVal, left: &'a str, right: &'a str) -> RefDoc<'a> {
     let mut doc = self.expr_no_delim(e);
     if let Doc::Group(doc2) = *doc {doc = doc2}
-    let doc = self.append_doc(self.alloc(Doc::text(left)),
-      self.append_doc(doc, self.alloc(Doc::text(right))));
+    let doc = self.append_doc(self.text(left), self.append_doc(doc, self.text(right)));
     self.alloc(Doc::Group(doc))
   }
 
@@ -383,7 +386,7 @@ impl<'a> Pretty<'a> {
         let doc = self.append_doc(self.lparen, self.append_doc(doc, self.rparen));
         self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
       }
-      _ => self.alloc(Doc::text(format!("{}", self.fe.to(e)))),
+      _ => self.text(format!("{}", self.fe.to(e))),
     })
   }
 
@@ -391,8 +394,8 @@ impl<'a> Pretty<'a> {
     let mut i = 1;
     for x in bvars {
       if ds & i != 0 {
-        let rhs = Doc::text(format!(" {}", self.fe.to(x)));
-        doc = self.append_doc(doc, self.alloc(rhs));
+        let rhs = format!(" {}", self.fe.to(x));
+        doc = self.append_doc(doc, self.text(rhs));
       }
       i *= 2;
     }
@@ -417,19 +420,19 @@ impl<'a> Pretty<'a> {
             bvars.push(a.unwrap_or(AtomId::UNDER));
             self.fe.to(a)
           }).format(" "));
-          buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
+          buf = self.append_doc(buf, self.text(lhs));
           buf = self.append_doc(buf, s!(": "));
           buf = self.append_annot(buf, Annot::SortName(s),
-            self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
+            self.text(self.fe.env.sorts[s].name.to_string()));
           buf = self.append_doc(buf, s!("}"));
         }
         Type::Reg(s, ds) => {
           buf = self.append_doc(buf, s!("("));
           let lhs = format!("{}", bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "));
-          buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
+          buf = self.append_doc(buf, self.text(lhs));
           buf = self.append_doc(buf, s!(": "));
           buf = self.append_annot(buf, Annot::SortName(s),
-            self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
+            self.text(self.fe.env.sorts[s].name.to_string()));
           buf = self.dep_type(bvars, ds, buf);
           buf = self.append_doc(buf, s!(")"));
         }
@@ -447,18 +450,18 @@ impl<'a> Pretty<'a> {
       if matches!(t.kind, TermKind::Term) {s!("term")} else {s!("def")});
     if !t.vis.is_empty() {
       doc = self.append_doc(self.annot(Annot::Visibility(t.vis),
-        self.alloc(Doc::text(t.vis.to_string()))), doc);
+        self.text(t.vis.to_string())), doc);
     }
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::TermName(tid),
-      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+      self.text(format!("{}", self.fe.to(&t.atom))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, s!(":"));
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = self.annot(
       Annot::SortName(t.ret.0),
-      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string()))
+      self.text(self.fe.env.sorts[t.ret.0].name.to_string())
     );
     buf = self.dep_type(&bvars, t.ret.1, buf);
     if let (true, TermKind::Def(Some(expr))) = (show_def, &t.kind) {
@@ -498,11 +501,11 @@ impl<'a> Pretty<'a> {
   pub fn sort(&'a self, sid: SortId) -> RefDoc<'a> {
     let s = &self.fe.env.sorts[sid];
     let mut doc = self.annot(Annot::SortModifiers(s.mods),
-      self.alloc(Doc::text(s.mods.to_string())));
+      self.text(s.mods.to_string()));
     doc = self.append_annot(doc, Annot::Keyword, s!("sort"));
     doc = self.append_doc(doc, Self::space());
     doc = self.append_annot(doc, Annot::SortName(sid),
-      self.alloc(Doc::text(s.name.as_str())));
+      self.text(s.name.as_str()));
     self.append_doc(doc, s!(";"))
   }
 
@@ -514,14 +517,14 @@ impl<'a> Pretty<'a> {
     let doc = self.annot(Annot::Keyword, s!("coercion"));
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::TermName(tid),
-      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+      self.text(format!("{}", self.fe.to(&t.atom))));
     let doc = self.append_doc(doc, s!(": "));
     let ty = if let [(_, Type::Reg(ty, 0))] = *t.args { ty } else { panic!("not a coercion") };
     let doc = self.append_annot(doc, Annot::SortName(ty),
-      self.alloc(Doc::text(self.fe.env.sorts[ty].name.to_string())));
+      self.text(self.fe.env.sorts[ty].name.to_string()));
     let doc = self.append_doc(doc, s!(" > "));
     let doc = self.append_annot(doc, Annot::SortName(t.ret.0),
-      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string())));
+      self.text(self.fe.env.sorts[t.ret.0].name.to_string()));
     self.append_doc(doc, s!(";"))
   }
 
@@ -534,23 +537,21 @@ impl<'a> Pretty<'a> {
     let doc = self.annot(Annot::Keyword, kw);
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::TermName(tid),
-      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+      self.text(format!("{}", self.fe.to(&t.atom))));
     let doc = self.append_doc(doc, s!(": $"));
-    let doc = self.append_annot(doc, Annot::TermName(tid),
-      self.alloc(Doc::text(format!("{}", tk))));
+    let doc = self.append_annot(doc, Annot::TermName(tid), self.text(format!("{}", tk)));
     let doc = self.append_doc(doc, s!("$ "));
     let doc = self.append_annot(doc, Annot::Keyword, s!("prec"));
     let doc = self.append_doc(doc, Self::space());
-    let doc = self.append_annot(doc, Annot::Prec,
-      self.alloc(Doc::text(format!("{}", prec))));
+    let doc = self.append_annot(doc, Annot::Prec, self.text(format!("{}", prec)));
     self.append_doc(doc, s!(";"))
   }
 
   /// Print a constant notation literal like `($e.$:23)`.
   fn const_lit(&'a self, tk: &ArcString) -> RefDoc<'a> {
-    let doc = self.alloc(Doc::text(format!("${}$:", tk)));
+    let doc = self.text(format!("${}$:", tk));
     let doc = self.append_annot(doc, Annot::Prec,
-      self.alloc(Doc::text(format!("{}", self.fe.env.pe.consts[tk].1))));
+      self.text(format!("{}", self.fe.env.pe.consts[tk].1)));
     self.append_doc(self.append_doc(self.lparen, doc), self.rparen)
   }
 
@@ -570,14 +571,14 @@ impl<'a> Pretty<'a> {
     let doc = self.annot(Annot::Keyword, s!("notation"));
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::TermName(nota.term),
-      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+      self.text(format!("{}", self.fe.to(&t.atom))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, s!(":"));
     let doc = self.alloc(Doc::Group(doc));
     let doc = self.append_doc(doc, Self::softline());
     let doc = self.append_annot(doc, Annot::SortName(t.ret.0),
-      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string())));
+      self.text(self.fe.env.sorts[t.ret.0].name.to_string()));
     let doc = self.dep_type(&bvars, t.ret.1, doc);
     let doc = self.append_doc(doc, s!(" ="));
     let doc = self.alloc(Doc::Group(doc));
@@ -591,7 +592,7 @@ impl<'a> Pretty<'a> {
       push_doc(match lit {
         &Literal::Var(i, _) => {
           let a = t.args[i].0.unwrap_or(AtomId::UNDER);
-          self.alloc(Doc::text(self.fe.env.data[a].name.to_string()))
+          self.text(self.fe.env.data[a].name.to_string())
         }
         Literal::Const(tk) => self.const_lit(tk)
       })
@@ -607,7 +608,7 @@ impl<'a> Pretty<'a> {
         let doc = self.alloc(Doc::Group(doc));
         let doc = self.append_doc(doc, Self::line());
         let doc = self.append_annot(doc, Annot::Prec,
-          self.alloc(Doc::text(format!("{}", if rassoc {prec2} else {prec1}))));
+          self.text(format!("{}", if rassoc {prec2} else {prec1})));
         let doc = self.append_doc(doc, Self::space());
         buf = self.append_annot(doc, Annot::Keyword, if rassoc {s!("rassoc")} else {s!("lassoc")});
       }
@@ -641,13 +642,12 @@ impl<'a> Pretty<'a> {
   /// The proof of the theorem is omitted.
   pub fn thm(&'a self, tid: ThmId) -> RefDoc<'a> {
     let t = &self.fe.env.thms[tid];
-    let doc = self.annot(Annot::Visibility(t.vis),
-      self.alloc(Doc::text(t.vis.to_string())));
+    let doc = self.annot(Annot::Visibility(t.vis), self.text(t.vis.to_string()));
     let doc = self.append_annot(doc, Annot::Keyword,
       if matches!(t.kind, ThmKind::Axiom) {s!("axiom")} else {s!("theorem")});
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::ThmName(tid),
-      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
+      self.text(format!("{}", self.fe.to(&t.atom))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, s!(":"));
@@ -696,7 +696,7 @@ impl<'a> Pretty<'a> {
       .map(|(_, e)| self.expr(&subst(e))).collect::<Box<[_]>>();
     let subst_ret = self.expr(&subst(&td.ret));
     let (msg1, e1, e2) = if let Some(i) = i {
-      (self.alloc(Doc::text(format!("Subproof {} of", i+1))), self.expr(proved), subst_hyps[i])
+      (self.text(format!("Subproof {} of", i+1)), self.expr(proved), subst_hyps[i])
     } else {
       (s!("Theorem application"), subst_ret, self.expr(proved))
     };

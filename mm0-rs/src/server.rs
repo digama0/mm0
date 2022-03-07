@@ -288,11 +288,11 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         .chain(errors.iter().map(|e| e.to_diag(source.ascii(), &mut to_loc)))
         .filter(|e| !e.message.is_empty())
         .inspect(|err| match err.severity {
-          None => {}
-          Some(DiagnosticSeverity::Error) => n_errs += 1,
-          Some(DiagnosticSeverity::Warning) => n_warns += 1,
-          Some(DiagnosticSeverity::Information) => n_infos += 1,
-          Some(DiagnosticSeverity::Hint) => n_hints += 1,
+          Some(DiagnosticSeverity::ERROR) => n_errs += 1,
+          Some(DiagnosticSeverity::WARNING) => n_warns += 1,
+          Some(DiagnosticSeverity::INFORMATION) => n_infos += 1,
+          Some(DiagnosticSeverity::HINT) => n_hints += 1,
+          _ => {}
         }).collect();
 
       send_diagnostics(path.url().clone(), version, errs)?;
@@ -523,7 +523,7 @@ fn register_capability(id: String, registrations: Vec<Registration>) -> Result<(
 fn log_message(message: String) -> Result<()> {
   send_message(Notification {
     method: "window/logMessage".to_owned(),
-    params: to_value(LogMessageParams {typ: MessageType::Log, message})?
+    params: to_value(LogMessageParams {typ: MessageType::LOG, message})?
   })
 }
 
@@ -919,18 +919,18 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
         let ad = &env.data()[a];
         let s = ad.sort().expect("env well formed");
         let sd = env.sort(s);
-        push!(sd.span, ad.name(), format!("{}", sd), sd.full, SymbolKind::Class)
+        push!(sd.span, ad.name(), format!("{}", sd), sd.full, SymbolKind::CLASS)
       }
       StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
         match ad.decl().expect("env well formed") {
           DeclKey::Term(t) => {
             let td = env.term(t);
-            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::Constructor)
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::CONSTRUCTOR)
           }
           DeclKey::Thm(t) => {
             let td = env.thm(t);
-            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::Method)
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::METHOD)
           }
         }
       }
@@ -945,18 +945,18 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
               match (|| Some(match e.unwrap() {
                 FrozenLispKind::Atom(_) |
                 FrozenLispKind::MVar(_, _) |
-                FrozenLispKind::Goal(_) => SymbolKind::Constant,
+                FrozenLispKind::Goal(_) => SymbolKind::CONSTANT,
                 r @ (FrozenLispKind::List(_) | FrozenLispKind::DottedList(_, _)) =>
-                  if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
-                FrozenLispKind::Number(_) => SymbolKind::Number,
-                FrozenLispKind::String(_) => SymbolKind::String,
-                FrozenLispKind::Bool(_) => SymbolKind::Boolean,
-                FrozenLispKind::Syntax(_) => SymbolKind::Event,
+                  if r.is_list() {SymbolKind::ARRAY} else {SymbolKind::OBJECT},
+                FrozenLispKind::Number(_) => SymbolKind::NUMBER,
+                FrozenLispKind::String(_) => SymbolKind::STRING,
+                FrozenLispKind::Bool(_) => SymbolKind::BOOLEAN,
+                FrozenLispKind::Syntax(_) => SymbolKind::EVENT,
                 FrozenLispKind::Undef => return None,
-                FrozenLispKind::Proc(_) => SymbolKind::Function,
+                FrozenLispKind::Proc(_) => SymbolKind::FUNCTION,
                 FrozenLispKind::AtomMap(_) |
                 FrozenLispKind::Annot(_, _) |
-                FrozenLispKind::Ref(_) => SymbolKind::Object,
+                FrozenLispKind::Ref(_) => SymbolKind::OBJECT,
               }))() {
                 Some(sk) => sk,
                 None => continue,
@@ -975,7 +975,6 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
 enum TraceKind {Sort, Decl, Global}
 
 fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
-  use CompletionItemKind::{Class, Constructor, Method};
   macro_rules! done {($desc:expr, $kind:expr, $doc:expr) => {
     CompletionItem {
       label: String::from_utf8_lossy(ad.name()).into(),
@@ -994,11 +993,17 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   match tk {
     TraceKind::Sort => ad.sort().map(|s| {
       let sd = &fe.sorts[s];
-      done!(format!("{}", sd), Class, sd.doc)
+      done!(format!("{}", sd), CompletionItemKind::CLASS, sd.doc)
     }),
     TraceKind::Decl => ad.decl().map(|dk| match dk {
-      DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor, td.doc)}
-      DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method, td.doc)}
+      DeclKey::Term(t) => {
+        let td = &fe.terms[t];
+        done!(format!("{}", fe.to(td)), CompletionItemKind::CONSTRUCTOR, td.doc)
+      }
+      DeclKey::Thm(t) => {
+        let td = &fe.thms[t];
+        done!(format!("{}", fe.to(td)), CompletionItemKind::METHOD, td.doc)
+      }
     }),
     #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
     TraceKind::Global => {
@@ -1007,7 +1012,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
       Some(done!(format!("{}", fe.to(unsafe { e.thaw() })), match *e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
-        FrozenLispKind::Goal(_) => CompletionItemKind::Constant,
+        FrozenLispKind::Goal(_) => CompletionItemKind::CONSTANT,
         FrozenLispKind::List(_) |
         FrozenLispKind::DottedList(_, _) |
         FrozenLispKind::Undef |
@@ -1016,14 +1021,14 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
         FrozenLispKind::Bool(_) |
         FrozenLispKind::AtomMap(_) |
         FrozenLispKind::Annot(_, _) |
-        FrozenLispKind::Ref(_) => CompletionItemKind::Value,
-        FrozenLispKind::Syntax(_) => CompletionItemKind::Event,
+        FrozenLispKind::Ref(_) => CompletionItemKind::VALUE,
+        FrozenLispKind::Syntax(_) => CompletionItemKind::EVENT,
         FrozenLispKind::Proc(ref p) if
           match *unsafe {p.thaw()} {
             Proc::Builtin(p) => p.to_str() == ad.name().as_str(),
             _ => false,
           } => return None,
-        FrozenLispKind::Proc(_) => CompletionItemKind::Function
+        FrozenLispKind::Proc(_) => CompletionItemKind::FUNCTION
       }, e.doc()))
     }
   }
@@ -1048,7 +1053,7 @@ async fn completion(path: FileRef, _pos: Position) -> Result<CompletionResponse,
     res.push(CompletionItem {
       label: s.into(),
       documentation: None,
-      kind: Some(CompletionItemKind::Keyword),
+      kind: Some(CompletionItemKind::KEYWORD),
       ..Default::default()
     })
   });
@@ -1070,7 +1075,7 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
         kind: MarkupKind::Markdown,
         value: p.doc().into(),
       })),
-      kind: Some(CompletionItemKind::Keyword),
+      kind: Some(CompletionItemKind::KEYWORD),
       ..Default::default()
     })
   };
@@ -1430,7 +1435,8 @@ impl Server {
     let (conn, _iot) = Connection::stdio();
     let params = from_value(conn.initialize(
       to_value(ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
+        text_document_sync: Some(
+          TextDocumentSyncCapability::Kind(TextDocumentSyncKind::INCREMENTAL)),
         hover_provider: Some(true.into()),
         completion_provider: Some(CompletionOptions {
           resolve_provider: Some(true),
