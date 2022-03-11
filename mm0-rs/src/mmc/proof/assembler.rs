@@ -702,7 +702,7 @@ impl BuildAssemblyProc<'_> {
               rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
           [l1, opch, inst, th]
         } else {
-          let inst = app!(self, (instImm sz dst (IRM_imm32 src)));
+          let inst = app!(self, (instMov sz dst (IRM_imm32 src)));
           let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
             parseMovImmM(dst, *ip, l1, l2, *self.start,
               rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
@@ -997,7 +997,9 @@ impl BuildAssemblyProc<'_> {
   }
 
   /// If `false`, the instruction will be skipped in the generated assembly listing.
-  fn keep_inst(inst: &Inst<'_>) -> bool { !matches!(inst.inst, PInst::SyncLet {..}) }
+  fn keep_inst(inst: &Inst<'_>) -> bool {
+    !matches!(inst.inst, /* PInst::LetStart {..} | */ PInst::MovId)
+  }
 
   /// Given `x`, proves `(y, A, Ok((s, |- localAssemble start s x y A)))`, using elements of the
   /// iterator `iter` in a balanced binary tree of `localAssembleA` nodes.

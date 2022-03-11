@@ -6,7 +6,7 @@ use num::Zero;
 use regalloc2::{MachineEnv, Operand};
 
 use crate::codegen::InstSink;
-use crate::types::{mir, Size,
+use crate::types::{classify as cl, mir, Size,
   vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg, IsReg, Inst as VInst, VCode}};
 
 /// A physical register. For x86, this is one of the 16 general purpose integer registers.
@@ -379,6 +379,10 @@ pub enum Offset<N = u32> {
   Const(N),
 }
 
+impl<N: Default> Default for Offset<N> {
+  fn default() -> Self { Self::Real(N::default()) }
+}
+
 impl<N: Zero + Debug> Debug for Offset<N> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -453,6 +457,10 @@ pub struct AMode<Reg = VReg> {
   pub si: Option<ShiftIndex<Reg>>,
 }
 
+impl<Reg: IsReg> Default for AMode<Reg> {
+  fn default() -> Self { Self { off: Offset::default(), base: Reg::invalid(), si: None } }
+}
+
 impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "[{:?}", self.off)?;
@@ -506,26 +514,38 @@ impl AMode {
     dst
   }
 
-  pub(crate) fn add_scaled(&self, code: &mut VCode<Inst>, sc: u64, reg: VReg) -> AMode {
+  pub(crate) fn add_scaled(&self,
+    code: &mut VCode<Inst>, sc: u64, reg: VReg
+  ) -> (AMode, cl::AddScaled) {
     match (
       &self.si,
       self.base != VReg::invalid() || matches!(self.off, Offset::Spill(..)),
       sc
     ) {
-      (_, false, 1) => AMode { off: self.off, base: reg, si: self.si },
+      (_, false, 1) => (AMode { off: self.off, base: reg, si: self.si }, cl::AddScaled::NoBase1),
       (None, _, 1 | 2 | 4 | 8) => {
         let shift = match sc { 1 => 0, 2 => 1, 4 => 2, 8 => 3, _ => unreachable!() };
-        AMode { off: self.off, base: self.base, si: Some(ShiftIndex { shift, index: reg }) }
+        let si = Some(ShiftIndex { shift, index: reg });
+        (AMode { off: self.off, base: self.base, si }, cl::AddScaled::Pow2)
       }
       (None, false, 3 | 5 | 9) => {
         let shift = match sc { 3 => 1, 5 => 2, 9 => 3, _ => unreachable!() };
-        AMode { off: self.off, base: reg, si: Some(ShiftIndex { index: reg, shift }) }
+        let si = Some(ShiftIndex { index: reg, shift });
+        (AMode { off: self.off, base: reg, si }, cl::AddScaled::NoBasePow2Add)
       }
-      (Some(_), _, _) => AMode::reg(code.emit_lea(Size::S64, *self)).add_scaled(code, sc, reg),
+      (Some(_), _, _) => {
+        let (a, sc) = AMode::reg(code.emit_lea(Size::S64, *self)).add_scaled(code, sc, reg);
+        (a, match sc {
+          cl::AddScaled::Large => cl::AddScaled::ComposeLarge,
+          cl::AddScaled::Pow2 => cl::AddScaled::ComposePow2,
+          _ => unreachable!(),
+        })
+      }
       (None, _, _) => {
         let sc = code.emit_imm(Size::S64, sc);
         let mul = code.emit_mul(Size::S64, reg, sc).0;
-        AMode { off: self.off, base: self.base, si: Some(ShiftIndex { shift: 0, index: mul }) }
+        let si = Some(ShiftIndex { shift: 0, index: mul });
+        (AMode { off: self.off, base: self.base, si }, cl::AddScaled::Large)
       }
     }
   }
@@ -551,6 +571,10 @@ pub enum RegMem<Reg = VReg> {
   Reg(Reg),
   /// A reference to a memory address
   Mem(AMode<Reg>),
+}
+
+impl<Reg: IsReg> Default for RegMem<Reg> {
+  fn default() -> Self { Self::Mem(AMode::default()) }
 }
 
 impl<Reg: IsReg + Display> Display for RegMem<Reg> {
@@ -590,26 +614,27 @@ impl RegMem {
     self.on_regs(|v| args.push(Operand::reg_use(v.0)))
   }
 
-  pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> VReg {
+  pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> (VReg, cl::IntoReg) {
     match self {
-      RegMem::Reg(r) => r,
-      RegMem::Mem(a) => a.emit_load(code, sz),
+      RegMem::Reg(r) => (r, cl::IntoReg(false)),
+      RegMem::Mem(a) => (a.emit_load(code, sz), cl::IntoReg(true))
     }
   }
 
-  pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> AMode {
+  pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> (AMode, cl::IntoMem) {
     match self {
       RegMem::Reg(r) => {
         let a = AMode::spill(code.fresh_spill(sz.bytes().expect("large reg").into()));
-        code.emit_copy(sz, a.into(), r);
-        a
+        let _ = code.emit_copy(sz, a.into(), r);
+        (a, cl::IntoMem(true))
       },
-      RegMem::Mem(a) => a,
+      RegMem::Mem(a) => (a, cl::IntoMem(false))
     }
   }
 
-  pub(crate) fn emit_deref(&self, code: &mut VCode<Inst>, sz: Size) -> AMode {
-    AMode::reg(self.into_reg(code, sz))
+  pub(crate) fn emit_deref(&self, code: &mut VCode<Inst>, sz: Size) -> (AMode, cl::IntoReg) {
+    let (reg, cl) = self.into_reg(code, sz);
+    (AMode::reg(reg), cl)
   }
 }
 
@@ -683,38 +708,40 @@ impl<N> RegMemImm<N> {
     }
   }
 
-  pub(crate) fn into_rm(self, code: &mut VCode<Inst>, sz: Size) -> RegMem
+  pub(crate) fn into_rm(self, code: &mut VCode<Inst>, sz: Size) -> (RegMem, cl::IntoRM)
   where N: Into<u64> {
     match self {
-      RegMemImm::Reg(r) => RegMem::Reg(r),
-      RegMemImm::Mem(a) => RegMem::Mem(a),
-      RegMemImm::Imm(i) => RegMem::Reg(code.emit_imm(sz, i)),
+      RegMemImm::Reg(r) => (RegMem::Reg(r), cl::IntoRM(false)),
+      RegMemImm::Mem(a) => (RegMem::Mem(a), cl::IntoRM(false)),
+      RegMemImm::Imm(i) => (RegMem::Reg(code.emit_imm(sz, i)), cl::IntoRM(true))
     }
   }
 
-  pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> VReg
+  pub(crate) fn into_reg(self, code: &mut VCode<Inst>, sz: Size) -> (VReg, cl::IntoReg)
   where N: Into<u64> {
     match self {
-      RegMemImm::Reg(r) => r,
-      RegMemImm::Mem(a) => a.emit_load(code, sz),
-      RegMemImm::Imm(i) => code.emit_imm(sz, i),
+      RegMemImm::Reg(r) => (r, cl::IntoReg(false)),
+      RegMemImm::Mem(a) => (a.emit_load(code, sz), cl::IntoReg(true)),
+      RegMemImm::Imm(i) => (code.emit_imm(sz, i), cl::IntoReg(true)),
     }
   }
 
-  pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> AMode
+  pub(crate) fn into_mem(self, code: &mut VCode<Inst>, sz: Size) -> (AMode, cl::IntoMem)
   where N: Into<u64> {
-    self.into_rm(code, sz).into_mem(code, sz)
+    let (rm, cl) = self.into_rm(code, sz);
+    let (a, cl2) = rm.into_mem(code, sz);
+    (a, cl::IntoMem(cl.0 || cl2.0))
   }
 }
 
 impl RegMemImm<u64> {
-  pub(crate) fn into_rmi_32(self, code: &mut VCode<Inst>) -> RegMemImm {
+  pub(crate) fn into_rmi_32(self, code: &mut VCode<Inst>) -> (RegMemImm, cl::IntoRMI32) {
     match self {
-      RegMemImm::Reg(r) => RegMemImm::Reg(r),
-      RegMemImm::Mem(a) => RegMemImm::Mem(a),
+      RegMemImm::Reg(r) => (RegMemImm::Reg(r), cl::IntoRMI32(false)),
+      RegMemImm::Mem(a) => (RegMemImm::Mem(a), cl::IntoRMI32(false)),
       RegMemImm::Imm(i) => match u32::try_from(i) {
-        Ok(i) => RegMemImm::Imm(i),
-        _ => RegMemImm::Reg(code.emit_imm(Size::S64, i))
+        Ok(i) => (RegMemImm::Imm(i), cl::IntoRMI32(false)),
+        _ => (RegMemImm::Reg(code.emit_imm(Size::S64, i)), cl::IntoRMI32(true)),
       }
     }
   }
@@ -765,10 +792,11 @@ pub(crate) enum Inst {
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
   Fallthrough { dst: BlockId },
-  /// A ghost instruction for synchronizing with the source IR.
-  /// `inst` refers to the instruction index of a `Let` in the MIR of the current `BasicBlock`,
-  ///  and `dst` refers to the register, just assigned, that corresponds to the new variable.
-  SyncLet { inst: usize, dst: RegMem },
+  // /// Ghost instruction: Start of a let statement, together with the size of the data to transfer.
+  // LetStart { size: u32 },
+  // /// Ghost instruction: End of a let statement,
+  // /// together with the register, just assigned, that corresponds to the new variable.
+  // LetEnd { dst: RegMem },
   /// A ghost instruction at the start of a basic block to declare that a MIR variable
   /// lives at a certain machine location.
   BlockParam { var: mir::VarId, val: RegMem },
@@ -822,8 +850,9 @@ pub(crate) enum Inst {
   // },
   /// Constant materialization: `reg <- (imm32|imm64)`.
   /// Either: movl $imm32, %reg32 or movabsq $imm64, %reg32.
+  /// (The 32 bit mov is used for all sizes <= 32)
   Imm {
-    sz: Size, // 4 or 8
+    sz: Size,
     dst: VReg,
     src: u64,
   },
@@ -971,7 +1000,8 @@ impl Debug for Inst {
     }
     match self {
       Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
-      Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
+      // Self::LetStart { size } => write!(f, "let_start[{}]", size),
+      // Self::LetEnd { dst } => write!(f, "let_end {:?}", dst),
       Self::BlockParam { var, val } => write!(f, "param {:?} @ {}", var, val),
       Self::Binop { op, sz, dst, src1, src2 } =>
         write!(f, "{} <- {:?}.{} {}, {}", dst, op, sz.bits0(), src1, src2),
@@ -1036,7 +1066,7 @@ impl VInst for Inst {
 
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
-      Inst::SyncLet { dst, .. } => dst.collect_operands(args),
+      // Inst::LetEnd { dst } => dst.collect_operands(args),
       Inst::BlockParam { val, .. } =>
         val.on_regs(|r| args.push(Operand::new(r.0,
           regalloc2::OperandConstraint::Any,
@@ -1109,6 +1139,7 @@ impl VInst for Inst {
       Inst::MovRR { .. } |
       // Other instructions that have no operands
       Inst::Fallthrough { .. } |
+      // Inst::LetStart { .. } |
       Inst::JmpCond { .. } |
       Inst::Assert { .. } |
       Inst::Ud2 => {}
@@ -1210,21 +1241,24 @@ impl VCode<Inst> {
     Flags(self, cc)
   }
 
-  #[inline] pub(crate) fn emit_copy(&mut self, sz: Size, dst: RegMem, src: impl Into<RegMemImm<u64>>) {
-    fn copy(code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>) {
+  #[must_use]
+  #[inline] pub(crate) fn emit_copy(&mut self,
+    sz: Size, dst: RegMem, src: impl Into<RegMemImm<u64>>
+  ) -> cl::Copy {
+    fn copy(code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>) -> cl::Copy {
       match (dst, src) {
-        (RegMem::Reg(dst), RegMemImm::Reg(src)) => { code.emit(Inst::MovRR { dst, src }); }
-        (RegMem::Reg(dst), RegMemImm::Mem(src)) => { code.emit(Inst::load_mem(sz, dst, src)); }
-        (RegMem::Reg(dst), RegMemImm::Imm(src)) => {
-          code.emit(Inst::Imm { sz: sz.max(Size::S32), dst, src });
-        }
-        (RegMem::Mem(dst), RegMemImm::Reg(src)) => { code.emit(Inst::Store { sz, dst, src }); }
+        (RegMem::Reg(dst), RegMemImm::Reg(src)) => code.emit(Inst::MovRR { dst, src }),
+        (RegMem::Reg(dst), RegMemImm::Mem(src)) => code.emit(Inst::load_mem(sz, dst, src)),
+        (RegMem::Reg(dst), RegMemImm::Imm(src)) => code.emit(Inst::Imm { sz, dst, src }),
+        (RegMem::Mem(dst), RegMemImm::Reg(src)) => code.emit(Inst::Store { sz, dst, src }),
         _ => {
           let temp = code.fresh_vreg();
           copy(code, sz, temp.into(), src);
           copy(code, sz, dst, temp.into());
+          return cl::Copy::Two
         }
-      }
+      };
+      cl::Copy::One
     }
     copy(self, sz, dst, src.into())
   }
@@ -1282,10 +1316,11 @@ pub enum PInst {
   /// Jump to the given block ID. This is required to be the immediately following instruction,
   /// so no code need be emitted.
   Fallthrough { dst: BlockId },
-  /// A ghost instruction for synchronizing with the source IR.
-  /// `inst` refers to the instruction index of a `Let` in the MIR of the current `BasicBlock`,
-  ///  and `dst` refers to the register, just assigned, that corresponds to the new variable.
-  SyncLet { inst: usize, dst: PRegMem },
+  // /// Ghost instruction: Start of a let statement, together with the size of the data to transfer,
+  // /// and the register that will be assigned, that corresponds to the new variable.
+  // LetStart { size: u32, dst: PRegMem },
+  /// An eliminated identity move instruction.
+  MovId,
   /// Integer arithmetic/bit-twiddling: `reg <- (add|sub|and|or|xor|adc|sbb) (32|64) reg rmi`
   Binop {
     op: Binop,
@@ -1329,8 +1364,9 @@ pub enum PInst {
   // },
   /// Constant materialization: `reg <- (imm32|imm64)`.
   /// Either: movl $imm32, %reg32 or movabsq $imm64, %reg32.
+  /// (The 32 bit mov is used for all sizes <= 32)
   Imm {
-    sz: Size, // 4 or 8
+    sz: Size,
     dst: PReg,
     src: u64,
   },
@@ -1446,7 +1482,8 @@ impl Debug for PInst {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Fallthrough { dst } => write!(f, "fallthrough -> vb{}", dst.0),
-      Self::SyncLet { inst, dst } => write!(f, "sync_let {:?} @ i[{}]", dst, inst),
+      // Self::LetStart { size, dst } => write!(f, "let_start[{}] {:?}", size, dst),
+      Self::MovId => write!(f, "mov_id"),
       Self::Binop { op, sz, dst, src } =>
         write!(f, "{} <- {:?}.{} {0}, {}", dst, op, sz.bits0(), src),
       Self::Unop { op, sz, dst } =>
@@ -1777,7 +1814,8 @@ impl PInst {
   pub(crate) fn layout_inst(&self) -> InstLayout {
     match *self {
       PInst::Fallthrough { .. } |
-      PInst::SyncLet { .. } => InstLayout { rex: false, opc: OpcodeLayout::Ghost },
+      // PInst::LetStart { .. } |
+      PInst::MovId => InstLayout { rex: false, opc: OpcodeLayout::Ghost },
       PInst::Binop { sz, dst, ref src, .. } => layout_binop_lo(sz, dst, src),
       PInst::Unop { sz, dst, .. } => {
         let mut rex = sz == Size::S64;
@@ -1914,8 +1952,8 @@ impl PInst {
       match *inst {
         PInst::Binop { op, sz, dst, src } => (sz, dst, src, op as u8),
         PInst::Cmp { sz, op: Cmp::Cmp, src1, src2 } => (sz, src1, src2, 7),
-        PInst::Imm { sz, dst, src: 0 } =>
-          (sz.min(Size::S32), dst, PRegMemImm::Reg(dst), Binop::Xor as u8),
+        PInst::Imm { sz: _, dst, src: 0 } =>
+          (Size::S32, dst, PRegMemImm::Reg(dst), Binop::Xor as u8),
         _ => unreachable!()
       }
     }
@@ -2058,7 +2096,7 @@ impl PInst {
         buf.push_u8(op);
         write_modrm(modrm, &mut rex, buf, r, rm);
       }
-      (OpcodeLayout::Mov64(false), &PInst::Imm { sz: Size::S32, dst, src }) => {
+      (OpcodeLayout::Mov64(false), &PInst::Imm { sz: _, dst, src }) => {
         buf.push_u8(0xb8 + encode_reg(dst, &mut rex, REX_B));
         buf.push_u32(src as u32);
       }
@@ -2067,7 +2105,7 @@ impl PInst {
         buf.push_u64(src);
       }
       (OpcodeLayout::MovImm(modrm), &PInst::Imm { sz, dst, src }) => {
-        buf.push_u8(0xc6 + op_size_w(&mut rex, sz));
+        buf.push_u8(0xc6 + op_size_w(&mut rex, sz.max(Size::S32)));
         write_opc_modrm(modrm, &mut rex, buf, 0, PRegMem::Reg(dst));
         buf.push_u32(src as u32);
       }

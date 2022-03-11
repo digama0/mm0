@@ -8,7 +8,7 @@ use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
 pub use regalloc2::Block as BlockId;
 
-use super::Size;
+use super::{Size, classify::Trace};
 
 /// A trait to factor the commonalities of [`VReg`] and [`PReg`].
 pub trait IsReg: Sized + Eq {
@@ -122,6 +122,12 @@ pub struct ChunkVec<I, T> {
 
 impl<I, T> Default for ChunkVec<I, T> {
   fn default() -> Self { Self { data: vec![], idxs: Default::default() } }
+}
+
+impl<I, T: Clone> Clone for ChunkVec<I, T> {
+  fn clone(&self) -> Self {
+    Self { data: self.data.clone(), idxs: self.idxs.clone() }
+  }
 }
 
 impl<I: Idx, T: Debug> Debug for ChunkVec<I, T> {
@@ -249,6 +255,7 @@ pub struct VCode<I> {
   pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_params: ChunkVec<BlockId, VReg>,
   pub(crate) operands: ChunkVec<InstId, Operand>,
+  pub(crate) trace: Trace,
   pub(crate) num_vregs: usize,
   pub(crate) spills: IdxVec<SpillId, u32>,
 }
@@ -264,6 +271,7 @@ impl<I> Default for VCode<I> {
       block_succs: Default::default(),
       block_params: Default::default(),
       operands: Default::default(),
+      trace: Default::default(),
       num_vregs: 0,
       spills: vec![0, 0].into(), // INCOMING, OUTGOING
     }

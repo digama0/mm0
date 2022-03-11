@@ -20,7 +20,7 @@ use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode, Inst, PReg, RegMem, 
   RET_AND_ARG_REGS, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};
-use crate::types::{Idx, IdxVec, IntTy, Size, Spanned};
+use crate::types::{Idx, IdxVec, IntTy, Size, Spanned, classify as cl};
 use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
   ChunkVec, ConstRef, InstId, GlobalId, ProcAbi, ProcId, SpillId, VReg};
 
@@ -211,13 +211,18 @@ impl<'a> LowerCtx<'a> {
     &self.var_map[&a]
   }
 
-  fn get_place(&mut self, p: &Place) -> RegMem {
+  fn get_place(&mut self, p: &Place) -> (RegMem, cl::Place) {
     let mut rm = self.get_var(p.local).0;
+    let mut cl = cl::Place { projs: 0 };
     for proj in &p.proj {
-      match proj.1 {
-        Projection::Deref =>
-          rm = RegMem::Mem(rm.emit_deref(&mut self.code, Size::S64)),
-        Projection::Proj(ListKind::And | ListKind::Sn, _) => {}
+      cl.projs += 1;
+      let proj = match proj.1 {
+        Projection::Deref => {
+          let (a, cl) = rm.emit_deref(&mut self.code, Size::S64);
+          rm = RegMem::Mem(a);
+          cl::Projection::Deref(cl)
+        }
+        Projection::Proj(ListKind::And | ListKind::Sn, _) => cl::Projection::Ghost,
         Projection::Proj(ListKind::Array, i) => {
           let ty = if let TyKind::Array(ty, _) = &*proj.0 { ty } else { unreachable!() };
           let sz = ty.sizeof(self.names)
@@ -229,6 +234,7 @@ impl<'a> LowerCtx<'a> {
               RegMem::Mem(a) => *a = &*a + off,
             }
           }
+          cl::Projection::ProjArray
         }
         Projection::Proj(ListKind::Struct, i) => {
           let args = if let TyKind::Struct(args) = &*proj.0 { args } else { unreachable!() };
@@ -244,6 +250,7 @@ impl<'a> LowerCtx<'a> {
               RegMem::Mem(a) => *a = &*a + off,
             }
           }
+          cl::Projection::ProjStruct
         }
         Projection::Index(i, _) |
         Projection::Slice(i, _, _) => {
@@ -251,21 +258,28 @@ impl<'a> LowerCtx<'a> {
           let stride = if let Some(sz) = ty.sizeof(self.names) { sz } else {
             panic!("array stride not known at compile time")
           };
-          if stride != 0 {
+          if stride == 0 {
+            cl::Projection::Ghost
+          } else {
             let (v, sz) = *self.get_var(i);
-            let v = v.into_reg(&mut self.code, sz);
+            let (v, cl) = v.into_reg(&mut self.code, sz);
             match &mut rm {
               RegMem::Reg(_) => panic!("register should be address-taken"),
-              RegMem::Mem(a) => *a = a.add_scaled(&mut self.code, stride, v),
+              RegMem::Mem(a) => {
+                let (a2, cl2) = a.add_scaled(&mut self.code, stride, v);
+                *a = a2;
+                cl::Projection::IndexSlice(cl, cl2)
+              }
             }
           }
         }
-      }
+      };
+      self.code.trace.projs.push(proj);
     }
-    rm
+    (rm, cl)
   }
 
-  fn get_const(&mut self, c: &Constant) -> (u32, ConstRef) {
+  fn get_const(&self, c: &Constant) -> (u32, ConstRef) {
     match c.k {
       ConstKind::Bool => {
         let_unchecked!(e as Some(e) = &c.ety.0);
@@ -314,149 +328,172 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn get_operand(&mut self, o: &Operand) -> RegMemImm<u64> {
+  fn get_operand(&mut self, o: &Operand) -> (RegMemImm<u64>, cl::Operand) {
     match o.place() {
-      Ok(p) => self.get_place(p).into(),
+      Ok(p) => {
+        let (p, cl) = self.get_place(p);
+        (p.into(), cl::Operand::Place(cl))
+      }
       Err(c) => match self.get_const(c).1 {
-        ConstRef::Value(val) => val.into(),
-        ConstRef::Ptr(addr) => AMode::const_(addr).into()
+        ConstRef::Value(val) => (val.into(), cl::Operand::Const(cl::Const::Value)),
+        ConstRef::Ptr(addr) => (AMode::const_(addr).into(), cl::Operand::Const(cl::Const::Ptr)),
       }
     }
   }
 
-  fn get_operand_reg(&mut self, o: &Operand, sz: Size) -> VReg {
-    self.get_operand(o).into_reg(&mut self.code, sz)
+  fn get_operand_reg(&mut self, o: &Operand, sz: Size) -> (VReg, cl::OperandReg) {
+    let (o, cl) = self.get_operand(o);
+    let (reg, cl2) = o.into_reg(&mut self.code, sz);
+    (reg, (cl, cl2))
   }
 
-  fn get_operand_rm(&mut self, o: &Operand, sz: Size) -> RegMem {
-    self.get_operand(o).into_rm(&mut self.code, sz)
+  fn get_operand_rm(&mut self, o: &Operand, sz: Size) -> (RegMem, cl::OperandRM) {
+    let (o, cl) = self.get_operand(o);
+    let (rm, cl2) = o.into_rm(&mut self.code, sz);
+    (rm, (cl, cl2))
   }
 
-  fn get_operand_32(&mut self, o: &Operand) -> RegMemImm {
-    self.get_operand(o).into_rmi_32(&mut self.code)
+  fn get_operand_32(&mut self, o: &Operand) -> (RegMemImm, cl::Operand32) {
+    let (o, cl) = self.get_operand(o);
+    let (rmi, cl2) = o.into_rmi_32(&mut self.code);
+    (rmi, (cl, cl2))
   }
 
   fn build_shift_or_zero(&mut self,
     sz: Size, dst: RegMem, kind: ShiftKind, o1: &Operand, o2: &Operand
-  ) {
+  ) -> cl::Shift {
     let bits = sz.bits().expect("unbounded");
-    let src1 = self.get_operand_reg(o1, sz);
-    let temp = match self.get_operand(o2) {
-      RegMemImm::Imm(n) => {
-        if n >= bits.into() { self.code.emit_copy(sz, dst, 0_u64); return }
+    let (src1, cl1) = self.get_operand_reg(o1, sz);
+    match self.get_operand(o2) {
+      (RegMemImm::Imm(n), _) => {
+        if n >= bits.into() {
+          let _ = self.code.emit_copy(sz, dst, 0_u64);
+          return cl::Shift::Zero(cl1)
+        }
         #[allow(clippy::cast_possible_truncation)]
-        self.code.emit_shift(sz, kind, src1, Ok(n as u8))
+        let temp = self.code.emit_shift(sz, kind, src1, Ok(n as u8));
+        cl::Shift::Imm(cl1, self.code.emit_copy(sz, dst, temp))
       }
-      src2 => {
-        let src2 = src2.into_reg(&mut self.code, sz);
+      (src2, cl2) => {
+        let (src2, cl3) = src2.into_reg(&mut self.code, sz);
         let temp = self.code.emit_shift(sz, kind, src1, Err(src2));
         let zero = self.code.emit_imm(sz, 0_u32);
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, CC::NB, src1, u32::from(bits));
-        cond.select(sz, zero, temp)
+        let temp = cond.select(sz, zero, temp);
+        cl::Shift::Var(cl1, (cl2, cl3), self.code.emit_copy(sz, dst, temp))
       }
-    };
-    self.code.emit_copy(sz, dst, temp);
+    }
   }
 
-  fn build_binop(&mut self, sz: Size, dst: RegMem, op: VBinop, o1: &Operand, o2: &Operand) {
+  fn build_binop(&mut self,
+    sz: Size, dst: RegMem, op: VBinop, o1: &Operand, o2: &Operand
+  ) -> cl::RValue {
     assert_ne!(sz, Size::Inf);
-    let src1 = self.get_operand_reg(o1, sz);
-    let src2 = self.get_operand_32(o2);
+    let (src1, cl1) = self.get_operand_reg(o1, sz);
+    let (src2, cl2) = self.get_operand_32(o2);
     let temp = self.code.emit_binop(sz, op, src1, src2);
-    self.code.emit_copy(sz, dst, temp);
+    let cl3 = self.code.emit_copy(sz, dst, temp);
+    cl::RValue::Binop(cl1, cl2, cl3)
 }
 
-  fn build_cmp(&mut self, sz: Size, dst: RegMem, cc: CC, o1: &Operand, o2: &Operand) {
+  fn build_cmp(&mut self, sz: Size, dst: RegMem, cc: CC, o1: &Operand, o2: &Operand) -> cl::RValue {
     assert_ne!(sz, Size::Inf);
-    let src1 = self.get_operand_reg(o1, sz);
-    let src2 = self.get_operand_32(o2);
+    let (src1, cl1) = self.get_operand_reg(o1, sz);
+    let (src2, cl2) = self.get_operand_32(o2);
     let temp = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2).into_reg();
-    self.code.emit_copy(Size::S8, dst, temp);
+    let cl3 = self.code.emit_copy(Size::S8, dst, temp);
+    cl::RValue::Cmp(cl1, cl2, cl3)
   }
 
-  fn build_as(&mut self, dst: RegMem, from: IntTy, to: IntTy, o: &Operand) {
+  fn build_as(&mut self, dst: RegMem, from: IntTy, to: IntTy, o: &Operand
+  ) -> (cl::OperandRM, cl::As) {
     let sz = from.size().min(to.size()); assert_ne!(sz, Size::Inf);
-    let src = self.get_operand(o).into_rm(&mut self.code, sz);
-    match ExtMode::new(sz, to.size()) {
-      None => self.code.emit_copy(sz, dst, src),
+    let (src, cl1) = self.get_operand_rm(o, sz);
+    (cl1, match ExtMode::new(sz, to.size()) {
+      None => cl::As::Truncate(self.code.emit_copy(sz, dst, src)),
       Some(ext_mode) => {
         let temp = self.code.fresh_vreg();
         self.code.emit(match to.signed() {
           true => Inst::MovsxRmR { ext_mode, dst: temp, src },
           false => Inst::MovzxRmR { ext_mode, dst: temp, src },
         });
-        self.code.emit_copy(to.size(), dst, temp);
+        cl::As::Extend(self.code.emit_copy(to.size(), dst, temp))
       }
-    }
+    })
   }
 
-  fn build_memcpy(&mut self, _tysize: u64, sz: Size, dst: RegMem, src: AMode) {
+  fn build_memcpy(&mut self, _tysize: u64, sz: Size, dst: RegMem, src: AMode) -> cl::Copy {
     if sz == Size::Inf {
       unimplemented!("large copy");
     } else {
-      self.code.emit_copy(sz, dst, src);
+      self.code.emit_copy(sz, dst, src)
     }
   }
 
-  fn build_move(&mut self, _tysize: u64, sz: Size, dst: RegMem, o: &Operand) {
+  fn build_move(&mut self, _tysize: u64, sz: Size, dst: RegMem, o: &Operand) -> cl::Move {
     if sz == Size::Inf {
       unimplemented!("large copy");
     } else {
-      let src = self.get_operand(o);
-      self.code.emit_copy(sz, dst, src);
+      let (src, cl1) = self.get_operand(o);
+      cl::Move::Small(cl1, self.code.emit_copy(sz, dst, src))
     }
   }
 
-  fn build_rvalue(&mut self, ty: &TyKind, tysize: u64, sz: Size, dst: RegMem, rv: &RValue) {
+  fn build_rvalue(&mut self,
+    ty: &TyKind, tysize: u64, sz: Size, dst: RegMem, rv: &RValue
+  ) -> cl::RValue {
     match rv {
-      RValue::Use(o) => self.build_move(tysize, sz, dst, o),
+      RValue::Use(o) => cl::RValue::Use(self.build_move(tysize, sz, dst, o)),
       RValue::Unop(Unop::Not, o) => {
         assert_ne!(sz, Size::Inf);
-        let src = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz);
         let temp = self.code.emit_binop(sz, VBinop::Xor, src, 1);
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Unop(Unop::Neg(_), o) => {
         assert_ne!(sz, Size::Inf);
-        let src = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz);
         let temp = self.code.emit_unop(sz, VUnop::Neg, src);
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Unop(Unop::BitNot(_), o) => {
         assert_ne!(sz, Size::Inf);
-        let src = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz);
         let temp = self.code.emit_unop(sz, VUnop::Not, src);
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
-      &RValue::Unop(Unop::As(from, to), ref o) => self.build_as(dst, from, to, o),
+      &RValue::Unop(Unop::As(from, to), ref o) => {
+        let (cl1, cl2) = self.build_as(dst, from, to, o);
+        cl::RValue::As(cl1, cl2)
+      }
       RValue::Binop(Binop::Add(ity), o1, o2) =>
         self.build_binop(ity.size(), dst, VBinop::Add, o1, o2),
       RValue::Binop(Binop::Mul(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let src1 = self.get_operand_reg(o1, sz);
-        let src2 = self.get_operand_rm(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz);
+        let (src2, cl2) = self.get_operand_rm(o2, sz);
         let temp = self.code.emit_mul(sz, src1, src2).0;
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Mul(cl1, cl2, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Binop(Binop::Sub(ity), o1, o2) =>
         self.build_binop(ity.size(), dst, VBinop::Sub, o1, o2),
       RValue::Binop(Binop::Max(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let src1 = self.get_operand_reg(o1, sz);
-        let src2 = self.get_operand_reg(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz);
+        let (src2, cl2) = self.get_operand_reg(o2, sz);
         let cc = if ity.signed() { CC::LE } else { CC::BE };
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2);
         let temp = cond.select(sz, src2, src1);
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Max(cl1, cl2, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Binop(Binop::Min(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let src1 = self.get_operand_reg(o1, sz);
-        let src2 = self.get_operand_reg(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz);
+        let (src2, cl2) = self.get_operand_reg(o2, sz);
         let cc = if ity.signed() { CC::LE } else { CC::BE };
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2);
         let temp = cond.select(sz, src1, src2);
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Min(cl1, cl2, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Binop(Binop::And, o1, o2) =>
         self.build_binop(Size::S8, dst, VBinop::And, o1, o2),
@@ -469,10 +506,10 @@ impl<'a> LowerCtx<'a> {
       RValue::Binop(Binop::BitXor(ity), o1, o2) =>
         self.build_binop(ity.size(), dst, VBinop::Xor, o1, o2),
       RValue::Binop(Binop::Shl(_), o1, o2) =>
-        self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2),
+        cl::RValue::Shift(self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2)),
       RValue::Binop(Binop::Shr(ity), o1, o2) => {
         let kind = if ity.signed() { ShiftKind::ShrA } else { ShiftKind::ShrL };
-        self.build_shift_or_zero(sz, dst, kind, o1, o2)
+        cl::RValue::Shift(self.build_shift_or_zero(sz, dst, kind, o1, o2))
       }
       RValue::Binop(Binop::Lt(ity), o1, o2) =>
         self.build_cmp(ity.size(), dst, if ity.signed() { CC::L } else { CC::B }, o1, o2),
@@ -492,7 +529,8 @@ impl<'a> LowerCtx<'a> {
       RValue::Pun(..) => unreachable!("handled in build()"),
       RValue::Cast(_, o, tyin) =>
         if let (Some(from), Some(to)) = (tyin.as_int_ty(), ty.as_int_ty()) {
-          self.build_as(dst, from, to, o);
+          let (cl1, cl2) = self.build_as(dst, from, to, o);
+          cl::RValue::Cast(cl1, cl2)
         } else {
           unimplemented!("casting between non-integral types: {:?} -> {:?}", tyin, ty)
         },
@@ -502,27 +540,36 @@ impl<'a> LowerCtx<'a> {
         let mut rm = dst;
         let mut last_off = 0;
         for (arg, o) in args.iter().zip(&**os) {
-          if arg.attr.contains(ArgAttr::GHOST) { continue }
-          let sz = arg.ty.sizeof(self.names)
-            .expect("struct element size not known at compile time");
-          if sz != 0 {
-            if last_off != 0 {
-              match &mut rm {
-                RegMem::Reg(_) => panic!("register should be address-taken"),
-                RegMem::Mem(a) => *a = &*a + u32::try_from(last_off).expect("overflow")
+          let elem = if arg.attr.contains(ArgAttr::GHOST) {
+            cl::Elem::Ghost
+          } else {
+            let sz = arg.ty.sizeof(self.names)
+              .expect("struct element size not known at compile time");
+            if sz == 0 {
+              cl::Elem::Ghost
+            } else {
+              if last_off != 0 {
+                match &mut rm {
+                  RegMem::Reg(_) => panic!("register should be address-taken"),
+                  RegMem::Mem(a) => *a = &*a + u32::try_from(last_off).expect("overflow")
+                }
               }
+              last_off = sz;
+              cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), rm, o))
             }
-            last_off = sz;
-            self.build_move(sz, Size::from_u64(sz), rm, o);
-          }
+          };
+          self.code.trace.lists.push(elem);
         }
+        cl::RValue::List(os.len().try_into().expect("overflow"))
       }
       RValue::Array(os) => if let [ref o] = **os {
-        self.build_move(tysize, sz, dst, o)
+        cl::RValue::Array1(self.build_move(tysize, sz, dst, o))
       } else {
         let ty = if let TyKind::Array(ty, _) = ty { ty } else { unreachable!() };
         let sz64 = ty.sizeof(self.names).expect("impossible");
-        if sz64 != 0 {
+        if sz64 == 0 {
+          cl::RValue::Ghost
+        } else {
           let sz32 = u32::try_from(sz64).expect("overflow");
           let sz = Size::from_u64(sz64);
           let mut a = match dst {
@@ -530,20 +577,23 @@ impl<'a> LowerCtx<'a> {
             RegMem::Mem(a) => a
           };
           for o in &**os {
-            self.build_move(sz64, sz, RegMem::Mem(a), o);
+            let elem = cl::Elem::Move(self.build_move(sz64, sz, RegMem::Mem(a), o));
             a = &a + sz32;
+            self.code.trace.lists.push(elem);
           }
+          cl::RValue::Array(os.len().try_into().expect("overflow"))
         }
       }
       RValue::Ghost(_) |
       RValue::Mm0(..) |
-      RValue::Typeof(_) => {}
+      RValue::Typeof(_) => cl::RValue::Ghost,
       RValue::Borrow(p) => {
-        let temp = match self.get_place(p) {
+        let (rm, cl1) = self.get_place(p);
+        let temp = match rm {
           RegMem::Reg(_) => panic!("register should be address-taken"),
           RegMem::Mem(a) => self.code.emit_lea(Size::S64, a),
         };
-        self.code.emit_copy(sz, dst, temp);
+        cl::RValue::Borrow(cl1, self.code.emit_copy(sz, dst, temp))
       }
     }
   }
@@ -553,24 +603,29 @@ impl<'a> LowerCtx<'a> {
     block_args: &ChunkVec<BlockId, VReg>,
     tgt: BlockId,
     args: &[(VarId, bool, Operand)]
-  ) {
+  ) -> cl::Terminator {
     let params = &block_args[tgt];
     let mut params_it = params.iter().peekable();
     for &(v, r, ref o) in args {
-      if !r { continue }
-      let a = self.allocs.get(v);
-      assert_ne!(a, AllocId::ZERO);
-      let (&(dst, sz), size) = self.get_alloc(a);
-      self.build_move(size, sz, dst, o);
-      if let RegMem::Reg(v) = dst {
-        if params_it.peek() == Some(&&v) { params_it.next(); }
-      }
+      let cl = if r {
+        let a = self.allocs.get(v);
+        assert_ne!(a, AllocId::ZERO);
+        let (&(dst, sz), size) = self.get_alloc(a);
+        if let RegMem::Reg(v) = dst {
+          if params_it.peek() == Some(&&v) { params_it.next(); }
+        }
+        cl::Elem::Move(self.build_move(size, sz, dst, o))
+      } else {
+        cl::Elem::Ghost
+      };
+      self.code.trace.lists.push(cl);
     }
     assert!(params_it.peek().is_none());
     self.unpatched.push((vbl, self.code.emit(Inst::JmpKnown {
       dst: VBlockId(tgt.0),
       params: params.iter().map(|&v| ROperand::reg_use(v.0)).collect()
-    })))
+    })));
+    cl::Terminator::Jump(args.len().try_into().expect("overflow"))
   }
 
   fn build_ret(&mut self, args: &[(VarId, bool, Operand)]) {
@@ -580,29 +635,31 @@ impl<'a> LowerCtx<'a> {
     let mut params = vec![];
     for (&(_, r, ref o), ret) in args.iter().zip(&*self.abi_rets.clone()) {
       assert!(r || matches!(ret, VRetAbi::Ghost));
-      match *ret {
-        VRetAbi::Ghost => {}
+      let cl = match *ret {
+        VRetAbi::Ghost => cl::Elem::Ghost,
         VRetAbi::Reg(reg, sz) => {
           let dst = self.code.fresh_vreg();
-          let src = self.get_operand(o);
-          self.code.emit_copy(sz, dst.into(), src);
+          let (src, cl1) = self.get_operand(o);
+          let _ = self.code.emit_copy(sz, dst.into(), src);
           params.push(ROperand::reg_fixed_use(dst.0, reg.0));
+          cl::Elem::Operand(cl1)
         }
         VRetAbi::Mem { off, sz } => {
           let sz = sz.into();
-          self.build_move(sz, Size::from_u64(sz), (&incoming + off).into(), o)
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), (&incoming + off).into(), o))
         }
         VRetAbi::Boxed { reg: (dst, _), sz } => {
           let sz = sz.into();
-          self.build_move(sz, Size::from_u64(sz), AMode::reg(dst).into(), o)
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(dst).into(), o))
         }
         VRetAbi::BoxedMem { off, sz } => {
           let ptr = self.code.fresh_vreg();
           self.code.emit(Inst::load_mem(Size::S64, ptr, &incoming + off));
           let sz = sz.into();
-          self.build_move(sz, Size::from_u64(sz), AMode::reg(ptr).into(), o)
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(ptr).into(), o))
         }
-      }
+      };
+      self.code.trace.lists.push(cl);
     }
     self.code.emit(Inst::Epilogue { params: params.into() });
   }
@@ -614,42 +671,53 @@ impl<'a> LowerCtx<'a> {
     reach: bool,
     tgt: BlockId,
     rets: &[(bool, VarId)],
-  ) {
+  ) -> cl::Terminator {
     let fabi = &self.funcs[f];
+    assert!(fabi.args.len() == args.len());
     let outgoing = AMode::spill(SpillId::OUTGOING);
     let mut operands = vec![];
     for (arg, &(r, ref o)) in fabi.args.iter().zip(args) {
-      if !r { continue }
-      match *arg {
-        ArgAbi::Ghost => {}
-        ArgAbi::Reg(reg, sz) => {
-          let src = self.get_operand(o);
-          let temp = self.code.fresh_vreg();
-          self.code.emit_copy(sz, temp.into(), src);
-          operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
+      let cl = if r {
+        match *arg {
+          ArgAbi::Ghost => cl::Elem::Ghost,
+          ArgAbi::Reg(reg, sz) => {
+            let (src, cl1) = self.get_operand(o);
+            let temp = self.code.fresh_vreg();
+            let _ = self.code.emit_copy(sz, temp.into(), src);
+            operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
+            cl::Elem::Operand(cl1)
+          }
+          ArgAbi::Mem { off, sz } => {
+            let sz64 = sz.into();
+            cl::Elem::Move(self.build_move(sz64, Size::from_u64(sz64), (&outgoing + off).into(), o))
+          }
+          ArgAbi::Boxed { reg, sz } => {
+            let sz64 = sz.into();
+            let sz = Size::from_u64(sz64);
+            let (o, cl1) = self.get_operand(o);
+            let (src, cl2) = o.into_mem(&mut self.code, sz);
+            let temp = self.code.emit_lea(Size::S64, src);
+            operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
+            cl::Elem::Boxed(cl1, cl2)
+          }
+          ArgAbi::BoxedMem { off, sz } => {
+            let sz64 = sz.into();
+            let sz = Size::from_u64(sz64);
+            let (o, cl1) = self.get_operand(o);
+            let (src, cl2) = o.into_mem(&mut self.code, sz);
+            let temp = self.code.emit_lea(Size::S64, src);
+            let _ = self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp);
+            cl::Elem::BoxedMem(cl1, cl2)
+          }
         }
-        ArgAbi::Mem { off, sz } => {
-          let sz64 = sz.into();
-          self.build_move(sz64, Size::from_u64(sz64), (&outgoing + off).into(), o);
-        }
-        ArgAbi::Boxed { reg, sz } => {
-          let sz64 = sz.into();
-          let sz = Size::from_u64(sz64);
-          let src = self.get_operand(o).into_mem(&mut self.code, sz);
-          let temp = self.code.emit_lea(Size::S64, src);
-          operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
-        }
-        ArgAbi::BoxedMem { off, sz } => {
-          let sz64 = sz.into();
-          let sz = Size::from_u64(sz64);
-          let src = self.get_operand(o).into_mem(&mut self.code, sz);
-          let temp = self.code.emit_lea(Size::S64, src);
-          self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp);
-        }
-      }
+      } else {
+        cl::Elem::Ghost
+      };
+      self.code.trace.lists.push(cl)
     }
     if let Some(ref retabi) = fabi.rets {
       assert!(reach);
+      assert!(retabi.len() == rets.len());
       let mut boxes = vec![];
       let mut ret_regs = vec![];
       for (arg, &(vr, v)) in retabi.iter().zip(rets) {
@@ -676,8 +744,9 @@ impl<'a> LowerCtx<'a> {
           match *arg {
             ArgAbi::Boxed { reg, .. } =>
               operands.push(ROperand::reg_fixed_use(temp.0, reg.0)),
-            ArgAbi::BoxedMem { off, .. } =>
-              self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp),
+            ArgAbi::BoxedMem { off, .. } => {
+              let _ = self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp);
+            }
             _ => unreachable!()
           }
         }
@@ -689,26 +758,34 @@ impl<'a> LowerCtx<'a> {
       });
       let mut ret_regs = ret_regs.into_iter();
       for (arg, &(vr, v)) in retabi.iter().zip(rets) {
-        if !vr { continue }
-        let a = self.allocs.get(v);
-        assert_ne!(a, AllocId::ZERO);
-        let dst = self.get_alloc(a).0 .0;
-        match *arg {
-          ArgAbi::Reg(_, sz) =>
-            self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed")),
-          ArgAbi::Mem { off, sz } => {
-            let sz64 = sz.into();
-            self.build_memcpy(sz64, Size::from_u64(sz64), dst, &outgoing + off);
+        let cl = if vr {
+          let a = self.allocs.get(v);
+          assert_ne!(a, AllocId::ZERO);
+          let dst = self.get_alloc(a).0 .0;
+          match *arg {
+            ArgAbi::Reg(_, sz) => {
+              let _ = self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed"));
+              cl::Elem::RetReg
+            }
+            ArgAbi::Mem { off, sz } => {
+              let sz64 = sz.into();
+              cl::Elem::RetMem(self.build_memcpy(sz64, Size::from_u64(sz64), dst, &outgoing + off))
+            }
+            _ => cl::Elem::Ghost
           }
-          _ => {}
-        }
+        } else {
+          cl::Elem::Ghost
+        };
+        self.code.trace.lists.push(cl)
       }
-      for (sz, dst, a) in boxes { self.code.emit_copy(sz, dst.into(), a); }
+      for (sz, dst, a) in boxes { let _ = self.code.emit_copy(sz, dst.into(), a); }
       self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
         dst: VBlockId(tgt.0),
       })));
+      cl::Terminator::Call(true)
     } else {
       self.emit(Inst::CallKnown { f, operands: operands.into(), clobbers: None });
+      cl::Terminator::Call(false)
     }
   }
 
@@ -718,15 +795,16 @@ impl<'a> LowerCtx<'a> {
     args: &[(bool, Operand)],
     tgt: BlockId,
     rets: &[(bool, VarId)],
-  ) {
-    let mut rmis = ArrayVec::<RegMemImm<u64>, 6>::new();
+  ) -> cl::Terminator {
+    let mut rmis = ArrayVec::<(RegMemImm<u64>, cl::Operand), 6>::new();
+    const CV: cl::Operand = cl::Operand::Const(cl::Const::Value);
     let (f, (ret_used, ret)) = match (f, rets, args) {
       (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
-        rmis.extend([self.get_operand(fname), 0.into(), 0.into()]);
+        rmis.extend([self.get_operand(fname), (0.into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
       }
       (IntrinsicProc::Create, &[ret], [(true, fname)]) => {
-        rmis.extend([self.get_operand(fname), (1 + (1<<6) + (1<<9)).into(), 0.into()]);
+        rmis.extend([self.get_operand(fname), ((1 + (1<<6) + (1<<9)).into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
       }
       (IntrinsicProc::Read, &[ret], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
@@ -743,23 +821,23 @@ impl<'a> LowerCtx<'a> {
       }
       (IntrinsicProc::MMap, &[ret], [(true, len), (true, prot), (true, fd)]) => {
         rmis.extend([
-          0.into(),
+          (0.into(), CV),
           self.get_operand(len),
           self.get_operand(prot),
-          2.into(),
+          (2.into(), CV),
           self.get_operand(fd),
-          0.into()
+          (0.into(), CV),
         ]);
         (SysCall::MMap, ret)
       }
       (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
           rmis.extend([
-            0.into(),
+            (0.into(), CV),
             self.get_operand(len),
             self.get_operand(prot),
-            (2+32).into(),
-            u64::from(u32::MAX).into(),
-            0.into()
+            ((2+32).into(), CV),
+            (u64::from(u32::MAX).into(), CV),
+            (0.into(), CV),
           ]);
           (SysCall::MMap, ret)
       }
@@ -767,25 +845,29 @@ impl<'a> LowerCtx<'a> {
     };
     let vreg = self.code.fresh_vreg();
     self.build_syscall(f, &rmis, vreg);
-    if ret_used {
+    let cl2 = if ret_used {
       let a = self.allocs.get(ret);
       assert_ne!(a, AllocId::ZERO);
       let (dst, sz) = *self.get_alloc(a).0;
-      self.code.emit_copy(sz, dst, vreg);
-    }
+      Some(self.code.emit_copy(sz, dst, vreg))
+    } else {
+      None
+    };
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
+    cl::Terminator::SysCall(rmis.len().try_into().expect("overflow"), cl2)
   }
 
-  fn build_syscall(&mut self, f: SysCall, args: &[RegMemImm<u64>], dst: VReg) {
+  fn build_syscall(&mut self, f: SysCall, args: &[(RegMemImm<u64>, cl::Operand)], dst: VReg) {
     let (rax, ref argregs) = SYSCALL_ARG_REGS;
     debug_assert!(args.len() <= argregs.len());
     let fname = self.code.fresh_vreg();
-    self.code.emit_copy(Size::S32, fname.into(), u64::from(f as u8));
+    let _ = self.code.emit_copy(Size::S32, fname.into(), u64::from(f as u8));
     let mut params = vec![ROperand::reg_fixed_use(fname.0, rax.0)];
-    for (arg, &reg) in args.iter().zip(argregs) {
+    for ((arg, cl), &reg) in args.iter().zip(argregs) {
       let dst = self.code.fresh_vreg();
-      self.code.emit_copy(Size::S64, dst.into(), *arg);
+      let _ = self.code.emit_copy(Size::S64, dst.into(), *arg);
       params.push(ROperand::reg_fixed_use(dst.0, reg.0));
+      self.code.trace.lists.push(cl::Elem::Operand(*cl))
     }
     if f.returns() { params.push(ROperand::reg_fixed_def(dst.0, rax.0)) }
     self.code.emit(Inst::SysCall { f, operands: params.into() });
@@ -793,29 +875,40 @@ impl<'a> LowerCtx<'a> {
 
   fn build_terminator(&mut self,
     block_args: &ChunkVec<BlockId, VReg>, vbl: VBlockId, term: &Terminator
-  ) {
+  ) -> cl::Terminator {
     match *term {
       Terminator::Jump(tgt, ref args, _) => self.build_jump(vbl, block_args, tgt, args),
-      Terminator::Jump1(tgt) =>
+      Terminator::Jump1(tgt) => {
         self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
-        }))),
-      Terminator::Return(_, ref args) => self.build_ret(args),
+        })));
+        cl::Terminator::Jump1
+      }
+      Terminator::Return(_, ref args) => {
+        self.build_ret(args);
+        cl::Terminator::Return
+      }
       Terminator::Exit(_) => {
         let dst = self.code.fresh_vreg();
-        self.build_syscall(SysCall::Exit, &[0.into()], dst);
+        self.build_syscall(SysCall::Exit, &[(0.into(), cl::Operand::Const(cl::Const::Value))], dst);
+        cl::Terminator::Exit
       }
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
-        let src = self.get_operand_reg(o, Size::S8);
+        let (src, cl1) = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));
+        cl::Terminator::If(cl1)
       }
       Terminator::Assert(ref o, _, true, bl) => {
-        let src = self.get_operand_reg(o, Size::S8);
+        let (src, cl1) = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.assert(VBlockId(bl.0))));
+        cl::Terminator::Assert(cl1)
       }
-      Terminator::Assert(_, _, false, _) => { self.code.emit(Inst::Ud2); }
+      Terminator::Assert(_, _, false, _) => {
+        self.code.emit(Inst::Ud2);
+        cl::Terminator::Fail
+      }
       Terminator::Call { f, ref tys, ref args, reach, tgt, ref rets, .. } => {
         if !tys.is_empty() { unimplemented!("monomorphization") }
         if let Some(&f) = self.func_mono.get(&f) {
@@ -924,7 +1017,7 @@ impl<'a> LowerCtx<'a> {
         (_, None) => {
           let off = alloc(8);
           let ptr = self.code.fresh_vreg();
-          self.code.emit_copy(Size::S64, ptr.into(), &incoming + off);
+          let _ = self.code.emit_copy(Size::S64, ptr.into(), &incoming + off);
           self.build_memcpy(size, sz, dst, AMode::reg(ptr));
           ArgAbi::BoxedMem { off, sz: size.try_into().expect("overflow") }
         },
@@ -946,40 +1039,46 @@ impl<'a> LowerCtx<'a> {
         let a = self.allocs.get(v);
         assert_ne!(a, AllocId::ZERO);
         let val = self.get_alloc(a).0 .0;
-        self.code.emit(Inst::BlockParam {var: v, val});
+        self.code.emit(Inst::BlockParam { var: v, val });
       }
-      for (inst, stmt) in bl.stmts.iter().enumerate() {
-        if stmt.relevant() {
+      self.code.trace.stmts.push_new();
+      for stmt in &bl.stmts {
+        let cl = if stmt.relevant() {
           match stmt {
-            &Statement::Let(ref lk, r, ref ty, ref rv) => {
+            Statement::Let(lk, _, ty, rv) => {
               let ((&LetKind::Let(v, _), &ref ty) |
                 (&LetKind::Own([_, (v, ref ty)]), _)) = (lk, ty);
-              if r {
-                let a = self.allocs.get(v);
-                assert_ne!(a, AllocId::ZERO);
-                if let RValue::Pun(_, p) = rv {
-                  let rm = self.get_place(p);
-                  self.var_map.entry(a).or_insert_with(||
-                    (rm, Size::from_u64(self.allocs[a].m.size)));
-                } else {
-                  let (&(dst, sz), size) = self.get_alloc(a);
-                  self.build_rvalue(ty, size, sz, dst, rv);
-                  self.code.emit(Inst::SyncLet { inst, dst });
-                }
+              let a = self.allocs.get(v);
+              assert_ne!(a, AllocId::ZERO);
+              if let RValue::Pun(_, p) = rv {
+                let (rm, cl) = self.get_place(p);
+                self.var_map.entry(a).or_insert_with(||
+                  (rm, Size::from_u64(self.allocs[a].m.size)));
+                cl::Statement::Let(cl::RValue::Pun(cl))
+              } else {
+                let (&(dst, sz), size) = self.get_alloc(a);
+                // self.code.emit(Inst::LetStart { size: size.try_into().expect("too large") });
+                let cl = self.build_rvalue(ty, size, sz, dst, rv);
+                // self.code.emit(Inst::LetEnd { dst });
+                cl::Statement::Let(cl)
               }
             }
             Statement::Assign(p, ty, o, _) => {
               let size = ty.sizeof(self.names).expect("size of type not a compile time constant");
-              let dst = self.get_place(p);
-              self.build_move(size, Size::from_u64(size), dst, o);
+              let (dst, cl) = self.get_place(p);
+              cl::Statement::Assign(cl, self.build_move(size, Size::from_u64(size), dst, o))
             }
             Statement::LabelGroup(..) | Statement::PopLabelGroup |
-            Statement::DominatedBlock(..) => {}
+            Statement::DominatedBlock(..) => cl::Statement::Ghost
           }
-        }
+        } else {
+          cl::Statement::Ghost
+        };
+        self.code.trace.stmts.extend_last(cl);
         stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))
       }
-      self.build_terminator(block_args, vbl, bl.terminator());
+      let cl = self.build_terminator(block_args, vbl, bl.terminator());
+      self.code.trace.terms.push(cl);
       self.code.finish_block();
     });
   }

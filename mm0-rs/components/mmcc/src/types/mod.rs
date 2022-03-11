@@ -8,6 +8,7 @@ pub mod global;
 pub mod hir;
 pub mod mir;
 pub mod vcode;
+pub mod classify;
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -36,12 +37,15 @@ impl Idx for usize {
 }
 
 /// A vector indexed by a custom indexing type `I`, usually a newtyped integer.
-#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct IdxVec<I, T>(pub Vec<T>, PhantomData<I>);
 
 impl<I, T: std::fmt::Debug> std::fmt::Debug for IdxVec<I, T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.0.fmt(f) }
+}
+
+impl<I, T: Clone> Clone for IdxVec<I, T> {
+  fn clone(&self) -> Self { Self(self.0.clone(), PhantomData) }
 }
 
 impl<I, T> IdxVec<I, T> {

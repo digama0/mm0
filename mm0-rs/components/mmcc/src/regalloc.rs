@@ -148,17 +148,19 @@ impl std::ops::DerefMut for PCodeBuilder {
 }
 
 impl PCodeBuilder {
-  fn push(&mut self, mut inst: PInst) {
+  fn push(&mut self, mut inst: PInst) -> PInstId {
     self.len += u32::from(inst.len());
     if let Some(dst) = inst.is_jump() {
       if let Some(&ub) = self.block_addr.get(dst) {
         if i8::try_from(self.len - ub).is_ok() { inst.shorten() }
-        self.insts.push(inst);
+        self.insts.push(inst)
       } else {
-        self.fwd_jumps.push((self.len, self.code.insts.push(inst)));
+        let id = self.code.insts.push(inst);
+        self.fwd_jumps.push((self.len, id));
+        id
       }
     } else {
-      self.insts.push(inst);
+      self.insts.push(inst)
     }
   }
 
@@ -188,7 +190,7 @@ impl PCodeBuilder {
     for dst in saved_regs.rev() {
       self.push(PInst::Pop64 { dst });
     }
-    self.push(PInst::Ret)
+    self.push(PInst::Ret);
   }
 
   fn apply_edits(&mut self,
@@ -199,7 +201,7 @@ impl PCodeBuilder {
     while edits.peek().map_or(false, |p| p.0 == pt) {
       if let Some((_, Edit::Move { from, to, .. })) = edits.next() {
         match (from.as_reg().map(PReg), to.as_reg().map(PReg)) {
-          (Some(src), Some(dst)) => self.push(PInst::MovRR { sz: Size::S64, dst, src }),
+          (Some(src), Some(dst)) => { self.push(PInst::MovRR { sz: Size::S64, dst, src }); }
           (Some(src), _) => {
             let dst = ar.spill(to.as_stack().expect("bad regalloc"));
             self.push(PInst::Store { spill: true, sz: Size::S64, dst, src });
@@ -280,6 +282,11 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
       }
     }
   }
+  for abi in &*vcode.abi.args {
+    if let vcode::ArgAbi::Reg(reg, _) | vcode::ArgAbi::Boxed {reg, ..} = *abi {
+      result.remove(reg)
+    }
+  }
   if let Some(rets) = &vcode.abi.rets {
     for abi in &**rets {
       if let vcode::ArgAbi::Reg(r, _) = *abi { result.remove(r) }
@@ -335,6 +342,7 @@ pub(crate) fn regalloc_vcode(
   };
   let mut bb = BlockBuilder::new(&vcode.blocks.0);
   code.push_prologue(stack_size_no_ret, saved_regs.iter().copied());
+  // let mut last_let_start = Default::default();
   for (i, inst) in vcode.insts.enum_iter() {
     ar.next_inst();
     if bb.next == i {
@@ -346,10 +354,15 @@ pub(crate) fn regalloc_vcode(
     match *inst {
       Inst::Fallthrough { dst } => {
         assert!(vcode.blocks[dst].0 == i.next());
-        code.push(PInst::Fallthrough { dst })
+        code.push(PInst::Fallthrough { dst });
       }
-      Inst::SyncLet { inst, ref dst } =>
-        code.push(PInst::SyncLet { inst, dst: ar.rm(dst) }),
+      // Inst::LetStart { size } =>
+      //   last_let_start = code.push(PInst::LetStart { size, dst: Default::default() }),
+      // Inst::LetEnd { dst: ref vdst } => {
+      //   if let PInst::LetStart { dst, .. } = &mut code.insts[last_let_start] {
+      //     *dst = ar.rm(vdst)
+      //   } else { unreachable!() }
+      // }
       Inst::BlockParam { var, ref val } => {
         code.block_params.extend_last((var, ar.rm(val)))
       }
@@ -370,43 +383,48 @@ pub(crate) fn regalloc_vcode(
         let (_, src, _, _) = (ar.next(), ar.rm(src2), ar.next(), ar.next());
         code.push(PInst::Mul { sz, src });
       }
-      Inst::Imm { sz, src, .. } => code.push(PInst::Imm { sz, dst: ar.reg(), src }),
-      Inst::MovRR { .. } => {}
+      Inst::Imm { sz, src, .. } => { code.push(PInst::Imm { sz, dst: ar.reg(), src }); }
+      Inst::MovRR { .. } => { code.push(PInst::MovId); }
       // Inst::MovRP { .. } |
-      Inst::MovPR { .. } => { ar.next(); }
-      Inst::MovzxRmR { ext_mode, ref src, .. } =>
-        code.push(PInst::MovzxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
-      Inst::Load64 { ref src, .. } =>
-        code.push(PInst::Load64 { spill: false, src: ar.mem(src), dst: ar.reg() }),
-      Inst::Lea { sz, ref addr, .. } =>
-        code.push(PInst::Lea { sz, addr: ar.mem(addr), dst: ar.reg() }),
-      Inst::MovsxRmR { ext_mode, ref src, .. } =>
-        code.push(PInst::MovsxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() }),
-      Inst::Store { sz, ref dst, .. } =>
-        code.push(PInst::Store { spill: false, sz, src: ar.reg(), dst: ar.mem(dst) }),
+      Inst::MovPR { .. } => { ar.next(); code.push(PInst::MovId); }
+      Inst::MovzxRmR { ext_mode, ref src, .. } => {
+        code.push(PInst::MovzxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() });
+      }
+      Inst::Load64 { ref src, .. } => {
+        code.push(PInst::Load64 { spill: false, src: ar.mem(src), dst: ar.reg() });
+      }
+      Inst::Lea { sz, ref addr, .. } => {
+        code.push(PInst::Lea { sz, addr: ar.mem(addr), dst: ar.reg() });
+      }
+      Inst::MovsxRmR { ext_mode, ref src, .. } => {
+        code.push(PInst::MovsxRmR { ext_mode, src: ar.rm(src), dst: ar.reg() });
+      }
+      Inst::Store { sz, ref dst, .. } => {
+        code.push(PInst::Store { spill: false, sz, src: ar.reg(), dst: ar.mem(dst) });
+      }
       Inst::ShiftImm { sz, kind, num_bits, .. } => {
         let (_, dst) = (ar.next(), ar.reg());
-        code.push(PInst::Shift { sz, kind, num_bits: Some(num_bits), dst })
+        code.push(PInst::Shift { sz, kind, num_bits: Some(num_bits), dst });
       }
       Inst::ShiftRR { sz, kind, .. } => {
         let (_, _, dst) = (ar.next(), ar.next(), ar.reg());
-        code.push(PInst::Shift { sz, kind, num_bits: None, dst })
+        code.push(PInst::Shift { sz, kind, num_bits: None, dst });
       }
       Inst::Cmp { sz, op, ref src2, .. } => {
-        code.push(PInst::Cmp { sz, op, src1: ar.reg(), src2: ar.rmi(src2) })
+        code.push(PInst::Cmp { sz, op, src1: ar.reg(), src2: ar.rmi(src2) });
       }
-      Inst::SetCC { cc, .. } => code.push(PInst::SetCC { cc, dst: ar.reg() }),
+      Inst::SetCC { cc, .. } => { code.push(PInst::SetCC { cc, dst: ar.reg() }); }
       Inst::CMov { sz, cc, ref src2, .. } => {
         let (_, src, dst) = (ar.reg(), ar.rm(src2), ar.reg());
         code.push(PInst::CMov { sz, cc, dst, src });
       }
       Inst::CallKnown { f, ref operands, .. } => {
         for _ in &**operands { ar.next(); }
-        code.push(PInst::CallKnown { f })
+        code.push(PInst::CallKnown { f });
       }
       Inst::SysCall { ref operands, .. } => {
         for _ in &**operands { ar.next(); }
-        code.push(PInst::SysCall)
+        code.push(PInst::SysCall);
       }
       Inst::Epilogue { ref params } => {
         for _ in &**params { ar.next(); }
@@ -431,9 +449,9 @@ pub(crate) fn regalloc_vcode(
         },
       Inst::Assert { cc, dst } => {
         assert!(vcode.blocks[dst].0 == i.next());
-        code.push(PInst::Assert { cc, dst })
+        code.push(PInst::Assert { cc, dst });
       }
-      Inst::Ud2 => code.push(PInst::Ud2),
+      Inst::Ud2 => { code.push(PInst::Ud2); }
     }
     code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
   }
