@@ -2022,7 +2022,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let this = RefCell::new(&mut *self);
         tys.iter()
           .map(|ty| this.borrow_mut().whnf_sizeof(sp, qvars.clone(), ty))
-          .fold1(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Add, e, e2))
+          .reduce(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Add, e, e2))
           .unwrap_or_else(|| self.common.num(0))
       }
       TyKind::Struct(args) => {
@@ -2039,7 +2039,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
               None
             }
           })
-          .fold1(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Add, e, e2))
+          .reduce(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Add, e, e2))
           .unwrap_or_else(|| self.common.num(0))
       }
       TyKind::All(pat, ty) => {
@@ -2051,7 +2051,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let this = RefCell::new(&mut *self);
         tys.iter()
           .map(|ty| this.borrow_mut().whnf_sizeof(sp, qvars.clone(), ty))
-          .fold1(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Max, e, e2))
+          .reduce(|e, e2| this.borrow_mut().whnf_binop(sp, Binop::Max, e, e2))
           .unwrap_or_else(|| self.common.num(0))
       }
       TyKind::If(_, ty1, ty2) => {

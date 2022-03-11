@@ -97,10 +97,10 @@ pub trait Inst: Sized {
   /// blocks, in order.
   fn is_branch(&self) -> bool;
 
-  /// Returns the operand index at which outgoing blockparam arguments are found.
-  /// Starting at this index, blockparam arguments for each
-  /// successor block's blockparams, in order, must be found.
-  fn branch_blockparam_arg_offset(&self) -> usize;
+  /// Returns the outgoing blockparam arguments for the given successor. The
+  /// number of arguments must match the number incoming blockparams
+  /// for each respective successor block.
+  fn branch_blockparams(&self, succ_idx: usize) -> &[regalloc2::VReg];
 
   /// Determine whether an instruction is a move; if so, return the
   /// Operands for (src, dst).
@@ -361,8 +361,8 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn is_ret(&self, insn: InstId) -> bool { self.insts[insn].is_ret() }
   fn is_branch(&self, insn: InstId) -> bool { self.insts[insn].is_branch() }
 
-  fn branch_blockparam_arg_offset(&self, _: BlockId, insn: InstId) -> usize {
-    self.insts[insn].branch_blockparam_arg_offset()
+  fn branch_blockparams(&self, _: BlockId, insn: InstId, succ_idx: usize) -> &[regalloc2::VReg] {
+    self.insts[insn].branch_blockparams(succ_idx)
   }
 
   fn is_move(&self, insn: InstId) -> Option<(Operand, Operand)> { self.insts[insn].is_move() }

@@ -70,8 +70,8 @@ lsp-types = { version = "0.92", optional = true }
 lsp-server = { version = "0.5", optional = true }
 
 # For "doc" feature
-pulldown-cmark = { version = "0.8", optional = true }
-webbrowser = { version = "0.5", optional = true }
+pulldown-cmark = { version = "0.9", optional = true }
+webbrowser = { version = "0.6", optional = true }
 
 # For "wasm" feature
 console_error_panic_hook = { version = "0.1", optional = true }

@@ -92,7 +92,7 @@ lazy_static! {
       preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
       non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
       scratch_by_class: [SCRATCH.0, PReg::invalid().0],
-      regs: caller_saved().chain(callee_saved()).chain([SCRATCH]).map(|r| r.0).collect(),
+      fixed_stack_slots: vec![],
     }
   };
 }
@@ -1056,7 +1056,7 @@ impl VInst for Inst {
     matches!(self, Inst::JmpCond {..} | Inst::JmpKnown {..})
   }
 
-  fn branch_blockparam_arg_offset(&self) -> usize { 0 }
+  fn branch_blockparams(&self, _: usize) -> &[regalloc2::VReg] { &[] }
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
     if let Inst::MovRR { dst, src } = *self {

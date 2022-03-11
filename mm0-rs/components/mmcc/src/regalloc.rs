@@ -270,9 +270,8 @@ impl<'a> BlockBuilder<'a> {
 fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
   let mut result = PRegSet::default();
   for (_, edit) in &out.edits {
-    if let Edit::Move { to, .. } = *edit {
-      if let Some(r) = to.as_reg() { result.insert(PReg(r)) }
-    }
+    let Edit::Move { to, .. } = *edit;
+    if let Some(r) = to.as_reg() { result.insert(PReg(r)) }
   }
   for (i, _) in vcode.insts.enum_iter() {
     for &r in vcode.inst_clobbers(i) { result.insert(PReg(r)) }
