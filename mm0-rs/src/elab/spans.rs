@@ -128,9 +128,11 @@ impl<T> Spans<T> {
   /// spans are stored according to the enclosing statement, we can quickly search for a
   /// span by getting the [`Spans`] object for a statement and then searching only in that
   /// [`Spans`] rather than looking in other statements' [`Spans`] as well.
-  pub fn insert_if(&mut self, sp: Span, val: impl FnOnce() -> T) {
-    if sp.start >= self.stmt().start {
-      self.insert(sp, val());
+  pub fn insert_if(&mut self, sp: Option<Span>, val: impl FnOnce() -> T) {
+    if let Some(sp) = sp {
+      if sp.start >= self.stmt().start {
+        self.insert(sp, val());
+      }
     }
   }
 

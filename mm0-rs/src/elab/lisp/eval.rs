@@ -383,7 +383,7 @@ impl Elaborator {
       None => LispVal::undef(),
       Some(DeclKey::Term(t)) => {
         if let Some(fsp) = fsp {
-          self.spans.insert_if(fsp.span, || ObjectKind::Term(t, fsp.span));
+          self.spans.insert_if(Some(fsp.span), || ObjectKind::Term(false, t, fsp.span));
         }
         let tdata = &self.env.terms[t];
         let mut bvs = Vec::new();
@@ -413,7 +413,7 @@ impl Elaborator {
       }
       Some(DeclKey::Thm(t)) => {
         if let Some(fsp) = fsp {
-          self.spans.insert_if(fsp.span, || ObjectKind::Thm(t));
+          self.spans.insert_if(Some(fsp.span), || ObjectKind::Thm(true, t));
         }
         let tdata = &self.thms[t];
         let mut bvs = Vec::new();
@@ -1862,7 +1862,7 @@ impl<'a> Evaluator<'a> {
     let span = try_get_span(fsp, &x);
     self.elab.lc.add_proof(a, e, ret);
     if span != fsp.span {
-      self.spans.insert_if(span, || ObjectKind::proof(x));
+      self.spans.insert_if(Some(span), || ObjectKind::Hyp(true, a));
     }
     self.stack.push(Stack::Undef);
     Ok(())

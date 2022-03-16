@@ -517,8 +517,13 @@ impl<'a> LispParser<'a> {
     Ok(())
   }
 
-  fn def(&mut self, tail: bool, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomId), ElabError> {
+  fn def(&mut self, global: bool, tail: bool, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomId), ElabError> {
     let (sp, x, stack) = self.def_var(e)?;
+    self.spans.insert(sp, if global {
+      ObjectKind::Global(true, !stack.is_empty(), x)
+    } else {
+      ObjectKind::LispVar(true, !stack.is_empty(), x)
+    });
     self.def_ir(sp, x != AtomId::UNDER, tail, es, stack)?;
     Ok((sp, x))
   }
@@ -594,12 +599,18 @@ impl<'a> LispParser<'a> {
       ElabError::new_e(sp, "keyword in invalid position"))
   }
 
-  fn parse_ident(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
+  fn parse_ident_raw(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
     if let SExprKind::Atom(a) = e.k {
       self.parse_atom(e.span, a)
     } else {
       Err(ElabError::new_e(e.span, "expected an identifier"))
     }
+  }
+
+  fn parse_ident(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
+    let x = self.parse_ident_raw(e)?;
+    self.spans.insert(e.span, ObjectKind::LispVar(true, false, x));
+    Ok(x)
   }
 
   fn parse_idents(&mut self, es: &[SExpr]) -> Result<Vec<AtomId>, ElabError> {
@@ -683,7 +694,11 @@ impl<'a> LispParser<'a> {
 
   fn let_var<'c>(&mut self, e: &'c SExpr) -> Result<(Var<'c>, &'c [SExpr]), ElabError> {
     match &e.k {
-      SExprKind::List(es) if !es.is_empty() => Ok((self.def_var(&es[0])?, &es[1..])),
+      SExprKind::List(es) if !es.is_empty() => {
+        let (sp, x, stk) = self.def_var(&es[0])?;
+        self.spans.insert(sp, ObjectKind::LispVar(true, !stk.is_empty(), x));
+        Ok(((sp, x, stk), &es[1..]))
+      }
       _ => Err(ElabError::new_e(e.span, "let: invalid spec"))
     }
   }
@@ -948,10 +963,12 @@ impl<'a> LispParser<'a> {
           self.elab.env.get_atom(self.elab.ast.span_atom(e.span, a))))
       } else {
         let x = self.parse_atom(e.span, a)?;
-        self.code.push({
-          if x == AtomId::UNDER { Ir::PatternResult(true) }
-          else { Ir::PatternAtom(ctx.get_or_push(x)) }
-        })
+        if x == AtomId::UNDER {
+          self.code.push(Ir::PatternResult(true))
+        } else {
+          self.spans.insert(e.span, ObjectKind::LispVar(true, false, x));
+          self.code.push(Ir::PatternAtom(ctx.get_or_push(x)))
+        }
       }
       SExprKind::DottedList(es, e) => {
         self.code.push(Ir::PatternDottedList(es.len()));
@@ -1010,10 +1027,9 @@ impl<'a> LispParser<'a> {
     Ok(())
   }
 
-  fn eval_atom(&mut self, keep: bool, sp: Span, x: AtomId) {
+  fn eval_atom(&mut self, keep: bool, sp: Span, x: AtomId) -> bool {
     match self.ctx.get(x) {
       None => {
-        self.spans.insert(sp, ObjectKind::Global(x));
         if keep {
           // Preload the value, if it exists; else look it up at run time
           let data = &self.data[x];
@@ -1026,8 +1042,12 @@ impl<'a> LispParser<'a> {
             self.code.push(Ir::Global(sp, x))
           }
         }
+        false
       },
-      Some(i) => if keep { self.code.push(Ir::Local(i)) }
+      Some(i) => {
+        if keep { self.code.push(Ir::Local(i)) }
+        true
+      }
     }
   }
 
@@ -1052,7 +1072,13 @@ impl<'a> LispParser<'a> {
       } else {
         match self.parse_atom(e.span, a)? {
           AtomId::UNDER => push_const!(span!(e.span, LispVal::atom(AtomId::UNDER))),
-          x => self.eval_atom(ctx.keep, e.span, x),
+          x => {
+            if self.eval_atom(ctx.keep, e.span, x) {
+              self.spans.insert(e.span, ObjectKind::LispVar(false, false, x));
+            } else {
+              self.spans.insert(e.span, ObjectKind::Global(false, false, x));
+            }
+          }
         }
       }
       SExprKind::DottedList(es, e) => {
@@ -1106,26 +1132,32 @@ impl<'a> LispParser<'a> {
         match self.parse_ident_or_syntax(es[0].span, a) {
           Ok(AtomId::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
           Ok(x) => {
-            self.eval_atom(true, es[0].span, x);
+            let mut local = self.eval_atom(true, es[0].span, x);
             let p = self.pop_builtin();
             let n = self.exprs(ExprsCtx::App, &es[1..])?;
             if let Some(p) = p {
+              local = false;
               self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span, es[0].span)), n));
             } else {
               self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
-            }
+            };
+            self.spans.insert(es[0].span, if local {
+              ObjectKind::LispVar(false, true, x)
+            } else {
+              ObjectKind::Global(false, true, x)
+            });
             if !ctx.keep { self.code.push(Ir::Drop(1)) }
           }
           Err(stx) => {
-            self.spans.insert_if(es[0].span, || ObjectKind::Syntax(stx));
+            self.spans.insert_if(Some(es[0].span), || ObjectKind::Syntax(stx));
             match stx {
               Syntax::Begin => { self.exprs(ExprsCtx::Eval(ctx.keep, ctx.tail), &es[1..])?; }
               Syntax::Define if es.len() < 2 => return Err(
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Define => {
-                let (sp, x) = self.def(ctx.tail && !ctx.keep, &es[1], &es[2..])?;
+                let (sp, x) = self.def(
+                  !ctx.mask_def && ctx.global, ctx.tail && !ctx.keep, &es[1], &es[2..])?;
                 if x != AtomId::UNDER && !ctx.mask_def {
-                  if ctx.global { self.spans.insert(sp, ObjectKind::Global(x)); }
                   let doc = if doc.is_empty() {None} else {Some(doc.into())};
                   self.push_def(ctx.global, e.span, sp, doc, x);
                 }
@@ -1190,7 +1222,8 @@ impl<'a> LispParser<'a> {
               Syntax::Let => self.let_(false, ctx.keep, ctx.tail, &es[1..])?,
               Syntax::Letrec => self.let_(true, ctx.keep, ctx.tail, &es[1..])?,
               Syntax::SetMergeStrategy if 2 <= es.len() && es.len() <= 3 => {
-                let a = self.parse_ident(&es[1])?;
+                let a = self.parse_ident_raw(&es[1])?;
+                self.spans.insert(es[1].span, ObjectKind::Global(false, false, a));
                 if let Some(e) = es.get(2) { self.expr(ExprCtx::EVAL, e)?; }
                 else { self.code.push(Ir::Undef) }
                 self.code.push(Ir::SetMergeStrategy(es[0].span, a));

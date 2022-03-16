@@ -688,19 +688,19 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
   let mut out: Vec<(Span, MarkedString)> = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     if let Some((r, doc)) = (|| Some(match k {
-      &ObjectKind::Sort(s) => {
+      &ObjectKind::Sort(_, s) => {
         let sd = &env.sorts[s];
         ((sp, mk_mm0(format!("{}", sd))), sd.doc.clone())
       }
-      &ObjectKind::Term(t, sp1) => {
+      &ObjectKind::Term(_, t, sp1) => {
         let td = &env.terms[t];
         ((sp1, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
-      &ObjectKind::Thm(t) => {
+      &ObjectKind::Thm(_, t) => {
         let td = &env.thms[t];
         ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
-      &ObjectKind::Var(x) => ((sp, mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+      &ObjectKind::Var(_, x) => ((sp, mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -713,6 +713,16 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
         }
         _ => return None,
       })), None),
+      &ObjectKind::Hyp(_, x) => match spans.lc.as_ref().and_then(|lc| lc.get_proof(x)) {
+        Some((_, ty, _)) => {
+          let mut out = format!("({}: ", fe.to(&x));
+          // Safety: render_fmt doesn't clone the expression
+          fe.pretty(|p| p.expr(ty).render_fmt(80, &mut out).expect("impossible"));
+          out += ")";
+          ((sp, mk_mm0(out)), None)
+        }
+        _ => return None,
+      }
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
@@ -778,18 +788,24 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
       }
-      &ObjectKind::Global(a) => {
-        let ld = env.data[a].lisp.as_ref()?;
-        if let Some(doc) = &ld.doc {
-          ((sp, mk_doc(doc)), None)
+      &ObjectKind::Global(_, _, a) => {
+        let ad = &env.data[a];
+        if let Some(ld) = &ad.lisp {
+          if let Some(doc) = &ld.doc {
+            ((sp, mk_doc(doc)), None)
+          } else {
+            let bp = ld.unwrapped(|e| match *e {
+              LispKind::Proc(Proc::Builtin(p)) => Some(p),
+              _ => None
+            })?;
+            ((sp, mk_doc(bp.doc())), None)
+          }
         } else {
-          let bp = ld.unwrapped(|e| match *e {
-            LispKind::Proc(Proc::Builtin(p)) => Some(p),
-            _ => None
-          })?;
+          let bp = BuiltinProc::from_bytes(&ad.name)?;
           ((sp, mk_doc(bp.doc())), None)
         }
       }
+      ObjectKind::LispVar(..) |
       ObjectKind::Import(_) => return None,
     }))() {
       let sp = r.0;
@@ -846,10 +862,12 @@ async fn definition<T>(path: FileRef, pos: Position,
       g(&td.span, td.full)
     };
     match k {
-      &ObjectKind::Sort(s) => res.push(sort(s)),
-      &ObjectKind::Term(t, _) => res.push(term(t)),
-      &ObjectKind::Thm(t) => res.push(thm(t)),
-      ObjectKind::Var(_) |
+      &ObjectKind::Sort(_, s) => res.push(sort(s)),
+      &ObjectKind::Term(_, t, _) => res.push(term(t)),
+      &ObjectKind::Thm(_, t) => res.push(thm(t)),
+      ObjectKind::Var(..) |
+      ObjectKind::Hyp(..) |
+      ObjectKind::LispVar(..) |
       ObjectKind::Syntax(_) |
       ObjectKind::PatternSyntax(_) |
       ObjectKind::RefineSyntax(_) => {}
@@ -864,7 +882,7 @@ async fn definition<T>(path: FileRef, pos: Position,
             .and_then(|head| head.as_atom()).and_then(|a| env.data()[a].decl()) {
           res.push(thm(t))
         },
-      &ObjectKind::Global(a) => {
+      &ObjectKind::Global(_, _, a) => {
         let ad = &env.data()[a];
         match ad.decl() {
           Some(DeclKey::Term(t)) => res.push(term(t)),
@@ -1117,7 +1135,9 @@ async fn references<T>(
   }}}
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
+    LispVar(AtomId),
     Var(AtomId),
+    Hyp(AtomId),
     Sort(SortId),
     Term(TermId),
     Thm(ThmId),
@@ -1154,11 +1174,13 @@ async fn references<T>(
     ObjectKind::Syntax(_) |
     ObjectKind::PatternSyntax(_) |
     ObjectKind::RefineSyntax(_) => None,
-    ObjectKind::Var(a) => Some(Key::Var(a)),
-    ObjectKind::Sort(a) => Some(Key::Sort(a)),
-    ObjectKind::Term(a, _) => Some(Key::Term(a)),
-    ObjectKind::Thm(a) => Some(Key::Thm(a)),
-    ObjectKind::Global(a) => Some(Key::Global(a)),
+    ObjectKind::Var(_, a) => Some(Key::Var(a)),
+    ObjectKind::Hyp(_, a) => Some(Key::Hyp(a)),
+    ObjectKind::LispVar(_, _, a) => Some(Key::LispVar(a)),
+    ObjectKind::Sort(_, a) => Some(Key::Sort(a)),
+    ObjectKind::Term(_, a, _) => Some(Key::Term(a)),
+    ObjectKind::Thm(_, a) => Some(Key::Thm(a)),
+    ObjectKind::Global(_, _, a) => Some(Key::Global(a)),
   };
 
   let mut res = vec![];
@@ -1171,15 +1193,15 @@ async fn references<T>(
     let mut cont = |&(sp2, ref k2)| {
       let eq = match *k2 {
         ObjectKind::Expr(_) if !matches!(key, Key::Term(_) | Key::Var(_)) => false,
-        ObjectKind::Proof(_) if !matches!(key, Key::Thm(_) | Key::Var(_)) => false,
+        ObjectKind::Proof(_) if !matches!(key, Key::Thm(_) | Key::Hyp(_)) => false,
         _ => Some(key) == to_key(k2),
       };
       if eq && (include_self || sp != sp2) {
-        let sp2 = if let ObjectKind::Term(_, sp2) = *k2 {sp2} else {sp2};
+        let sp2 = if let ObjectKind::Term(_, _, sp2) = *k2 {sp2} else {sp2};
         res.push(f(text.to_range(sp2)))
       }
     };
-    if let Key::Var(_) = key {
+    if let Key::Var(_) | Key::Hyp(_) | Key::LispVar(_) = key {
       spans.into_iter().for_each(&mut cont);
     } else {
       for spans2 in env.spans() {

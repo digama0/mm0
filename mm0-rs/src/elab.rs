@@ -339,7 +339,7 @@ impl Elaborator {
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
     let a = self.env.get_atom(self.ast.span(n.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    self.spans.insert(n.id, ObjectKind::Term(term, n.id));
+    self.spans.insert(n.id, ObjectKind::Term(false, term, n.id));
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => {
@@ -382,9 +382,9 @@ impl Elaborator {
     let s1 = self.data[a_from].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
     let s2 = self.data[a_to].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     self.check_term_nargs(id, t, 1)?;
-    self.spans.insert(id, ObjectKind::Term(t, id));
-    self.spans.insert(from, ObjectKind::Sort(s1));
-    self.spans.insert(to, ObjectKind::Sort(s2));
+    self.spans.insert(id, ObjectKind::Term(false, t, id));
+    self.spans.insert(from, ObjectKind::Sort(false, s1));
+    self.spans.insert(to, ObjectKind::Sort(false, s2));
     let fsp = self.fspan(id);
     self.add_coe(s1, s2, fsp, t)
   }
@@ -414,7 +414,7 @@ impl Elaborator {
     let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
     let nargs = nota.bis.len();
     self.check_term_nargs(nota.id, term, nargs)?;
-    self.spans.insert(nota.id, ObjectKind::Term(term, nota.id));
+    self.spans.insert(nota.id, ObjectKind::Term(false, term, nota.id));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&[u8], (usize, bool)>::new();
     for (idx, bi) in nota.bis.iter().enumerate() {
@@ -524,12 +524,12 @@ impl Elaborator {
         ) {
           let ad = &self.env.data[a];
           if let Some(s) = ad.sort {
-            self.spans.insert(sp, ObjectKind::Sort(s));
+            self.spans.insert(sp, ObjectKind::Sort(false, s));
           }
           if let Some(k) = ad.decl {
             match k {
-              DeclKey::Term(t) => {self.spans.insert(sp, ObjectKind::Term(t, sp));}
-              DeclKey::Thm(t) => {self.spans.insert(sp, ObjectKind::Thm(t));}
+              DeclKey::Term(t) => {self.spans.insert(sp, ObjectKind::Term(false, t, sp));}
+              DeclKey::Thm(t) => {self.spans.insert(sp, ObjectKind::Thm(false, t));}
             }
           }
         }
@@ -565,7 +565,7 @@ impl Elaborator {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
         let id = self.add_sort(a, fsp, span, sd, to_doc(doc)).map_err(|e| e.into_elab_error(sp))?;
-        self.spans.insert(sp, ObjectKind::Sort(id));
+        self.spans.insert(sp, ObjectKind::Sort(true, id));
       }
       StmtKind::Decl(d) => self.elab_decl(span, d, to_doc(doc))?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),

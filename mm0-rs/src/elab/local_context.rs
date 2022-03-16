@@ -327,7 +327,7 @@ impl<'a> ElabTermMut<'a> {
   fn spans_insert(&mut self, e: &LispKind, k: impl FnOnce() -> ObjectKind) {
     if let Some(fsp) = e.fspan() {
       if self.fsp.file.ptr_eq(&fsp.file) {
-        self.elab.spans.insert_if(fsp.span, k)
+        self.elab.spans.insert_if(Some(fsp.span), k)
       }
     }
   }
@@ -368,7 +368,7 @@ impl<'a> ElabTermMut<'a> {
       (&mut (InferSort::Reg(sort, _) | InferSort::Bound(sort)), tgt) =>
         self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
     };
-    self.spans_insert(e, || ObjectKind::Var(a));
+    self.spans_insert(e, || ObjectKind::Var(false, a));
     res
   }
 
@@ -383,7 +383,7 @@ impl<'a> ElabTermMut<'a> {
     let tid = self.env.term(a).ok_or_else(||
       self.as_ref().err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
     let sp1 = self.as_ref().try_get_span(e);
-    self.spans_insert(&t, || ObjectKind::Term(tid, sp1));
+    self.spans_insert(&t, || ObjectKind::Term(false, tid, sp1));
     let tdata = &self.env.terms[tid];
     let nargs = tdata.args.len();
     let ret = tdata.ret.0;
@@ -528,7 +528,7 @@ impl Elaborator {
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
-    self.spans.insert(d.sort, ObjectKind::Sort(sort));
+    self.spans.insert(d.sort, ObjectKind::Sort(false, sort));
     Ok(if lk.is_bound() {
       if let Some(&Span {end, ..}) = d.deps.last() {
         self.report(ElabError::new_e(d.deps[0].start..end,
@@ -539,7 +539,7 @@ impl Elaborator {
     } else {
       let deps = d.deps.iter().map(|&sp| {
         let y = self.env.get_atom(self.ast.span(sp));
-        self.spans.insert(sp, ObjectKind::Var(y));
+        self.spans.insert(sp, ObjectKind::Var(false, y));
         match self.lc.var(y, sp) {
           (_, InferSort::Unknown {dummy, must_bound, ..}) =>
             {*dummy = false; *must_bound = true}
@@ -560,7 +560,11 @@ impl Elaborator {
     let x = if lk == LocalKind::Anon {None} else {
       sp.map(|sp| {
         let a = self.env.get_atom(self.ast.span(sp));
-        self.spans.insert(sp, ObjectKind::Var(a));
+        self.spans.insert(sp, if matches!(ty, Some(Type::Formula(_))) {
+          ObjectKind::Hyp(true, a)
+        } else {
+          ObjectKind::Var(true, a)
+        });
         a
       })
     };
@@ -818,7 +822,7 @@ impl Elaborator {
             vis: d.mods,
             full,
           }).map_err(|e| e.into_elab_error(d.id))?;
-          self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
+          self.spans.insert(d.id, ObjectKind::Term(true, tid, d.id));
         }
       }
       DeclKind::Axiom | DeclKind::Thm => {
@@ -919,7 +923,7 @@ impl Elaborator {
             atom, span, vis: d.mods, full, doc,
             args: args.into(), heap, hyps, ret, kind
           }).map_err(|e| e.into_elab_error(d.id))?;
-          self.spans.insert(d.id, ObjectKind::Thm(tid));
+          self.spans.insert(d.id, ObjectKind::Thm(true, tid));
         }
       }
     }

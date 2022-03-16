@@ -506,20 +506,35 @@ impl AtomData {
 #[derive(Debug, DeepSizeOf)]
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
+  /// The bool is true if this is the definition itself.
   /// This sort must actually exist in the [`Environment`] if is constructed
-  Sort(SortId),
+  Sort(bool, SortId),
   /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
+  /// The bool is true if this is the definition itself.
   /// This term must actually exist in the [`Environment`] if is constructed
-  Term(TermId, Span),
+  Term(bool, TermId, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
+  /// The bool is true if this is the definition itself.
   /// This theorem must actually exist in the [`Environment`] if is constructed
-  Thm(ThmId),
+  Thm(bool, ThmId),
   /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder.
+  /// The bool is true if this is the definition itself.
   /// This should be a variable in the statement.
-  Var(AtomId),
+  Var(bool, AtomId),
+  /// This is a hypothesis; hovering yields `(h : $ ty $)` and go-to-definition takes you to the binder.
+  /// The bool is true if this is the definition itself.
+  /// This should be a variable in the statement.
+  Hyp(bool, AtomId),
   /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works.
+  /// The first bool is true if this is the definition itself.
+  /// The second bool is true if this is a call operation.
   /// Either `lisp` or `graveyard` for the atom must be non-`None` if this is constructed
-  Global(AtomId),
+  Global(bool, bool, AtomId),
+  /// This is a local lisp variable.
+  /// The first bool is true if this is the definition itself.
+  /// The second bool is true if this is a call operation.
+  /// The bool is true if this is the definition itself.
+  LispVar(bool, bool, AtomId),
   /// This is an expression; hovering shows the type and go-to-definition goes to the head term definition
   Expr(FrozenLispVal),
   /// This is a proof; hovering shows the intermediate statement
