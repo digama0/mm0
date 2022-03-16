@@ -144,6 +144,45 @@ impl std::fmt::Display for Syntax {
 }
 
 str_enum! {
+  /// The [`PatternSyntax`] type represents additional syntax elements that are only parsed
+  /// inside patterns.
+  enum PatternSyntax {
+    /// * `(mvar s bd)` matches a metavariable with sort `s` and boundedness `bd`
+    ///   (see the arguments to `mvar!`)
+    /// * `(mvar)` matches a metavariable with unconstrained target.
+    /// * `(mvar ...)` with literal `...` will match either kind of metavariable.
+    MVar: "mvar",
+    /// `(goal p)` matches a goal with target `p`.
+    Goal: "goal",
+    /// `(and p1 ... pn)` will match the input against all the patterns `p1` through `pn`,
+    /// and using all the resulting bindings. It succeeds if all the patterns match.
+    And: "and",
+    /// `(or p1 ... pn)` succeeds if any of the patterns match, and it uses all bindings from the
+    /// successes. Results are unspecified if the patterns do not all bind the same variables.
+    Or: "or",
+    /// `(not p1 ... pn)` succeeds if none of the patterns match, and binds nothing.
+    Not: "not",
+    /// `(? pred p1 ... pn)` succeeds if all of the patterns `p1`, ..., `pn` match,
+    /// and `(pred v)` evaluates to a truthy value where `v` is the value being matched.
+    ///
+    /// `pred` should evaluate to a unary predicate *in the context of the match expression*;
+    /// bindings from the match are not available when the predicate is evaluated.
+    Test: "?",
+    /// `(cons p1 ... pn p)` or `(p1 ... pn . p)` ensures the input is a proper or improper list
+    /// of length at least `n`, and matches the first `n` patterns with the `n` input values
+    /// and matches the tail against the pattern `p`.
+    Cons: "cons",
+    /// `(p1 ... pn "...")` (with a literal `...` at the end) ensures the input is a proper list
+    /// of length at least `n`, and matches the first `n` patterns with the `n` input values.
+    /// You can also use `___` in place of `...`.
+    Rest: "...",
+    /// `(p1 ... pn __ k)`, where `k` is a number, ensures the input is a proper list
+    /// of length at least `n + k`, and matches the first `n` patterns with the `n` input values.
+    RestN: "__",
+  }
+}
+
+str_enum! {
   /// The `RefineSyntax` type represents atom-like objects that are considered keywords
   /// in the refine tactic, and have special interpretations.
   enum RefineSyntax {

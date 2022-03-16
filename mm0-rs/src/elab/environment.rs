@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use super::{BoxError, ElabError, FrozenEnv, FrozenLispVal, spans::Spans, verify::VERIFY_ON_ADD};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
-  elab::verify::VerifyError, lisp::{LispVal, RefineSyntax, Syntax}};
+  elab::verify::VerifyError, lisp::{LispVal, RefineSyntax, Syntax, PatternSyntax}};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 
 /// The information associated to a defined [`Sort`].
@@ -527,6 +527,8 @@ pub enum ObjectKind {
   Proof(FrozenLispVal),
   /// This is a lisp syntax item; hovering shows the doc comment
   Syntax(Syntax),
+  /// This is a syntax element in a pattern; hovering shows the doc comment
+  PatternSyntax(PatternSyntax),
   /// This is a refine tactic syntax item; hovering shows the doc comment
   RefineSyntax(RefineSyntax),
   /// This is an import; hovering does nothing and go-to-definition goes to the file

@@ -9,7 +9,7 @@ use num::{BigInt, ToPrimitive};
 use crate::ast::{SExpr, SExprKind, Atom};
 use crate::ArcString;
 use super::super::{AtomId, Span, DocComment, Elaborator, ElabError, ObjectKind};
-use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
+use super::{BuiltinProc, FileSpan, LispKind, LispVal, PatternSyntax, Proc, ProcSpec,
   Remap, Remapper, Syntax};
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
@@ -458,7 +458,6 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  #[allow(clippy::vec_init_then_push)] // bug: rust-clippy#6615
   fn def_var<'c>(&mut self, mut e: &'c SExpr) -> Result<Var<'c>, ElabError> {
     let mut stack = vec![];
     loop {
@@ -765,80 +764,108 @@ impl<'a> LispParser<'a> {
         _ if quote => {},
         [ref head, ref args @ ..] => if let SExprKind::Atom(a) = head.k {
           match self.ast.span_atom(head.span, a) {
-            b"quote" => match args {
-              [e] => finish!(self.pattern(ctx, true, e)?),
-              _ => return Err(ElabError::new_e(head.span, "expected one argument")),
+            b"quote" => {
+              self.spans.insert(head.span, ObjectKind::Syntax(Syntax::Quote));
+              match args {
+                [e] => finish!(self.pattern(ctx, true, e)?),
+                _ => return Err(ElabError::new_e(head.span, "expected one argument")),
+              }
+            }
+            b"mvar" => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::MVar));
+              match args {
+                [] => finish!(self.code.push(Ir::PatternMVar(MVarPattern::Unknown))),
+                &[SExpr {span, k: SExprKind::Atom(a)}]
+                if matches!(self.ast.span_atom(span, a), b"___" | b"...") =>
+                  finish!(self.code.push(Ir::PatternMVar(MVarPattern::Any))),
+                [bd, s] => finish!({
+                  self.code.push(Ir::PatternMVar(MVarPattern::Simple));
+                  self.pattern(ctx, quote, bd)?;
+                  self.pattern(ctx, quote, s)?;
+                }),
+                _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
+              }
+            }
+            b"goal" => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Goal));
+              match args {
+                [e] => finish!({
+                  self.code.push(Ir::PatternGoal);
+                  self.pattern(ctx, quote, e)?
+                }),
+                _ => return Err(ElabError::new_e(head.span, "expected one argument")),
+              }
             },
-            b"mvar" => match args {
-              [] => finish!(self.code.push(Ir::PatternMVar(MVarPattern::Unknown))),
-              &[SExpr {span, k: SExprKind::Atom(a)}]
-              if matches!(self.ast.span_atom(span, a), b"___" | b"...") =>
-                finish!(self.code.push(Ir::PatternMVar(MVarPattern::Any))),
-              [bd, s] => finish!({
-                self.code.push(Ir::PatternMVar(MVarPattern::Simple));
-                self.pattern(ctx, quote, bd)?;
-                self.pattern(ctx, quote, s)?;
-              }),
-              _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
-            },
-            b"goal" => match args {
-              [e] => finish!({
-                self.code.push(Ir::PatternGoal);
-                self.pattern(ctx, quote, e)?
-              }),
-              _ => return Err(ElabError::new_e(head.span, "expected one argument")),
-            },
-            b"and" => finish!(self.patterns_and(ctx, args)?),
-            b"or" => finish!(self.patterns_or(ctx, args)?),
+            b"and" => finish!({
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::And));
+              self.patterns_and(ctx, args)?
+            }),
+            b"or" => finish!({
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Or));
+              self.patterns_or(ctx, args)?
+            }),
             b"not" => finish!({
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Not));
               let patch = self.new_patch();
               self.patterns_and(ctx, args)?;
               self.finish_patch(patch, |ip| Ir::PatternTry(ip, ip + 1));
               self.code.push(Ir::PatternResult(false))
             }),
-            b"?" => match args {
-              [test, tail @ ..] => finish!({
-                self.code.push(Ir::PatternTestPause);
-                self.expr(ExprCtx::EVAL.mask_def(), test)?;
-                if let Some(p) = self.pop_builtin() {
-                  self.code.push(Ir::BuiltinApp(false, p, Box::new((test.span, test.span)), 1));
-                } else {
-                  self.code.push(Ir::AppHead(test.span));
-                }
-                self.code.push(Ir::TestPatternResume);
-                self.patterns_and(ctx, tail)?
-              }),
-              _ => return Err(ElabError::new_e(head.span, "expected at least one argument")),
+            b"?" => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Test));
+              match args {
+                [test, tail @ ..] => finish!({
+                  self.code.push(Ir::PatternTestPause);
+                  self.expr(ExprCtx::EVAL.mask_def(), test)?;
+                  if let Some(p) = self.pop_builtin() {
+                    self.code.push(Ir::BuiltinApp(false, p, Box::new((test.span, test.span)), 1));
+                  } else {
+                    self.code.push(Ir::AppHead(test.span));
+                  }
+                  self.code.push(Ir::TestPatternResume);
+                  self.patterns_and(ctx, tail)?
+                }),
+                _ => return Err(ElabError::new_e(head.span, "expected at least one argument")),
+              }
             }
-            b"cons" => match args {
-              [] => return Err(ElabError::new_e(head.span, "expected at least one argument")),
-              [es2 @ .., e] => {
-                if es2.len() + pfx != 0 {
-                  self.code.push(Ir::PatternDottedList(es2.len() + pfx));
-                  for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
-                  for e in es2 { self.pattern(ctx, quote, e)? }
+            b"cons" => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Cons));
+              match args {
+                [] => return Err(ElabError::new_e(head.span, "expected at least one argument")),
+                [es2 @ .., e] => {
+                  if es2.len() + pfx != 0 {
+                    self.code.push(Ir::PatternDottedList(es2.len() + pfx));
+                    for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
+                    for e in es2 { self.pattern(ctx, quote, e)? }
+                  }
+                  self.pattern(ctx, quote, e)?;
+                  return Ok(())
                 }
-                self.pattern(ctx, quote, e)?;
-                return Ok(())
               }
-            },
-            b"___" | b"..." => match args {
-              [] => {
-                self.code.push(Ir::PatternList(pfx, Some(0)));
-                for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
-                return Ok(())
+            }
+            b"___" | b"..." => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Rest));
+              match args {
+                [] => {
+                  self.code.push(Ir::PatternList(pfx, Some(0)));
+                  for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
+                  return Ok(())
+                }
+                _ => return Err(ElabError::new_e(head.span, "expected nothing after '...'")),
               }
-              _ => return Err(ElabError::new_e(head.span, "expected nothing after '...'")),
-            },
-            b"__" => match *args {
-              [SExpr {span, k: SExprKind::Number(ref n)}] => {
-                self.code.push(Ir::PatternList(pfx, Some(n.to_usize().ok_or_else(||
-                  ElabError::new_e(span, "number out of range"))?)));
-                for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
-                return Ok(())
+            }
+            b"__" => {
+              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::RestN));
+              match *args {
+                [SExpr {span, k: SExprKind::Number(ref n)}] => {
+                  self.code.push(Ir::PatternList(pfx, Some(n.to_usize().ok_or_else(||
+                    ElabError::new_e(span, "number out of range"))?)));
+                  for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
+                  return Ok(())
+                }
+                _ => return Err(ElabError::new_e(head.span, "expected number after '__'")),
               }
-              _ => return Err(ElabError::new_e(head.span, "expected number after '__'")),
-            },
+            }
             _ => {}
           }
         }

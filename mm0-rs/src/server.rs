@@ -768,6 +768,11 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
       }
+      ObjectKind::PatternSyntax(stx) => {
+        if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
+          ((sp, mk_doc(stx.doc())), None)
+        } else { return None }
+      }
       ObjectKind::RefineSyntax(stx) => {
         if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
           ((sp, mk_doc(stx.doc())), None)
@@ -846,6 +851,7 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Thm(t) => res.push(thm(t)),
       ObjectKind::Var(_) |
       ObjectKind::Syntax(_) |
+      ObjectKind::PatternSyntax(_) |
       ObjectKind::RefineSyntax(_) => {}
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
@@ -1146,6 +1152,7 @@ async fn references<T>(
     }
     ObjectKind::Import(_) |
     ObjectKind::Syntax(_) |
+    ObjectKind::PatternSyntax(_) |
     ObjectKind::RefineSyntax(_) => None,
     ObjectKind::Var(a) => Some(Key::Var(a)),
     ObjectKind::Sort(a) => Some(Key::Sort(a)),
