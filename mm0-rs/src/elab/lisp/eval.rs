@@ -1034,7 +1034,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     args[1].clone().into()
   },
   CopySpan: Exact(2) => {
-    let mut it = args.drain(..);
+    let mut it = args.into_iter();
     match (it.next().unwrap().fspan(), it.next().unwrap()) {
       (Some(sp), e) => e.replace_span(sp),
       (None, e) => e
@@ -1113,7 +1113,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     Stack::Undef
   },
   MergeMap: AtLeast(0) => {
-    let mut it = args.drain(..);
+    let mut it = args.into_iter();
     if let Some(arg1) = it.next() {
       if let Some(arg2) = it.next() {
         if let Some(arg3) = it.next() {
@@ -1170,7 +1170,7 @@ make_builtins! { self, tail, sp1, sp2, args,
   GetGoals: AtLeast(0) => LispVal::list(self.lc.goals.clone()).into(),
   SetGoals: AtLeast(0) => { self.lc.set_goals(args); Stack::Undef },
   SetCloseFn: AtLeast(0) => {
-    let e = args.drain(..).next().unwrap_or_default();
+    let e = args.into_iter().next().unwrap_or_default();
     if e.is_def() && !e.is_proc() { try1!(Err("expected a procedure")) }
     self.lc.closer = e;
     Stack::Undef
@@ -1192,7 +1192,7 @@ make_builtins! { self, tail, sp1, sp2, args,
   },
   Have: AtLeast(2) => {
     if args.len() > 3 { try1!(Err("invalid arguments")) }
-    let mut args = args.drain(..);
+    let mut args = args.into_iter();
     let xarg = args.next().unwrap();
     try1!(xarg.as_atom().ok_or("expected an atom"));
     let fsp = self.fspan(sp1);
@@ -1371,6 +1371,7 @@ impl<'a> Evaluator<'a> {
 
   fn try_pop_lisp(&mut self) -> Option<LispVal> {
     let e = self.stack.pop()?;
+    #[allow(clippy::needless_match)] // rust-clippy#8549
     if let Some(e) = e.try_to_lisp() {
       Some(e)
     } else {

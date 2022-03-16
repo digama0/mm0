@@ -1279,10 +1279,15 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
       last_start = range.start;
     };
     match k {
-      ObjectKind::Thm(false, _) |
-      ObjectKind::Proof(_) => push(token_types::THEOREM, 0),
+      ObjectKind::Sort(..) |
+      ObjectKind::Term(..) |
+      ObjectKind::Thm(true, _) |
+      ObjectKind::RefineSyntax(_) |
+      ObjectKind::Import(_) |
       // Don't highlight non-text keywords
       ObjectKind::Syntax(Syntax::Quote | Syntax::Unquote) => {}
+      ObjectKind::Thm(false, _) |
+      ObjectKind::Proof(_) => push(token_types::THEOREM, 0),
       ObjectKind::Syntax(_) => push(token_types::KEYWORD, 0),
       ObjectKind::PatternSyntax(_) => push(token_types::FUNCTION, 1),
       &ObjectKind::Var(_, x) => push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
@@ -1324,11 +1329,6 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
           push(token_types::FUNCTION, 1)
         }
       }
-      ObjectKind::Sort(..) |
-      ObjectKind::Term(..) |
-      ObjectKind::Thm(true, _) |
-      ObjectKind::RefineSyntax(_) |
-      ObjectKind::Import(_) => {}
     }
   });
   Ok(Some(SemanticTokens { result_id: None, data }))
@@ -1386,13 +1386,13 @@ impl ClientCapabilities {
 
   fn register(&mut self) -> Result<()> {
     assert!(self.reg_id.is_none());
-    let mut regs = vec![];
-
-    regs.push(Registration {
-      id: String::new(),
-      method: "workspace/didChangeConfiguration".into(),
-      register_options: None,
-    });
+    let regs = vec![
+      Registration {
+        id: String::new(),
+        method: "workspace/didChangeConfiguration".into(),
+        register_options: None,
+      }
+    ];
 
     if !regs.is_empty() {
       register_capability("regs".into(), regs)?;

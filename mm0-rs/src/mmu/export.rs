@@ -23,11 +23,11 @@ fn is_nonatomic_proof(e: &ProofNode) -> bool {
   matches!(e, ProofNode::Thm {..} | ProofNode::Conv(_))
 }
 
-fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomId, &'a ProofNode>, checked: &mut [bool],
+fn build_unfold_map<'a>(m: &mut HashMap<AtomId, &'a ProofNode>, checked: &mut [bool],
   heap: &[ExprNode], node: &ExprNode, t_heap: &'a [ProofNode], mut tgt: &'a ProofNode) {
   match *node {
     ExprNode::Ref(i) => if !mem::replace(&mut checked[i], true) {
-      build_unfold_map(env, m, checked, heap, &heap[i], t_heap, tgt)
+      build_unfold_map(m, checked, heap, &heap[i], t_heap, tgt)
     },
     ExprNode::Dummy(a, _) => {m.insert(a, tgt);}
     ExprNode::App(t, ref es) => loop {
@@ -35,7 +35,7 @@ fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomId, &'a ProofNode>,
         ProofNode::Ref(j) => tgt = &t_heap[j],
         ProofNode::Term {term: t2, args: ref es2} if t == t2 && es.len() == es2.len() => {
           for (e1, e2) in es.iter().zip(&**es2) {
-            build_unfold_map(env, m, checked, heap, e1, t_heap, e2)
+            build_unfold_map(m, checked, heap, e1, t_heap, e2)
           }
           break
         }
@@ -206,7 +206,7 @@ impl FrozenEnv {
             list(self, args.iter(), |this, e| this.go(e, indent))?;
             let mut m = HashMap::new();
             if let TermKind::Def(Some(Expr {heap: eheap, head})) = &td.kind {
-              build_unfold_map(self.env, &mut m, &mut vec![false; eheap.len()],
+              build_unfold_map(&mut m, &mut vec![false; eheap.len()],
                 eheap, head, self.heap, sub_lhs)
             }
             self.l.push(b' ');
