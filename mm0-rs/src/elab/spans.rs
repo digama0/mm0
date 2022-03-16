@@ -2,6 +2,7 @@
 
 use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
+use std::ops::Range;
 use crate::AtomId;
 use super::local_context::LocalContext;
 use crate::Span;
@@ -165,5 +166,26 @@ impl<T> Spans<T> {
       Ok(i) => Some(&spans[i]),
       Err(i) => i.checked_sub(1).map(|j| &spans[j]),
     }.filter(|&s| pos < s.stmt().end)
+  }
+
+  /// Execute the given closure over all data elements in spans that start in the target
+  /// range, that is, `range.start <= sp.start < range.end`.
+  /// (This is not as precise a lookup as we would like, but the indexing doesn't
+  /// support getting all spans that overlap the target range,
+  /// so we work around this in the caller instead.)
+  pub fn on_range(spans: &[Self], range: Option<Range<usize>>, mut f: impl FnMut(&Self, &(Span, T))) {
+    if let Some(range) = range {
+      let i = spans.binary_search_by_key(&range.start, |s| s.stmt().start)
+        .unwrap_or_else(|i| i.saturating_sub(1));
+      let spans = &spans[i..];
+      let j = spans.binary_search_by_key(&range.end.saturating_sub(1), |s| s.stmt().start)
+        .unwrap_or_else(|i| i.saturating_sub(1));
+      let spans = &spans[..=j];
+      spans.iter().for_each(|sp| sp.data.range(range.clone())
+        .for_each(|(_, v)| v.iter().for_each(|x| f(sp, x))))
+    } else {
+      spans.iter().for_each(|sp| sp.data.iter()
+        .for_each(|(_, v)| v.iter().for_each(|x| f(sp, x))))
+    }
   }
 }

@@ -29,7 +29,7 @@ use crate::{ObjectKind, DeclKey, StmtTrace, AtomId, SortId, TermId, ThmId, Lined
   FrozenLispKind, FrozenAtomData};
 use crate::elab::{ElabResult, ElaborateBuilder, GoalListener,
   local_context::InferSort, proof::Subst,
-  lisp::{print::FormatEnv, pretty::Pretty, LispKind, Proc, BuiltinProc},
+  lisp::{print::FormatEnv, pretty::Pretty, Syntax, LispKind, Proc, BuiltinProc},
   spans::Spans};
 
 #[derive(Debug)]
@@ -497,6 +497,8 @@ request_type! {
   "textDocument/documentSymbol"       => DocumentSymbol(DocumentSymbolParams),
   "textDocument/references"           => References(ReferenceParams),
   "textDocument/documentHighlight"    => DocumentHighlight(DocumentHighlightParams),
+  "textDocument/semanticTokens/full"  => SemanticTokens(SemanticTokensParams),
+  "textDocument/semanticTokens/range" => SemanticTokensRange(SemanticTokensRangeParams),
 }
 
 fn send_message<T: Into<Message>>(t: T) -> Result<()> {
@@ -580,6 +582,10 @@ impl RequestHandler {
         self.finish(references(file.clone(), doc.position, true,
           |range| DocumentHighlight { range, kind: None }).await)
       }
+      RequestType::SemanticTokens(SemanticTokensParams {text_document: doc, ..}) =>
+        self.finish(semantic_tokens(doc.uri.into(), None).await),
+      RequestType::SemanticTokensRange(SemanticTokensRangeParams {text_document: doc, range, ..}) =>
+        self.finish(semantic_tokens(doc.uri.into(), Some(range)).await),
     }
   }
 
@@ -1212,6 +1218,122 @@ async fn references<T>(
   Ok(res)
 }
 
+macro_rules! token_types {
+  ($([$e:literal]: const $name:ident => $val:path;)*) => {
+    const _: () = { let mut _n = 0; $(assert!(_n == $e); _n += 1;)* };
+    mod token_types { $(pub(super) const $name: u32 = $e;)* }
+    fn get_token_types() -> Vec<SemanticTokenType> { vec![$($val),*] }
+  }
+}
+
+token_types! {
+  [0]: const FVAR => SemanticTokenType::VARIABLE; // local variable / lisp variable
+  [1]: const BVAR => SemanticTokenType::PARAMETER; // dummy variable
+  [2]: const HVAR => SemanticTokenType::PROPERTY; // hypothesis / subproof variable
+  [3]: const THEOREM => SemanticTokenType::METHOD; // theorem
+  [4]: const FUNCTION => SemanticTokenType::FUNCTION; // lisp function
+  [5]: const MACRO => SemanticTokenType::MACRO; // lisp macro
+  [6]: const KEYWORD => SemanticTokenType::KEYWORD; // lisp keyword
+}
+
+async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<SemanticTokens>, ResponseError> {
+  let file = SERVER.vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "semantic tokens nonexistent file"))?;
+
+  let maybe_old = if SERVER.elab_on().unwrap_or_default() == ElabOn::Save { try_old(&file) } else { None };
+  let (text, env) = if let Some((contents, frozen)) = maybe_old {
+    (contents.ascii().clone(), frozen)
+  } else {
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    match env.into_response_error()? {
+      None => return Ok(None),
+      Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
+    }
+  };
+  let range = range.map(|r| {
+    let start = text.to_idx(r.start).unwrap_or(0);
+    start..text.to_idx(r.end).unwrap_or(text.len())
+  });
+
+  let mut data = vec![];
+  let mut last_end = 0;
+  let mut last_start = Position::default();
+  Spans::on_range(env.spans(), range, |spans, &(sp, ref k)| {
+    if sp.start < last_end { return }
+    let mut push = |token_type, token_modifiers_bitset| {
+      let range = text.to_range(sp);
+      if range.start.line != range.end.line { return }
+      last_end = sp.end;
+      data.push(SemanticToken {
+        delta_line: range.start.line - last_start.line,
+        delta_start: if last_start.line == range.start.line {
+          range.start.character - last_start.character
+        } else {
+          range.start.character
+        },
+        length: range.end.character - range.start.character,
+        token_type,
+        token_modifiers_bitset,
+      });
+      last_start = range.start;
+    };
+    match k {
+      ObjectKind::Thm(false, _) |
+      ObjectKind::Proof(_) => push(token_types::THEOREM, 0),
+      // Don't highlight non-text keywords
+      ObjectKind::Syntax(Syntax::Quote | Syntax::Unquote) => {}
+      ObjectKind::Syntax(_) => push(token_types::KEYWORD, 0),
+      ObjectKind::PatternSyntax(_) => push(token_types::FUNCTION, 1),
+      &ObjectKind::Var(_, x) => push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+        Some((_, InferSort::Bound(..))) => token_types::BVAR,
+        _ => token_types::FVAR,
+      }, 0),
+      &ObjectKind::Hyp(..) => push(token_types::HVAR, 0),
+      ObjectKind::Expr(e) => {
+        let head = e.uncons().next().unwrap_or(e);
+        let a = if let Some(a) = head.as_atom() { a } else { return };
+        if let Some(DeclKey::Term(_)) = env.data()[a].decl() { return }
+        push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&a)) {
+          Some((_, InferSort::Bound(..))) => token_types::BVAR,
+          _ => token_types::FVAR,
+        }, 0)
+      }
+      ObjectKind::LispVar(_, false, _) |
+      ObjectKind::Global(true, false, _) => push(token_types::FVAR, 0),
+      ObjectKind::LispVar(_, true, _) |
+      ObjectKind::Global(true, true, _) => push(token_types::FUNCTION, 0),
+      &ObjectKind::Global(false, call, a) => {
+        let ad = &env.data()[a];
+        if let Some(e) = ad.lisp().as_ref() {
+          let (x, m) = match *e.unwrap() {
+            FrozenLispKind::Syntax(_) => (token_types::MACRO, 0),
+            FrozenLispKind::Proc(ref proc) => {
+              // Safety: We are not cloning the expression
+              let builtin = match unsafe { proc.thaw() } {
+                Proc::Lambda { .. } => 0,
+                _ => 1
+              };
+              (token_types::FUNCTION, builtin)
+            }
+            _ if call => (token_types::FUNCTION, 0),
+            _ => (token_types::FVAR, 0),
+          };
+          push(x, m)
+        } else if BuiltinProc::from_bytes(ad.name()).is_some() {
+          push(token_types::FUNCTION, 1)
+        }
+      }
+      ObjectKind::Sort(..) |
+      ObjectKind::Term(..) |
+      ObjectKind::Thm(true, _) |
+      ObjectKind::RefineSyntax(_) |
+      ObjectKind::Import(_) => {}
+    }
+  });
+  Ok(Some(SemanticTokens { result_id: None, data }))
+}
+
 struct Server {
   conn: Connection,
   #[allow(unused)]
@@ -1461,6 +1583,15 @@ impl Server {
         document_symbol_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         document_highlight_provider: Some(OneOf::Left(true)),
+        semantic_tokens_provider: Some(SemanticTokensOptions {
+          legend: SemanticTokensLegend {
+            token_types: get_token_types(),
+            token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
+          },
+          range: Some(true),
+          full: Some(SemanticTokensFullOptions::Bool(true)),
+          ..Default::default()
+        }.into()),
         ..Default::default()
       })?
     )?)?;
