@@ -32,9 +32,6 @@ use crate::elab::{ElabResult, ElaborateBuilder, GoalListener,
   lisp::{print::FormatEnv, pretty::Pretty, LispKind, Proc, BuiltinProc},
   spans::Spans};
 
-// Disabled because vscode doesn't handle them properly
-const USE_LOCATION_LINKS: bool = false;
-
 #[derive(Debug)]
 struct ServerError(BoxError);
 
@@ -476,28 +473,30 @@ impl Vfs {
   }
 }
 
-#[derive(Debug)]
-enum RequestType {
-  Completion(CompletionParams),
-  CompletionResolve(Box<CompletionItem>),
-  Hover(TextDocumentPositionParams),
-  Definition(TextDocumentPositionParams),
-  DocumentSymbol(DocumentSymbolParams),
-  References(ReferenceParams),
-  DocumentHighlight(DocumentHighlightParams),
+macro_rules! request_type {
+  ($($s:literal => $name:ident($param:ty),)*) => {
+    #[derive(Debug)]
+    enum RequestType {
+      $($name($param),)*
+    }
+
+    fn parse_request(Request {id, method, params}: Request) -> Result<Option<(RequestId, RequestType)>> {
+      Ok(match method.as_str() {
+        $($s => Some((id, RequestType::$name(from_value(params)?))),)*
+        _ => None
+      })
+    }
+  }
 }
 
-fn parse_request(Request {id, method, params}: Request) -> Result<Option<(RequestId, RequestType)>> {
-  Ok(match method.as_str() {
-    "textDocument/completion"        => Some((id, RequestType::Completion(from_value(params)?))),
-    "completionItem/resolve"         => Some((id, RequestType::CompletionResolve(from_value(params)?))),
-    "textDocument/hover"             => Some((id, RequestType::Hover(from_value(params)?))),
-    "textDocument/definition"        => Some((id, RequestType::Definition(from_value(params)?))),
-    "textDocument/documentSymbol"    => Some((id, RequestType::DocumentSymbol(from_value(params)?))),
-    "textDocument/references"        => Some((id, RequestType::References(from_value(params)?))),
-    "textDocument/documentHighlight" => Some((id, RequestType::DocumentHighlight(from_value(params)?))),
-    _ => None
-  })
+request_type! {
+  "textDocument/completion"           => Completion(CompletionParams),
+  "completionItem/resolve"            => CompletionResolve(Box<CompletionItem>),
+  "textDocument/hover"                => Hover(TextDocumentPositionParams),
+  "textDocument/definition"           => Definition(TextDocumentPositionParams),
+  "textDocument/documentSymbol"       => DocumentSymbol(DocumentSymbolParams),
+  "textDocument/references"           => References(ReferenceParams),
+  "textDocument/documentHighlight"    => DocumentHighlight(DocumentHighlightParams),
 }
 
 fn send_message<T: Into<Message>>(t: T) -> Result<()> {
@@ -548,7 +547,7 @@ impl RequestHandler {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(doc.uri.into(), position).await),
       RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
-        if USE_LOCATION_LINKS && matches!(SERVER.caps.ulock().definition_location_links, Some(true)) {
+        if SERVER.caps.ulock().definition_location_links {
           self.finish(definition(doc.uri.into(), position,
             |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
               origin_selection_range: Some(text.to_range(src)),
@@ -1217,7 +1216,7 @@ struct ClientCapabilitiesExt {
 
 struct ClientCapabilities {
   reg_id: Option<RequestId>,
-  definition_location_links: Option<bool>,
+  definition_location_links: bool,
   goal_view: bool,
 }
 
@@ -1225,9 +1224,8 @@ impl ClientCapabilities {
   fn new(params: InitializeParams) -> ClientCapabilities {
     let dll = match params.capabilities.text_document.as_ref()
       .and_then(|d| d.definition.as_ref()) {
-      Some(&GotoCapability {link_support: Some(b), ..}) => Some(b),
-      Some(GotoCapability {dynamic_registration: Some(true), ..}) => Some(true),
-      _ => Some(false)
+      Some(&GotoCapability {link_support: Some(b), ..}) => b,
+      _ => false
     };
     let goal_view = params.initialization_options
       .and_then(|o| from_value(o).ok()).and_then(|o: InitOptions| o.extra_capabilities)
@@ -1238,13 +1236,6 @@ impl ClientCapabilities {
   fn register(&mut self) -> Result<()> {
     assert!(self.reg_id.is_none());
     let mut regs = vec![];
-    if USE_LOCATION_LINKS && self.definition_location_links.is_none() {
-      regs.push(Registration {
-        id: String::new(),
-        method: "textDocument/definition".into(),
-        register_options: None
-      })
-    }
 
     regs.push(Registration {
       id: String::new(),
@@ -1259,13 +1250,8 @@ impl ClientCapabilities {
     Ok(())
   }
 
-  fn finish_register(&mut self, resp: &Response) {
+  fn finish_register(&mut self, _resp: &Response) {
     assert!(self.reg_id.take().is_some());
-    match resp {
-      Response {result: None, error: None, ..} =>
-        self.definition_location_links = Some(true),
-      _ => self.definition_location_links = Some(false)
-    }
   }
 }
 
