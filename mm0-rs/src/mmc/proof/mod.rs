@@ -41,7 +41,8 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
 
   fn get(&self, i: Self::Id) -> &Self::Hash;
 
-  fn build0(&mut self, i: Self::Id) -> (Box<[Self::Node]>, Self::Node);
+  #[allow(clippy::type_complexity)]
+  fn build0(&mut self, i: Self::Id) -> (Box<[Self::Node]>, Vec<Self::Node>, Self::Node);
 
   const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash;
 
@@ -62,32 +63,38 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
   #[inline] fn do_from_usize(&self, i: usize) -> Self::Id { Idx::from_usize(i) }
 
   #[allow(clippy::wrong_self_convention)]
-  fn from_expr_node(&mut self, e: &ExprNode, refs: &[Self::Id]) -> Self::Id {
+  fn from_expr_node(&mut self, env: &Environment,
+    store: &[ExprNode], e: &ExprNode, refs: &[Self::Id]
+  ) -> Self::Id {
     match *e {
       ExprNode::Ref(i) if i < refs.len() => refs[i],
       ExprNode::Ref(i) => self.ref_(ProofKind::Expr, i),
       ExprNode::Dummy(s, sort) => self.dummy(s, sort),
-      ExprNode::App(t, ref es) => {
-        let args = es.iter().map(|e| self.from_expr_node(e, refs)).collect::<Vec<_>>();
-        self.app(t, &args)
+      ExprNode::App(t, p) => {
+        let args = env.terms[t].unpack_app(&store[p..]).iter().map(|e| {
+          self.from_expr_node(env, store, e, refs).into_usize()
+        }).collect();
+        self.add(Self::APP(t, args))
       }
     }
   }
 
   #[allow(clippy::wrong_self_convention)]
-  fn from_expr_nodes(&mut self, heap: &[ExprNode]) -> Vec<Self::Id> {
+  fn from_expr_nodes(&mut self,
+    env: &Environment, heap: &[ExprNode], store: &[ExprNode]
+  ) -> Vec<Self::Id> {
     let mut refs = Vec::with_capacity(heap.len());
     for node in heap {
-      let id = self.from_expr_node(node, &refs);
+      let id = self.from_expr_node(env, store, node, &refs);
       refs.push(id)
     }
     refs
   }
 
   #[allow(clippy::wrong_self_convention)]
-  fn from_expr(&mut self, e: &Expr) -> Self::Id {
-    let refs = self.from_expr_nodes(&e.heap);
-    self.from_expr_node(&e.head, &refs)
+  fn from_expr(&mut self, env: &Environment, e: &Expr) -> Self::Id {
+    let refs = self.from_expr_nodes(env, &e.heap, &e.store);
+    self.from_expr_node(env, &e.store, e.head(), &refs)
   }
 
   fn to_lisp(&self, env: &mut Environment, i: Self::Id) -> LispVal;
@@ -136,10 +143,10 @@ macro_rules! make_dedup {
       fn dummy(&mut self, s: crate::AtomId, sort: SortId) -> Self::Id {
         self.add(proof::$hash::Dummy(s, sort))
       }
-      fn build0(&mut self, i: $id) -> (Box<[$node]>, $node) {
+      fn build0(&mut self, i: $id) -> (Box<[$node]>, Vec<$node>, $node) {
         self.de.calc_use(0, [i.into_usize()]);
-        let (mut ids, heap) = proof::build(&self.de);
-        (heap, ids[i.into_usize()].take())
+        let (mut ids, heap, store) = proof::build(&self.de);
+        (heap, store, ids[i.into_usize()].take())
       }
       fn get(&self, i: Self::Id) -> &Self::Hash { &self.de[i.into_usize()] }
       const APP: fn(t: TermId, args: Box<[usize]>) -> Self::Hash = proof::$hash::$app;
@@ -171,8 +178,8 @@ impl ProofDedup<'_> {
   fn thm0(&mut self, env: &Environment, name: ThmId) -> (ProofId, ProofId) {
     let thd = &env.thms[name];
     assert!(thd.args.is_empty() && thd.hyps.is_empty());
-    let refs = self.from_expr_nodes(&thd.heap);
-    let concl = self.from_expr_node(&thd.ret, &refs);
+    let refs = self.from_expr_nodes(env, &thd.heap, &thd.store);
+    let concl = self.from_expr_node(env, &thd.store, &thd.ret, &refs);
     (concl, self.thm(name, &[], concl))
   }
 
@@ -182,7 +189,7 @@ impl ProofDedup<'_> {
     let td = &env.terms[name];
     assert!(td.args.is_empty());
     let e = if let TermKind::Def(Some(e)) = &td.kind { e } else { unreachable!("not a def") };
-    self.from_expr(e)
+    self.from_expr(env, e)
   }
 
   fn refl_conv(&mut self, e: ProofId) -> ProofId {
@@ -245,12 +252,13 @@ impl ProofDedup<'_> {
   ) -> Thm {
     let mut de = ExprDedup::new(self.pd, &[]);
     let concl = self.to_expr(&mut de, self.concl(thm));
-    let (eheap, ret) = de.build0(concl);
-    let (heap, head) = self.build0(thm);
+    let (eheap, estore, ret) = de.build0(concl);
+    let (heap, mut store, head) = self.build0(thm);
+    store.push(head);
     Thm {
       atom, span, full, doc, vis,
-      args: Box::new([]), hyps: Box::new([]), heap: eheap, ret,
-      kind: ThmKind::Thm(Some(Proof { heap, hyps: Box::new([]), head })),
+      args: Box::new([]), hyps: Box::new([]), heap: eheap, store: estore.into(), ret,
+      kind: ThmKind::Thm(Some(Proof { heap, hyps: Box::new([]), store: store.into() })),
     }
   }
 }
@@ -262,10 +270,11 @@ impl ExprDedup<'_> {
     atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, doc: Option<Arc<str>>,
     e: ExprId, ret: SortId,
   ) -> Term {
-    let (heap, head) = self.build0(e);
+    let (heap, mut store, head) = self.build0(e);
+    store.push(head);
     Term {
       atom, span, vis, full, doc, args: Box::new([]), ret: (ret, 0),
-      kind: TermKind::Def(Some(Expr { heap, head })),
+      kind: TermKind::Def(Some(Expr { heap, store: store.into() })),
     }
   }
 }

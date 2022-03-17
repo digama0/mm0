@@ -604,7 +604,7 @@ impl Elaborator {
             let num_args = tdata.args.len();
             let mut args = Vec::with_capacity(num_args);
             if !u.extend_into(num_args, &mut args) {return Err(err!(e, "not enough arguments"))}
-            Subst::new(&self.env, &tdata.heap, args).subst(&tdata.ret)
+            Subst::new(&self.env, &tdata.heap, &tdata.store, args).subst(&tdata.ret)
           }
         }
       }
@@ -778,8 +778,8 @@ impl Elaborator {
       if !u1.extend_into(nargs, &mut args) {
         return Err(format!("bad term: {}", self.print(u1)))
       }
-      let e1_unfolded = Subst::new(&self.env, &val.heap, args.clone())
-        .subst_mut(&mut self.lc, &val.head);
+      let e1_unfolded = Subst::new(&self.env, &val.heap, &val.store, args.clone())
+        .subst_mut(&mut self.lc, val.head());
       let conv = self.unify1(&e1_unfolded, e2)?;
       let conv = LispVal::unfold(a, args, if conv.is_def() {conv} else {e1_unfolded});
       Ok(if sym {LispVal::sym(conv)} else {conv})
@@ -956,7 +956,7 @@ impl Elaborator {
               }
               args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2.unwrap_or(sp)))))
             }
-            let mut subst = Subst::new(&self.env, &tdata.heap, Vec::from(&args[1..]));
+            let mut subst = Subst::new(&self.env, &tdata.heap, &tdata.store, Vec::from(&args[1..]));
             let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
             let ret = subst.subst(&tdata.ret);
             break RState::RefineHyps {

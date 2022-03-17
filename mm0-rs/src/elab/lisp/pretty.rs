@@ -471,10 +471,10 @@ impl<'a> Pretty<'a> {
       let mut heap = Vec::new();
       self.fe.binders(&t.args, &mut heap, &mut bvars);
       for e in &expr.heap[heap.len()..] {
-        let e = self.fe.expr_node(&heap, &mut None, e);
+        let e = self.fe.expr_node(&heap, &mut None, &expr.store, e);
         heap.push(e)
       }
-      let val = &self.fe.expr_node(&heap, &mut None, &expr.head);
+      let val = &self.fe.expr_node(&heap, &mut None, &expr.store, expr.head());
       let doc = self.append_doc(doc, self.append_doc(Self::line(),
         self.expr_delimited(val, "$ ", " $;")));
       self.alloc(Doc::Group(doc))
@@ -656,12 +656,12 @@ impl<'a> Pretty<'a> {
     let mut heap = Vec::new();
     self.fe.binders(&t.args, &mut heap, &mut bvars);
     for e in &t.heap[heap.len()..] {
-      let e = self.fe.expr_node(&heap, &mut None, e);
+      let e = self.fe.expr_node(&heap, &mut None, &t.store, e);
       heap.push(e)
     }
     let doc = self.hyps_and_ret(doc,
-      t.hyps.iter().map(|(_, e)| self.fe.expr_node(&heap, &mut None, e)),
-      &self.fe.expr_node(&heap, &mut None, &t.ret));
+      t.hyps.iter().map(|(_, e)| self.fe.expr_node(&heap, &mut None, &t.store, e)),
+      &self.fe.expr_node(&heap, &mut None, &t.store, &t.ret));
     let doc = self.append_doc(doc, s!(";"));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }

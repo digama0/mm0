@@ -301,8 +301,9 @@ impl<'a> Importer<'a> {
           self.dummies(&mut vars)?;
           let mut de = Dedup::new(&args);
           let i = self.expr(&mut de, &vars)?;
-          let (mut ids, heap) = build(&de);
-          TermKind::Def(Some(Expr {heap, head: ids[i].take()}))
+          let (mut ids, heap, mut store) = build(&de);
+          store.push(ids[i].take());
+          TermKind::Def(Some(Expr {heap, store: store.into()}))
         };
         let end = self.close_err()?;
         self.env.add_term(Term {
@@ -333,7 +334,7 @@ impl<'a> Importer<'a> {
           }
         }
         let ir = self.expr(&mut de, &vars)?;
-        let (mut ids, heap) = build(&de);
+        let (mut ids, heap, store) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let kind = if let DeclKind::Axiom = dk {
@@ -351,9 +352,10 @@ impl<'a> Importer<'a> {
             }
           }
           let ip = self.proof(&mut de, &vars, &mut proofs, ProofKind::Proof)?;
-          let (mut ids, heap) = build(&de);
+          let (mut ids, heap, mut store) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-          ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
+          store.push(ids[ip].take());
+          ThmKind::Thm(Some(Proof {heap, hyps, store: store.into()}))
         };
         let end = self.close_err()?;
         self.env.add_thm(Thm {
@@ -362,7 +364,7 @@ impl<'a> Importer<'a> {
           vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
-          args: args.into(), heap, hyps, ret, kind
+          args: args.into(), heap, store: store.into(), hyps, ret, kind
         }).map_err(|e| e.into_elab_error(span))?;
       }
     }
@@ -460,7 +462,7 @@ impl<'a> Importer<'a> {
           for (i, &n) in ns.iter().enumerate() { heap[i] = Some(n) }
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ProofKind::Proof)?)}
           let td = &self.env.thms[t];
-          let rhs = ProofHash::subst(de, &td.heap, &mut heap, &td.ret);
+          let rhs = ProofHash::subst(&self.env, de, &td.heap, &mut heap, &td.store, &td.ret);
           ProofHash::Thm(t, ns.into(), rhs)
         } else {
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;

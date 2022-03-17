@@ -778,8 +778,9 @@ impl Elaborator {
               let mut de = Dedup::new(&args);
               let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp));
               let i = de.dedup(&nh, ProofKind::Expr, &val)?;
-              let (mut ids, heap) = build(&de);
-              Expr {heap, head: ids[i].take()}
+              let (mut ids, heap, mut store) = build(&de);
+              store.push(ids[i].take());
+              Expr {heap, store: store.into()}
             };
             match ret {
               None => {
@@ -879,7 +880,7 @@ impl Elaborator {
         }
         let ir = de.dedup(&nh, ProofKind::Expr, &e_ret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
-        let (mut ids, heap) = build(&de);
+        let (mut ids, heap, store) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let kind = match &d.val {
@@ -911,9 +912,10 @@ impl Elaborator {
                 if error {return Ok(None)}
                 let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
                 let ip = de.dedup(&nh, ProofKind::Proof, &g)?;
-                let (mut ids, heap) = build(&de);
+                let (mut ids, heap, mut store) = build(&de);
                 let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-                Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
+                store.push(ids[ip].take());
+                Ok(Some(Proof {heap, hyps, store: store.into()}))
               })().unwrap_or_else(|e| {self.report(e); None})
             } else {None}
           })
@@ -921,7 +923,7 @@ impl Elaborator {
         if atom != AtomId::UNDER {
           let tid = self.env.add_thm(Thm {
             atom, span, vis: d.mods, full, doc,
-            args: args.into(), heap, hyps, ret, kind
+            args: args.into(), heap, store: store.into(), hyps, ret, kind
           }).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Thm(true, tid));
         }
@@ -1103,8 +1105,9 @@ impl Elaborator {
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
         let i = de.dedup(&nh, ProofKind::Expr, val)?;
-        let (mut ids, heap) = build(&de);
-        Ok(Some(Expr {heap, head: ids[i].take()}))
+        let (mut ids, heap, mut store) = build(&de);
+        store.push(ids[i].take());
+        Ok(Some(Expr {heap, store: store.into()}))
       })().unwrap_or_else(|e| {
         self.report(ElabError::new_e(e.pos,
           format!("while adding {}: {}", self.print(&x), e.kind.msg())));
@@ -1168,7 +1171,7 @@ impl Elaborator {
       Ok((a, de.dedup(&nh, ProofKind::Expr, &ty)?, ty))
     }).collect::<Result<Vec<_>>>()?;
     let ir = de.dedup(&nh, ProofKind::Expr, &e_ret)?;
-    let (mut ids, heap) = build(&de);
+    let (mut ids, heap, store) = build(&de);
     let hyps = is.iter().map(|&(a, i, _)| {
       (a, ids[i].take())
     }).collect();
@@ -1176,7 +1179,8 @@ impl Elaborator {
     let mut thm = Thm {
       atom: x, span, full: fsp.span, doc: None,
       vis: Modifiers::NONE, kind: ThmKind::Axiom,
-      args, heap, hyps, ret };
+      args, heap, store: store.into(), hyps, ret
+    };
     let out = if let Some((vis, proof)) = proof {
       thm.vis = self.visibility(&fsp, vis)?;
       if !DeclKind::Thm.allowed_visibility(thm.vis) {
@@ -1220,9 +1224,10 @@ impl Elaborator {
           dummies(fe, fsp, lc, &ds)?;
           let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
           let ip = de.dedup(&nh, ProofKind::Proof, &pf)?;
-          let (mut ids, heap) = build(&de);
+          let (mut ids, heap, mut store) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-          Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
+          store.push(ids[ip].take());
+          Ok(Some(Proof {heap, hyps, store: store.into()}))
         })().unwrap_or_else(|e| {
           self.report(ElabError::new_e(e.pos,
             format!("while adding {}: {}", self.print(&t.atom), e.kind.msg())));

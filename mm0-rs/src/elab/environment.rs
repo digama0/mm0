@@ -64,16 +64,16 @@ impl Type {
   #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
-/// An [`ExprNode`] is interpreted inside a context containing the `Vec<`[`Type`]`>`
-/// args and the `Vec<ExprNode>` heap.
-#[derive(Clone, Debug, DeepSizeOf)]
+/// An [`ExprNode`] is interpreted inside a context containing the `[`[`Type`]`]`
+/// args, the `[ExprNode]` heap and the `[ExprNode]` store for subterms.
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ExprNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),
-  /// `App(t, nodes)` is an application of term constructor `t` to subterms
-  App(TermId, Box<[ExprNode]>),
+  /// `App(t, [nodes..])` is an application of term constructor `t` to subterms
+  App(TermId, usize),
 }
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
@@ -83,8 +83,15 @@ pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ExprNode]>,
-  /// The target expression.
-  pub head: ExprNode,
+  /// The store, which is used for subexpressions that only appear once.
+  /// References in `ExprNode` other than `Ref(_)` refer to the store.
+  /// The last expression in the store is the head expression.
+  pub store: Box<[ExprNode]>,
+}
+
+impl Expr {
+  /// Retrieve the head expression node.
+  #[must_use] pub fn head(&self) -> &ExprNode { self.store.last().expect("bad store") }
 }
 
 /// The value of a term or def.
@@ -128,55 +135,45 @@ pub struct Term {
 /// A [`ProofNode`] is a stored proof term. This is an extension of [`ExprNode`] with
 /// more constructors, so a [`ProofNode`] can represent an expr, a proof, or a conversion,
 /// and the typing determines which. A [`ProofNode`] is interpreted in a context of
-/// variables `Vec<Type>`, and a heap `Vec<ProofNode>`.
-#[derive(Clone, Debug, DeepSizeOf)]
+/// variables `[Type]`, a heap `[ProofNode]`, and a store `[ProofNode]` for subterms.
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ProofNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),
-  /// `Term {term, args}` is an application of term constructor `term` to subterms
-  Term {
-    /** the term constructor */ term: TermId,
-    /** the subterms */ args: Box<[ProofNode]>,
-  },
+  /// `Term(term, [args..])` is an application of term constructor `term` to subterms.
+  /// The arguments are packed into storage with `args = store[p..][..args.len]`.
+  Term(TermId, usize),
   /// `Hyp(i, e)` is hypothesis `i` (`hyps[i]` will be a reference to element),
   /// which is a proof of `|- e`.
-  Hyp(usize, Box<ProofNode>),
-  /// `Thm {thm, args, res}` is a proof of `|- res` by applying theorem `thm` to arguments
-  /// `args`. `args` is a list of length `thm.args.len() + thm.hyps.len()` containing the
-  /// substitution, followed by the hypothesis subproofs, and it is required that `res`
-  /// and the subproofs be the result of substitution of the theorem conclusion and hypotheses
-  /// under the substitution.
-  Thm {
-    /** the theorem to apply */ thm: ThmId,
-    /** the substitution, and the subproofs */ args: Box<[ProofNode]>,
-    /** the substituted conclusion */ res: Box<ProofNode>,
-  },
-  /// `Conv(tgt, conv, proof)` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
-  Conv(Box<(ProofNode, ProofNode, ProofNode)>),
+  Hyp(usize, usize),
+  /// `Thm(thm, [res, args.., hyps..])` is a proof of `|- res` by applying theorem `thm` to
+  /// arguments `args` and `hyps`. `args` is a list of length `thm.args.len()` containing the
+  /// substitution, and `hyps` is a list of length `thm.hyps.len()` containing by the hypothesis
+  /// subproofs, and it is required that `res` and the subproofs be the result of substitution
+  /// of the theorem conclusion and hypotheses under the substitution.
+  /// The arguments are packed into storage with
+  /// `res = store[p], args = store[p+1..][..args.len], hyps = [p+1+args.len..][..hyps.len]`.
+  Thm(ThmId, usize),
+  /// `Conv([tgt, conv, proof])` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
+  /// The arguments are packed into storage with
+  /// `tgt = store[p], conv = store[p+1], proof = store[p+2]`.
+  Conv(usize),
   /// `Refl(e): e = e`
-  Refl(Box<ProofNode>),
-  /// `Refl(p): e2 = e1` if `p: e1 = e2`
-  Sym(Box<ProofNode>),
-  /// `Cong {term, args}: term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
-  Cong {
-    /** the term constructor */ term: TermId,
-    /** the conversion proofs for the arguments */ args: Box<[ProofNode]>,
-  },
-  /// `Unfold {term, args, res: (sub_lhs, p)}` is a proof of `term args = rhs` if
+  Refl(usize),
+  /// `Sym(p): e2 = e1` if `p: e1 = e2`
+  Sym(usize),
+  /// `Cong(term, [args..]): term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
+  /// The arguments are packed into storage with `args = store[p..][..args.len]`.
+  Cong(TermId, usize),
+  /// `Unfold {term, (sub_lhs, c, args)}` is a proof of `term args = rhs` if
   /// `term` is a definition and `sub_lhs` is the result of
-  /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
-  Unfold {
-    /// the definition to unfold
-    term: TermId,
-    /// the (non-dummy) parameters to the term
-    args: Box<[ProofNode]>,
-    /// - `sub_lhs`: the result of unfolding the definition (for some choice of dummy names)
-    /// - `p`: the proof that `sub_lhs = rhs`
-    res: Box<(ProofNode, ProofNode)>,
-  },
+  /// substituting `args` into the definition of `term`, and `c: sub_lhs = rhs`.
+  /// The arguments are packed into storage with
+  /// `sub_lhs = store[p], c = store[p+1], args = store[p+2..p+2+term.args.len]`.
+  Unfold(TermId, usize),
 }
 
 impl ProofNode {
@@ -190,17 +187,41 @@ impl ProofNode {
       }
     }
   }
+
+  /// Unpack the arguments to a [`ProofNode::Conv`]
+  #[inline] #[must_use] pub fn unpack_conv(args: &[ProofNode]) -> (&ProofNode, &ProofNode, &ProofNode) {
+    if let [tgt, conv, proof, ..] = args { (tgt, conv, proof) } else { panic!("invalid store") }
+  }
 }
 
-impl From<&ExprNode> for ProofNode {
-  fn from(e: &ExprNode) -> ProofNode {
-    match *e {
-      ExprNode::Ref(n) => ProofNode::Ref(n),
-      ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
-      ExprNode::App(term, ref es) => ProofNode::Term {
-        term, args: es.iter().map(Into::into).collect()
-      }
-    }
+impl Term {
+  /// Unpack the arguments to a [`ExprNode::App`]
+  #[inline] #[must_use] pub fn unpack_app<'a>(&self, args: &'a [ExprNode]) -> &'a [ExprNode] {
+    &args[..self.args.len()]
+  }
+  /// Unpack the arguments to a [`ProofNode::Term`] or [`ProofNode::Cong`]
+  #[inline] #[must_use] pub fn unpack_term<'a>(&self, args: &'a [ProofNode]) -> &'a [ProofNode] {
+    &args[..self.args.len()]
+  }
+  /// Unpack the arguments to a [`ProofNode::Unfold`]
+  #[inline] #[must_use] pub fn unpack_unfold<'a>(&self,
+    args: &'a [ProofNode]
+  ) -> (&'a ProofNode, &'a ProofNode, &'a [ProofNode]) {
+    if let [sub_lhs, c, args @ ..] = args {
+      (sub_lhs, c, &args[..self.args.len()])
+    } else { panic!("invalid store") }
+  }
+}
+
+impl Thm {
+  /// Unpack the arguments to a [`ProofNode::Thm`]
+  #[inline] #[must_use] pub fn unpack_thm<'a>(&self,
+    args: &'a [ProofNode]
+  ) -> (&'a ProofNode, &'a [ProofNode], &'a [ProofNode]) {
+    if let [res, args @ ..] = args {
+      let (args, hyps) = args.split_at(self.args.len());
+      (res, args, &hyps[..self.hyps.len()])
+    } else { panic!("invalid store") }
   }
 }
 
@@ -219,8 +240,15 @@ pub struct Proof {
   /// [`Hyp`]: ProofNode::Hyp
   /// [`Ref`]: ProofNode::Ref
   pub hyps: Box<[ProofNode]>,
-  /// The target proof term.
-  pub head: ProofNode,
+  /// The store, which is used for subexpressions that only appear once.
+  /// References in `ProofNode` other than `Ref` refer to the store.
+  /// The last expression in the store is the head expression.
+  pub store: Box<[ProofNode]>,
+}
+
+impl Proof {
+  /// Retrieve the head proof node.
+  #[must_use] pub fn head(&self) -> &ProofNode { self.store.last().expect("bad store") }
 }
 
 /// The proof of the axiom or theorem.
@@ -255,6 +283,8 @@ pub struct Thm {
   pub args: Box<[(Option<AtomId>, Type)]>,
   /// The heap used as the context for the `hyps` and `ret`.
   pub heap: Box<[ExprNode]>,
+  /// The store used as the context for the `hyps` and `ret`.
+  pub store: Box<[ExprNode]>,
   /// The expressions for the hypotheses (and their names, which are not used except
   /// in pretty printing and conversion back to s-exprs).
   pub hyps: Box<[(Option<AtomId>, ExprNode)]>,
@@ -277,8 +307,10 @@ pub struct OutputString {
   pub span: FileSpan,
   /// The heap of expressions used in the `exprs`.
   pub heap: Box<[ExprNode]>,
-  /// The expressions to output.
-  pub exprs: Box<[ExprNode]>,
+  /// The store of expressions used in the `exprs`.
+  pub store: Box<[ExprNode]>,
+  /// The last `exprs` expressions in the store are the expressions to output.
+  pub exprs: usize,
 }
 
 /// A global order on sorts, declarations ([`Term`] and [`Thm`]), and lisp
@@ -745,10 +777,10 @@ impl Remap for Type {
 impl Remap for ExprNode {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &ExprNode::Ref(i) => ExprNode::Ref(i),
+    match *self {
+      ExprNode::Ref(i) => ExprNode::Ref(i),
       ExprNode::Dummy(a, s) => ExprNode::Dummy(a.remap(r), s.remap(r)),
-      ExprNode::App(t, es) => ExprNode::App(t.remap(r), es.remap(r)),
+      ExprNode::App(t, es) => ExprNode::App(t.remap(r), es),
     }
   }
 }
@@ -757,7 +789,7 @@ impl Remap for Expr {
   fn remap(&self, r: &mut Remapper) -> Self {
     Expr {
       heap: self.heap.remap(r),
-      head: self.head.remap(r),
+      store: self.store.remap(r),
     }
   }
 }
@@ -791,26 +823,25 @@ impl Remap for OutputString {
     OutputString {
       span: self.span.clone(),
       heap: self.heap.remap(r),
-      exprs: self.exprs.remap(r),
+      store: self.store.remap(r),
+      exprs: self.exprs,
     }
   }
 }
 impl Remap for ProofNode {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &ProofNode::Ref(i) => ProofNode::Ref(i),
+    match *self {
+      ProofNode::Ref(i) => ProofNode::Ref(i),
       ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
-      ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
-      &ProofNode::Hyp(i, ref e) => ProofNode::Hyp(i, e.remap(r)),
-      ProofNode::Thm {thm, args, res} => ProofNode::Thm {
-        thm: thm.remap(r), args: args.remap(r), res: res.remap(r) },
-      ProofNode::Conv(p) => ProofNode::Conv(Box::new((p.0.remap(r), p.1.remap(r), p.2.remap(r)))),
-      ProofNode::Refl(p) => ProofNode::Refl(p.remap(r)),
-      ProofNode::Sym(p) => ProofNode::Sym(p.remap(r)),
-      ProofNode::Cong {term, args} => ProofNode::Cong { term: term.remap(r), args: args.remap(r) },
-      ProofNode::Unfold {term, args, res} => ProofNode::Unfold {
-        term: term.remap(r), args: args.remap(r), res: res.remap(r) },
+      ProofNode::Term(term, p) => ProofNode::Term(term.remap(r), p),
+      ProofNode::Hyp(i, e) => ProofNode::Hyp(i, e),
+      ProofNode::Thm(thm, p) => ProofNode::Thm(thm.remap(r), p),
+      ProofNode::Conv(p) => ProofNode::Conv(p),
+      ProofNode::Refl(p) => ProofNode::Refl(p),
+      ProofNode::Sym(p) => ProofNode::Sym(p),
+      ProofNode::Cong(term, p) => ProofNode::Cong(term.remap(r), p),
+      ProofNode::Unfold(term, p) => ProofNode::Unfold(term.remap(r), p),
     }
   }
 }
@@ -820,7 +851,7 @@ impl Remap for Proof {
     Proof {
       heap: self.heap.remap(r),
       hyps: self.hyps.remap(r),
-      head: self.head.remap(r),
+      store: self.store.remap(r),
     }
   }
 }
@@ -844,6 +875,7 @@ impl Remap for Thm {
       doc: self.doc.clone(),
       args: self.args.remap(r),
       heap: self.heap.remap(r),
+      store: self.store.remap(r),
       hyps: self.hyps.remap(r),
       ret: self.ret.remap(r),
       kind: self.kind.remap(r),

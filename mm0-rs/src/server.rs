@@ -769,7 +769,7 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
               // printing at the same time. But this is a hover output so this seems unlikely.
               args.push(unsafe { u.next()?.thaw() }.clone());
             }
-            let mut subst = Subst::new(env, &td.heap, args);
+            let mut subst = Subst::new(env, &td.heap, &td.store, args);
             let mut out = String::new();
             let ret = subst.subst(&td.ret);
             fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),

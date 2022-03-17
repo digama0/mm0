@@ -2,7 +2,7 @@
 
 use std::io;
 use super::proof::{Dedup, NodeHasher, ProofKind, build};
-use crate::{DeclKey, SortId, TermId, Type, Expr, ExprNode,
+use crate::{DeclKey, SortId, TermId, Type, ExprNode,
   TermKind, OutputString, StmtTrace, Environment, FileSpan, BoxError};
 use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
   lisp::{InferTarget, LispVal}, local_context::try_get_span, FrozenEnv};
@@ -193,31 +193,32 @@ impl Environment {
 
   fn process_node<T>(&self,
     terms: &HashMap<TermId, InoutStringType>,
-    args: &[(T, Type)], e: &ExprNode,
+    args: &[(T, Type)], store: &[ExprNode], e: &ExprNode,
     heap: &[Box<[StringSeg]>],
     out: &mut StringSegBuilder,
   ) -> Result<(), String> {
-    match e {
+    match *e {
       ExprNode::Dummy(_, _) => return Err("dummy not permitted".into()),
-      &ExprNode::Ref(i) => match i.checked_sub(args.len()) {
+      ExprNode::Ref(i) => match i.checked_sub(args.len()) {
         None => if let (_, Type::Reg(s, 0)) = args[i] {
           out.push_seg(StringSeg::Var(s, i.try_into().expect("too many refs")));
         } else {unreachable!()}
         Some(j) => out.flush().built.extend_from_slice(&heap[j]),
       },
-      &ExprNode::App(t, ref ns) => match terms.get(&t) {
+      ExprNode::App(t, p) => match terms.get(&t) {
         Some(InoutStringType::S0) => {}
         Some(InoutStringType::S1) =>
-          self.process_node(terms, args, &ns[0], heap, out)?,
+          self.process_node(terms, args, store, &store[p], heap, out)?,
         Some(InoutStringType::SAdd | InoutStringType::SCons | InoutStringType::Ch) => {
-          self.process_node(terms, args, &ns[0], heap, out)?;
-          self.process_node(terms, args, &ns[1], heap, out)?;
+          self.process_node(terms, args, store, &store[p], heap, out)?;
+          self.process_node(terms, args, store, &store[p+1], heap, out)?;
         }
         Some(&InoutStringType::Hex(h)) => {out.push_hex(h);}
         // Some(InoutStringType::Str(s)) => {out.push_str(s);}
         _ => {
+          let ns = self.terms[t].unpack_app(&store[p..]);
           let args = ns.iter().map(|n| StringSegBuilder::make(|arg|
-              self.process_node(terms, args, n, heap, arg)))
+              self.process_node(terms, args, store, n, heap, arg)))
             .collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
           out.push_seg(StringSeg::Term(t, args));
         }
@@ -228,35 +229,35 @@ impl Environment {
 
   fn write_node<W: io::Write>(&self,
     terms: &HashMap<TermId, InoutStringType>,
-    heap: &[StringPart],
-    e: &ExprNode,
+    heap: &[StringPart], store: &[ExprNode], e: &ExprNode,
     w: &mut StringWriter<W>,
   ) -> Result<(), OutputError> {
-    match e {
+    match *e {
       ExprNode::Dummy(_, _) => Err("Found dummy variable in string definition".into()),
-      &ExprNode::Ref(i) => w.write_part(&heap[i]),
-      &ExprNode::App(t, ref ns) => match terms.get(&t) {
+      ExprNode::Ref(i) => w.write_part(&heap[i]),
+      ExprNode::App(term, p) => match terms.get(&term) {
         Some(InoutStringType::S0) => Ok(()),
         Some(InoutStringType::S1) =>
-          self.write_node(terms, heap, &ns[0], w),
+          self.write_node(terms, heap, store, &store[p], w),
         Some(InoutStringType::SAdd | InoutStringType::SCons | InoutStringType::Ch) => {
-          self.write_node(terms, heap, &ns[0], w)?;
-          self.write_node(terms, heap, &ns[1], w)
+          self.write_node(terms, heap, store, &store[p], w)?;
+          self.write_node(terms, heap, store, &store[p+1], w)
         }
         Some(&InoutStringType::Hex(h)) => w.write_hex(h),
-        _ => if let TermKind::Def(Some(expr)) = &self.terms[t].kind {
+        _ => if let TermKind::Def(Some(expr)) = &self.terms[term].kind {
           let mut args: Vec<StringPart> = Vec::with_capacity(heap.len());
-          for e in &**ns {
+          let ns = self.terms[term].unpack_app(&store[p..]);
+          for e in ns {
             let mut w = StringWriter::default();
-            self.write_node(terms, heap, e, &mut w)?;
+            self.write_node(terms, heap, store, e, &mut w)?;
             args.push(w.into());
           }
           for e in &expr.heap[ns.len()..] {
             let mut w = StringWriter::default();
-            self.write_node(terms, &args, e, &mut w)?;
+            self.write_node(terms, &args, store, e, &mut w)?;
             args.push(w.into());
           }
-          self.write_node(terms, &args, &expr.head, w)
+          self.write_node(terms, &args, &expr.store, expr.head(), w)
         } else {
           Err("Unknown definition".into())
         }
@@ -267,16 +268,16 @@ impl Environment {
   fn write_output_string<W: io::Write>(&self,
     terms: &HashMap<TermId, InoutStringType>,
     w: &mut StringWriter<W>,
-    heap: &[ExprNode], exprs: &[ExprNode]
+    heap: &[ExprNode], store: &[ExprNode], exprs: &[ExprNode]
   ) -> Result<(), OutputError> {
     let mut args = Vec::with_capacity(heap.len());
     for e in heap {
       let mut w = StringWriter::default();
-      self.write_node(terms, &args, e, &mut w)?;
+      self.write_node(terms, &args, store, e, &mut w)?;
       args.push(w.into());
     }
     for e in exprs {
-      self.write_node(terms, &args, e, w)?;
+      self.write_node(terms, &args, store, e, w)?;
     }
     Ok(())
   }
@@ -285,15 +286,15 @@ impl Environment {
       terms: &HashMap<TermId, InoutStringType>,
       t: TermId, name: &str) -> Result<Box<[StringSeg]>, String> {
     let td = &self.terms[t];
-    if let TermKind::Def(Some(Expr {heap, head})) = &td.kind {
-      let mut refs = Vec::with_capacity(heap.len() - td.args.len());
-      for e in &heap[td.args.len()..] {
+    if let TermKind::Def(Some(expr)) = &td.kind {
+      let mut refs = Vec::with_capacity(expr.heap.len() - td.args.len());
+      for e in &expr.heap[td.args.len()..] {
         let out = StringSegBuilder::make(|out|
-          self.process_node(terms, &td.args, e, &refs, out))?;
+          self.process_node(terms, &td.args, &expr.store, e, &refs, out))?;
         refs.push(out);
       }
       StringSegBuilder::make(|out|
-        self.process_node(terms, &td.args, head, &refs, out))
+        self.process_node(terms, &td.args, &expr.store, expr.head(), &refs, out))
     } else {
       Err(format!("term '{}' should be a def", name))
     }
@@ -349,10 +350,11 @@ impl Elaborator {
     let mut de = Dedup::new(&[]);
     let is = es.into_iter().map(|val| de.dedup(&nh, ProofKind::Expr, &val))
       .collect::<EResult<Vec<_>>>()?;
-    let (mut ids, heap) = build(&de);
-    let exprs = is.into_iter().map(|i| ids[i].take()).collect();
+    let (mut ids, heap, mut store) = build(&de);
+    let exprs = is.len();
+    store.extend(is.into_iter().map(|i| ids[i].take()));
     self.stmts.push(StmtTrace::OutputString(
-      Box::new(OutputString {span: fsp, heap, exprs})));
+      Box::new(OutputString {span: fsp, heap, store: store.into(), exprs})));
     Ok(())
   }
 
@@ -377,11 +379,11 @@ impl Elaborator {
     let mut de = Dedup::new(&[]);
     let is = es.into_iter().map(|val| de.dedup(&nh, ProofKind::Expr, &val))
       .collect::<EResult<Vec<_>>>()?;
-    let (mut ids, heap) = build(&de);
+    let (mut ids, heap, store) = build(&de);
     let exprs = is.into_iter().map(|i| ids[i].take()).collect::<Vec<_>>();
     let mut w = StringWriter::default();
     let terms = &self.inout.string.as_ref().expect("string handler should be initialized").1;
-    self.env.write_output_string(terms, &mut w, &heap, &exprs).map_err(|e| match e {
+    self.env.write_output_string(terms, &mut w, &heap, &store, &exprs).map_err(|e| match e {
       OutputError::IoError(e) => panic!("{}", e),
       OutputError::String(e) => ElabError::new_e(fsp.span, e),
     })?;
@@ -416,13 +418,13 @@ impl FrozenEnv {
     let env = unsafe { self.thaw() };
     for s in self.stmts() {
       if let StmtTrace::OutputString(os) = s {
-        let OutputString {span, heap, exprs} = &**os;
+        let OutputString {span, heap, store, exprs} = &**os;
         (|| -> Result<(), OutputError> {
           let terms = {
             handler = Some(env.new_string_handler().map_err(OutputError::String)?);
             let_unchecked!(Some((_, t)) = &handler, t)
           };
-        env.write_output_string(terms, &mut w, heap, exprs)
+          env.write_output_string(terms, &mut w, heap, store, &store[store.len() - exprs..])
         })().map_err(|e| (span.clone(), e))?;
       }
     }

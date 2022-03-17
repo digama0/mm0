@@ -358,10 +358,10 @@ impl Elaborator {
       ThmKind::Thm(Some(pr)) => {
         let mut ds = Vec::new();
         for e in &pr.heap[heap.len()..] {
-          let e = self.proof_node(&[], &heap, &mut Some(&mut ds), e);
+          let e = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.store, e);
           heap.push(e)
         }
-        let ret = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.head);
+        let ret = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.store, pr.head());
         LispVal::list(vec![LispVal::list(ds), ret])
       }
       _ => LispVal::atom(AtomId::SORRY),
@@ -402,10 +402,10 @@ impl Elaborator {
           args.push(vis(tdata.vis));
           let mut ds = Vec::new();
           for e in &v.heap[heap.len()..] {
-            let e = self.expr_node(&heap, &mut Some(&mut ds), e);
+            let e = self.expr_node(&heap, &mut Some(&mut ds), &v.store, e);
             heap.push(e)
           }
-          let ret = self.expr_node(&heap, &mut Some(&mut ds), &v.head);
+          let ret = self.expr_node(&heap, &mut Some(&mut ds), &v.store, v.head());
           args.push(LispVal::list(ds));
           args.push(ret);
         }
@@ -427,15 +427,15 @@ impl Elaborator {
           self.binders(&tdata.args, &mut heap, &mut bvs),
           {
             for e in &tdata.heap[heap.len()..] {
-              let e = self.expr_node(&heap, &mut None, e);
+              let e = self.expr_node(&heap, &mut None, &tdata.store, e);
               heap.push(e)
             }
             LispVal::list(tdata.hyps.iter().map(|(a, e)| LispVal::list(vec![
               LispVal::atom(a.unwrap_or(AtomId::UNDER)),
-              self.expr_node(&heap, &mut None, e)
+              self.expr_node(&heap, &mut None, &tdata.store, e)
             ])).collect::<Vec<_>>())
           },
-          self.expr_node(&heap, &mut None, &tdata.ret)
+          self.expr_node(&heap, &mut None, &tdata.store, &tdata.ret)
         ];
         if let ThmKind::Thm(_) = tdata.kind {
           args.push(vis(tdata.vis));

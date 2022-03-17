@@ -145,20 +145,21 @@ impl AxiomUse {
     (to_tid, AxiomUse { axiom_use, axiom_sets })
   }
 
-  fn accumulate(&mut self, env: &Environment, bs: &mut BitSet, node: &ProofNode) {
+  fn accumulate(&mut self, env: &Environment, bs: &mut BitSet, store: &[ProofNode], node: &ProofNode) {
     match node {
       ProofNode::Ref(_) |
       ProofNode::Dummy(_, _) |
-      ProofNode::Term {..} |
+      ProofNode::Term(..) |
       ProofNode::Hyp(_, _) |
       ProofNode::Refl(_) |
       ProofNode::Sym(_) |
-      ProofNode::Cong {..} |
-      ProofNode::Unfold {..} => {}
-      ProofNode::Conv(p) => self.accumulate(env, bs, &p.2),
-      &ProofNode::Thm {thm: tid, ref args, ..} => {
+      ProofNode::Cong(..) |
+      ProofNode::Unfold(..) => {}
+      ProofNode::Conv(p) => self.accumulate(env, bs, store, &store[p+2]),
+      &ProofNode::Thm(tid, p) => {
+        let (_, _, pfs) = env.thms[tid].unpack_thm(&store[p..]);
         bs.union_with(self.get(env, tid));
-        for p in &**args { self.accumulate(env, bs, p) }
+        for p in pfs { self.accumulate(env, bs, store, p) }
       }
     }
   }
@@ -176,9 +177,9 @@ impl AxiomUse {
     match &td.kind {
       ThmKind::Axiom => unreachable!(),
       ThmKind::Thm(None) => {bs.insert(0);}
-      ThmKind::Thm(Some(Proof {heap, head, ..})) => {
-        for p in &heap[td.args.len()..] { self.accumulate(env, &mut bs, p) }
-        self.accumulate(env, &mut bs, head)
+      ThmKind::Thm(Some(pf)) => {
+        for p in &pf.heap[td.args.len()..] { self.accumulate(env, &mut bs, &pf.store, p) }
+        self.accumulate(env, &mut bs, &pf.store, pf.head())
       }
     }
     self.axiom_use.entry(tid).or_insert(bs)
@@ -203,6 +204,7 @@ struct LayoutProof<'a> {
   rev: bool,
   args: &'a [(Option<AtomId>, Type)],
   heap: &'a [ProofNode],
+  store: &'a [ProofNode],
   hyps: &'a [(Option<AtomId>, ExprNode)],
   heap_lines: Box<[Option<LayoutResult>]>,
 }
@@ -237,8 +239,8 @@ impl<'a> LayoutProof<'a> {
   }
 
   fn layout_conv(&mut self, defs: &mut Vec<TermId>, p: &ProofNode) {
-    match p {
-      &ProofNode::Ref(i) => {
+    match *p {
+      ProofNode::Ref(i) => {
         for &d in
           if let Some(h) = &self.heap_lines[i] {h} else {
             let h = self.layout(&self.heap[i]);
@@ -252,11 +254,12 @@ impl<'a> LayoutProof<'a> {
       ProofNode::Thm {..} |
       ProofNode::Conv(_) => unreachable!(),
       ProofNode::Refl(_) => {}
-      ProofNode::Sym(c) => self.layout_conv(defs, c),
-      ProofNode::Cong {args, ..} => for c in &**args { self.layout_conv(defs, c) },
-      &ProofNode::Unfold {term, ref res, ..} => {
+      ProofNode::Sym(p) => self.layout_conv(defs, &self.store[p]),
+      ProofNode::Cong(term, p) =>
+        for c in self.env.terms[term].unpack_term(&self.store[p..]) { self.layout_conv(defs, c) }
+      ProofNode::Unfold(term, p) => {
         if !defs.contains(&term) {defs.push(term)}
-        self.layout_conv(defs, &res.1)
+        self.layout_conv(defs, &self.store[p+1])
       }
     }
   }
@@ -274,40 +277,41 @@ impl<'a> LayoutProof<'a> {
           res
         },
       ProofNode::Dummy(a, _) => LayoutResult::Expr(LispVal::atom(a)),
-      ProofNode::Term {term, ref args} => {
-        let mut out = Vec::with_capacity(args.len()+1);
-        out.push(LispVal::atom(self.env.terms[term].atom));
-        for e in &**args {
+      ProofNode::Term(term, p) => {
+        let td = &self.env.terms[term];
+        let mut out = Vec::with_capacity(td.args.len()+1);
+        out.push(LispVal::atom(td.atom));
+        for e in td.unpack_term(&self.store[p..]) {
           out.push(self.layout(e).into_expr());
         }
         LayoutResult::Expr(LispVal::list(out))
       }
-      ProofNode::Hyp(i, ref e) => {
-        let e = self.layout(e).into_expr();
+      ProofNode::Hyp(i, p) => {
+        let e = self.layout(&self.store[p]).into_expr();
         LayoutResult::Proof(self.push_line(Box::new([]), LineKind::Hyp(self.hyps[i].0), e))
       }
-      ProofNode::Thm {thm, ref args, ref res} => {
+      ProofNode::Thm(thm, p) => {
         let td = &self.env.thms[thm];
+        let (res, _, subproofs) = td.unpack_thm(&self.store[p..]);
         let mut hyps = SliceUninit::new(td.hyps.len());
-        assert!(td.args.len() + td.hyps.len() == args.len());
         if self.rev {
-          for (i, e) in args[td.args.len()..].iter().enumerate().rev() {
+          for (i, e) in subproofs.iter().enumerate().rev() {
             hyps.set(i, self.layout(e).into_proof())
           }
         } else {
-          for (i, e) in args[td.args.len()..].iter().enumerate() {
+          for (i, e) in subproofs.iter().enumerate() {
             hyps.set(i, self.layout(e).into_proof())
           }
         }
         let res = self.layout(res).into_expr();
-        // Safety: We checked that the length matches, and we initialize
-        // every element exactly once in forward or reverse order.
+        // Safety: We initialize every element exactly once in forward or reverse order.
         LayoutResult::Proof(self.push_line(unsafe { hyps.assume_init() }, LineKind::Thm(thm), res))
       }
-      ProofNode::Conv(ref p) => {
-        let n = self.layout(&p.2).into_proof();
-        let mut defs = self.layout(&p.1).into_conv();
-        let tgt = self.layout(&p.0).into_expr();
+      ProofNode::Conv(p) => {
+        let (tgt, conv, proof) = ProofNode::unpack_conv(&self.store[p..]);
+        let n = self.layout(proof).into_proof();
+        let mut defs = self.layout(conv).into_conv();
+        let tgt = self.layout(tgt).into_expr();
         defs.sort_by_key(|&t| self.env.data[self.env.terms[t].atom].name.as_str());
         LayoutResult::Proof(self.push_line(Box::new([n]), LineKind::Conv(defs), tgt))
       }
@@ -379,11 +383,11 @@ fn render_proof<'a>(
   pf: &'a Proof,
 ) -> io::Result<()> {
   let mut layout = LayoutProof {
-    env, args, heap: &pf.heap, hyps,
+    env, args, heap: &pf.heap, hyps, store: &pf.store,
     rev: matches!(order, ProofOrder::Pre), lines: vec![],
     heap_lines: vec![None; pf.heap.len()].into_boxed_slice()
   };
-  layout.layout(&pf.head).into_proof();
+  layout.layout(pf.head()).into_proof();
   let lines = layout.lines;
   let fe = FormatEnv {source, env};
   match order {
