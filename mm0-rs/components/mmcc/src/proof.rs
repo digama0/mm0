@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::regalloc::PCode;
+use crate::types::classify;
 use crate::types::vcode::ProcAbi;
 use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
 use crate::codegen::FUNCTION_ALIGN;
@@ -632,6 +633,15 @@ impl<'a> BlockProof<'a> {
   /// The physical block associated to this proof, or `None` if this is a virtual-only block.
   #[must_use] pub fn vblock(&self) -> Option<VBlock<'a>> {
     Some(self.ctx.vblock(self.ctx.vblock_id(self.id)?))
+  }
+
+  /// Calls a visitor on the MIR block and its physical counterpart.
+  pub fn visit_vblock(&self, v: &mut impl classify::Visitor) {
+    if let Some(id) = self.ctx.vblock_id(self.id) {
+      let abis = &self.ctx.code.func_abi;
+      let abi_rets = self.ctx.id.and_then(|id| abis[id].rets.as_deref());
+      self.ctx.proc.visit(abis, abi_rets, id, self.block(), v)
+    }
   }
 }
 

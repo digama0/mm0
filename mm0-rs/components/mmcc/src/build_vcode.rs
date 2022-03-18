@@ -361,18 +361,18 @@ impl<'a> LowerCtx<'a> {
 
   fn build_shift_or_zero(&mut self,
     sz: Size, dst: RegMem, kind: ShiftKind, o1: &Operand, o2: &Operand
-  ) -> cl::Shift {
+  ) -> cl::RValue {
     let bits = sz.bits().expect("unbounded");
     let (src1, cl1) = self.get_operand_reg(o1, sz);
-    match self.get_operand(o2) {
+    cl::RValue::Shift(cl1, match self.get_operand(o2) {
       (RegMemImm::Imm(n), _) => {
         if n >= bits.into() {
           let _ = self.code.emit_copy(sz, dst, 0_u64);
-          return cl::Shift::Zero(cl1)
+          return cl::RValue::Shift(cl1, cl::Shift::Zero)
         }
         #[allow(clippy::cast_possible_truncation)]
         let temp = self.code.emit_shift(sz, kind, src1, Ok(n as u8));
-        cl::Shift::Imm(cl1, self.code.emit_copy(sz, dst, temp))
+        cl::Shift::Imm(self.code.emit_copy(sz, dst, temp))
       }
       (src2, cl2) => {
         let (src2, cl3) = src2.into_reg(&mut self.code, sz);
@@ -380,9 +380,9 @@ impl<'a> LowerCtx<'a> {
         let zero = self.code.emit_imm(sz, 0_u32);
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, CC::NB, src1, u32::from(bits));
         let temp = cond.select(sz, zero, temp);
-        cl::Shift::Var(cl1, (cl2, cl3), self.code.emit_copy(sz, dst, temp))
+        cl::Shift::Var((cl2, cl3), self.code.emit_copy(sz, dst, temp))
       }
-    }
+    })
   }
 
   fn build_binop(&mut self,
@@ -506,10 +506,10 @@ impl<'a> LowerCtx<'a> {
       RValue::Binop(Binop::BitXor(ity), o1, o2) =>
         self.build_binop(ity.size(), dst, VBinop::Xor, o1, o2),
       RValue::Binop(Binop::Shl(_), o1, o2) =>
-        cl::RValue::Shift(self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2)),
+        self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2),
       RValue::Binop(Binop::Shr(ity), o1, o2) => {
         let kind = if ity.signed() { ShiftKind::ShrA } else { ShiftKind::ShrL };
-        cl::RValue::Shift(self.build_shift_or_zero(sz, dst, kind, o1, o2))
+        self.build_shift_or_zero(sz, dst, kind, o1, o2)
       }
       RValue::Binop(Binop::Lt(ity), o1, o2) =>
         self.build_cmp(ity.size(), dst, if ity.signed() { CC::L } else { CC::B }, o1, o2),
@@ -731,14 +731,14 @@ impl<'a> LowerCtx<'a> {
           let a = self.allocs.get(v);
           assert_ne!(a, AllocId::ZERO);
           let (&(dst, sz), size) = self.get_alloc(a);
-          let addr = match dst {
+          let (addr, cl) = match dst {
             RegMem::Reg(r) => {
               let a = AMode::spill(self.code.fresh_spill(
                 size.try_into().expect("allocation too large")));
               boxes.push((sz, r, a));
-              a
+              (a, true)
             }
-            RegMem::Mem(a) => a,
+            RegMem::Mem(a) => (a, false),
           };
           let temp = self.code.emit_lea(Size::S64, addr);
           match *arg {
@@ -749,6 +749,7 @@ impl<'a> LowerCtx<'a> {
             }
             _ => unreachable!()
           }
+          self.code.trace.lists.push(cl::Elem::RetArg(cl::IntoMem(cl)))
         }
       }
       self.emit(Inst::CallKnown {
@@ -758,23 +759,20 @@ impl<'a> LowerCtx<'a> {
       });
       let mut ret_regs = ret_regs.into_iter();
       for (arg, &(vr, v)) in retabi.iter().zip(rets) {
-        let cl = if vr {
-          let a = self.allocs.get(v);
-          assert_ne!(a, AllocId::ZERO);
-          let dst = self.get_alloc(a).0 .0;
-          match *arg {
-            ArgAbi::Reg(_, sz) => {
-              let _ = self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed"));
-              cl::Elem::RetReg
-            }
-            ArgAbi::Mem { off, sz } => {
-              let sz64 = sz.into();
-              cl::Elem::RetMem(self.build_memcpy(sz64, Size::from_u64(sz64), dst, &outgoing + off))
-            }
-            _ => cl::Elem::Ghost
+        if !vr { continue }
+        let a = self.allocs.get(v);
+        assert_ne!(a, AllocId::ZERO);
+        let dst = self.get_alloc(a).0 .0;
+        let cl = match *arg {
+          ArgAbi::Reg(_, sz) => {
+            let _ = self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed"));
+            cl::Elem::RetReg
           }
-        } else {
-          cl::Elem::Ghost
+          ArgAbi::Mem { off, sz } => {
+            let sz64 = sz.into();
+            cl::Elem::RetMem(self.build_memcpy(sz64, Size::from_u64(sz64), dst, &outgoing + off))
+          }
+          _ => cl::Elem::Ghost
         };
         self.code.trace.lists.push(cl)
       }
@@ -782,23 +780,22 @@ impl<'a> LowerCtx<'a> {
       self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
         dst: VBlockId(tgt.0),
       })));
-      cl::Terminator::Call(true)
     } else {
       self.emit(Inst::CallKnown { f, operands: operands.into(), clobbers: None });
-      cl::Terminator::Call(false)
     }
+    cl::Terminator::Call(f)
   }
 
   fn build_intrinsic(&mut self,
     vbl: VBlockId,
-    f: IntrinsicProc,
+    proc: IntrinsicProc,
     args: &[(bool, Operand)],
     tgt: BlockId,
     rets: &[(bool, VarId)],
   ) -> cl::Terminator {
     let mut rmis = ArrayVec::<(RegMemImm<u64>, cl::Operand), 6>::new();
     const CV: cl::Operand = cl::Operand::Const(cl::Const::Value);
-    let (f, (ret_used, ret)) = match (f, rets, args) {
+    let (f, (ret_used, ret)) = match (proc, rets, args) {
       (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), (0.into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
@@ -831,15 +828,15 @@ impl<'a> LowerCtx<'a> {
         (SysCall::MMap, ret)
       }
       (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
-          rmis.extend([
-            (0.into(), CV),
-            self.get_operand(len),
-            self.get_operand(prot),
-            ((2+32).into(), CV),
-            (u64::from(u32::MAX).into(), CV),
-            (0.into(), CV),
-          ]);
-          (SysCall::MMap, ret)
+        rmis.extend([
+          (0.into(), CV),
+          self.get_operand(len),
+          self.get_operand(prot),
+          ((2+32).into(), CV),
+          (u64::from(u32::MAX).into(), CV),
+          (0.into(), CV),
+        ]);
+        (SysCall::MMap, ret)
       }
       e => panic!("intrinsic has the wrong number of arguments: {:?}", e)
     };
@@ -854,7 +851,7 @@ impl<'a> LowerCtx<'a> {
       None
     };
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
-    cl::Terminator::SysCall(rmis.len().try_into().expect("overflow"), cl2)
+    cl::Terminator::Intrinsic(proc, cl2)
   }
 
   fn build_syscall(&mut self, f: SysCall, args: &[(RegMemImm<u64>, cl::Operand)], dst: VReg) {
@@ -1042,6 +1039,8 @@ impl<'a> LowerCtx<'a> {
         self.code.emit(Inst::BlockParam { var: v, val });
       }
       self.code.trace.stmts.push_new();
+      let proj_start = self.code.trace.projs.len().try_into().expect("overflow");
+      let list_start = self.code.trace.lists.len().try_into().expect("overflow");
       for stmt in &bl.stmts {
         let cl = if stmt.relevant() {
           match stmt {
@@ -1078,7 +1077,7 @@ impl<'a> LowerCtx<'a> {
         stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))
       }
       let cl = self.build_terminator(block_args, vbl, bl.terminator());
-      self.code.trace.terms.push(cl);
+      self.code.trace.block.push(cl::Block { proj_start, list_start, term: cl });
       self.code.finish_block();
     });
   }

@@ -16,6 +16,7 @@ use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offs
   PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, PReg, RegMem, RegMemImm};
 use crate::linker::ConstData;
 use crate::mir_opt::storage::Allocations;
+use crate::types::classify::Trace;
 use crate::types::{IdxVec, Size};
 use crate::types::mir::{self, Cfg};
 use crate::{Entity, Idx, Symbol};
@@ -105,6 +106,7 @@ pub(crate) struct PCode {
   pub(crate) blocks: IdxVec<BlockId, (PInstId, PInstId)>,
   pub(crate) block_addr: IdxVec<BlockId, u32>,
   pub(crate) block_params: ChunkVec<BlockId, (mir::VarId, PRegMem)>,
+  pub(crate) trace: Trace,
   pub(crate) stack_size: u32,
   pub(crate) saved_regs: Vec<PReg>,
   pub(crate) len: u32,
@@ -333,6 +335,7 @@ pub(crate) fn regalloc_vcode(
       blocks: IdxVec::from(vec![]),
       block_addr: IdxVec::from(vec![0]),
       block_params: [[]].into_iter().collect(),
+      trace: vcode.trace,
       stack_size: stack_size_no_ret,
       saved_regs: vec![],
       len: 0,

@@ -750,7 +750,7 @@ impl RegMemImm<u64> {
 /// The available set of kernel calls that can be made through the `syscall` instruction.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub(crate) enum SysCall {
+pub enum SysCall {
   /// `fd <- open(filename, flags, 0)`. `flags` must be one of:
   /// * `O_RDONLY = 0`
   /// * `O_WRONLY + O_CREAT + O_TRUNC = 1 + 1<<6 + 1<<9 = 577`
@@ -1535,6 +1535,16 @@ pub enum DispLayout {
   S8 = 1,
   /// 4 byte immediate, `mm = 10`
   S32 = 2,
+}
+
+impl PInst {
+  /// Returns true if this is a spill instruction (added by regalloc)
+  pub fn is_spill(&self) -> bool {
+    matches!(self,
+      Self::MovRR { .. } |
+      Self::Load64 { spill: true, .. } |
+      Self::Store { spill: true, .. })
+  }
 }
 
 impl DispLayout {
