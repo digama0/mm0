@@ -232,9 +232,12 @@ make_predefs! {
   /// `localAssembleA (A B: set): set`
   localAssembleA: TermId => "localAssembleA";
   localAssembleA_I: ThmId => "localAssembleA_I";
+  /// `ASM0: set`
+  ASM0: TermId => "ASM0";
 
   /// `localAssemble0 (p: nat) (x: nat) (P: set): wff`
   localAssemble0: TermId => "localAssemble0";
+  localAssemble0_0: ThmId => "localAssemble0_0";
   localAssemble0_l: ThmId => "localAssemble0_l";
   localAssemble0_r: ThmId => "localAssemble0_r";
   localAssemble0_A: ThmId => "localAssemble0_A";

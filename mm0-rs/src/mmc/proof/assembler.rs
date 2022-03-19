@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
+use mmcc::{types::{mir, classify as cl, vcode::{ArgAbi, ProcAbi}, IdxVec}, arch::SysCall};
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc, ProcId};
@@ -996,55 +997,6 @@ impl BuildAssemblyProc<'_> {
     }
   }
 
-  /// If `false`, the instruction will be skipped in the generated assembly listing.
-  fn keep_inst(inst: &Inst<'_>) -> bool {
-    !matches!(inst.inst, /* PInst::LetStart {..} | */ PInst::MovId)
-  }
-
-  /// Given `x`, proves `(y, A, Ok((s, |- localAssemble start s x y A)))`, using elements of the
-  /// iterator `iter` in a balanced binary tree of `localAssembleA` nodes.
-  /// The function `f` handles the base case of an individual item in the iterator.
-  ///
-  /// If `s` is empty, the proof is instead `Err(|- localAssemble0 start x A)`.
-  fn bisect<T>(&mut self,
-    n: usize, iter: &mut impl Iterator<Item=T>, x: Num,
-    f: &mut impl FnMut(&mut Self, T, Num) -> (Num, ProofId, Result<(ProofId, ProofId), ProofId>),
-  ) -> (Num, ProofId, Result<(ProofId, ProofId), ProofId>) {
-    if n <= 1 {
-      assert!(n != 0);
-      let item = iter.next().expect("iterator size lied");
-      f(self, item, x)
-    } else {
-      let m = n >> 1;
-      let (y, a, th1) = self.bisect(m, iter, x, f);
-      let (z, b, th2) = self.bisect(n - m, iter, y, f);
-      let ab = app!(self, (localAssembleA a b));
-      match (th1, th2) {
-        (Ok((s, th1)), Ok((t, th2))) => {
-          let st = app!(self, (sadd s t));
-          let th = thm!(self, localAssembleA_I(a, b, *self.start, s, t, *x, *y, *z, th1, th2):
-            localAssemble[*self.start, st, *x, *z, ab]);
-          (z, ab, Ok((st, th)))
-        }
-        (Ok((s, th1)), Err(th2)) => {
-          let th = thm!(self, localAssemble0_r(a, b, *self.start, s, *x, *z, th1, th2):
-            localAssemble[*self.start, s, *x, *z, ab]);
-          (z, ab, Ok((s, th)))
-        }
-        (Err(th1), Ok((s, th2))) => {
-          let th = thm!(self, localAssemble0_l(a, b, *self.start, s, *x, *z, th1, th2):
-            localAssemble[*self.start, s, *x, *z, ab]);
-          (z, ab, Ok((s, th)))
-        }
-        (Err(th1), Err(th2)) => {
-          let th = thm!(self, localAssemble0_A(a, b, *self.start, *z, th1, th2):
-            localAssemble0[*self.start, *z, ab]);
-          (z, ab, Err(th))
-        }
-      }
-    }
-  }
-
   /// Given a string `s` with `len s < 16`, proves `(i, |- len s = x[i])`
   fn strlen(&mut self, s: ProofId) -> (Num, ProofId) {
     let mut args = vec![];
@@ -1069,51 +1021,232 @@ impl BuildAssemblyProc<'_> {
       })
     }
   }
+}
 
+/// If `false`, the instruction will be skipped in the generated assembly listing.
+fn keep_inst(inst: &Inst<'_>) -> bool {
+  !matches!(inst.inst, /* PInst::LetStart {..} | */ PInst::MovId)
+}
+
+enum Stack {
+  /// `(s, x, y, A, |- localAssemble start s x y A)`
+  Asm(ProofId, Num, Num, ProofId, ProofId),
+  /// `(x, A, |- localAssemble0 start x A)`
+  Asm0(Num, ProofId, ProofId),
+  /// No element
+  Empty(Num),
+}
+
+impl Stack {
+  fn dummy(pos: Num, de: &mut BuildAssemblyProc<'_>) -> Self {
+    let a = app!(de, (ASM0));
+    let th = thm!(de, localAssemble0_0(*de.start, *pos):
+      localAssemble0[*de.start, *pos, a]);
+    Stack::Asm0(pos, a, th)
+  }
+
+  fn join(self, other: Stack, force: bool, de: &mut BuildAssemblyProc<'_>) -> Self {
+    match (self, other) {
+      (Stack::Empty(pos), other) if force => Stack::dummy(pos, de).join(other, force, de),
+      (this, Stack::Empty(pos)) if force => this.join(Stack::dummy(pos, de), force, de),
+      (Stack::Empty(pos), s) => s,
+      (s, Stack::Empty(pos)) => s,
+      (Stack::Asm(s, x, y, a, th1), Stack::Asm(t, y2, z, b, th2)) => {
+        assert!(*y == *y2);
+        let ab = app!(de, (localAssembleA a b));
+        let st = app!(de, (sadd s t));
+        let th = thm!(de, localAssembleA_I(a, b, *de.start, s, t, *x, *y, *z, th1, th2):
+          localAssemble[*de.start, st, *x, *z, ab]);
+        Stack::Asm(st, x, z, ab, th)
+      }
+      (Stack::Asm(s, x, z1, a, th1), Stack::Asm0(z, b, th2)) => {
+        assert!(*z1 == *z);
+        let ab = app!(de, (localAssembleA a b));
+        let th = thm!(de, localAssemble0_r(a, b, *de.start, s, *x, *z, th1, th2):
+          localAssemble[*de.start, s, *x, *z, ab]);
+        Stack::Asm(s, x, z, ab, th)
+      }
+      (Stack::Asm0(x, a, th1), Stack::Asm(s, x2, z, b, th2)) => {
+        assert!(*x == *x2);
+        let ab = app!(de, (localAssembleA a b));
+        let th = thm!(de, localAssemble0_l(a, b, *de.start, s, *x, *z, th1, th2):
+          localAssemble[*de.start, s, *x, *z, ab]);
+        Stack::Asm(s, x, z, ab, th)
+      }
+      (Stack::Asm0(z1, a, th1), Stack::Asm0(z, b, th2)) => {
+        assert!(*z1 == *z);
+        let ab = app!(de, (localAssembleA a b));
+        let th = thm!(de, localAssemble0_A(a, b, *de.start, *z, th1, th2):
+          localAssemble0[*de.start, *z, ab]);
+        Stack::Asm0(z, ab, th)
+      }
+    }
+  }
+}
+
+struct BuildAssemblyVisitor<'a, 'b> {
+  proc: &'b mut BuildAssemblyProc<'a>,
+  stack: Vec<Stack>,
+  groups: Vec<usize>,
+  pos: Num,
+}
+
+impl<'a> Deref for BuildAssemblyVisitor<'a, '_> {
+  type Target = BuildAssemblyProc<'a>;
+  fn deref(&self) -> &Self::Target { self.proc }
+}
+impl<'a, 'b> DerefMut for BuildAssemblyVisitor<'a, 'b> {
+  fn deref_mut(&mut self) -> &mut Self::Target { self.proc }
+}
+
+impl<'a, 'b> BuildAssemblyVisitor<'a, 'b> {
+  fn new(proc: &'b mut BuildAssemblyProc<'a>, pos: Num) -> Self {
+    Self { proc, stack: vec![], groups: vec![], pos }
+  }
+
+  fn start(&mut self) {
+    self.groups.push(self.stack.len())
+  }
+
+  fn end_rassoc(&mut self, force: bool) {
+    let n = self.groups.pop().expect("stack underflow");
+    let mut it = self.stack.drain(n..).rev();
+    if let Some(mut s) = it.next() {
+      for t in it { s = t.join(s, force, self.proc) }
+      self.stack.push(s)
+    } else {
+      drop(it);
+      self.stack.push(Stack::Empty(self.pos))
+    }
+  }
+
+  fn pop_binary(&mut self, force: bool, n: usize) -> Stack {
+    match n {
+      0 => Stack::Empty(self.pos),
+      1 => self.stack.pop().expect("stack underflow"),
+      _ => {
+        let m = n >> 1;
+        let b = self.pop_binary(force, n - m);
+        let a = self.pop_binary(force, m);
+        a.join(b, force, self.proc)
+      }
+    }
+  }
+
+  fn end_binary(&mut self, force: bool) {
+    let n = self.groups.pop().expect("stack underflow");
+    let s = self.pop_binary(force, self.stack.len().checked_sub(n).expect("group mismatch"));
+    self.stack.push(s)
+  }
+}
+
+impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
+  fn on_inst(&mut self, _: bool, inst: &Inst<'_>) {
+    let n = inst.layout.len();
+    let x = self.pos;
+    let elem = if n == 0 {
+      if keep_inst(inst) {
+        let [inst, th] = self.parse_ghost_inst(inst, x);
+        Stack::Asm0(x, inst, th)
+      } else {
+        Stack::Empty(x)
+      }
+    } else {
+      let n = self.proc.hex.from_u8(&mut self.proc.thm, n);
+      let (y, h2) = self.proc.hex.add(&mut self.proc.thm, x, n);
+      let [s, inst, h3] = self.parse_inst(inst, y);
+      let (n2, h1) = self.strlen(s); assert!(n == n2);
+      let th = thm!(self, parseInstE(*self.start, s, *x, *y, *n, inst, h1, h2, h3):
+        localAssemble[*self.start, s, *x, *y, inst]);
+      self.pos = y;
+      Stack::Asm(s, x, y, inst, th)
+    };
+    self.stack.push(elem);
+  }
+
+  // Every group is handled the same way: agglomerate all children of the node into a
+  // right-associative list of children with instructions at the nodes.
+  // This accumulates the desired proof in `self.stack`.
+
+  fn before(&mut self) { self.start() }
+  fn after(&mut self) { self.end_rassoc(false) }
+
+  // This is not required, but it is helpful to add `ASM0` nodes as needed in some groups
+  // to ensure a consistent number of children of the node, rather than opportunistically
+  // collapsing these nodes.
+
+  fn after_shift(&mut self, _: &mir::Operand, _: &cl::Shift) { self.end_rassoc(true) }
+
+  fn after_rvalue(&mut self,
+    _: &mir::Ty, _: &mir::RValue, cl: &cl::RValue
+  ) {
+    // use binary reduction for lists and arrays
+    if let cl::RValue::List(_) | cl::RValue::Array(_) = cl { self.end_binary(true) }
+    else { self.end_rassoc(true) }
+  }
+
+  fn after_call_arg(&mut self,
+    _: bool, _: &mir::Operand, _: &ArgAbi, _: &cl::Elem
+  ) { self.end_rassoc(true) }
+
+  fn after_call(&mut self, _: ProcId, _: &ProcAbi,
+    _: &[(bool, mir::Operand)], _: bool, _: &[(bool, mir::VarId)]
+  ) { self.end_rassoc(true) }
+
+  fn after_syscall(&mut self, _: SysCall,
+    _: &[Option<&(bool, mir::Operand)>], _: Option<cl::Copy>,
+  ) { self.end_rassoc(true) }
+
+  fn after_terminator(
+    &mut self, _: &IdxVec<ProcId, ProcAbi>, _: Option<&[ArgAbi]>,
+    _: &mir::Terminator, _: &cl::Terminator,
+  ) { self.end_rassoc(true) }
+}
+
+impl<'a> BuildAssemblyProc<'a> {
   /// Given `x`, proves `(s, y, A, |- localAssemble start s x y A)` where
   /// `s` is generated from the assembly blocks.
   pub(super) fn blocks(&mut self, proc: &Proc<'_>) -> (ProofId, Num, ProofId, ProofId) {
-    let mut iter = proc.assembly_blocks();
-    let x = self.hex.h2n(&mut self.thm, 0);
     let mut entry = true;
-    let (y, a, th) = self.bisect(iter.len(), &mut iter, x, &mut |this, block, x| {
-      let mut iter = block.insts().filter(Self::keep_inst);
-      let (y, a, th) = this.bisect(iter.clone().count(), &mut iter, x, &mut |this, inst, x| {
-        let n = inst.layout.len();
-        if n == 0 {
-          let [inst, th] = this.parse_ghost_inst(&inst, x);
-          (x, inst, Err(th))
-        } else {
-          let n = this.hex.from_u8(&mut this.thm, n);
-          let (y, h2) = this.hex.add(&mut this.thm, x, n);
-          let [s, inst, h3] = this.parse_inst(&inst, y);
-          let (n2, h1) = this.strlen(s); assert!(n == n2);
-          let th = thm!(this, parseInstE(*this.start, s, *x, *y, *n, inst, h1, h2, h3):
-            localAssemble[*this.start, s, *x, *y, inst]);
-          (y, inst, Ok((s, th)))
+    let pos = self.hex.h2n(&mut self.thm, 0);
+    let mut visitor = BuildAssemblyVisitor::new(self, pos);
+    for block in proc.assembly_blocks() {
+      let n = visitor.stack.len();
+      block.visit(&mut visitor);
+      let n = visitor.stack.len().checked_sub(n).expect("group mismatch");
+      let mut stk = visitor.pop_binary(false, n);
+      let this = &mut *visitor.proc;
+      if let Stack::Empty(pos) = stk { stk = Stack::dummy(pos, this) }
+      stk = match (stk, std::mem::take(&mut entry)) {
+        (Stack::Empty(_), _) => unreachable!(),
+        (Stack::Asm(s, x, y, a, th), true) => {
+          let a2 = app!(this.thm, (asmEntry {*this.start} a));
+          Stack::Asm(s, x, y, a2, thm!(this.thm, asmEntryI(a, *this.start, s, *y, th):
+            localAssemble[*this.start, s, *x, *y, a2]))
         }
-      });
-      if std::mem::take(&mut entry) {
-        let a2 = app!(this.thm, (asmEntry {*this.start} a));
-        (y, a2, match th {
-          Ok((s, th)) => Ok((s, thm!(this.thm, asmEntryI(a, *this.start, s, *y, th):
-            localAssemble[*this.start, s, *x, *y, a2]))),
-          Err(th) => Err(thm!(this.thm, asmEntry0(a, *this.start, th):
-            localAssemble0[*this.start, *y, a2])),
-        })
-      } else {
-        let a2 = app!(this.thm, (asmAt {*x} a));
-        (y, a2, match th {
-          Ok((s, th)) => Ok((s, thm!(this.thm, asmAtI(a, *this.start, s, *x, *y, th):
-            localAssemble[*this.start, s, *x, *y, a2]))),
-          Err(th) => Err(thm!(this.thm, asmAt0(a, *this.start, *y, th):
-            localAssemble0[*this.start, *y, a2])),
-        })
-      }
-    });
-    #[allow(clippy::ok_expect)]
-    let (s, th) = th.ok().expect("empty procedure");
-    (s, y, a, th)
+        (Stack::Asm0(x, a, th), true) => {
+          let a2 = app!(this.thm, (asmEntry {*this.start} a));
+          Stack::Asm0(x, a2, thm!(this.thm, asmEntry0(a, *this.start, th):
+            localAssemble0[*this.start, *x, a2]))
+        }
+        (Stack::Asm(s, x, y, a, th), false) => {
+          let a2 = app!(this.thm, (asmAt {*x} a));
+          Stack::Asm(s, x, y, a2, thm!(this.thm, asmAtI(a, *this.start, s, *x, *y, th):
+            localAssemble[*this.start, s, *x, *y, a2]))
+        }
+        (Stack::Asm0(x, a, th), false) => {
+          let a2 = app!(this.thm, (asmAt {*x} a));
+          Stack::Asm0(x, a2, thm!(this.thm, asmAt0(a, *this.start, *x, th):
+            localAssemble0[*this.start, *x, a2]))
+        }
+      };
+      visitor.stack.push(stk);
+    }
+    let n = visitor.stack.len();
+    match visitor.pop_binary(false, n) {
+      Stack::Asm(s, _, y, a, th) => (s, y, a, th),
+      _ => panic!("empty procedure")
+    }
   }
 }
 

@@ -4,7 +4,7 @@ axiom sorry (p: wff): $ p $;
 
 do {
   --| A dummy annotation to indicate that the term/theorem is referenced in
-  --| mm0-rs/src/proof/predefs.rs, and any changes here have to be reflected
+  --| `mm0-rs/src/proof/predefs.rs`, and any changes here have to be reflected
   --| in uses in the compiler.
   (def mmc-th
     (def map (atom-map!))
@@ -73,7 +73,7 @@ $ y = x + len s /\ (y e. u64 -> s <> x e. P) $;
 $ s != 0 /\ assembleN s x y P $;
 
 @mmc-th local def assembleA (A B: set): set =
-$ S\ s, {x | E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
+$ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
 infixr assembleA: $++asm$ prec 120;
 
 @mmc-th theorem assembleA_I (s t x y z A B)
@@ -86,12 +86,16 @@ $ assembleN s x y (P @' p) $;
 @mmc-th local def localAssembleA (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
 infixr localAssembleA: $+asm$ prec 122;
 
+@mmc-th local def ASM0: set = $ S\ p, S\ s, {x | s = 0} $;
+
 @mmc-th theorem localAssembleA_I
   (h1: $ localAssemble p s x y A $) (h2: $ localAssemble p t y z B $):
   $ localAssemble p (s '+ t) x z (A +asm B) $ = 'sorry;
 
 @mmc-th local def localAssemble0 (p: nat) (x: nat) (P: set): wff =
 $ x e. u64 -> p <> 0 <> x e. P $;
+
+@mmc-th theorem localAssemble0_0: $ localAssemble0 p x ASM0 $ = 'sorry;
 
 @mmc-th theorem localAssemble0_l
   (h1: $ localAssemble0 p x A $) (h2: $ localAssemble p s x y B $):
@@ -159,7 +163,7 @@ $ A. l (readPrefixes rex l -> parseInstN p ip (l ++ opc : s) I) $;
 
 @mmc-th local def IRM_reg (reg: hex): nat = $ suc (immRM_rm (RM_reg reg)) $;
 @mmc-th @_ local def IRM_mem (si base off: nat): nat =
-$ obind (asI64 off) (\ q, immRM_rm (RM_mem si base q)) $;
+$ obind (asI64 off) (\ q, suc (immRM_rm (RM_mem si base q))) $;
 @mmc-th @_ local def IRM_imm32 (imm: nat): nat = $ obind (asI32 imm) (\ x, suc (immRM_imm x)) $;
 @mmc-th @_ local def IRM_imm64 (imm: nat): nat = $ obind (asI64 imm) (\ x, suc (immRM_imm x)) $;
 
