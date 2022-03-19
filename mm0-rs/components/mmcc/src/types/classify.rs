@@ -1,5 +1,5 @@
 //! A high level classification of VCode emit patterns, used for relating MIR to VCode.
-use crate::{regalloc::PCode, arch::{PInst, SysCall}};
+use crate::arch::{PInst, SysCall};
 
 use super::{vcode::{BlockId, ChunkVec, ProcAbi, ArgAbi, ProcId}, IdxVec, mir, IntTy, entity::IntrinsicProc};
 
@@ -253,32 +253,39 @@ macro_rules! mk_fold {
     /// A trait for consuming an instruction stream with alignment between the MIR and the
     /// generated instructions.
     #[allow(unused_variables)]
-    pub trait Visitor {
+    pub trait Visitor<'a> {
       /// Called every time an instruction is emitted.
-      fn on_inst(&mut self, spill: bool, inst: &PInst) {}
+      fn on_inst(&mut self, spill: bool, inst: &crate::proof::Inst<'a>) {}
         /// Visit a single regular instruction from the stream,
         /// preceded by zero or more spill instructions.
-      fn do_inst<'a>(&mut self, it: &mut TraceIter<'a>) -> &'a PInst {
+      fn do_inst(&mut self, it: &mut TraceIter<'a>) -> crate::proof::Inst<'a> {
         loop {
           let inst = it.insts.next().expect("missing instruction");
-          let spill = inst.is_spill();
-          self.on_inst(spill, inst);
+          let spill = inst.inst.is_spill();
+          self.on_inst(spill, &inst);
           if spill { continue }
           return inst
         }
       }
       /// Visit `n` instructions from the stream.
-      fn do_insts(&mut self, n: usize, it: &mut TraceIter<'_>) {
+      fn do_insts(&mut self, n: usize, it: &mut TraceIter<'a>) {
         for _ in 0..n { self.do_inst(it); }
       }
 
+      /// Called before each classifier's instructions are visited.
+      /// This is the default implementation of `before_foo()`.
+      fn before(&mut self) {}
+      /// Called after each classifier's instructions are visited.
+      /// This is the default implementation of `after_foo()`.
+      fn after(&mut self) {}
+
       $(
         /// Called before a certain classifier's instructions are visited. Intended for overriding.
-        fn $before(&mut self, $($e: $ty),*) {}
+        fn $before(&mut self, $($e: $ty),*) { self.before() }
         /// Called after a certain classifier's instructions are visited. Intended for overriding.
-        fn $after(&mut self, $($e: $ty),*) {}
+        fn $after(&mut self, $($e: $ty),*) { self.after() }
         /// Consumes the instructions for a classifier. Not intended for overriding.
-        fn $do(&mut $self, $($e: $ty,)* $it: &mut TraceIter<'_>) {
+        fn $do(&mut $self, $($e: $ty,)* $it: &mut TraceIter<'a>) {
           $self.$before($($e),*);
           { $body }
           $self.$after($($e),*);
@@ -467,6 +474,7 @@ mk_fold! {
       (Statement::Let(cl), mir::Statement::Let(_, _, ty, rv)) => self.do_rvalue(ty, rv, cl, it),
       (&Statement::Assign(cl1, cl2), mir::Statement::Assign(p, ty, o, _)) => {
         self.do_place(p, cl1, it);
+        self.do_move(o, cl2, it);
       }
       _ => unreachable!()
     }
@@ -485,19 +493,19 @@ mk_fold! {
   fn before_ret_elem, after_ret_elem, do_ret_elem(self, it,
     v: mir::VarId, r: bool, o: &mir::Operand, ret: &ArgAbi, cl: &Elem
   ) {
-    match (cl, ret) {
-      (Elem::Ghost, _) => {}
-      (&Elem::Move(cl), ArgAbi::BoxedMem {..}) => {
-        self.do_inst(it);
+    match *cl {
+      Elem::Ghost => {}
+      Elem::Move(cl) => {
+        if let ArgAbi::BoxedMem {..} = ret { self.do_inst(it); }
         self.do_move(o, cl, it);
       }
-      (&Elem::Move(cl), _) => self.do_move(o, cl, it),
+      Elem::Operand(cl) => { self.do_operand(o, cl, it); self.do_copy(Copy::One, it) }
       _ => unreachable!()
     }
   }
 
   fn before_epilogue, after_epilogue, do_epilogue(self, it) {
-    while !matches!(self.do_inst(it), PInst::Ret) {}
+    while !matches!(self.do_inst(it).inst, PInst::Ret) {}
   }
 
   fn before_call_arg, after_call_arg, do_call_arg(self, it,
@@ -548,16 +556,28 @@ mk_fold! {
     self.do_inst(it);
   }
 
-  fn before_call, after_call, do_call(self, it,
+  fn before_call_args, after_call_args, do_call_args(self, it,
     f: ProcId, fabi: &ProcAbi, args: &[(bool, mir::Operand)],
-    reach: bool, rets: &[(bool, mir::VarId)],
   ) {
     for (arg, &(r, ref o)) in fabi.args.iter().zip(args) {
       let cl = it.lists.next().expect("iter mismatch");
       self.do_call_arg(r, o, arg, cl, it);
     }
+  }
+
+  // do_call_retargs is unused, before and after are called directly
+  fn before_call_retargs, after_call_retargs, do_call_retargs(self, it,
+    f: ProcId, fabi: &ProcAbi, retabi: &[ArgAbi], rets: &[(bool, mir::VarId)],
+  ) {}
+
+  fn before_call, after_call, do_call(self, it,
+    f: ProcId, fabi: &ProcAbi, args: &[(bool, mir::Operand)],
+    reach: bool, rets: &[(bool, mir::VarId)],
+  ) {
+    self.do_call_args(f, fabi, args, it);
     if let Some(retabi) = &fabi.rets {
       let mut boxes = 0;
+      self.before_call_retargs(f, fabi, retabi, rets);
       for (arg, &(vr, _)) in retabi.iter().zip(rets) {
         if vr && matches!(arg, ArgAbi::Boxed {..} | ArgAbi::BoxedMem {..}) {
           let cl = match it.lists.next() {
@@ -568,15 +588,12 @@ mk_fold! {
           self.do_call_retarg(cl, arg, it)
         }
       }
+      self.after_call_retargs(f, fabi, retabi, rets);
       self.do_inst(it);
       self.do_call_rets(boxes, retabi, rets, it);
     } else {
       self.do_inst(it);
     }
-  }
-
-  fn before_syscall_elem, after_syscall_elem, do_syscall_elem(self, it, f: SysCall, nargs: u8) {
-    self.do_insts((nargs + 2).into(), it);
   }
 
   fn before_syscall, after_syscall, do_syscall(self, it,
@@ -597,7 +614,7 @@ mk_fold! {
     }
   }
 
-  fn before_term, after_term, do_term(self, it,
+  fn before_terminator, after_terminator, do_terminator(self, it,
     funcs: &IdxVec<ProcId, ProcAbi>, abi_rets: Option<&[ArgAbi]>,
     term: &mir::Terminator, cl: &Terminator
   ) {
@@ -656,25 +673,20 @@ mk_fold! {
 /// Internal state for [`Visitor`].
 #[derive(Clone, Debug)]
 pub struct TraceIter<'a> {
-  insts: std::slice::Iter<'a, PInst>,
+  insts: crate::proof::InstIter<'a>,
   projs: std::slice::Iter<'a, Projection>,
   lists: std::slice::Iter<'a, Elem>,
 }
 
-impl PCode {
-  pub(crate) fn visit(&self,
-    funcs: &IdxVec<ProcId, ProcAbi>, abi_rets: Option<&[ArgAbi]>,
-    id: BlockId, bl: &mir::BasicBlock, v: &mut impl Visitor
-  ) {
-    let Block { proj_start, list_start, ref term } = self.trace.block[id];
-    let mut iter = TraceIter {
-      insts: self.block_insts(id).iter(),
-      projs: self.trace.projs[proj_start as usize..].iter(),
-      lists: self.trace.lists[list_start as usize..].iter(),
-    };
-    for (stmt, cl) in bl.stmts.iter().zip(&self.trace.stmts[id]) {
-      v.do_stmt(stmt, cl, &mut iter);
-    }
-    v.do_term(funcs, abi_rets, bl.terminator(), term, &mut iter);
+impl Trace {
+  pub(crate) fn iter<'a>(&'a self,
+    id: BlockId, insts: crate::proof::InstIter<'a>,
+  ) -> (TraceIter<'a>, &'a Terminator) {
+    let Block { proj_start, list_start, ref term } = self.block[id];
+    (TraceIter {
+      insts,
+      projs: self.projs[proj_start as usize..].iter(),
+      lists: self.lists[list_start as usize..].iter(),
+    }, term)
   }
 }
