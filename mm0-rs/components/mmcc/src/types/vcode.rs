@@ -250,7 +250,7 @@ pub struct VCode<I> {
   pub(crate) abi: ProcAbi,
   pub(crate) insts: IdxVec<InstId, I>,
   pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
-  pub(crate) blocks: IdxVec<BlockId, (InstId, InstId)>,
+  pub(crate) blocks: IdxVec<BlockId, (mir::BlockId, InstId, InstId)>,
   pub(crate) block_preds: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_succs: IdxVec<BlockId, Vec<BlockId>>,
   pub(crate) block_params: ChunkVec<BlockId, VReg>,
@@ -299,7 +299,7 @@ impl<I> VCode<I> {
   /// Finalize a block. Must be called after each call to `new_block`,
   /// once all instructions of the block are emitted.
   pub fn finish_block(&mut self) {
-    self.blocks.0.last_mut().expect("no blocks").1 = InstId::new(self.insts.len());
+    self.blocks.0.last_mut().expect("no blocks").2 = InstId::new(self.insts.len());
   }
 
   /// Make space in the outgoing argument stack region.
@@ -314,9 +314,9 @@ impl<I> VCode<I> {
   }
 
   /// Start a new block, giving the list of block parameters.
-  pub fn new_block(&mut self, params: impl IntoIterator<Item=VReg>) -> BlockId {
+  pub fn new_block(&mut self, id: mir::BlockId, params: impl IntoIterator<Item=VReg>) -> BlockId {
     let inst = InstId::new(self.insts.len());
-    let bl = self.blocks.push((inst, inst));
+    let bl = self.blocks.push((id, inst, inst));
     self.block_preds.push(vec![]);
     self.block_succs.push(vec![]);
     self.block_params.push(params.into_iter());
@@ -346,7 +346,7 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn entry_block(&self) -> BlockId { BlockId::new(0) }
 
   fn block_insns(&self, block: BlockId) -> InstRange {
-    let (from, to) = self.blocks[block];
+    let (_, from, to) = self.blocks[block];
     InstRange::forward(from, to)
   }
 

@@ -372,6 +372,8 @@ pub struct VBlock<'a> {
   ctx: &'a Proc<'a>,
   /// The block ID of the block.
   pub id: VBlockId,
+  /// The block ID of the corresponding logical block.
+  pub mir_id: BlockId,
   /// The start of this block relative to the function start.
   pub start: u32,
   /// The byte data for this block.
@@ -389,6 +391,7 @@ impl<'a> VBlock<'a> {
     let id = VBlockId::from_usize(id);
     Self {
       ctx,
+      mir_id: ctx.proc.blocks[id].0,
       id,
       start,
       content: &ctx.content[start as usize..end as usize],
@@ -404,6 +407,21 @@ impl<'a> VBlock<'a> {
       start: self.start,
       insts: self.insts.iter(),
     }
+  }
+
+  /// The underlying MIR block object.
+  #[must_use] pub fn mir_block(&self) -> &'a mir::BasicBlock { &self.ctx.cfg.blocks[self.mir_id] }
+
+  /// Calls a visitor on the MIR block and its physical counterpart.
+  pub fn visit(&self, v: &mut impl classify::Visitor<'a>) {
+    let funcs = &self.ctx.code.func_abi;
+    let abi_rets = self.ctx.id.and_then(|id| funcs[id].rets.as_deref());
+    let (mut iter, term) = self.ctx.proc.trace.iter(self.id, self.insts());
+    let bl = self.mir_block();
+    for (stmt, cl) in bl.stmts.iter().zip(&self.ctx.proc.trace.stmts[self.id]) {
+      v.do_stmt(stmt, cl, &mut iter);
+    }
+    v.do_terminator(funcs, abi_rets, bl.terminator(), term, &mut iter);
   }
 }
 
@@ -633,15 +651,6 @@ impl<'a> BlockProof<'a> {
   /// The physical block associated to this proof, or `None` if this is a virtual-only block.
   #[must_use] pub fn vblock(&self) -> Option<VBlock<'a>> {
     Some(self.ctx.vblock(self.ctx.vblock_id(self.id)?))
-  }
-
-  /// Calls a visitor on the MIR block and its physical counterpart.
-  pub fn visit_vblock(&self, v: &mut impl classify::Visitor) {
-    if let Some(id) = self.ctx.vblock_id(self.id) {
-      let abis = &self.ctx.code.func_abi;
-      let abi_rets = self.ctx.id.and_then(|id| abis[id].rets.as_deref());
-      self.ctx.proc.visit(abis, abi_rets, id, self.block(), v)
-    }
   }
 }
 

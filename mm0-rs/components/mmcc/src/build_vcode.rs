@@ -1027,7 +1027,7 @@ impl<'a> LowerCtx<'a> {
   fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
     visit_blocks(self.cfg, move |i, bl| {
       assert!(!bl.is_dead()); // dead blocks are not reachable from the entry
-      let vbl = self.code.new_block(block_args[i].iter().copied());
+      let vbl = self.code.new_block(i, block_args[i].iter().copied());
       self.code.block_map.insert(i, vbl);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }

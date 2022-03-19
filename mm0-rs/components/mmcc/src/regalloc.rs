@@ -103,7 +103,7 @@ mk_id! {
 pub(crate) struct PCode {
   pub(crate) insts: IdxVec<PInstId, PInst>,
   pub(crate) block_map: HashMap<mir::BlockId, BlockId>,
-  pub(crate) blocks: IdxVec<BlockId, (PInstId, PInstId)>,
+  pub(crate) blocks: IdxVec<BlockId, (mir::BlockId, PInstId, PInstId)>,
   pub(crate) block_addr: IdxVec<BlockId, u32>,
   pub(crate) block_params: ChunkVec<BlockId, (mir::VarId, PRegMem)>,
   pub(crate) trace: Trace,
@@ -114,14 +114,14 @@ pub(crate) struct PCode {
 
 impl PCode {
   pub(crate) fn block_insts(&self, id: BlockId) -> &[PInst] {
-    let (inst_start, inst_end) = self.blocks[id];
+    let (_, inst_start, inst_end) = self.blocks[id];
     &self.insts[inst_start..inst_end]
   }
 }
 
 impl std::fmt::Debug for PCode {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    for (bl, &(start, end)) in self.blocks.enum_iter() {
+    for (bl, &(_, start, end)) in self.blocks.enum_iter() {
       write!(f, "vb{}(", bl.index())?;
       let mut first = true;
       for (v, m) in &self.block_params[bl] {
@@ -231,11 +231,11 @@ impl PCodeBuilder {
     code.block_addr.0.clear();
     code.len = 0;
     let mut iter = code.blocks.0.iter();
-    let mut cur = iter.next().expect("nonempty").0;
+    let mut cur = iter.next().expect("nonempty").1;
     for (id, inst) in code.insts.enum_iter() {
       if id == cur {
         code.block_addr.push(code.len);
-        if let Some(n) = iter.next() { cur = n.0 }
+        if let Some(n) = iter.next() { cur = n.1 }
       }
       code.len += u32::from(inst.len());
     }
@@ -244,19 +244,25 @@ impl PCodeBuilder {
 }
 
 struct BlockBuilder<'a> {
-  blocks: &'a [(InstId, InstId)],
+  blocks: &'a [(mir::BlockId, InstId, InstId)],
   start: PInstId,
   cur: usize,
+  next_id: mir::BlockId,
   next: InstId,
 }
 
 impl<'a> BlockBuilder<'a> {
   fn next(&mut self) {
-    self.next = self.blocks.get(self.cur).map_or_else(InstId::invalid, |p| p.1);
+    match self.blocks.get(self.cur) {
+      Some(&(id, _, next)) => { self.next_id = id; self.next = next }
+      None => self.next = InstId::invalid()
+    }
   }
 
-  fn new(blocks: &'a [(InstId, InstId)]) -> Self {
-    let mut this = Self { blocks, start: PInstId(0), cur: 0, next: InstId(0) };
+  fn new(blocks: &'a [(mir::BlockId, InstId, InstId)]) -> Self {
+    let mut this = Self {
+      blocks, start: PInstId(0), cur: 0, next_id: mir::BlockId(0), next: InstId(0)
+    };
     this.next();
     this
   }
@@ -264,8 +270,9 @@ impl<'a> BlockBuilder<'a> {
   fn finish_block(&mut self, code: &mut PCode) {
     let end = PInstId::from_usize(code.insts.len());
     self.cur += 1;
+    let id = self.next_id;
     self.next();
-    code.blocks.push((std::mem::replace(&mut self.start, end), end));
+    code.blocks.push((id, std::mem::replace(&mut self.start, end), end));
   }
 }
 
@@ -355,7 +362,7 @@ pub(crate) fn regalloc_vcode(
     code.apply_edits(&mut edits, &mut ar, ProgPoint::before(i));
     match *inst {
       Inst::Fallthrough { dst } => {
-        assert!(vcode.blocks[dst].0 == i.next());
+        assert!(vcode.blocks[dst].1 == i.next());
         code.push(PInst::Fallthrough { dst });
       }
       // Inst::LetStart { size } =>
@@ -434,15 +441,15 @@ pub(crate) fn regalloc_vcode(
       }
       Inst::JmpKnown { dst, ref params } => {
         for _ in &**params { ar.next(); }
-        if vcode.blocks[dst].0 != i.next() {
+        if vcode.blocks[dst].1 != i.next() {
           code.push(PInst::JmpKnown { dst, short: false });
         }
       }
       Inst::JmpCond { cc, taken, not_taken } =>
-        if vcode.blocks[not_taken].0 == i.next() {
+        if vcode.blocks[not_taken].1 == i.next() {
           code.push(PInst::JmpCond { cc, dst: taken, short: false });
           code.push(PInst::Fallthrough { dst: not_taken });
-        } else if vcode.blocks[taken].0 == i.next() {
+        } else if vcode.blocks[taken].1 == i.next() {
           code.push(PInst::JmpCond { cc: cc.invert(), dst: not_taken, short: false });
           code.push(PInst::Fallthrough { dst: taken });
         } else {
@@ -450,7 +457,7 @@ pub(crate) fn regalloc_vcode(
           code.push(PInst::JmpKnown { dst: not_taken, short: false });
         },
       Inst::Assert { cc, dst } => {
-        assert!(vcode.blocks[dst].0 == i.next());
+        assert!(vcode.blocks[dst].1 == i.next());
         code.push(PInst::Assert { cc, dst });
       }
       Inst::Ud2 => { code.push(PInst::Ud2); }
