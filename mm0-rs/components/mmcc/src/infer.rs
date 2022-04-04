@@ -1810,11 +1810,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         if let ExprKind::Int(i) = self.whnf_expr(sp, i).k;
         if let Ok(i) = usize::try_from(i);
         if i < es.len();
-        then {{ // see rust-analyzer#7845
+        then {
           let es2 = self.alloc.alloc_slice_copy(es);
           es2[i] = val;
           intern!(self, ExprKind::Array(es2))
-        }}
+        }
         else { e }
       },
       ExprKind::UpdateSlice([a, i, l, val]) => if_chain! {
@@ -1827,22 +1827,22 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         if il < es.len();
         if let ExprKind::Array(val2) = self.whnf_expr(sp, val).k;
         if l == val2.len();
-        then {{ // see rust-analyzer#7845
+        then {
           let es2 = self.alloc.alloc_slice_copy(es);
           es2[i..il].clone_from_slice(val2);
           intern!(self, ExprKind::Array(es2))
-        }}
+        }
         else { e }
       },
       ExprKind::UpdateProj(p, i, val) => if_chain! {
         if let ExprKind::List(es) = self.whnf_expr(sp, p).k;
         let i = u32_as_usize(i);
         if i < es.len();
-        then {{ // see rust-analyzer#7845
+        then {
           let es2 = self.alloc.alloc_slice_copy(es);
           es2[i] = val;
           intern!(self, ExprKind::List(es2))
-        }}
+        }
         else { e }
       },
       ExprKind::Sizeof(ty) => self.whnf_sizeof(sp, Default::default(), ty),
