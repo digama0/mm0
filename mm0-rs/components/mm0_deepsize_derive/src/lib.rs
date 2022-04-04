@@ -29,12 +29,13 @@ pub fn derive_deep_size(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     // Generate an expression to sum up the size of each field.
-    let sum = deepsize_sum(&input.data, &name);
+    let context = quote! { context };
+    let sum = deepsize_sum(&input.data, &name, &context);
 
     let expanded = quote! {
         // The generated impl.
         impl #impl_generics ::mm0_deepsize::DeepSizeOf for #name #ty_generics #where_clause {
-            fn deep_size_of_children(&self, context: &mut ::mm0_deepsize::Context) -> usize {
+            fn deep_size_of_children(&self, #context: &mut ::mm0_deepsize::Context) -> usize {
                 #sum
             }
         }
@@ -54,13 +55,13 @@ fn add_trait_bounds(mut generics: Generics) -> Generics {
     generics
 }
 
-fn match_fields(fields: &syn::Fields) -> TokenStream {
+fn match_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
     match fields {
         Fields::Named(ref fields) => {
             let recurse = fields.named.iter().map(|f| {
                 let name = &f.ident;
                 quote_spanned! {f.span()=>
-                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(&self.#name, context)
+                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(&self.#name, #context)
                 }
             });
             quote! {
@@ -71,7 +72,7 @@ fn match_fields(fields: &syn::Fields) -> TokenStream {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
                 let index = Index::from(i);
                 quote_spanned! {f.span()=>
-                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(&self.#index, context)
+                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(&self.#index, #context)
                 }
             });
             quote! {
@@ -85,13 +86,13 @@ fn match_fields(fields: &syn::Fields) -> TokenStream {
     }
 }
 
-fn match_enum_fields(fields: &syn::Fields) -> TokenStream {
+fn match_enum_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
     match fields {
         Fields::Named(ref fields) => {
             let recurse = fields.named.iter().map(|f| {
                 let name = &f.ident;
                 quote_spanned! {f.span()=>
-                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(#name, context)
+                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(#name, #context)
                 }
             });
             quote! {
@@ -102,7 +103,7 @@ fn match_enum_fields(fields: &syn::Fields) -> TokenStream {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
                 let i = syn::Ident::new(&format!("_{}", i), proc_macro2::Span::call_site());
                 quote_spanned! {f.span()=>
-                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(#i, context)
+                    ::mm0_deepsize::DeepSizeOf::deep_size_of_children(#i, #context)
                 }
             });
             quote! {
@@ -145,16 +146,16 @@ fn get_matcher(var: &syn::Variant) -> TokenStream {
 }
 
 /// Generate an expression to sum up the size of each field.
-fn deepsize_sum(data: &Data, struct_name: &proc_macro2::Ident) -> TokenStream {
+fn deepsize_sum(data: &Data, struct_name: &proc_macro2::Ident, context: &TokenStream) -> TokenStream {
     match *data {
         Data::Struct(ref inner) => {
-            match_fields(&inner.fields)
+            match_fields(&inner.fields, context)
         }
         Data::Enum(ref inner) => {
             let arms = inner.variants.iter()
                 .map(|var| {
                     let matcher = get_matcher(var);
-                    let output = match_enum_fields(&var.fields);
+                    let output = match_enum_fields(&var.fields, context);
                     let name = &var.ident;
                     let ident = quote!(#struct_name::#name);
                     quote!(#ident #matcher => #output,)

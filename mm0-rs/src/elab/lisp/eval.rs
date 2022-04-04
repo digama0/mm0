@@ -317,8 +317,8 @@ impl Elaborator {
   fn head_err(&self, e: &LispKind) -> SResult<LispVal> {
     e.unwrapped(|e| match e {
       LispKind::List(es) if es.is_empty() => Err("evaluating 'hd ()'".into()),
-      LispKind::List(es) => Ok(es[0].clone()),
       LispKind::DottedList(es, r) if es.is_empty() => self.head_err(r),
+      LispKind::List(es) |
       LispKind::DottedList(es, _) => Ok(es[0].clone()),
       _ => Err(format!("expected a list, got {}", self.print(e)))
     })
