@@ -506,7 +506,11 @@ impl<'a> Parser<'a> {
     }
     let ty = if self.chr(b':').is_some() { Some(self.ty()?) } else { None };
     let end = self.chr_err(if curly { b'}' } else { b')' })?;
-    Ok(Some(((start..end).into(), locals, ty)))
+    let span = (start..end).into();
+    if curly && matches!(ty, Some(Type::Formula(_))) {
+      return Err(ParseError::new(span, "formulas must be in regular binders".into()))
+    }
+    Ok(Some((span, locals, ty)))
   }
 
   fn binders(&mut self) -> Result<Vec<Binder>> {

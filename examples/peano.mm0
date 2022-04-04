@@ -1,4 +1,4 @@
-delimiter $ ( ) ~ { } , $;
+delimiter $ ( { ~ $  $ } ) , $;
 --| Well formed formulas, or propositions - true or false.
 strict provable sort wff;
 --| Implication: if p, then q.
@@ -283,9 +283,13 @@ infixl dvd: $||$ prec 50;
 
 --| `b0 n` is `n * 2`.
 --| It is named for "bit 0" as in binary representation of numbers.
+--|
+--| `b0` is also used as left injection when creating disjoint unions.
 def b0 (n: nat): nat = $ n + n $;
 --| `b1 n` is `n * 2 + 1`.
 --| It is named for "bit 1" as in binary representation of numbers.
+--|
+--| `b1` is also used as right injection when creating disjoint unions.
 def b1 (n: nat): nat = $ suc (b0 n) $;
 --| `odd n` means `n` is odd, not divisible by 2.
 def odd (n: nat): wff = $ n % 2 = 1 $;

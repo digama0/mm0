@@ -412,7 +412,7 @@ impl Elaborator {
 
     let a = self.env.get_atom(self.ast.span(nota.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
-    let nargs = nota.bis.len();
+    let nargs = nota.bis.iter().filter(|bi| bi.kind != LocalKind::Dummy).count();
     self.check_term_nargs(nota.id, term, nargs)?;
     self.spans.insert(nota.id, ObjectKind::Term(false, term, nota.id));
     let ast = self.ast.clone();
