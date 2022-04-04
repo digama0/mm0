@@ -496,8 +496,11 @@ def _z: char = $ ch x7 xa $;
 
 -- Now we define the lexer:
 
+--| `prefix s t` means that `s` is a prefix of `t`, for example `prefix "he" "hello"`.
 def prefix (s t .x: nat): wff = $ E. x s ++ x = t $;
 
+--| `maxPrefix A s` splits `s` at the longest prefix of `s` which satisfies `A`, if any.
+--| `maxPrefix: Set X -> List X -> Option (List X, List X)`
 def maxPrefix (A: set) (s: nat): nat;
 theorem maxPrefix0 {x: nat} (A: set) (s: nat):
   $ ~ (E. x (prefix x s /\ x e. A)) -> maxPrefix A s = 0 $;
@@ -507,14 +510,40 @@ theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
       A. y (prefix y s /\ y e. A -> prefix y x) /\
       maxPrefix A s = suc (x <> t)) $;
 
+-- The parsers here are relations `R: Parser S A` where
+-- `Parser S A := List S -> A -> Bool`, with the meaning that
+-- if `s <> a e. R` then parsing `s: List S` results in an output value `a: A`.
+-- They are all nondeterministic; determinism is ensured by applying additional
+-- constraints to the matches until at most one thing can match.
+
+--| `regexStar R` is the `many` combinator on regexes. It matches `s` if there exists
+--| some way to split `s` into pieces `s_i` satisfying `s_i <> a_i e. R`;
+--| the list of resulting `a_i` values is returned.
+--|
+--| `regexStar: Parser S A -> Parser S (List A)`
 def regexStar (R: set) (.s .t .L .x .y: nat): set =
 $ S\ s, {t | E. L (L <> t e. all2 R /\ s = ljoin L)} $;
+
+--| `regexApp R S` is the sequential composition of regexes.
+--| It matches `s ++ t` and returns `a <> b` if `s R a` and `t S b`.
+--|
+--| `regexApp: Parser S A -> Parser S B -> Parser S (A, B)`
 def regexApp (R S: set) (.z .a .b .x .y: nat): set =
 $ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
     z = (x ++ y) <> (a <> b))} $;
 infixr regexApp: $<+>$ prec 75;
+
+--| `regexPlus R` is the `many1` combinator: it is like `regexStar`
+--| except it must match at least once.
+--|
+--| `regexPlus: Parser S A -> Parser S (List A)`
 def regexPlus (R: set) (.x: nat): set =
 $ regexStar R i^i {x | snd x != 0} $;
+
+--| `regexOpt R` is the `optional` combinator: it matches the empty string
+--| and returns `0`, as well as matching `s` if `s R a`, and returns `suc a`.
+--|
+--| `regexOpt: Parser S A -> Parser S (Option A)`
 def regexOpt (R: set) (.s .t .y: nat): set =
 $ sn 0 u. S\ s, {t | E. y (s <> y e. R /\ t = suc y)} $;
 
@@ -523,36 +552,70 @@ $ sn 0 u. S\ s, {t | E. y (s <> y e. R /\ t = suc y)} $;
 --| `white : set char`
 def white: nat = $ __ ; sn _nl $;
 
+--| A predicate that matches a line comment: two hyphens,
+--| then zero or more non-newline characters and a newline.
+--|
+--| `regexLineComment: Set String`
 def regexLineComment (.x .y: nat): set =
 $ (\ x, _hyphen : _hyphen : x ++ _nl : 0) '' {x | all {y | y != _nl} x} $;
 
+--| A predicate that matches a semantic whitespace: either a whitespace character or a line comment.
+--|
+--| `whitespace: Set String`
 def whitespace (.c: nat): set =
 $ ((\ c, c : 0) '' white) u. regexLineComment $;
 
+--| A predicate that matches a math string: zero or more non-`$` characters surrounded by `$`.
+--|
+--| `regexMath: Set String`
 def regexMath (.x .y: nat): set =
 $ (\ x, _dollar : x ++ _dollar : 0) '' {x | all {y | y != _dollar} x} $;
 
+--| The set of characters that can start an identifier: `[_A-Za-z]`
+--|
+--| `IdentStart: Set char`
 def IdentStart (.c: nat): set =
 $ {c | (_a <= c /\ c <= _z) \/ (_A <= c /\ c <= _Z) \/ c = _under} $;
 
+--| The set of ASCII digits: `[0-9]`
+--|
+--| `digits: Set char`
 def digits (.c: nat): set = $ {c | _0 <= c /\ c <= _9} $;
 
+--| The set of characters that are legal in an identifier: `[_A-Za-z0-9]`
+--|
+--| `IdentRest: Set char`
 def IdentRest (.c: nat): set = $ IdentStart u. digits $;
 
+--| A regex that matches an identifier. Note: this is not deterministic, it allows end-extension
+--|
+--| `regexIdent: Set String`
 def regexIdent (.s .x .y .t: nat): set =
 $ {s | E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t)} $;
 
+--| `s e. isNumber` is true if `s` denotes a natural number.
+--| Leading `0` is not allowed, but `0` itself is okay.
+--|
+--| `isNumber: Set String`
 def isNumber (.s .x .y .t: nat): set =
 $ sn (_0 : 0) u. {s | E. x E. t (s = x : t /\
   _1 <= x /\ x <= _9 /\ all digits t)} $;
 
+--| The set of MM0 punctuation characters in the "outer syntax": `* . : ; ( ) > { } =`
+--|
+--| `symbols: Set char`
 def symbols: nat =
 $ _ast ; _dot ; _colon ; _semi ; _lparen ; _rparen ;
   _gt ; _lbrace ; _rbrace ; sn _equal $;
 
+--| A token: either punctuation or an identifier. `TK: String -> Token`
 def TK (s: nat): nat = $ b0 s $;
+--| The (unparsed) contents of a math string: `MATH: String -> Token`
 def MATH (s: nat): nat = $ b1 s $;
 
+--| The MM0 lexer. This parses a full MM0 file into a list of tokens.
+--|
+--| `Tokenize: String -> Option (List Token)`
 def Tokenize (s: nat): nat;
 theorem Tokenize0: $ Tokenize 0 = suc 0 $;
 theorem TokenizeWS (s x: nat):
@@ -581,40 +644,78 @@ theorem TokenizeElse {x: nat} (s: nat):
 
 -- Now the parser:
 
+--| The `map` combinator on regexes. If `R` returns `a` on `s` then `regexMap F R` returns `F @ a`.
+--|
+--| `regexMap: (A -> B) -> Parser S A -> Parser S B`
 def regexMap (F R: set): set = $ R o> cnv F $;
 infixr regexMap: $<@>$ prec 100;
 
+--| The `seqLeft` combinator on regexes. Reads two regexes in sequence and keeps the first value.
+--|
+--| `regexAppL: Parser S A -> Parser S B -> Parser S A`
 def regexAppL (R S: set) (.x: nat): set = $ (\ x, fst x) <@> (R <+> S) $;
 infixl regexAppL: $<+$ prec 77;
 
+--| The `seqRight` combinator on regexes. Reads two regexes in sequence and keeps the second value.
+--|
+--| `regexAppR: Parser S A -> Parser S B -> Parser S B`
 def regexAppR (R S: set) (.x: nat): set = $ (\ x, snd x) <@> (R <+> S) $;
 infixr regexAppR: $+>$ prec 76;
 
+-- We will be interested in the special case `TParser A := Parser Token A` here.
+
+--| A regex to parse token `tk` and returns `0`. `parseTk: String -> TParser ()`
 def parseTk (tk: string): set = $ sn (TK tk <> 0) $;
+--| A regex to (nondeterministically) optionally parse token `tk`.
+--| Returns `1` if it consumed `tk` and `0` otherwise. `parseOptTk: String -> TParser Bool`
 def parseOptTk (tk: string): set = $ regexOpt (parseTk tk) $;
+--| A regex to parse a single character `c`. `parseOptTk: String -> TParser ()`
 def parseCh (c: char): set = $ parseTk (s1 c) $;
 
+--| The string literal `"pure"`.
 def _pure: string = $ _p ': _u ': _r ': _e ': s0 $;
+--| The string literal `"strict"`.
 def _strict: string = $ _s ': _t ': _r ': _i ': _c ': _t ': s0 $;
+--| The string literal `"provable"`.
 def _provable: string = $ _p ': _r ': _o ': _v ': _a ': _b ': _l ': _e ': s0 $;
+--| The string literal `"free"`.
 def _free: string = $ _f ': _r ': _e ': _e ': s0 $;
 
+--| Parse the sort modifiers before a sort. `parseSortData: TParser SortData`
 def parseSortData: set =
 $ (parseOptTk _pure <+> parseOptTk _strict) <+>
   (parseOptTk _provable <+> parseOptTk _free) $;
 
+--| Parse an identifier or `_`. `parseIdent_: TParser Ident_`
 def parseIdent_ (.s: nat): set = $ (\ s, TK s <> s) '' regexIdent $;
+--| Parse an identifier. `parseIdent: TParser Ident`
 def parseIdent (.x: nat): set = $ parseIdent_ i^i {x | snd x != s1 _under} $;
 
+--| `ASTSort (mods <> s)` is the parsed result of `[mods] sort s;`.
+--| `ASTSort: (SortData, String) -> AST`
 def ASTSort (x: nat): nat = $ b0 (b0 (b0 x)) $;
+--| `ASTTerm (x <> bis <> b0 ret)` is the parsed result of `term x (bis): ret;`.
+--| `ASTTerm: (Ident, List ASTBinder, ASTDepType) -> AST`
 def ASTTerm (x: nat): nat = $ b0 (b0 (b1 x)) $;
+--| `ASTAxiom (x <> bis <> b1 concl)` is the parsed result of `axiom x (bis): concl;`.
+--| `ASTAxiom: (Ident, List ASTBinder, Formula) -> AST`
 def ASTAxiom (x: nat): nat = $ b0 (b1 (b0 x)) $;
+--| `ASTDef (x <> bis <> b0 ret <> 0)` is the parsed result of `def x (bis): ret;`.
+--| `ASTDef (x <> bis <> b0 ret <> suc (b1 val))` is the result of `def x (bis): ret = $ val $;`.
+--| `ASTDef: (Ident, List ASTBinder, ASTDepType, Option Formula) -> AST`
 def ASTDef (x: nat): nat = $ b0 (b1 (b1 x)) $;
+--| `ASTThm (x <> bis <> b1 concl)` is the parsed result of `theorem x (bis): concl;`.
+--| `ASTThm: (Ident, List ASTBinder, Formula) -> AST`
 def ASTThm (x: nat): nat = $ b1 (b0 (b0 x)) $;
+--| An `input` or `output` declaration.
+--| `ASTIO: Bool -> (Ident, List Token) -> AST`
 def ASTIO (out x: nat): nat = $ b1 (b0 (b1 (out <> x))) $;
+--| `ASTNota n` is a notation declatation. `ASTNota: Nota -> AST`
 def ASTNota (x: nat): nat = $ b1 (b1 x) $;
 
+--| The string literal `"sort"`.
 def _sort: string = $ _s ': _o ': _r ': _t ': s0 $;
+--| Parse a sort declaration. `parseSort: TParser AST`
 def parseSort (.x: nat): set = $ (\ x, ASTSort x) <@>
   (parseSortData <+> parseTk _sort +> parseIdent <+ parseCh _semi) $;
 
@@ -632,128 +733,191 @@ def parseSort (.x: nat): set = $ (\ x, ASTSort x) <@>
 -- (_: $foo$)   goes to    (0, "_", b1 "foo")
 -- (.x: set)    goes to    (2, "x", b0 ("set", []))
 
+--| Parse a type binder. `parseType: TParser ASTDepType`
 def parseType (.x: nat): set = $ (\ x, b0 x) <@>
   (parseIdent <+> regexStar parseIdent) $;
+--| Parse a formula binder. `parseFmla: TParser Formula`
 def parseFmla (.s: nat): set = $ Ran (\ s, MATH s <> b1 s) $;
+--| Parse a type or formula binder. `parseTypeFmla: TParser BinderType`
 def parseTypeFmla: set = $ parseType u. parseFmla $;
 
+--| Parse a binder variable or dummy variable. `parseDummyId: TParser (Ident_ + Ident)`
 def parseDummyId (.x: nat): set =
 $ (\ x, b0 x) <@> parseIdent_ u.
   (\ x, b1 x) <@> (parseCh _dot +> parseIdent) $;
 
+--| Parse a binder surrounded in `{}` braces. `parseCurlyBinder: TParser (List ASTBinder)`
 def parseCurlyBinder (.x .z: nat): set =
 $ (\ z, map (case (\ x, 1 <> x <> snd z) (\ x, 2 <> x <> snd z)) (fst z)) <@>
   (parseCh _lbrace +> regexStar parseDummyId <+>
     parseCh _colon +> parseTypeFmla <+ parseCh _rbrace) $;
+--| Parse a binder surrounded in `()` parentheses. `parseRegBinder: TParser (List ASTBinder)`
 def parseRegBinder (.x .z: nat): set =
 $ (\ z, map (case (\ x, 0 <> x <> snd z) (\ x, 2 <> x <> snd z)) (fst z)) <@>
   (parseCh _lparen +> regexStar parseDummyId <+>
     parseCh _colon +> parseTypeFmla <+ parseCh _rparen) $;
+--| Parse a binder. `parseBinder: TParser (List ASTBinder)`
 def parseBinder (.x .y: nat): set = $ parseCurlyBinder u. parseRegBinder $;
 
+--| Parse a list of binders. `parseRegBinder: TParser (List ASTBinder)`
 def parseBinders (.x .z: nat): set =
 $ (\ x, ljoin x) <@> regexStar parseBinder $;
 
+--| Parse a sequence of formulas separated by `>`.
+--|
+--| `parseArrows: TParser (List BinderType, BinderType)`
 def parseArrows: set =
 $ regexStar (parseTypeFmla <+ parseCh _gt) <+> parseTypeFmla $;
 
+--| Parse a sequence of binders, then a colon, then an arrow-list.
+--| The arrow-list hypotheses are converted to anonymous binders.
+--|
+--| `parseBindersAndArrows: TParser (List ASTBinder, BinderType)`
 def parseBindersAndArrows (.x .z: nat): set =
 $ (\ x, (fst x ++ map (\ z, (0 <> s1 _under <> z)) (pi21 x)) <> pi22 x) <@>
   (parseBinders <+> parseCh _colon +> parseArrows) $;
 
+--| Parse a simple declaration of the form `tk ident (binders): concl;`.
+--|
+--| `parseSimple: String -> TParser (Ident, List ASTBinder, BinderType)`
 def parseSimple (tk: string): set =
 $ parseTk tk +> parseIdent <+> parseBindersAndArrows <+ parseCh _semi $;
 
+--| The string literal `"term"`.
 def _term: string = $ _t ': _e ': _r ': _m ': s0 $;
+--| Parse a term constructor declaration. `parseTerm: TParser AST`
 def parseTerm (.x: nat): set = $ (\ x, ASTTerm x) <@> parseSimple _term $;
 
+--| The string literal `"axiom"`.
 def _axiom: string = $ _a ': _x ': _i ': _o ': _m ': s0 $;
+--| Parse an axiom declaration. `parseAxiom: TParser AST`
 def parseAxiom (.x: nat): set = $ (\ x, ASTAxiom x) <@> parseSimple _axiom $;
 
+--| The string literal `"theorem"`.
 def _theorem: string = $ _t ': _h ': _e ': _o ': _r ': _e ': _m ': s0 $;
+--| Parse a theorem declaration. `parseThm: TParser AST`
 def parseThm (.x: nat): set = $ (\ x, ASTThm x) <@> parseSimple _theorem $;
 
+--| The string literal `"def"`.
 def _def: string = $ _d ': _e ': _f ': s0 $;
+--| Parse a `def` declaration. `parseDef: TParser AST`
 def parseDef (.x: nat): set = $ (\ x, ASTDef x) <@>
   (parseTk _theorem +> parseIdent <+> parseBinders <+>
     parseCh _colon +> parseType <+>
     regexOpt (parseCh _equal +> parseFmla) <+ parseCh _semi) $;
 
+--| A delimiter declaration. `NotaDelim: (Formula, Formula) -> Nota`
 def NotaDelim (x: nat): nat = $ b0 (b0 x) $;
+--| An infix declaration. `NotaInfix: Bool -> (Ident, Formula, Prec) -> Nota`
 def NotaInfix (x y: nat): nat = $ b0 (b1 (b0 (x <> y))) $;
+--| A prefix declaration. `NotaPfx: (Ident, Formula, Prec) -> Nota`
 def NotaPfx (x: nat): nat = $ b0 (b1 (b1 x)) $;
+--| A coercion declaration. `NotaCoe: (Ident, Ident, Ident) -> Nota`
 def NotaCoe (x: nat): nat = $ b1 (b0 x) $;
+--| A general notation declaration.
+--| `NotaGen: (Ident, List Binder, ASTDepType, List Literal) -> Nota`
 def NotaGen (x: nat): nat = $ b1 (b1 x) $;
 
+--| The string literal `"delimiter"`.
 def _delimiter: string =
 $ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
+--| Parse a `delimiter` declaration. `parseDelim: TParser (Formula, Formula)`
 def parseDelim (.x: nat): set = $ (\ x, NotaDelim x) <@>
   (parseTk _delimiter +>
     (((\ x, x <> x) <@> parseFmla) u.
      (parseFmla <+> parseFmla)) <+ parseCh _semi) $;
 
+--| Convert a string representing a number to a natural number. `stoi: String -> nat`
 def stoi (x: nat): nat;
 theorem stoi0: $ stoi 0 = 0 $;
 theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $;
 
+--| Parse a numerical expression. `parseNumber: TParser nat`
 def parseNumber (.s: nat): set = $ (\ s, TK s <> stoi s) '' isNumber $;
 
+--| The string literal `"max"`.
 def _max: string = $ _m ': _a ': _x ': s0 $;
+--| Parse a precendence, `parsePrec: TParser Prec` where `Prec := Option nat`
 def parsePrec (.x: nat): set = $ parseTk _max u. (\ x, suc x) <@> parseNumber $;
 
+--| The string literal `"prec"`.
 def _prec: string = $ _p ': _r ': _e ': _c ': s0 $;
+--| Parse a simple notation declaration of the form `tk name: $constant$ prec num;`.
+--| `parseSimpleNota: String -> TParser (Ident, Formula, Prec)`
 def parseSimpleNota (tk: string): set =
 $ parseTk tk +> parseIdent <+> parseCh _colon +> parseFmla <+>
     parseTk _prec +> parsePrec <+ parseCh _semi $;
 
+--| The string literal `"infixl"`.
 def _infixl: string = $ _i ': _n ': _f ': _i ': _x ': _l ': s0 $;
+--| The string literal `"infixr"`.
 def _infixr: string = $ _i ': _n ': _f ': _i ': _x ': _r ': s0 $;
+--| The string literal `"prefix"`.
 def _prefix: string = $ _p ': _r ': _e ': _f ': _i ': _x ': s0 $;
+--| Parse a left-associative infix notation. `parseInfixl: TParser Nota`
 def parseInfixl (.x: nat): set = $ (\ x, NotaInfix 0 x) <@> parseSimpleNota _infixl $;
+--| Parse a right-associative infix notation. `parseInfixl: TParser Nota`
 def parseInfixr (.x: nat): set = $ (\ x, NotaInfix 1 x) <@> parseSimpleNota _infixr $;
+--| Parse a prefix notation. `parsePrefix: TParser Nota`
 def parsePfx (.x: nat): set = $ (\ x, NotaPfx x) <@> parseSimpleNota _prefix $;
 
+--| The string literal `"coercion"`.
 def _coercion: string = $ _c ': _o ': _e ': _r ': _c ': _i ': _o ': _n ': s0 $;
+--| Parse a coercion notation. `parseCoe: TParser Nota`
 def parseCoe (.x: nat): set = $ (\ x, NotaCoe x) <@>
   (parseTk _coercion +> parseIdent <+>
    parseCh _colon +> parseIdent <+>
    parseCh _gt +> parseIdent <+ parseCh _semi) $;
 
+--| Parse a literal in a general notation. `parseLiteral: TParser Literal`,
+--| where `Literal := (Formula, Prec) + Ident`
 def parseLiteral (.x: nat): set =
 $ ((\ x, b0 x) <@> (parseCh _lparen +> parseFmla <+>
     parseCh _colon +> parsePrec <+ parseCh _rparen)) u.
   ((\ x, b1 x) <@> parseIdent) $;
 
+--| The string literal `"notation"`.
 def _notation: string = $ _n ': _o ': _t ': _a ': _t ': _i ': _o ': _n ': s0 $;
+--| Parse a general notation. `parseGenNota: TParser Nota`
 def parseGenNota (.x: nat): set = $ (\ x, NotaGen x) <@>
   (parseTk _notation +> parseIdent <+>
    parseBinders <+> parseCh _colon +> parseType <+>
    parseCh _equal +> regexPlus parseLiteral <+ parseCh _semi) $;
 
+--| Parse a notation declaration. `parseNota: TParser AST`
 def parseNota (.x: nat): set = $ (\ x, ASTNota x) <@>
   (parseDelim u. parseInfixl u. parseInfixr u. parsePfx u.
     parseCoe u. parseGenNota) $;
 
+--| The string literal `"input"`.
 def _input: string = $ _i ': _n ': _p ': _u ': _t ': s0 $;
+--| The string literal `"output"`.
 def _output: string = $ _o ': _u ': _t ': _p ': _u ': _t ': s0 $;
 
+--| The supported set of input kinds, currently empty. `inputKinds: Set String`
 def inputKinds: nat = $0$;
+--| The supported set of output kinds, currently empty. `outputKinds: Set String`
 def outputKinds: nat = $0$;
 
+--| Parse an input or output declaration.
+--| `parseIO1: String -> Set String -> TParser (Ident, List Token)`
 def parseIO1 (tk: string) (k .x .s: nat): set =
 $ parseTk tk +> (parseIdent i^i {x | snd x e. k}) <+>
   parseCh _colon +>
     regexStar (((\ s, TK s) <@> parseIdent) u. Ran (\ s, MATH s <> MATH s))
     <+ parseCh _semi $;
 
+--| Parse an input or output declaration. `parseIO: TParser AST`
 def parseIO (.x: nat): set =
 $ ((\ x, ASTIO 0 x) <@> parseIO1 _input inputKinds) u.
   ((\ x, ASTIO 1 x) <@> parseIO1 _output outputKinds) $;
 
+--| Parse a full file AST. `parseAST: TParser (List AST)`
 def parseAST: set =
 $ regexStar (parseSort u. parseTerm u. parseAxiom u.
     parseThm u. parseDef u. parseNota u. parseIO) $;
 
+--| Parse the string contents of a file. `parse: String -> List AST -> Bool`
 def parse (s ast .tks: nat): wff =
 $ E. tks (Tokenize s = suc tks /\ tks <> ast e. parseAST) $;
 
@@ -761,6 +925,8 @@ $ E. tks (Tokenize s = suc tks /\ tks <> ast e. parseAST) $;
 -- AST Navigation --
 --------------------
 
+--| Look up a variable in the context to get its index.
+--| `lookupVar: List ASTBinder -> Ident -> Option Nat`
 def lookupVar (ctx x: nat): nat;
 theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $;
 theorem lookupVarEq (bis c x t: nat):
@@ -772,9 +938,13 @@ theorem lookupVarNe (bis c x y t: nat): $ y != x ->
 -- Math Parsing --
 ------------------
 
+--| `s e. nonemptyNonwhite` means that `s` is a nonempty list of non-whitespace characters.
+--| `nonemptyNonwhite: Set String`
 def nonemptyNonwhite (.s .c: nat): set =
 $ {s | s != 0 /\ all {c | ~c e. white} s} $;
 
+--| `simpleTokenize s` splits `s` into chunks of non-whitespace characters separated by whitespace.
+--| `simpleTokenize: String -> List String`
 def simpleTokenize (s: nat): nat;
 theorem simpleTokenize0: $ simpleTokenize 0 = 0 $;
 theorem simpleTokenizeWS (c s: nat):
@@ -783,6 +953,8 @@ theorem simpleTokenizeTk (s x r: nat):
   $ maxPrefix nonemptyNonwhite s = suc (x <> r) ->
     simpleTokenize s = x : simpleTokenize r $;
 
+--| Compute the list of valid delimiters from the given AST.
+--| `getDelimiters: List AST -> (Set char, Set char)`
 def getDelimiters (ast: nat): nat;
 theorem getDelimiters0: $ getDelimiters 0 = 0 <> 0 $;
 theorem getDelimitersDelim (ast a b l r: nat):
@@ -794,9 +966,13 @@ theorem getDelimitersOther {l r: nat} (ast t: nat):
   $ ~(E. l E. r t = ASTNota (NotaDelim (b1 l <> b1 r))) ->
     getDelimiters (ast |> t) = getDelimiters ast $;
 
+--| Validation of a delimiter set. Delimiters must be one character in this implementation.
+--| `delimitersOk: Set char -> Bool`
 def delimitersOk (A: set) (.x .y: nat): wff =
 $ A. x (x e. A -> len x = 1) $;
 
+--| Tokenize a formula using the delimiters from the given AST context.
+--| `tokenizeFmla: List AST -> String -> List String`
 def tokenizeFmla (ast f: nat): nat;
 theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
 theorem tokenizeFmlaWhite (ast x xs: nat): $ x e. white ->
@@ -836,35 +1012,55 @@ theorem tokenizeFmlaSElse (ast x y xs r r2: nat):
 --     E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
 --     E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
 
+--| `x <> c <> p e. getPfx ast` says that the AST contains a
+--| prefix declaration `c` for `x` at precedence `p`.
+--|
+--| `getPfx: List AST -> Set (Ident, String, Prec)`
 def getPfx (ast: nat): nat;
 theorem getPfxEl {fmla: nat} (ast x c p: nat):
   $ x <> c <> p e. getPfx ast <-> E. fmla
     (ASTNota (NotaPfx (x <> b1 fmla <> p)) IN ast /\
      simpleTokenize fmla = c : 0) $;
 
+--| `x <> c <> p e. getInfix ast r` says that the AST contains a
+--| infix(r) declaration `c` for `x` at precedence `p`.
+--|
+--| `getInfix: List AST -> Bool -> Set (Ident, String, Prec)`
 def getInfix (ast r: nat): nat;
 theorem getInfixEl {fmla: nat} (ast r x c p: nat):
   $ x <> c <> p e. getInfix ast r <-> E. fmla
     (ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
      simpleTokenize fmla = c : 0) $;
 
+--| `n e. getNota ast` says that the AST contains a notation declaration `n`.
+--|
+--| `getNota: List AST -> Set (Ident, List ASTBinder, ASTDepType, List Literal)`
 def getNota (ast: nat): nat;
 theorem getNotaEl (ast x: nat):
   $ x e. getNota ast <-> ASTNota (NotaGen x) IN ast $;
 
+--| `c e. getNota ast` says that the AST contains a coercion declaration `c`.
+--|
+--| `getCoe: List AST -> Set (Ident, Ident, Ident)`
 def getCoe (ast: nat): nat;
 theorem getCoeEl (ast x: nat):
   $ x e. getCoe ast <-> ASTNota (NotaCoe x) IN ast $;
 
+--| `m <=p n` is the `<=` relation for precedences. `0` represents `max`,
+--| so it is ordered after everything else and the other numbers are in the usual order.
+--| `precle: Prec -> Prec -> Bool`
 def precle (m n: nat): wff; infixl precle: $<=p$ prec 50;
 theorem precle02 (n: nat): $ n <=p 0 $;
 theorem precle01 (m: nat): $ ~ 0 <=p suc m $;
 theorem precleS (m n: nat): $ suc m <=p suc n <-> m <= n $;
 
+--| The successor operation on precedences. `precSuc: Prec -> Prec`
 def precSuc (n: nat): nat;
 theorem precSuc0: $ precSuc 0 = 0 $;
 theorem precSucS (n: nat): $ precSuc (suc n) = suc (suc n) $;
 
+--| Extracts the precedence of a variable given the list of literals that follow.
+--| `litsPrec: List Literal -> Prec -> Prec`
 def litsPrec (lits q: nat): nat;
 theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $;
 theorem litsPrecC (c p lits q: nat):
@@ -874,14 +1070,28 @@ theorem litsPrecV (v lits q: nat):
 
 -- This is a more precise version of SExpr that allows reconstructing an
 -- exact token string from a parse proof
+
+--| A variable reference `v`. `PTVar: Ident -> ParseTree`
 def PTVar (v: nat): nat = $ b0 (b0 (b0 v)) $;
+--| A parenthesized expression `(x)`. `PTParens: ParseTree -> ParseTree`
 def PTParens (x: nat): nat = $ b0 (b0 (b1 x)) $;
+--| A function call expression `f xs`. `PTFunc: Ident -> List ParseTree -> ParseTree`
 def PTFunc (f xs: nat): nat = $ b0 (b1 (f <> xs)) $;
+--| A prefix notation expression `c xs` which resolves to `f`.
+--| `PTPfx: Ident -> String -> List ParseTree -> ParseTree`
 def PTPfx (f c xs: nat): nat = $ b1 (b0 (b0 (f <> c <> xs))) $;
+--| A notation expression, consisting of literals `lits` which are either `String` constants
+--| or expression subtrees, which resolves to `f`.
+--| `PTNota: Ident -> List (String + ParseTree) -> ParseTree`
 def PTNota (f lits: nat): nat = $ b1 (b0 (b1 (f <> lits))) $;
+--| An infix(r) expression, with parse trees `x` and `y` separated by `c`, which resolves to `f`.
+--| `PTInfix: Bool -> Ident -> String -> ParseTree -> ParseTree -> ParseTree`
 def PTInfix (r f c x y: nat): nat = $ b1 (b1 (b0 (r <> f <> c <> x <> y))) $;
+--| A coercion expression, which applies `f` to the parse tree `x`.
+--| `PTCoe: Ident -> ParseTree -> ParseTree`
 def PTCoe (f x: nat): nat = $ b1 (b1 (b1 (f <> x))) $;
 
+--| Convert a parse tree object to a string of tokens. `ptToStr: ParseTree -> List String`
 def ptToStr (pt: nat): nat;
 theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
 theorem ptToStrParens {s: nat} (e: nat):
@@ -898,7 +1108,24 @@ theorem ptToStrInfix (r f c x y: nat):
 theorem ptToStrCoe {y: nat} (f x: nat):
   $ ptToStr (PTCoe f x) = ptToStr x $;
 
+--| ```
+--| ptCheck (eac: (Env, List AST, Ctx')) (p: Prec) (pt: ParseTree) (e: SExpr): Bool
+--| ```
+--| checks that `pt` is a valid parse tree elaborating to the expression `e`.
+--|
+--| This function has the technical restriction that `p <= eac`.
+--| This is easy to satisfy since `eac` is a *huge* number (the encoding of the environment)
+--| and we will never attempt to parse an expression at precedence `p` unless `p`
+--| or its predecessor is mentioned somewhere in the environment.
 def ptCheck (eac p pt e: nat): wff;
+
+--| ```
+--| ptCheckNotaLs (eac: (Env, List AST, Ctx'))
+--|   (bis: List ASTBinder) (lits: List Literal)
+--|   (xs: List (String + ParseTree)) (es: List SExpr) (p: Prec): Bool
+--| ```
+--| checks that `xs` consists of a list of constants and subtrees
+--| according to the given literal list.
 def ptCheckNotaLs (eac bis lits xs es p: nat): wff;
 
 theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
@@ -951,10 +1178,22 @@ theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
       ptCheck eac (litsPrec lits q) x e /\
       ptCheckNotaLs eac bis lits xs2 es q)) $;
 
+--| ```
+--| parseExpr (eac: (Env, List AST, Ctx'))
+--|   (args: List Binder) (f: List String) (s: SortID): Set SExpr
+--| ```
+--| `e e. parseExpr eac args f s` means that parsing `f` at sort `s` yields `e`.
+--| Although it returns a set of values, there is at most one possible result.
 def parseExpr (eac args f s .e .pt: nat): set =
 $ {e | E. pt (ptToStr pt = f /\
   ptCheck eac 0 pt e /\ Expr (fst eac) args e s)} $;
 
+--| ```
+--| parseExprProv (eac: (Env, List AST, Ctx'))
+--|   (args: List Binder) (f: List String) (s: SortID): Set SExpr
+--| ```
+--| `e e. parseExpr eac args f` means that parsing `f` at provable sort yields `e`.
+--| Although it returns a set of values, there is at most one possible result.
 def parseExprProv (eac args f .e .pt: nat): set =
 $ {e | E. pt (ptToStr pt = f /\
   ptCheck eac 0 pt e /\ ExprProv (fst eac) args e)} $;
@@ -966,6 +1205,15 @@ $ {e | E. pt (ptToStr pt = f /\
 -- Here we have to convert a parsed AST into an Env, and also
 -- parse the math strings.
 
+-- `ASTBinder' := (Bool, Ident_, BinderType)`
+-- `Ctx' := List ASTBinder'`
+-- is the special case of `ASTBinder` with no dummy binders.
+
+--| ```
+--| splitDummies: List ASTBinder -> (Ctx', List (Ident, BinderType))
+--| ```
+--| Removes the dummy binders from the input list,
+--| returning all the regular binders, plus the dummies.
 def splitDummies (bis: nat): nat;
 theorem splitDummies0: $ splitDummies 0 = 0 $;
 theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
@@ -976,6 +1224,11 @@ theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
   splitDummies bis = bis1 <> bis2 ->
   splitDummies (bis |> (2 <> x <> t)) = bis1 <> (bis2 |> (x <> t)) $;
 
+--| ```
+--| checkDummies: List (Ident, BinderType) -> Ctx' -> Bool`
+--| ```
+--| Checks that all dummy declarations are well formed
+--| and converts them into `Ctx'` representation.
 def checkDummies (ds bis: nat): wff;
 theorem checkDummies0 (bis: nat): $ checkDummies 0 bis <-> bis = 0 $;
 theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
@@ -983,12 +1236,22 @@ theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
       t = b0 (t2 <> 0) /\ checkDummies ds bis2 /\
       bis = (1 <> x <> t) : bis2) $;
 
+--| `lookupVars: Ctx' -> (Ident => Nat)` is the same as `lookupVar`
+--| but expressed as a finite (partial) function.
 def lookupVars (ctx .s .t: nat): set = $ S\ s, {t | lookupVar ctx s = suc t} $;
 
+--| ```
+--| elabType (ctx: Ctx') (s: ASTDepType) (out: DepType): Bool
+--| ```
+--| elaborates `s` into a type in context `ctx`.
 def elabType (ctx s out .t .vs .vs2: nat): wff =
 $ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\
     vs2 == lookupVars ctx '' vs) $;
 
+--| ```
+--| elabTermBinders (bis: Ctx') (ctx: Ctx): Bool
+--| ```
+--| elaborates a binder list `bis` into an abstract context `ctx`.
 def elabTermBinders (bis ctx: nat): wff;
 theorem elabTermBinders0 (ctx: nat):
   $ elabTermBinders 0 ctx <-> ctx = 0 $;
@@ -999,16 +1262,37 @@ theorem elabTermBindersS {ctx c x t t2 vs2: nat} (bis ctx2: nat):
       lookupVar bis x = 0 /\ t = b0 (t2 <> vs2) /\
       ctx2 = ctx |> if (true c) (PBound t2) (PReg t2 vs2)) $;
 
+--| ```
+--| elabFmla (env: Env) (ast: List AST) (ctx: Ctx')
+--|   (args: List Binder) (f: Formula) (e: SExpr) (s: SortID): Bool
+--| ```
+--| Elaborate formula `f` to expression `e` when expecting sort `s`.
 def elabFmla (env ast ctx args f e s .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;
 
+--| ```
+--| elabFmlaProv (env: Env) (ast: List AST) (ctx: Ctx')
+--|   (args: List Binder) (f: Formula) (e: SExpr): Bool
+--| ```
+--| Elaborate formula `f` to expression `e` when expecting a provable sort.
 def elabFmlaProv (env ast ctx args f e .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExprProv (env <> ast <> ctx) args f2 == sn e) $;
 
+--| ```
+--| elabHyps (env: Env) (ast: List AST) (ctx: Ctx') (args: List Binder)
+--|   (hyps: List ASTBinder') (hyps2: List SExpr): Bool
+--| ```
+--| Elaborate a list of hypotheses `hyps` to a list of expressions `hyps2`.
 def elabHyps (env ast ctx args hyps hyps2 .hyp .hyp2 .x .f: nat): wff =
 $ hyps <> hyps2 e. all2 (S\ hyp, {hyp2 | E. x E. f (hyp = 0 <> x <> f /\
     elabFmlaProv env ast ctx args f hyp2)}) $;
 
+--| ```
+--| elabDefO (env: Env) (ast: List AST) (ctx: Ctx')
+--|   (s: SortID) (ds: Ctx') (ds2: List SortID) (o: Option Formula)
+--|   (o2: Option (List SortID, SExpr)): Bool
+--| ```
+--| Elaborate a definition's optional value to an optional list of dummies and an expression.
 def elabDefO (env ast ctx s ds ds2 o o2: nat): wff;
 theorem elabDefO0 (env ast ctx s ds ds2 o2: nat):
   $ elabDefO env ast ctx s ds ds2 0 o2 <-> ds = 0 /\ o2 = 0 $;
@@ -1018,6 +1302,11 @@ theorem elabDefOS {args2 e: nat} (env ast ctx s ds ds2 f o2: nat):
       elabFmla env ast (ctx ++ ds) args2 f e s /\
       o2 = suc (ds2 <> e)) $;
 
+--| ```
+--| Elaborate (ast: List AST): Set Env
+--| ```
+--| Elaborate an AST to an environment.
+--| Even though this returns a set, the environment is uniquely determined by the AST.
 def Elaborate (ast: nat): set;
 theorem Elaborate0: $ Elaborate 0 == sn 0 $;
 theorem ElaborateSort {e: nat} (ast sd x: nat):
@@ -1063,5 +1352,13 @@ theorem ElaborateIO (ast out n: nat):
 theorem ElaborateNota (ast n: nat):
   $ Elaborate (ast |> ASTNota n) == Elaborate ast $;
 
+--| ```
+--| Valid (s: String): Bool
+--| ```
+--| The top level validity statement.
+--| A string denoting an MM0 file is valid if it parses to some `ast`
+--| which elaborates to an environment `e` which is valid,
+--| which is to say that it extends to an environment `e2`
+--| which is well formed and has a proof `p`.
 def Valid (s .ast .e: nat): wff =
 $ E. ast E. e (parse s ast /\ e e. Elaborate ast /\ ValidEnv e) $;
