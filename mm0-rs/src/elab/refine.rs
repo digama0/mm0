@@ -631,8 +631,8 @@ impl Elaborator {
   }
 
   /// Coerce proof `p`, which has type `e`, to target `tgt`.
-  fn coerce_to(&mut self, sp: Span, tgt: LispVal, e: &LispVal, p: LispVal) -> Result<LispVal> {
-    Ok(LispVal::apply_conv(self.unify(sp, &tgt, e)?, tgt, p))
+  fn coerce_to(&mut self, sp: Span, tgt: LispVal, e: &LispVal, p: LispVal) -> LispVal {
+    LispVal::apply_conv(self.unify(sp, &tgt, e), tgt, p)
   }
 
   /// Return true if `e` contains an occurrence of the metavariable `mv`.
@@ -675,8 +675,11 @@ impl Elaborator {
 
   /// Unify expressions `e1` and `e2`. Returns a conversion proof
   /// `u: e1 = e2`, with `#undef` meaning that `e1` and `e2` are equal after unification.
-  fn unify(&mut self, sp: Span, e1: &LispVal, e2: &LispVal) -> Result<LispVal> {
-    self.unify1(e1, e2).map_err(|e| ElabError::new_e(sp, e))
+  fn unify(&mut self, sp: Span, e1: &LispVal, e2: &LispVal) -> LispVal {
+    self.unify1(e1, e2).unwrap_or_else(|e| {
+      self.report(ElabError::new_e(sp, e));
+      LispVal::atom(AtomId::SORRY)
+    })
   }
 
   /// Unify expressions `e1` and `e2`. Returns a conversion proof
@@ -865,7 +868,7 @@ impl Elaborator {
           }
           RefineExpr::Exact(p) => {
             let e = self.infer_type(sp, &p)?;
-            RState::Ret(self.coerce_to(sp, tgt, &e, p)?)
+            RState::Ret(self.coerce_to(sp, tgt, &e, p))
           }
           RefineExpr::Proc => RState::Proc {tgt, p},
         },
@@ -937,7 +940,7 @@ impl Elaborator {
           }
         }
         RState::RefineArgs {sp, tgt, ty, p, u} if u.is_empty() =>
-          RState::Ret(self.coerce_to(sp, tgt, &ty, p)?),
+          RState::Ret(self.coerce_to(sp, tgt, &ty, p)),
         RState::RefineArgs {tgt, p, u, ..} =>
           return Ok(RefineResult::RefineExtraArgs(tgt, p, u)),
         RState::RefineBis {sp, sp2, tgt, im, t, mut u, mut args} => {
@@ -961,7 +964,7 @@ impl Elaborator {
             let ret = subst.subst(&tdata.ret);
             break RState::RefineHyps {
               res: if u.len() <= hyps.len() {
-                RefineHypsResult::Ok(self.unify(sp2.unwrap_or(sp), &tgt, &ret)?)
+                RefineHypsResult::Ok(self.unify(sp2.unwrap_or(sp), &tgt, &ret))
               } else {
                 RefineHypsResult::Extra
               },
@@ -1002,10 +1005,10 @@ impl Elaborator {
           Some(RStack::CoerceTo(tgt)) => {
             let sp = try_get_span(&fsp, &ret);
             let e = self.infer_type(sp, &ret)?;
-            RState::Ret(self.coerce_to(sp, tgt, &e, ret)?)
+            RState::Ret(self.coerce_to(sp, tgt, &e, ret))
           }
           Some(RStack::TypedAt {sp, tgt, p}) => {
-            stack.push(RStack::Coerce {u: self.unify(sp, &tgt, &ret)?, tgt});
+            stack.push(RStack::Coerce {u: self.unify(sp, &tgt, &ret), tgt});
             RState::RefineProof {tgt: ret, p}
           }
           Some(RStack::Typed(p)) => RState::RefineProof {tgt: ret, p},
