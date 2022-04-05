@@ -76,7 +76,7 @@ jobs:
         key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
     - name: Clippy
       working-directory: ./mm0-rs
-      run: cargo clippy --all-features -- -D warnings
+      run: ./clippy.sh
 
   peano:
     name: Peano MM1 files
