@@ -3,10 +3,12 @@
 # but you can also use it directly
 
 cargo clippy --all-features -- -D warnings
+error=$?
 for i in components/*; do
   cd $i
   cp ../../Cargo.lock .
-  CARGO_TARGET_DIR=../../target cargo clippy --all-features -- -D warnings
+  CARGO_TARGET_DIR=../../target cargo clippy --all-features -- -D warnings || error=$?
   rm Cargo.lock
   cd ../..
 done
+exit $error
