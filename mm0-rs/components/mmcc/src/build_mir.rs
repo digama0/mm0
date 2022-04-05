@@ -767,22 +767,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })
   }
 
-  #[allow(clippy::match_same_arms)] // rust-clippy#8637
   fn rvalue(&mut self, e: hir::Expr<'a>) -> Block<RValue> {
     Ok(match e.k.0 {
-      hir::ExprKind::Var(_, _) |
-      hir::ExprKind::Index(_) |
-      hir::ExprKind::Slice(_) |
-      hir::ExprKind::Proj(_, _, _) |
-      hir::ExprKind::Deref(_) |
-      hir::ExprKind::Rval(_) |
-      hir::ExprKind::Ref(_) |
-      hir::ExprKind::ArgRef(_) |
-      hir::ExprKind::Unit |
-      hir::ExprKind::ITrue |
-      hir::ExprKind::Bool(_) |
-      hir::ExprKind::Int(_) |
-      hir::ExprKind::Const(_) => self.operand(e)?.into(),
       hir::ExprKind::Unop(op, e) => {
         let v = self.as_temp(*e)?;
         RValue::Unop(op, v.into())
@@ -857,7 +843,6 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let_unchecked!(PreVar::Ok(v) = v, v.into())
         }).collect())
       }
-      hir::ExprKind::Call(_) => self.operand(e)?.into(),
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
       hir::ExprKind::While(while_) => self.rvalue_while(*while_, e.k.1)?,
       hir::ExprKind::Unreachable(_) |
@@ -868,6 +853,20 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.expr(e, None)?;
         unreachable!()
       }
+      hir::ExprKind::Var(_, _) |
+      hir::ExprKind::Index(_) |
+      hir::ExprKind::Slice(_) |
+      hir::ExprKind::Proj(_, _, _) |
+      hir::ExprKind::Deref(_) |
+      hir::ExprKind::Rval(_) |
+      hir::ExprKind::Ref(_) |
+      hir::ExprKind::ArgRef(_) |
+      hir::ExprKind::Unit |
+      hir::ExprKind::ITrue |
+      hir::ExprKind::Bool(_) |
+      hir::ExprKind::Int(_) |
+      hir::ExprKind::Const(_) |
+      hir::ExprKind::Call(_) => self.operand(e)?.into(),
       hir::ExprKind::If {..} | hir::ExprKind::Block(_) |
       hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!(),
     })
