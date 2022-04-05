@@ -311,13 +311,13 @@ mod test {
       fn write_file(name: &str, data: &[u8]) -> io::Result<()> {
         File::create(name)?.write_all(data)
       }
-      let _ = write_file(&format!("{}.expected", test_name), &hex::decode(result).unwrap());
-      let _ = write_file(&format!("{}.produced", test_name), data);
+      drop(write_file(&format!("{}.expected", test_name), &hex::decode(result).unwrap()));
+      drop(write_file(&format!("{}.produced", test_name), data));
       let mut msg = String::new();
       for (i, &c) in data.iter().enumerate() {
+        use std::fmt::Write;
         if i % 16 == 0 { msg += "\\\n     " }
         if i % 2 == 0 { msg += " " }
-        use std::fmt::Write;
         write!(msg, "{:02x}", c).unwrap();
       }
       if data.len() % 16 == 0 { msg += "\\\n    " }

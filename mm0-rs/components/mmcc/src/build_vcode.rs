@@ -788,14 +788,14 @@ impl<'a> LowerCtx<'a> {
 
   fn build_intrinsic(&mut self,
     vbl: VBlockId,
-    proc: IntrinsicProc,
+    intrinsic: IntrinsicProc,
     args: &[(bool, Operand)],
     tgt: BlockId,
     rets: &[(bool, VarId)],
   ) -> cl::Terminator {
-    let mut rmis = ArrayVec::<(RegMemImm<u64>, cl::Operand), 6>::new();
     const CV: cl::Operand = cl::Operand::Const(cl::Const::Value);
-    let (f, (ret_used, ret)) = match (proc, rets, args) {
+    let mut rmis = ArrayVec::<(RegMemImm<u64>, cl::Operand), 6>::new();
+    let (f, (ret_used, ret)) = match (intrinsic, rets, args) {
       (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
         rmis.extend([self.get_operand(fname), (0.into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
@@ -851,7 +851,7 @@ impl<'a> LowerCtx<'a> {
       None
     };
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
-    cl::Terminator::Intrinsic(proc, cl2)
+    cl::Terminator::Intrinsic(intrinsic, cl2)
   }
 
   fn build_syscall(&mut self, f: SysCall, args: &[(RegMemImm<u64>, cl::Operand)], dst: VReg) {
@@ -891,10 +891,10 @@ impl<'a> LowerCtx<'a> {
         cl::Terminator::Exit
       }
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
-        let (src, cl1) = self.get_operand_reg(o, Size::S8);
+        let (src, cl) = self.get_operand_reg(o, Size::S8);
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));
-        cl::Terminator::If(cl1)
+        cl::Terminator::If(cl)
       }
       Terminator::Assert(ref o, _, true, bl) => {
         let (src, cl1) = self.get_operand_reg(o, Size::S8);
@@ -1027,8 +1027,8 @@ impl<'a> LowerCtx<'a> {
   fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
     visit_blocks(self.cfg, move |i, bl| {
       assert!(!bl.is_dead()); // dead blocks are not reachable from the entry
-      let vbl = self.code.new_block(i, block_args[i].iter().copied());
-      self.code.block_map.insert(i, vbl);
+      let vblock = self.code.new_block(i, block_args[i].iter().copied());
+      self.code.block_map.insert(i, vblock);
       self.ctx.start_block(bl);
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
       for (v, r, _) in bl.ctx_iter(&self.cfg.ctxs) {
@@ -1076,7 +1076,7 @@ impl<'a> LowerCtx<'a> {
         self.code.trace.stmts.extend_last(cl);
         stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))
       }
-      let cl = self.build_terminator(block_args, vbl, bl.terminator());
+      let cl = self.build_terminator(block_args, vblock, bl.terminator());
       self.code.trace.block.push(cl::Block { proj_start, list_start, term: cl });
       self.code.finish_block();
     });

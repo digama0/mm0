@@ -21,8 +21,9 @@ impl PReg {
   }
 
   /// The index of the register, a number from 0 to 15.
+  #[allow(clippy::cast_possible_truncation)]
   #[inline(always)]
-  pub fn index(self) -> u8 { self.0.hw_enc() as u8 }
+  #[must_use] pub fn index(self) -> u8 { self.0.hw_enc() as u8 }
 
   /// If true, then a REX byte is needed to encode this register
   #[inline] fn large(self) -> bool { self.index() & 8 != 0 }
@@ -1539,7 +1540,7 @@ pub enum DispLayout {
 
 impl PInst {
   /// Returns true if this is a spill instruction (added by regalloc)
-  pub fn is_spill(&self) -> bool {
+  #[must_use] pub fn is_spill(&self) -> bool {
     matches!(self,
       Self::MovRR { .. } |
       Self::Load64 { spill: true, .. } |

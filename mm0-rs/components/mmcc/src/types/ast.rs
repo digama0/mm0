@@ -849,6 +849,19 @@ bitflags! {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ArgAttr);
 
+/// An out parameter in a function's returns.
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub struct OutArg {
+  /// The index of the argument in the inputs
+  pub input: u32,
+  /// The name of the binder
+  pub name: Symbol,
+  /// The variable in the binder
+  pub var: VarId,
+  /// The type, if provided
+  pub ty: Option<Box<Type>>,
+}
 /// A top level program item. (A program AST is a list of program items.)
 pub type Item = Spanned<ItemKind>;
 
@@ -870,10 +883,8 @@ pub enum ItemKind {
     tyargs: u32,
     /// The arguments of the procedure.
     args: Box<[Arg]>,
-    /// The out parameters of the procedure. `(i, n, v, ty)` means that this argument was marked as
-    /// `out` corresponding to argument `i` in the inputs; `n` or `v` is the name of the binder,
-    /// and `ty` is the type, if provided.
-    outs: Box<[(u32, Symbol, VarId, Option<Box<Type>>)]>,
+    /// The out parameters of the procedure.
+    outs: Box<[OutArg]>,
     /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
     rets: Box<[TuplePattern]>,
     /// The variant, used for recursive functions.

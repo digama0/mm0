@@ -842,6 +842,7 @@ impl<'a, 'n, 'b> FromGlobalCtx<'a, 'n, 'b> {
 
 trait FromGlobal<'a> {
   type Output: 'a;
+  #[allow(clippy::wrong_self_convention)]
   fn from_global(&self, ctx: &mut FromGlobalCtx<'a, '_, '_>) -> Self::Output;
   fn inst_global(&self, ic: &mut InferCtx<'a, '_>, subst: &[Ty<'a>]) -> Self::Output {
     self.from_global(&mut FromGlobalCtx::new(ic, subst))
@@ -2089,7 +2090,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?}
       (ExprKind::Index(a1, a2), ExprKind::Index(b1, b2)) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?}
-      (ExprKind::Slice([a1, a2, a3]), ExprKind::Slice([b1, b2, b3])) =>
+      (ExprKind::Slice([a1, a2, a3]), ExprKind::Slice([b1, b2, b3])) |
+      (ExprKind::If {cond: a1, then: a2, els: a3}, ExprKind::If {cond: b1, then: b2, els: b3}) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
       (ExprKind::Proj(a1, p_a), ExprKind::Proj(b1, p_b)) if p_a == p_b => self.equate_expr(a1, b1)?,
       (ExprKind::List(ls_a), ExprKind::List(ls_b)) if ls_a.len() == ls_b.len() =>
@@ -2099,8 +2101,6 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       (ExprKind::Call {f: f_a, tys: tys_a, args: args_a},
        ExprKind::Call {f: f_b, tys: tys_b, args: args_b}) if f_a == f_b && tys_a == tys_b =>
         for (&a1, &b1) in args_a.iter().zip(args_b) {self.equate_expr(a1, b1)?},
-      (ExprKind::If {cond: a1, then: a2, els: a3}, ExprKind::If {cond: b1, then: b2, els: b3}) =>
-        {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
       (ExprKind::Infer(v), _) => {
         if let Some(e) = self.mvars.expr.lookup(v) { return self.equate_expr(e, b) }
         if !self.assign_expr(v, b) { return Err(()) }
@@ -2996,9 +2996,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       let newgen = gctx.ic.new_generation();
       for (&i, ret) in outs.iter().zip(&*rets) {
         let ret = ret.from_global(&mut gctx);
-        let ret = subst.subst_arg(&mut gctx.ic, span, ret);
-        let arg = match pes[u32_as_usize(i)] {
-          Ok(&WithMeta {k: ExprKind::Ref(p), ..}) => p,
+        let ret = subst.subst_arg(gctx.ic, span, ret);
+        let arg = match pes.get(u32_as_usize(i)) {
+          Some(Ok(&WithMeta {k: ExprKind::Ref(p), ..})) => p,
           _ => unreachable!()
         };
         let w = ret.k.1.var().k.var;
@@ -3007,7 +3007,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let w2 = gctx.ic.fresh_var2(w);
         let ctx = gctx.ic.new_context_next(w2, None, ty); // FIXME: ty is not correct here
         let new_val = intern!(gctx.ic, ExprKind::Var(w2));
-        let new_val = lens(&mut gctx.ic, new_val);
+        let new_val = lens(gctx.ic, new_val);
         subst.add_fvars(Ok(new_val));
         subst.push_raw(w, Ok(new_val));
         gctx.ic.dc.context = ctx.into();
@@ -3017,7 +3017,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let gen = gctx.ic.dc.generation;
     let rets = rets[outs.len()..].iter().map(|arg| {
       let arg = arg.from_global(&mut gctx);
-      subst.subst_arg(&mut gctx.ic, span, arg)
+      subst.subst_arg(gctx.ic, span, arg)
     }).collect::<Vec<_>>();
     drop(gctx);
     let rets = &*self.alloc.alloc_slice_fill_iter(rets.into_iter());
@@ -4294,19 +4294,19 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let mut subst = Subst::default();
         let gen = self.new_generation();
         let mut rets2 = vec![];
-        let outs = outs.iter().map(|&(i, n, v, ref ty)| {
-          let i_usize = u32_as_usize(i);
+        let outs = outs.iter().map(|out| {
+          let i_usize = u32_as_usize(out.input);
           let span = &args[i_usize].span;
-          let ty = if let Some(ty) = ty {
+          let ty = if let Some(ty) = &out.ty {
             self.lower_ty(ty, ExpectTy::Any)
           } else {
             subst.subst_ty(self, span, args2[i_usize].1.var().ctx.ty)
           };
-          let ctx = self.new_context_next(v, None, ty);
+          let ctx = self.new_context_next(out.var, None, ty);
           self.dc.context = ctx.into();
           rets2.push((ArgAttr::GHOST, UnelabArgKind::Lam(
-            UnelabTupPat { span, ctx, k: UnelabTupPatKind::Name(false, n) })));
-          i
+            UnelabTupPat { span, ctx, k: UnelabTupPatKind::Name(false, out.name) })));
+          out.input
         }).collect::<Box<[_]>>();
         rets2.extend(rets.iter().map(|pat| (ArgAttr::empty(), UnelabArgKind::Lam(
           self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0))));

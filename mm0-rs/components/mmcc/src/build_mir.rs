@@ -481,6 +481,14 @@ impl Default for Initializer {
   }
 }
 
+/// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
+#[derive(Debug)]
+struct Returns {
+  outs: Box<[HVarId]>,
+  /// The names of the return places.
+  args: Box<[(VarId, bool)]>,
+}
+
 /// The main context struct for the MIR builder.
 #[derive(Debug)]
 pub(crate) struct BuildMir<'a, 'n> {
@@ -493,9 +501,8 @@ pub(crate) struct BuildMir<'a, 'n> {
   labels: Vec<(HVarId, LabelGroupData)>,
   /// The in-progress parts of the `BlockTree`
   tree: BlockTreeBuilder,
-  /// If this is `Some(args)` then `args` are the names of the return places.
-  /// There is no block ID because [`Return`](Terminator::Return) doesn't jump to a block.
-  returns: Option<Rc<(Box<[HVarId]>, Box<[(VarId, bool)]>)>>,
+  /// If this is `Some(_)` then returning is possible at this point.
+  returns: Option<Rc<Returns>>,
   /// A list of allocated globals and the variables they were assigned to.
   globals: Vec<(Symbol, bool, VarId, Ty)>,
   /// The current block, which is where new statements from functions like [`Self::expr()`] are
@@ -760,6 +767,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })
   }
 
+  #[allow(clippy::match_same_arms)] // rust-clippy#8637
   fn rvalue(&mut self, e: hir::Expr<'a>) -> Block<RValue> {
     Ok(match e.k.0 {
       hir::ExprKind::Var(_, _) |
@@ -1112,7 +1120,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     for arg in args.into_vec() {
       match arg.1 {
         hir::ArgKind::Lam(pat) => {
-          // In push_args_raw we push exactly one element for every Lam(..) in args
+          // Safety: In push_args_raw we push exactly one element for every Lam(..) in args
           let v = unsafe { it.next().unwrap_unchecked().0 };
           self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
           self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
@@ -1574,7 +1582,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     es: impl FnOnce(usize) -> I,
     mut f: impl FnMut(&mut Self, T) -> Block<Place>,
   ) -> Block<std::convert::Infallible> {
-    let (outs, args) = &*self.returns.as_ref().expect("can't return here").clone();
+    let Returns { outs, args } = &*self.returns.as_ref().expect("can't return here").clone();
     let args = es(args.len()).zip(&**args).map(|(e, &(v, r))| {
       Ok((v, r, f(self, e)?.into()))
     }).collect::<Block<Box<[_]>>>()?;
@@ -1612,7 +1620,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let ret_vs = self.push_args_raw(&rets, |attr, var, ty| {
           rets2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
         })[outs2.len()..].into();
-        self.returns = Some(Rc::new((outs2, ret_vs)));
+        self.returns = Some(Rc::new(Returns { outs: outs2, args: ret_vs }));
         self.tr.cur_gen = GenId::ROOT;
         match self.block(body, None) {
           Ok(()) => unreachable!("bodies should end in unconditional return"),

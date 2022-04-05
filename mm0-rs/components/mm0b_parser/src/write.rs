@@ -22,10 +22,10 @@ use zerocopy::{AsBytes, U32};
 pub fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
   if data == 0 {
     w.write_u8(cmd)
-  } else if let Ok(data) = data.try_into() {
+  } else if let Ok(data) = u8::try_from(data) {
     w.write_u8(cmd | DATA_8)?;
     w.write_u8(data)
-  } else if let Ok(data) = data.try_into() {
+  } else if let Ok(data) = u16::try_from(data) {
     w.write_u8(cmd | DATA_16)?;
     w.write_u16::<LE>(data)
   } else {
@@ -44,16 +44,14 @@ pub fn write_cmd_bytes(w: &mut impl Write, cmd: u8, buf: &[u8]) -> io::Result<()
   if let Ok(data) = (buf.len() + 2).try_into() {
     w.write_u8(cmd | DATA_8)?;
     w.write_u8(data)?;
-    w.write_all(buf)
   } else if let Ok(data) = (buf.len() + 3).try_into() {
     w.write_u8(cmd | DATA_16)?;
     w.write_u16::<LE>(data)?;
-    w.write_all(buf)
   } else {
     w.write_u8(cmd | DATA_32)?;
     w.write_u32::<LE>((buf.len() + 5).try_into().expect("too large for format"))?;
-    w.write_all(buf)
   }
+  w.write_all(buf)
 }
 
 impl UnifyCmd {
@@ -373,7 +371,7 @@ impl<W: Reopen> Mm0Writer<W> {
     let mut write = |vec| -> io::Result<()> {
       let offset = |off, i| match i {
         usize::MAX => 0,
-        _ => off + u64::try_from(i).unwrap(),
+        _ => off + u64::try_from(i).expect("overflow"),
       };
       for (decl, name) in vec {
         w.write_u64::<LE>(offset(p_proof, decl))?;

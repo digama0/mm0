@@ -169,12 +169,11 @@ fn u64_as_usize(n: U64<LE>) -> usize {
 #[must_use]
 pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
   let mid = memchr::memchr(0, bytes)? + 1;
-  unsafe {
-    Some((
-      CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
-      bytes.get_unchecked(..mid),
-    ))
-  }
+  // Safety: mid <= bytes.len()
+  let (left, right) = unsafe { (bytes.get_unchecked(..mid), bytes.get_unchecked(mid..)) };
+  // Safety: memchr ensures there are no internal NUL characters
+  let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(left) };
+  Some((cstr, right))
 }
 
 /// The main part of the proof consists of a sequence of declarations,

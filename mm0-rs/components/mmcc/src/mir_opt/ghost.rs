@@ -257,10 +257,11 @@ impl Cfg {
       fn apply_statement(&mut self, _: &Self::Doms,
           loc: Location, stmt: &Statement, d: &mut GhostDom) {
         match stmt {
+          Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) |
           Statement::Let(_, false, _, _) => {}
           Statement::Let(lk, true, _, rv) => {
             let (LetKind::Let(v, _) | LetKind::Own([_, (v, _)])) = lk;
-            if d.vars.contains(&v) { d.apply_rvalue(loc.block, rv) }
+            if d.vars.contains(v) { d.apply_rvalue(loc.block, rv) }
           }
           Statement::Assign(_, _, rhs, vars) => {
             let mut needed = false;
@@ -275,7 +276,6 @@ impl Cfg {
               d.apply_operand(rhs)
             }
           }
-          Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
       }
 
@@ -333,9 +333,9 @@ impl Cfg {
   }
 
   /// Modify the CFG in place to apply the result of ghost analysis.
-  pub fn apply_ghost_analysis(&mut self, res: &GhostAnalysisResult) {
+  pub fn apply_ghost_analysis(&mut self, result: &GhostAnalysisResult) {
     self.ctxs.reset_ghost();
-    for (id, res) in res.0.enum_iter() {
+    for (id, res) in result.0.enum_iter() {
       let bl = &mut self.blocks[id];
       if bl.is_dead() { continue }
       bl.relevance = Some(self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v)));

@@ -136,13 +136,27 @@ impl<T, R> VecPatch<T, R> {
     assert!(unsafe { self.insert.last().unwrap_unchecked() }.0 <= end, "index out of bounds");
     let mut diff = self.insert.len();
     let new_len = end + diff;
+
+    // invariant: `vec` consists of:
+    // * old elements up to `end`
+    // * followed by a gap of uninit data of length `diff`
+    // * followed by new elements up to `new_len`
     for (i, val) in self.insert.into_iter().rev() {
+      assert!(i <= end);
+      // Safety: i <= end <= new_len = vec.capacity
       let p = unsafe { vec.as_mut_ptr().add(i) };
+      // Safety: diff + end <= new_len = vec.capacity
+      // This moves the elements `i..end` to `i+diff..end+diff`,
+      // resulting in the gap moving to `i`
       unsafe { std::ptr::copy(p, p.add(diff), end - i); }
       diff -= 1;
+      // Safety: This fills the last element of the gap
       unsafe { std::ptr::write(p.add(diff), val); }
       end = i;
+      // the gap is now at `i..i+diff-1` so the new variables are correct
     }
+    // Safety: When we exit the loop, `diff = 0` so there is no gap,
+    // so `new_len` elements are initialized
     unsafe { vec.set_len(new_len); }
   }
 }

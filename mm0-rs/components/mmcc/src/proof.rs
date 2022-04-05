@@ -733,7 +733,7 @@ impl<'a> BlockProof<'a> {
   fn validate(&self, ctx: &im::HashMap<BlockId, bool>) {
     loop {
       match *self.ctx.cfg[self.id].terminator() {
-        mir::Terminator::Jump(bl, _, ref var) => assert!(*ctx.get(&bl).unwrap() == var.is_some()),
+        mir::Terminator::Jump(bl, _, ref var) => assert!(ctx[&bl] == var.is_some()),
         mir::Terminator::Return(..) |
         mir::Terminator::Unreachable(_) |
         mir::Terminator::Exit(_) |

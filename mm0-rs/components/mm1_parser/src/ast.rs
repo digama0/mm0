@@ -556,7 +556,8 @@ impl Default for Ast {
 
 /// Iteartor over the AST's stmts while also traversing into the nested
 /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
-#[must_use] #[derive(Debug)]
+#[must_use]
+#[derive(Debug)]
 pub struct StmtIter<'a> {
   stmts: std::slice::Iter<'a, Stmt>,
   nested: Option<&'a Stmt>,
@@ -579,7 +580,6 @@ impl<'a> Iterator for StmtIter<'a> {
 impl Ast {
   /// Get an iterator over the AST's stmts while also traversing into the nested
   /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
-  #[must_use]
   pub fn stmts_iter(&self) -> StmtIter<'_> { StmtIter { stmts: self.stmts.iter(), nested: None } }
 
   /// Look for a [`Decl`] by `ident` (where `ident` is in bytes)

@@ -58,9 +58,8 @@ macro_rules! id_wrapper {
       }
 
       /// Returns the index that will be returned by the next call to `push`.
-      pub fn peek(&self) -> $id {
-        $id(self.0.len() as $ty)
-      }
+      #[must_use]
+      pub fn peek(&self) -> $id { $id(self.0.len() as $ty) }
 
       /// Push a new element to the vector, and return the ID of the element just pushed.
       pub fn push(&mut self, t: T) -> $id {

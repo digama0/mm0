@@ -766,7 +766,7 @@ impl Contexts {
         return iters.into_iter().rev().flatten()
       }
       iters.push(&ctx.vars[..id.1 as usize]);
-      if id.0 == CtxBufId::ROOT { panic!("iter_from: id not in (from..) range") }
+      assert!(id.0 != CtxBufId::ROOT, "iter_from: id not in (from..) range");
       id = ctx.parent;
     }
   }

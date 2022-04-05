@@ -35,15 +35,13 @@
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
   clippy::undocumented_unsafe_blocks,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
@@ -52,6 +50,7 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -265,7 +264,7 @@ impl<'a> Parser<'a> {
   pub fn cur(&self) -> u8 { self.source[self.idx] }
   /// Attempt to get the character at the parser's index. Does not advance.
   #[must_use]
-  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).copied() }
 
   /// Create a parse error at the current location.
   #[must_use]
@@ -309,6 +308,7 @@ impl<'a> Parser<'a> {
       None
     } else {
       self.ws();
+      // Safety: if doc is not empty then end was initialized
       Some((String::from_utf8(doc).ok()?.into(), unsafe { end.assume_init() }))
     }
   }
@@ -326,7 +326,7 @@ impl<'a> Parser<'a> {
         b'\t' => {
           let start = self.idx;
           self.idx += 1;
-          while let Some(b'\t') = self.cur_opt() {
+          while self.cur_opt() == Some(b'\t') {
             self.idx += 1
           }
           self
@@ -569,7 +569,7 @@ impl<'a> Parser<'a> {
           Some(b'n') => b'\n',
           Some(b'r') => b'\r',
           Some(b'\"') => b'\"',
-          Some(b'x') | Some(b'X') if self.idx + 2 <= self.source.len() => {
+          Some(b'x' | b'X') if self.idx + 2 <= self.source.len() => {
             let c1 = (self.cur(), self.idx += 1).0;
             let c2 = (self.cur(), self.idx += 1).0;
             if let (Some(h1), Some(h2)) = ((c1 as char).to_digit(16), (c2 as char).to_digit(16)) {
@@ -632,7 +632,7 @@ impl<'a> Parser<'a> {
     if self.cur() == b'0' {
       self.idx += 1;
       match self.cur_opt() {
-        Some(b'x') | Some(b'X') => {
+        Some(b'x' | b'X') => {
           self.idx += 1;
           while self.idx < self.source.len() {
             let c = self.cur();
@@ -768,8 +768,7 @@ impl<'a> Parser<'a> {
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
-            msg: format!("unknown keyword '{}'", unsafe { std::str::from_utf8_unchecked(k) })
-              .into(),
+            msg: format!("unknown keyword '{}'", String::from_utf8_lossy(k)).into(),
           }),
         }
       }
@@ -808,7 +807,7 @@ impl<'a> Parser<'a> {
     if ty.is_none() && val.is_none() {
       return self.err_str("type or value expected")
     }
-    Ok((self.chr_err(b';')?, Decl { mods, k, bis, id, ty, val }))
+    Ok((self.chr_err(b';')?, Decl { mods, k, id, bis, ty, val }))
   }
 
   fn decl_stmt(
@@ -1089,8 +1088,7 @@ impl<'a> Parser<'a> {
             Err(ParseError {
               pos: id,
               level: ErrorLevel::Error,
-              msg: format!("unknown command '{}'", unsafe { std::str::from_utf8_unchecked(k) })
-                .into(),
+              msg: format!("unknown command '{}'", String::from_utf8_lossy(k)).into(),
             })
           }
         }

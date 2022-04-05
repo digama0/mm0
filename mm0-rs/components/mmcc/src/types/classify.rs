@@ -1,4 +1,4 @@
-//! A high level classification of VCode emit patterns, used for relating MIR to VCode.
+//! A high level classification of `VCode` emit patterns, used for relating MIR to `VCode`.
 use crate::arch::{PInst, SysCall};
 
 use super::{vcode::{BlockId, ChunkVec, ProcAbi, ArgAbi, ProcId}, IdxVec, mir, IntTy, entity::IntrinsicProc};
@@ -147,7 +147,7 @@ pub enum AddScaled {
 
 impl AddScaled {
   /// Strip `Compose` from an [`AddScaled`] element.
-  pub fn decompose(self) -> Option<Self> {
+  #[must_use] pub fn decompose(self) -> Option<Self> {
     match self {
       AddScaled::ComposePow2 => Some(AddScaled::Pow2),
       AddScaled::ComposeLarge => Some(AddScaled::Large),
@@ -626,7 +626,7 @@ mk_fold! {
         }
         self.do_inst(it);
       }
-      (Terminator::Jump1, _) => { self.do_inst(it); }
+      (Terminator::Jump1 | Terminator::Fail, _) => { self.do_inst(it); }
       (Terminator::Return, mir::Terminator::Return(_, args)) => {
         for (&(v, r, ref o), ret) in args.iter().zip(abi_rets.expect("expected return ABI")) {
           let cl = it.lists.next().expect("iter mismatch");
@@ -643,7 +643,6 @@ mk_fold! {
         self.do_operand_reg(o, cl, it);
         self.do_insts(2, it);
       }
-      (Terminator::Fail, _) => { self.do_inst(it); }
       (&Terminator::Call(f), mir::Terminator::Call { args, reach, rets, .. }) => {
         self.do_call(f, &funcs[f], args, *reach, rets, it)
       }
@@ -679,6 +678,7 @@ pub struct TraceIter<'a> {
 }
 
 impl Trace {
+  #[allow(clippy::iter_not_returning_iterator)]
   pub(crate) fn iter<'a>(&'a self,
     id: BlockId, insts: crate::proof::InstIter<'a>,
   ) -> (TraceIter<'a>, &'a Terminator) {

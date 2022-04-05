@@ -61,6 +61,7 @@ extern crate bitflags;
 
 #[cfg(feature = "memory")]
 use mm0_deepsize_derive::DeepSizeOf;
+use std::borrow::Borrow;
 use std::collections::{
   hash_map::{Entry, OccupiedEntry},
   HashMap,
@@ -73,7 +74,6 @@ use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::borrow::Borrow;
 
 mod atoms;
 mod ids;
@@ -202,6 +202,7 @@ pub fn alphanumber(n: usize) -> String {
     }
   }
   out.reverse();
+  // Safety: the string consists of ASCII letters
   unsafe { String::from_utf8_unchecked(out) }
 }
 
@@ -274,7 +275,10 @@ impl ArcString {
   /// # Safety
   /// This is potentially unsafe because `ArcString` do not have to be valid unicode.
   #[must_use]
-  pub fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
+  pub fn as_str(&self) -> &str {
+    // Safety: ensured by caller
+    unsafe { std::str::from_utf8_unchecked(self) }
+  }
 }
 
 /// A structure that allows constructing linked lists on the call stack.
@@ -397,7 +401,10 @@ impl<T> SliceUninit<T> {
   /// This causes undefined behavior if the content is not fully initialized.
   #[inline]
   #[must_use]
-  pub unsafe fn assume_init(self) -> Box<[T]> { unsafe { mem::transmute(self.0) } }
+  pub unsafe fn assume_init(self) -> Box<[T]> {
+    // Safety: ensured by caller
+    unsafe { mem::transmute(self.0) }
+  }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
@@ -436,11 +443,17 @@ impl From<Span> for std::ops::Range<usize> {
 
 impl Deref for Span {
   type Target = std::ops::Range<usize>;
-  fn deref(&self) -> &std::ops::Range<usize> { unsafe { &*<*const _>::cast(self) } }
+  fn deref(&self) -> &std::ops::Range<usize> {
+    // Safety: Range<usize> and Span are layout compatible
+    unsafe { &*<*const _>::cast(self) }
+  }
 }
 
 impl DerefMut for Span {
-  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> { unsafe { &mut *<*mut _>::cast(self) } }
+  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> {
+    // Safety: Range<usize> and Span are layout compatible
+    unsafe { &mut *<*mut _>::cast(self) }
+  }
 }
 
 impl IntoIterator for Span {
@@ -591,7 +604,7 @@ impl Hash for FileRef {
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let s = self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str());
+    let s = self.0.path.file_name().unwrap_or(self.0.path.as_os_str());
     s.to_str().expect("bad unicode in path").fmt(f)
   }
 }
@@ -624,6 +637,7 @@ impl<'a> From<&'a FileSpan> for Span {
 #[allow(unused)]
 #[cfg(all(feature = "memory", not(target_arch = "wasm32")))]
 fn get_memory_rusage() -> usize {
+  // Safety: getrusage() initializes the passed-in buffer
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);

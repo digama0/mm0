@@ -355,6 +355,7 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn block_params(&self, block: BlockId) -> &[regalloc2::VReg] {
     let ret = &self.block_params[block];
     // Safety: `VReg` is repr(transparent)
+    #[allow(clippy::transmute_ptr_to_ptr)]
     unsafe { std::mem::transmute::<&[VReg], &[regalloc2::VReg]>(ret) }
   }
 
@@ -370,6 +371,7 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
   fn inst_clobbers(&self, insn: InstId) -> &[regalloc2::PReg] {
     let ret = self.insts[insn].clobbers();
     // Safety: `PReg` is repr(transparent)
+    #[allow(clippy::transmute_ptr_to_ptr)]
     unsafe { std::mem::transmute::<&[PReg], &[regalloc2::PReg]>(ret) }
   }
   fn num_vregs(&self) -> usize { self.num_vregs }

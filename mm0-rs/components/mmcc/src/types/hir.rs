@@ -86,7 +86,7 @@ pub enum ArgKind<'a> {
 
 impl<'a> ArgKind<'a> {
   /// Get the variable part of this argument.
-  pub fn var(&self) -> ty::TuplePattern<'a> {
+  #[must_use] pub fn var(&self) -> ty::TuplePattern<'a> {
     match self { Self::Lam(pat) | Self::Let(pat, ..) => pat }
   }
 
