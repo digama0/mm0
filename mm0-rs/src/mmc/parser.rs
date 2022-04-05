@@ -877,7 +877,7 @@ impl<'a, C> Parser<'a, C> {
     intrinsic: bool,
   ) -> Result<Item> {
     struct OutVal {
-      index: u32,
+      input: u32,
       name: Symbol,
       used: bool,
     }
@@ -927,7 +927,7 @@ impl<'a, C> Parser<'a, C> {
               }
               outmap.push(OutVal {
                 name, used: false,
-                index: args.len().try_into().expect("too many arguments"),
+                input: args.len().try_into().expect("too many arguments"),
               });
             } else { return Err(ElabError::new_e(&span, "cannot use tuple pattern with 'mut'")) }
           }
@@ -956,8 +956,9 @@ impl<'a, C> Parser<'a, C> {
             Ok(())
           })?
         }
-        outs.extend(outmap.iter().filter(|val| !val.used)
-          .map(|&OutVal {index, name, ..}| (index, name, this.ba.push_fresh(name), None)));
+        outs.extend(outmap.iter().filter(|val| !val.used).map(|&OutVal { input, name, .. }| {
+          OutArg { input, name, var: this.ba.push_fresh(name), ty: None }
+        }));
         for (span, attr, pat) in rets1 {
           if attr.mut_ {
             return Err(ElabError::new_e(&span, "'mut' not permitted on function returns"))
@@ -970,17 +971,17 @@ impl<'a, C> Parser<'a, C> {
                 return Err(ElabError::new_e(&span,
                   "out parameters must precede regular function returns"))
               }
-              let mut oty = None;
+              let mut ty = None;
               let mut sp = span.clone();
               outs.push(loop {
                 match pat {
-                  TuplePatternKind::Name(_, name2, v) => {
-                    let &OutVal {index, ..} =
+                  TuplePatternKind::Name(_, name2, var) => {
+                    let &OutVal {input, ..} =
                       outmap.iter().find(|p| p.name == name).expect("checked");
-                    break (index, name2, v, oty)
+                    break OutArg { input, name: name2, var, ty }
                   }
-                  TuplePatternKind::Typed(pat2, ty) => {
-                    if oty.replace(ty).is_some() {
+                  TuplePatternKind::Typed(pat2, ty2) => {
+                    if ty.replace(ty2).is_some() {
                       return Err(ElabError::new_e(&span,
                         "double type ascription not permitted here"))
                     }
