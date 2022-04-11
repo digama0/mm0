@@ -49,7 +49,6 @@ macro_rules! make_prims {
         }
 
         /// Convert a byte string into this type.
-        #[allow(clippy::undocumented_unsafe_blocks)] // FIXME clippy false positive
         #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
           // Safety: the function we defined just above doesn't do anything
           // dangerous with the &str

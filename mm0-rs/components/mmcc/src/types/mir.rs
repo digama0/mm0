@@ -698,8 +698,8 @@ impl Contexts {
   fn unshare(&mut self, id: &'_ mut CtxId) -> &mut CtxBuf {
     let ctx = &mut self[id.0];
     if u32::try_from(ctx.vars.len()).expect("overflow") == id.1 {
-      // Safety: NLL case 3 (polonius validates this borrow pattern)
       #[allow(clippy::useless_transmute)]
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
       unsafe { std::mem::transmute::<&mut CtxBuf, &mut CtxBuf>(ctx) }
     } else {
       let size = ctx.size;
@@ -943,8 +943,8 @@ impl Cfg {
   /// Calculate the predecessor information for this CFG, and return a reference to it.
   pub fn compute_predecessors(&mut self) -> &Predecessors {
     if let Some(preds) = &self.predecessors {
-      // Safety: NLL case 3 (polonius validates this borrow pattern)
       #[allow(clippy::useless_transmute)]
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
       return unsafe { std::mem::transmute::<&Predecessors, &Predecessors>(preds) }
     }
     let preds = self.predecessors_uncached();
@@ -954,8 +954,8 @@ impl Cfg {
   /// Calculate the dominator information for this CFG, and return a reference to it.
   pub fn compute_dominator_tree(&mut self) -> &DominatorTree {
     if let Some(preds) = &self.dominator_tree {
-      // Safety: NLL case 3 (polonius validates this borrow pattern)
       #[allow(clippy::useless_transmute)]
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
       return unsafe { std::mem::transmute::<&DominatorTree, &DominatorTree>(preds) }
     }
     let preds = self.dominator_tree_uncached();

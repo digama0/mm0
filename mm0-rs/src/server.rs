@@ -966,7 +966,6 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
         if let Some(ld) = ad.lisp() {
-          #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
           if let Some((ref fsp, full)) = *ld.src() {
             let e = &**ld;
             // Safety: We only use the expression for printing and don't Rc::clone it
@@ -1034,7 +1033,6 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
         done!(format!("{}", fe.to(td)), CompletionItemKind::METHOD, td.doc)
       }
     }),
-    #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
     TraceKind::Global => {
       let e = ad.lisp().as_ref()?;
       // Safety: We only use the expression for printing and don't Rc::clone it

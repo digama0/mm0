@@ -58,7 +58,6 @@ macro_rules! str_enum {
         }
       }
       #[doc=$from_bytes]
-      #[allow(clippy::undocumented_unsafe_blocks)] // rust-clippy#8449
       #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
         // Safety: the function we defined just above doesn't do anything
         // dangerous with the &str
