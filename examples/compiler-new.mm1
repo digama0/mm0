@@ -21,7 +21,7 @@ import "compiler-old.mm1";
 --| * `epi: epilogue`: the epilogue sequence
 --| * `se: bool`: true if this procedure is allowed to perform side effects
 @mmc-th local def mkPCtx1 (ret: set) (epi: nat) (se: wff): set =
-$ Sum ret (epi <> nat se) $;
+$ Sum ret (epi, nat se) $;
 
 --| Procedure-global context, constructor for `pctx := gctx * pctx1` type.
 --| We write it in such a way that `pctx` extends `gctx`,
@@ -48,7 +48,7 @@ local def okLabelGroupsN (pctx: set): set = $ Snd (Snd pctx) $;
 @mmc-th local def labelGroup0: set = $ 0 $; -- TODO
 prefix labelGroup0: $LG0$ prec max;
 @mmc-th local def labelGroup (var: nat) (ls labs: set): set = $ 0 $; -- TODO
-notation labelGroup (var: nat) (ls labs: set): set = ($LG($:85) var ($,$:0) ls ($);$:0) labs;
+notation labelGroup (var: nat) (ls labs: set): set = ($LG($:85) var ($,$:55) ls ($);$:0) labs;
 
 @mmc-th local def findLabels (labs: set) (var: nat) (ls: set): wff = $ F. $; -- TODO
 @mmc-th theorem findLabels1: $ findLabels (LG(var, ls); labs) var ls $ = 'sorry;
@@ -207,7 +207,7 @@ $ E. p (x = text_start + p /\ sublistAt p l1 l2) $;
 
 local def okAsmd (bctx code: set) (x y: nat): wff =
 $ E. s (y = x + len s /\ okStartN bctx + y e. u64 /\
-  contentAt (okStartN bctx + x) (okContentN bctx) s /\ okStartN bctx <> s <> x e. code) $;
+  contentAt (okStartN bctx + x) (okContentN bctx) s /\ okStartN bctx, s, x e. code) $;
 
 @mmc-th local def okWeak (bctx lctx1 lctx2: set): wff = $ F. $; -- TODO
 
@@ -242,7 +242,7 @@ $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
 @mmc-th local def mkPrologue (vctx: set) (vctx_sz epi: nat): set = $ 0 $; -- TODO
 
 @mmc-th local def okPrologue (epi sp: nat) (mctx prl: set): set =
-$ Sum (suc (epi <> sp)) (Sum mctx prl) $;
+$ Sum (suc (epi, sp)) (Sum mctx prl) $;
 
 @mmc-th local def okAssembled (pctx: set) (code: set): wff =
 $ E. p assembledN (okContentN pctx) (code @' p) $;

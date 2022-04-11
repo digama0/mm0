@@ -212,7 +212,7 @@ do {
         (continue
           (variant (entail h_unpack remainder
             -- proof of
-            -- w <> sz <> data = cmd_unpack (* stmt),
+            -- w, sz, data = cmd_unpack (* stmt),
             -- remainder = old_rem - data |- remainder < old_rem
             _))))
       (assert {((M . sorts) . cur) = ((C . sorts) . max)})

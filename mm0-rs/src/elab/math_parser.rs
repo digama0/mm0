@@ -27,7 +27,7 @@ pub struct QExpr {
   pub k: QExprKind,
 }
 #[derive(Debug)]
-/// A math expression like `$ 2 + foo (x <> y) z $` is parsed by the math parser
+/// A math expression like `$ 2 + foo (x, y) z $` is parsed by the math parser
 /// into a representation such as `'(add (two (foo (pair x y) z)))`, and these
 /// are mostly interchangeable. The `QExpr` type is slightly different from
 /// [`SExpr`] because we cannot immediately resolve some aspects like whether a

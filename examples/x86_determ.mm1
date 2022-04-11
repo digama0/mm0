@@ -248,16 +248,16 @@ theorem determ_cons: $ l = a : r /\ l ++ l2 = b : r2 -> a = b /\ r2 = r ++ l2 $ 
 
 theorem determ_splitBitsS
   (h: $ splitBits bs1 (shr b k) /\ splitBits bs2 (shr b k) -> p $):
-  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b ->
+  $ splitBits ((k, a1) : bs1) b /\ splitBits ((k, a2) : bs2) b ->
     a1 = a2 /\ p $ =
 '(sylbi (aneq splitBitsS_uniq splitBitsS_uniq) @
   iand (determ_anwl determ_eqr) (determ_anwr h));
 theorem determ_splitBits_skip
   (h: $ splitBits bs1 (shr b k) /\ splitBits bs2 (shr b k) -> p $):
-  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b -> p $ =
+  $ splitBits ((k, a1) : bs1) b /\ splitBits ((k, a2) : bs2) b -> p $ =
 '(anrd @ determ_splitBitsS h);
 theorem determ_splitBits1:
-  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b ->
+  $ splitBits ((k, a1) : bs1) b /\ splitBits ((k, a2) : bs2) b ->
     a1 = a2 $ = '(anld @ determ_splitBitsS (a1i itru));
 
 theorem determ_subst2 (a2 b2) (h1: $ a /\ b -> e $)
@@ -372,9 +372,9 @@ do (begin
       '(,pfs (determ_ifp ,pr1 ,pr2))]
     [_ @ match pfs @ (pf1 . pfs) '(,pfs ,(fn (r t) (set! idx 0) @ r t pf1))]]
   [(splitBits bs) @ match bs
-    [$ (,_ <> ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
+    [$ (,_, ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
       @ match (splitBits bs) [#undef] [x '(determ_splitBits_skip ,x)]]
-    [$ (,_ <> ,v) : ,bs $
+    [$ (,_, ,v) : ,bs $
       @ match (splitBits bs) [#undef 'determ_splitBits1] [x '(determ_splitBitsS ,x)]]
     [$0$]])
   (def idx (ref! 0))
@@ -386,9 +386,9 @@ do (begin
       '(,pfs (determ_ifp ,pr1 ,pr2))]
     [_ @ match pfs @ (pf1 . pfs) '(,pfs ,(fn (r t) (set! idx 0) @ r t pf1))]]
   [(splitBits bs) @ match bs
-    [$ (,_ <> ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
+    [$ (,_, ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
       @ match (splitBits bs) [#undef] [x '(determ_splitBits_skip ,x)]]
-    [$ (,_ <> ,v) : ,bs $
+    [$ (,_, ,v) : ,bs $
       @ match (splitBits bs) [#undef 'determ_splitBits1] [x '(determ_splitBitsS ,x)]]
     [$0$]])
   (def (mk-thm name args ret f)

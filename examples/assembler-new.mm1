@@ -67,13 +67,13 @@ do {
 };
 
 local def assembleN (s x y: nat) (P: set): wff =
-$ y = x + len s /\ (y e. u64 -> s <> x e. P) $;
+$ y = x + len s /\ (y e. u64 -> s, x e. P) $;
 
 @mmc-th local def assemble (s: string) (x y: nat) (P: set): wff =
 $ s != 0 /\ assembleN s x y P $;
 
 @mmc-th local def assembleA (A B: set): set =
-$ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1 <> x e. A /\ t2 <> (x + len t1) e. B)} $;
+$ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1, x e. A /\ t2, (x + len t1) e. B)} $;
 infixr assembleA: $++asm$ prec 120;
 
 @mmc-th theorem assembleA_I (s t x y z A B)
@@ -93,7 +93,7 @@ infixr localAssembleA: $+asm$ prec 122;
   $ localAssemble p (s '+ t) x z (A +asm B) $ = 'sorry;
 
 @mmc-th local def localAssemble0 (p: nat) (x: nat) (P: set): wff =
-$ x e. u64 -> p <> 0 <> x e. P $;
+$ x e. u64 -> p, 0, x e. P $;
 
 @mmc-th theorem localAssemble0_0: $ localAssemble0 p x ASM0 $ = 'sorry;
 
@@ -110,7 +110,7 @@ $ x e. u64 -> p <> 0 <> x e. P $;
   $ localAssemble0 p x (A +asm B) $ = 'sorry;
 
 @mmc-th local def asmAt (n: nat) (A: set): set =
-$ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
+$ S\ p, S\ s, {x | x = n /\ p, s, x e. A} $;
 
 @mmc-th theorem asmAtI
   (h1: $ localAssemble p s x y A $): $ localAssemble p s x y (asmAt x A) $ = 'sorry;
@@ -119,7 +119,7 @@ $ S\ p, S\ s, {x | x = n /\ p <> s <> x e. A} $;
   (h1: $ localAssemble0 p x A $): $ localAssemble0 p x (asmAt x A) $ = 'sorry;
 
 @mmc-th local def asmEntry (n: nat) (A: set): set =
-$ S\ p, S\ s, {x | p = n /\ x = 0 /\ p <> s <> x e. A} $;
+$ S\ p, S\ s, {x | p = n /\ x = 0 /\ p, s, x e. A} $;
 
 @mmc-th theorem asmEntryI
   (h1: $ localAssemble p s x0 y A $): $ localAssemble p s x0 y (asmEntry p A) $ = 'sorry;
@@ -129,7 +129,7 @@ $ S\ p, S\ s, {x | p = n /\ x = 0 /\ p <> s <> x e. A} $;
 
 --| See `parseInst`. (The `*N` functions are proof-internal, used for proving compiler lemmas.)
 @_ local def parseInstN (p ip s: nat) (I: set): wff =
-$ ip e. u64 -> A. x (ip = x + len s -> p <> s <> x e. I) $;
+$ ip e. u64 -> A. x (ip = x + len s -> p, s, x e. I) $;
 
 --| `parseInst p ip s I` means that decoding `s` with proc pos `p`
 --| and local instruction end at `ip` results in instruction `I`.
@@ -273,12 +273,12 @@ $ parseImmN (min (wsizeBits sz) 32) imm s $;
 @mmc-th theorem parseImm_32 (h: $ parseImm32 imm s $): $ parseImm wSz32 imm s $ = 'sorry;
 @mmc-th theorem parseImm_64 (h: $ parseImm32 imm s $): $ parseImm wSz64 imm s $ = 'sorry;
 
-@mmc-th local def splitBits13 (a b) (x: hex) = $ splitBits ((1 <> a) : (3 <> b) : 0) x $;
-@mmc-th local def splitBits22 (a b) (x: hex) = $ splitBits ((2 <> a) : (2 <> b) : 0) x $;
-@mmc-th local def splitBits31 (a b) (x: hex) = $ splitBits ((3 <> a) : (1 <> b) : 0) x $;
-@mmc-th local def splitBits121 (a b c) (x: hex) = $ splitBits ((1 <> a) : (2 <> b) : (1 <> c) : 0) x $;
+@mmc-th local def splitBits13 (a b) (x: hex) = $ splitBits ((1, a) : (3, b) : 0) x $;
+@mmc-th local def splitBits22 (a b) (x: hex) = $ splitBits ((2, a) : (2, b) : 0) x $;
+@mmc-th local def splitBits31 (a b) (x: hex) = $ splitBits ((3, a) : (1, b) : 0) x $;
+@mmc-th local def splitBits121 (a b c) (x: hex) = $ splitBits ((1, a) : (2, b) : (1, c) : 0) x $;
 @mmc-th local def splitBits1111 (a b c d) (x: hex) =
-$ splitBits ((1 <> a) : (1 <> b) : (1 <> c) : (1 <> d) : 0) x $;
+$ splitBits ((1, a) : (1, b) : (1, c) : (1, d) : 0) x $;
 
 do {
   (def (splitBits2 l i) (atom-app (apply atom-app 'splitBits l) "_" (hexstring i)))
@@ -309,7 +309,7 @@ $ E. l1 (l = l1 ++ l2 /\ readDisplacement mod q l1) $;
 @mmc-th theorem parseDisplacement_32 (h: $ parseImm32S a s s2 $):
   $ parseDisplacement 2 a s s2 $ = 'sorry;
 
-@mmc-th local def scaleReg (sc: nat) (ix: hex): nat = $ suc (sc <> ix) $;
+@mmc-th local def scaleReg (sc: nat) (ix: hex): nat = $ suc (sc, ix) $;
 
 @mmc-th local def parseSI (sc: nat) (ix: hex) (osi: nat): wff =
 $ if (ix = RSP) 0 (scaleReg sc ix) = osi $;
@@ -779,7 +779,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastCMov (suc c) sz ds) s
 --------------------------------------------
 
 @mmc-th local def asmProc (n: nat) (A: set): set =
-$ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p <> t1 <> 0 e. A)} $;
+$ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p, t1, 0 e. A)} $;
 
 @mmc-th theorem asmProcI (s x n y A)
   (h1: $ localAssemble x s x0 n A $)
@@ -798,7 +798,7 @@ $ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p <> t1 <> 0 
 --| string where relevant (using `asmAt`), so that the existential is uniquely determined.
 @_ local def assembledN (c: nat) (P: set): wff =
 $ E. x E. s (s != 0 /\ sublistAt x c s /\
-  text_start + x + len s e. u64 /\ s <> (text_start + x) e. P) $;
+  text_start + x + len s e. u64 /\ s, (text_start + x) e. P) $;
 
 @mmc-th local def isU64 (n: nat): wff = $ n e. u64 $;
 

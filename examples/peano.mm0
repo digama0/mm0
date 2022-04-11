@@ -294,20 +294,21 @@ def b1 (n: nat): nat = $ suc (b0 n) $;
 --| `odd n` means `n` is odd, not divisible by 2.
 def odd (n: nat): wff = $ n % 2 = 1 $;
 
---| `a <> b` is the pairing operator `(a, b)`.
+--| `a, b` is the pairing operator on natural numbers
+--| (or anything that is being encoded as a natural number).
 --| It is defined using the Cantor pairing function.
---| It is right associative, i.e. `a <> b <> c` means `(a, (b, c))`.
+--| It is right associative, i.e. `a, b, c` means `(a, (b, c))`.
 def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
-infixr pr: $<>$ prec 55;
+infixr pr: $,$ prec 55;
 --| The first component of a pair.
 def fst (a: nat): nat;
 --| The second component of a pair.
 def snd (a: nat): nat;
 
-theorem pr0: $ 0 <> 0 = 0 $;
-theorem fstpr (a b: nat): $ fst (a <> b) = a $;
-theorem sndpr (a b: nat): $ snd (a <> b) = b $;
-theorem fstsnd (a: nat): $ fst a <> snd a = a $;
+theorem pr0: $ 0, 0 = 0 $;
+theorem fstpr (a b: nat): $ fst (a, b) = a $;
+theorem sndpr (a b: nat): $ snd (a, b) = b $;
+theorem fstsnd (a: nat): $ fst a, snd a = a $;
 
 --| `pi11 ((a, b), c) = a`
 def pi11 (n: nat): nat = $ fst (fst n) $;
@@ -325,21 +326,21 @@ def pi222 (n: nat): nat = $ snd (pi22 n) $;
 --| `isfun A` means `A` is a function,
 --| i.e. if `(x,y)` and `(x,z)` are in `A` then `y = z`.
 def isfun (A: set) (.a .b .b2: nat): wff =
-$ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
+$ A. a A. b A. b2 (a, b e. A -> a, b2 e. A -> b = b2) $;
 
---| `S\ x, A` is "lambda for relations": `a <> b e. S\ x, A(x)` if `b e. A(a)`.
+--| `S\ x, A` is "lambda for relations": `a, b e. S\ x, A(x)` if `b e. A(a)`.
 --| It can be iterated to produce n-ary relations.
 --| `S\ x, S\ y, {z | p(x,y,z)}` is the set `S` such that
---| `x <> y <> z e. S` iff `p(x,y,z)`.
+--| `x, y, z e. S` iff `p(x,y,z)`.
 def sab {x .z: nat} (A: set x): set = $ {z | snd z e. S[ fst z / x ] A} $;
-notation sab {x: nat} (A: set x): set = ($S\$:100) x ($,$:0) A;
+notation sab {x: nat} (A: set x): set = ($S\$:100) x ($,$:55) A;
 
 --| Indexed disjoint union, a restricted version of `S\`.
---| `a <> b e. X\ x e. A, B(x)` iff `a e. A` and `b e. B(a)`.
+--| `a, b e. X\ x e. A, B(x)` iff `a e. A` and `b e. B(a)`.
 def xab {x .z: nat} (A: set) (B: set x): set =
 $ {z | fst z e. A /\ snd z e. S[ fst z / x ] B} $;
 notation xab {x: nat} (A: set) (B: set x): set =
-  ($X\$:100) x ($e.$:50) A ($,$:0) B;
+  ($X\$:100) x ($e.$:50) A ($,$:55) B;
 
 --| `Xp A B` is the cartesian product of sets:
 --| `(a,b) e. Xp A B` iff `a e. A` and `b e. B`.
@@ -347,18 +348,18 @@ def Xp (A B: set) (.x: nat): set = $ X\ x e. A, B $;
 
 --| The domain of a binary relation:
 --| `x e. Dom A` if there exists `y` such that `(x,y) e. A`.
-def Dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
+def Dom (A: set) (.x .y: nat): set = $ {x | E. y x, y e. A} $;
 --| The range of a binary relation:
 --| `y e. Ran A` if there exists `x` such that `(x,y) e. A`.
-def Ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
+def Ran (A: set) (.x .y: nat): set = $ {y | E. x x, y e. A} $;
 
 --| The image of a relation under a set: `y e. F '' A`
 --| if there exists `x e. A` such that `(x,y) e. F`.
-def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
+def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x, y e. F)} $;
 infixl Im: $''$ prec 80;
 
 --| The converse of a relation: `(x,y) e. cnv A` if `(y,x) e. A`.
-def cnv (A: set) (.x .y: nat): set = $ S\ x, {y | y <> x e. A} $;
+def cnv (A: set) (.x .y: nat): set = $ S\ x, {y | y, x e. A} $;
 
 --| The relational composition: `(x,z) e. F o> G` if there exists `y` such that
 --| `(x,y) e. F` and `(y,z) e. G`. *Warning*: This is also applicable for functions,
@@ -366,7 +367,7 @@ def cnv (A: set) (.x .y: nat): set = $ S\ x, {y | y <> x e. A} $;
 --| `(F o> G) @ x = G @ (F @ x)`. We use an arrow like notation
 --| `o>` to remind the reader of this: we apply `F` *then* `G`.
 def comp (F G: set) (.x .y .z: nat): set =
-$ S\ x, {z | E. y (x <> y e. F /\ y <> z e. G)} $;
+$ S\ x, {z | E. y (x, y e. F /\ y, z e. G)} $;
 infixr comp: $o>$ prec 91;
 
 --| The restriction of a relation to a set: `A |` B` is
@@ -376,13 +377,13 @@ infixl res: $|`$ prec 54;
 
 --| The lambda operator: `\ x, v(x)` is the set of pairs `(x, v(x))` over
 --| all natural numbers `x`.
-def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
-notation lam {x: nat} (a: nat x): set = ($\$:53) x ($,$:0) a;
+def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x, a} $;
+notation lam {x: nat} (a: nat x): set = ($\$:53) x ($,$:55) a;
 
 --| The application operator. If `F` is a function and `x` is a natural number then
 --| `F @ x` is `F` evaluated at `x`. That is, it is the value `y`
 --| for which `(x,y) e. F`, if there is a unique such number.
-def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
+def app (F: set) (x .y: nat): nat = $ the {y | x, y e. F} $;
 infixl app: $@$ prec 200;
 
 --| Define a function by cases on a disjoint union.
@@ -475,7 +476,7 @@ def sUnion (A: set) (.x .y: nat): set = $ {x | E. y (x e. y /\ y e. A)} $;
 
 --| `cons a b`, or `a : b`, is the list cons operator:
 --| `cons : A -> List A -> List A`
-def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 91;
+def cons (a b: nat): nat = $ suc (a, b) $; infixr cons: $:$ prec 91;
 
 --| `sep n {x | p(x)}` is `{x e. n | p(x)}`,
 --| the set of elements of `n` such that `p(x)`. Because it is a subset of an
@@ -492,12 +493,12 @@ $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
 --| `\. x e. a, v(x)` is the finite (restricted) lambda: the regular lambda `\ x, v(x)`
 --| restricted to the finite set `a`. Since it is finite, we make it manifestly finite here.
 def rlam {x: nat} (a: nat) (v: nat x): nat = $ lower ((\ x, v) |` a) $;
-notation rlam {x: nat} (a: nat) (v: nat x): nat = ($\.$:53) x ($e.$:50) a ($,$:0) v;
+notation rlam {x: nat} (a: nat) (v: nat x): nat = ($\.$:53) x ($e.$:50) a ($,$:55) v;
 
 --| `write F a b`, sometimes denoted `F[a -> b]` is
 --| the function which is `b` at `a` and returns `F @ x` for `x != a`.
 def write (F: set) (a b .x .y: nat): set =
-$ S\ x, {y | ifp (x = a) (y = b) (x <> y e. F)} $;
+$ S\ x, {y | ifp (x = a) (y = b) (x, y e. F)} $;
 theorem writeEq (F: set) (a b: nat): $ write F a b @ a = b $;
 theorem writeNe (F: set) (a b x: nat): $ x != a -> write F a b @ x = F @ x $;
 
@@ -511,7 +512,7 @@ theorem srecval {i: nat} (S: set) (n: nat):
 --| * `srecp n <-> (srecp 0, ..., srecp (n-1)) e. A`
 def srecp (A: set) (n: nat): wff;
 theorem srecpval {i: nat} (A: set) (n: nat):
-  $ srecp A n <-> n <> sep (upto n) {i | srecp A i} e. A $;
+  $ srecp A n <-> n, sep (upto n) {i | srecp A i} e. A $;
 
 --| The cardinality (number of elements) of a finite set.
 def card (s: nat): nat;
@@ -524,7 +525,7 @@ theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
 def lrec (z: nat) (S: set) (n: nat): nat;
 theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $;
 theorem lrecS (z: nat) (S: set) (a b: nat):
-  $ lrec z S (a : b) = S @ (a <> b <> lrec z S b) $;
+  $ lrec z S (a : b) = S @ (a, b, lrec z S b) $;
 
 --| The set of members of list `l`: `lmems [a, b, c] = {a, b, c}`.
 --|
@@ -626,18 +627,18 @@ theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 def sublistAt (n L1 L2 .l .r: nat): wff =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
---| `L1 <> L2 e. all2 R` means that `L1` and `L2` are
+--| `L1, L2 e. all2 R` means that `L1` and `L2` are
 --| lists of the same length that are pairwise related by `R`.
 --|
 --| `all2 : (A -> B -> Bool) -> (list A -> list B -> Bool)`
 def all2 (R: set) {.l1 .l2 .x .y .n: nat}: set =
 $ S\ l1, {l2 | len l1 = len l2 /\ A. n A. x A. y
-  (nth n l1 = suc x -> nth n l2 = suc y -> x <> y e. R)} $;
+  (nth n l1 = suc x -> nth n l2 = suc y -> x, y e. R)} $;
 
---| `L1 <> L2 e. ex2 R` means that `L1` and `L2` are
+--| `L1, L2 e. ex2 R` means that `L1` and `L2` are
 --| lists of the same length for which some pair is related by `R`.
 --|
 --| `ex2 : (A -> B -> Bool) -> (list A -> list B -> Bool)`
 def ex2 (R: set) {.l1 .l2 .x .y .n: nat}: set =
 $ S\ l1, {l2 | len l1 = len l2 /\ E. n E. x E. y
-  (nth n l1 = suc x /\ nth n l2 = suc y /\ x <> y e. R)} $;
+  (nth n l1 = suc x /\ nth n l2 = suc y /\ x, y e. R)} $;

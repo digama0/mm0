@@ -171,7 +171,7 @@ local def ELF_lit (e fs ms c: string): string =
 $ ELF_header_s e '+ basic_pHeader_s fs ms '+ c $;
 
 local def ELF_parse (entry bss: nat) (c: string): nat =
-$ entry <> PROT_RWX <> text_start <> c ++ repeat 0 bss $;
+$ entry, PROT_RWX, text_start, c ++ repeat 0 bss $;
 
 local def ELF_lit_ok (elf: string) (entry bss: nat) (c: string) =
 $ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
@@ -639,7 +639,7 @@ do {
 
 @_ local def CFG_ok: set = $ S\ s, S\ l, S\ x, {y | y = x + len s} $;
 
-theorem CFG_ok_i: $ A C_ CFG_ok -> s <> l <> x <> y e. A -> y = x + len s $ =
+theorem CFG_ok_i: $ A C_ CFG_ok -> s, l, x, y e. A -> y = x + len s $ =
 (focus '(syl6ib _ ssel) '(elsabe @ elsabed @ elsabed @ elabed ,eqtac));
 
 theorem mk_CFG_ok (p: wff s l x y) (h: $ p -> y = x + len s $):
@@ -647,7 +647,7 @@ theorem mk_CFG_ok (p: wff s l x y) (h: $ p -> y = x + len s $):
 '(sabssi @ sabssi @ sabssi @ mpbi ssab @ ax_gen h);
 
 local def sat_CFG (s t: string) (l x y: nat) (A: set): wff =
-$ A C_ CFG_ok /\ E. u (s = u ++ t /\ u <> l <> x <> y e. A) $;
+$ A C_ CFG_ok /\ E. u (s = u ++ t /\ u, l, x, y e. A) $;
 
 theorem sat_CFG_i (p: wff s l x y) (x2)
   (h1: $ p -> y = x + len s $) (h2: $ s2 = u2 ++ t2 $)
@@ -661,7 +661,7 @@ $ E. y sat_CFG s s0 0 x y A $;
 theorem sat_CFG_func_i (h: $ sat_CFG s s0 0 x y A $):
   $ sat_CFG_func s x A $ = (named '(iexie @ mpbiri h @ aneq2d ,eqtac));
 theorem sat_CFG_func_iff (h: $ assemble1OLD s x y $):
-  $ sat_CFG_func s x A <-> A C_ CFG_ok /\ s <> 0 <> x <> y e. A $ =
+  $ sat_CFG_func s x A <-> A C_ CFG_ok /\ s, 0, x, y e. A $ =
 '(bitr exan1 @ aneq2a @
   syl5bb (exeqi @
     bitr (exeqi @ aneq1i @ bitr eqcomb @ eqeq1 @ eqtr (appendeq2 s2ns0) append02) @
@@ -684,7 +684,7 @@ theorem sat_CFG1 (h1: $ assemble1OLD s x y $) (h2: $ decode ast s $):
 
 @_ local def CFG_seq (A B: set): set =
 $ S\ s, S\ l, S\ x, {y | E. t1 E. t2 E. z (s = t1 ++ t2 /\
-  t1 <> l <> x <> z e. A /\ t2 <> l <> z <> y e. B)} $;
+  t1, l, x, z e. A /\ t2, l, z, y e. B)} $;
 theorem sat_CFG_seq (h1: $ sat_CFG s t l x y A $) (h2: $ sat_CFG t u l y z B $):
   $ sat_CFG s u l x z (CFG_seq A B) $ =
 (named @ focus
@@ -702,7 +702,7 @@ theorem sat_CFG_S (h1: $ assemble1OLD s x y $) (h2: $ decode ast s $)
 '(sat_CFG_seq (sat_CFG1 h1 h2) h3);
 
 @_ local def CFG_scope (A: set): set =
-$ S\ s, S\ l, S\ x, {y | E. a (s <> (a : l) <> x <> y e. A)} $;
+$ S\ s, S\ l, S\ x, {y | E. a (s, a : l, x, y e. A)} $;
 theorem sat_CFG_scope (h: $ sat_CFG s t (a : l) x y A $):
   $ sat_CFG s t l x y (CFG_scope A) $ =
 (named @ focus
@@ -719,7 +719,7 @@ theorem sat_CFG_label: $ sat_CFG s s (x : l) x x CFG_label $ =
   (eqcom append0) ,eqtac @ iani (iani eqid eqid) @ iexie @ eqcomd conseq2));
 
 @_ local def CFG_lift (A: set): set =
-$ S\ s, S\ l, S\ x, {y | E. a E. l2 (l = a : l2 /\ s <> l2 <> x <> y e. A)} $;
+$ S\ s, S\ l, S\ x, {y | E. a E. l2 (l = a : l2 /\ s, l2, x, y e. A)} $;
 theorem sat_CFG_lift (h: $ sat_CFG s t l x y A $):
   $ sat_CFG s t (a : l) x y (CFG_lift A) $ =
 (named @ focus
@@ -750,8 +750,8 @@ theorem sat_CFG_ex (p: wff a) (A: set a)
     ax_gen @ exp (iexe @ aneqd e1 @ eleq2d e2) h1) (anri h3)));
 
 -- @_ local def CFG_mov (sz dest src: nat) (A: set): set =
--- $ CFG_seq (CFG_ex ds (destsrcIRM ds = dest <> src) (CFG1 (xastMov sz ds))) A $;
--- theorem sat_CFG_mov (e: $ destsrcIRM ds = dest <> src $)
+-- $ CFG_seq (CFG_ex ds (destsrcIRM ds = dest, src) (CFG1 (xastMov sz ds))) A $;
+-- theorem sat_CFG_mov (e: $ destsrcIRM ds = dest, src $)
 --   (h1: $ assemble1OLD s x y $) (h2: $ decode (xastMov sz ds) s $)
 --   (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_mov sz dest src A) $ =
 -- '(sat_CFG_seq (sat_CFG_ex ,eqtac ,eqtac e CFG1_ok @ sat_CFG1 h1 h2) h3);
