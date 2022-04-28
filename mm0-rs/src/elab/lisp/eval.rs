@@ -1441,12 +1441,7 @@ impl<'a> Evaluator<'a> {
       let func = if let LispKind::Proc(f) = func { f }
       else { throw!(sp.0, "not a function, cannot apply") };
       let spec = func.spec();
-      if !spec.valid(args.len()) {
-        match spec {
-          ProcSpec::Exact(n) => throw!(sp.0, format!("expected {} argument(s)", n)),
-          ProcSpec::AtLeast(n) => throw!(sp.0, format!("expected at least {} argument(s)", n)),
-        }
-      }
+      if !spec.valid(args.len()) { throw!(sp.0, spec.arity_error()) }
       match func {
         &Proc::Builtin(func) => self.evaluate_builtin(tail, sp, func, args)?,
         Proc::Lambda {pos, env, code, ..} => {
@@ -1706,7 +1701,7 @@ impl<'a> Evaluator<'a> {
         Ir::Drop(_) | Ir::DropAbove(_) | Ir::Undef | Ir::AssertScope(_) | Ir::EndScope(_) |
         Ir::Local(_) | Ir::Global(..) | Ir::Const(_) | Ir::List(..) | Ir::DottedList(_) |
         Ir::App(..) | Ir::BuiltinApp(..) | Ir::AppHead(_) | Ir::JumpUnless(_) | Ir::Jump(_) |
-        Ir::FocusStart(_) | Ir::RefineGoal(_) | Ir::FocusFinish |
+        Ir::ArityError(..) | Ir::FocusStart(_) | Ir::RefineGoal(_) | Ir::FocusFinish |
         Ir::SetMergeStrategy(..) | Ir::LocalDef(_) | Ir::GlobalDef(..) | Ir::SetDoc(..) |
         Ir::Lambda(..) | Ir::Branch(..) | Ir::TestPatternResume | Ir::BranchFail(_) |
         Ir::Map | Ir::Have | Ir::RefineResume | Ir::AddThm | Ir::MergeMap
@@ -1974,10 +1969,12 @@ impl<'a> Evaluator<'a> {
             self.app(tail, sp, &func, args)?
           }
           Ir::BuiltinApp(tail, func, ref sp, n) => {
+            debug_assert!(func.spec().valid(n));
             let args = self.popn(n).map(Stack::into_lisp).collect();
             self.heartbeat()?;
             self.evaluate_builtin(tail, sp, func, args)?
           }
+          Ir::ArityError(sp, spec) => throw!(sp, spec.arity_error()),
           Ir::AppHead(sp) => {
             let func = self.pop_lisp();
             let e = self.pop_lisp();

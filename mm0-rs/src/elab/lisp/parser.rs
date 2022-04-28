@@ -57,6 +57,8 @@ pub enum Ir {
   /// * `app: [f, a1, ..., an] -> [f(a1, ..., an)]`
   /// * `tail-app: [ret, ..., f, a1, ..., an] -> [ret, f(a1, ..., an)]`
   BuiltinApp(bool, BuiltinProc, Box<(Span, Span)>, usize),
+  /// A constant-propagated arity error in a builtin application.
+  ArityError(Span, ProcSpec),
   /// Applies the head of the stack to the element under it. `[x, f] -> [f(x)]`
   AppHead(Span),
   /// Pop the last result on the stack; if it is truthy then continue, else jump
@@ -236,6 +238,7 @@ impl Ir {
       Ir::App(true, _, n) => write!(f, "tail-app {}", n),
       Ir::BuiltinApp(false, p, _, n) => write!(f, "app {} {}", p, n),
       Ir::BuiltinApp(true, p, _, n) => write!(f, "tail-app {} {}", p, n),
+      Ir::ArityError(_, spec) => write!(f, "error {:?}", spec.arity_error()),
       Ir::AppHead(_) => write!(f, "app-head"),
       Ir::JumpUnless(ip) => write!(f, "jump-unless -> {}", ip),
       Ir::Jump(ip) => write!(f, "jump -> {}", ip),
@@ -1137,7 +1140,12 @@ impl<'a> LispParser<'a> {
             let n = self.exprs(ExprsCtx::App, &es[1..])?;
             if let Some(p) = p {
               local = false;
-              self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span, es[0].span)), n));
+              let spec = p.spec();
+              if spec.valid(n) {
+                self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span, es[0].span)), n));
+              } else {
+                self.code.push(Ir::ArityError(e.span, spec));
+              }
             } else {
               self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
             };

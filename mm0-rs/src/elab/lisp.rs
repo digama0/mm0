@@ -999,6 +999,13 @@ impl ProcSpec {
       ProcSpec::AtLeast(n) => i >= n,
     }
   }
+
+  fn arity_error(self) -> String {
+    match self {
+      ProcSpec::Exact(n) => format!("expected {} argument(s)", n),
+      ProcSpec::AtLeast(n) => format!("expected at least {} argument(s)", n),
+    }
+  }
 }
 
 impl Proc {
