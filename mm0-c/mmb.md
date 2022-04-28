@@ -34,32 +34,34 @@ Command pairs are denoted `(cmd, data)` and use a variable length encoding, from
 The file header contains basic information about the format and pointers to the other tables in the file, and starts at the first byte of the file.
 
 `sizeof(header) = 40; align(header) = 8; header =`
-| Field       | Type                         | Description                                         |
-| ----------- | ---------------------------- | --------------------------------------------------- |
-| `magic`     | `str4 = "MM0B" = 0x42304D4D` | Indicates that this file uses MMB format            |
-| `version`   | `u8 = 1`                     | Indicates the version of the MMB format in use;<br/>this document details version `1`. |
-| `num_sorts` | `u8`                         | The number of sorts in the file.                    |
-| `reserved`  | `u16`                        | Reserved, should be set to `0`.                     |
-| `num_terms` | `u32`                        | The number of `term` and `def` in the file.         |
-| `num_thms`  | `u32`                        | The number of `axiom` and `theorem` in the file.    |
-| `p_terms`   | `p32<[term; num_terms]>`     | The pointer to the [term table](#term-table).       |
-| `p_thms`    | `p32<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table). |
-| `p_proof`   | `p32<proof_stream>`          | The pointer to the [proof stream](#proof-stream).   |
-| `reserved2` | `u32`                        | Reserved, should be set to `0`.                     |
-| `p_index`   | `p64?<index>`                | The pointer to the [index](#debugging-index).       |
-| `sorts`     | `[sort_data; num_sorts]`     | The [sort table](#sort-table).                      |
+| Field       | Type                         | Description
+| ----------- | ---------------------------- | -----------
+| `magic`     | `str4 = "MM0B" = 0x42304D4D` | Indicates that this file uses MMB format
+| `version`   | `u8 = 1`                     | Indicates the version of the MMB format in use;<br/>this document details version `1`.
+| `num_sorts` | `u8`                         | The number of sorts in the file.
+| `reserved`  | `u16`                        | Reserved, should be set to `0`.
+| `num_terms` | `u32`                        | The number of `term` and `def` in the file.
+| `num_thms`  | `u32`                        | The number of `axiom` and `theorem` in the file.
+| `p_terms`   | `p32<[term; num_terms]>`     | The pointer to the [term table](#term-table).
+| `p_thms`    | `p32<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table).
+| `p_proof`   | `p32<proof_stream>`          | The pointer to the [proof stream](#proof-stream).
+| `reserved2` | `u32`                        | Reserved, should be set to `0`.
+| `p_index`   | `p64?<index>`                | The pointer to the [index](#debugging-index).
+| `sorts` (*) | `[sort_data; num_sorts]`     | The [sort table](#sort-table).
+
+(*) The `sorts` field is not included in the header for the purpose of `sizeof(header)`.
 
 ## Sort Table
 
 The sort table comes directly at the end of the header, and is a list of `sort_data = u8` items that give the sort modifiers for each of the sorts.
 
-| Bit  | Modifier         |
-| ---- | ---------------- |
-| 0    | `pure`           |
-| 1    | `strict`         |
-| 2    | `provable`       |
-| 3    | `free`           |
-| 4-7  | unused, set to 0 |
+| Bit  | Modifier
+| ---- | --------
+| 0    | `pure`
+| 1    | `strict`
+| 2    | `provable`
+| 3    | `free`
+| 4-7  | unused, set to 0
 
 See [mm0.md](../mm0.md) for a description of the sort modifiers.
 
@@ -68,32 +70,32 @@ See [mm0.md](../mm0.md) for a description of the sort modifiers.
 The term table is an array `[term; num_terms]` where `term` is as follows:
 
 `sizeof(term) = 8; align(term) = 8; term =`
-| Field      | Type             | Description                                           |
-| ---------- | ---------------- | ----------------------------------------------------- |
-| `num_args` | `u16`            | The number of arguments of the term constructor       |
-| `ret_sort` | `u7`             | The sort of the return type.                          |
-| `is_def`   | `u1`             | The high bit of `ret_sort` is `1` if this is a `def`. |
-| `reserved` | `u8`             | Reserved, should be set to `0`.                       |
-| `p_data`   | `p32<term_data>` | Pointer to additional information.                    |
+| Field      | Type             | Description
+| ---------- | ---------------- | -----------
+| `num_args` | `u16`            | The number of arguments of the term constructor
+| `ret_sort` | `u7`             | The sort of the return type.
+| `is_def`   | `u1`             | The high bit of `ret_sort` is `1` if this is a `def`.
+| `reserved` | `u8`             | Reserved, should be set to `0`.
+| `p_data`   | `p32<term_data>` | Pointer to additional information.
 
 The `p_data` field points to additional data `term_data` for a term that cannot fit in these 8 bytes. Note that this data structure depends on the `num_args` and `is_def` fields of the relevant entry in the term table.
 
 `sizeof(term_data)` varies; `align(term_data) = 8; term_data =`
-| Field              | Type                | Description     |
-| ------------------ | ------------------- | --------------- |
-| `args`             | `[arg; num_args]`   | The arguments   |
-| `ret`              | `arg`               | The return type |
-| `unify` (optional) | `p32<unify_stream>` | The [unify stream](#unify-stream), only present if `is_def = 1` |
+| Field              | Type                | Description
+| ------------------ | ------------------- | -----------
+| `args`             | `[arg; num_args]`   | The arguments
+| `ret`              | `arg`               | The return type
+| `unify` (optional) | `p32<unify_stream>` | The [unify stream](#unify-stream), only present if `is_def = 1`
 
 The type `arg = u64` contains a bit array for storing the dependencies of a sort.
 
 `sizeof(arg) = 8; align(arg) = 8; arg =`
-| Field      | Type       | Description                                                  |
-| ---------- | ---------- | ------------------------------------------------------------ |
-| `deps`     | `[u1; 55]` | Bit `i` is 1 if this arg depends on the `i`th bound variable |
-| `reserved` | `u1`       | Must be `0`. (reserved for extensions to allow >55 deps)     |
-| `sort`     | `u7`       | The sort of the type                                         |
-| `bound`    | `u1`       | True if this is a bound variable                             |
+| Field      | Type       | Description
+| ---------- | ---------- | -----------
+| `deps`     | `[u1; 55]` | Bit `i` is 1 if this arg depends on the `i`th bound variable
+| `reserved` | `u1`       | Must be `0`. (reserved for extensions to allow >55 deps)
+| `sort`     | `u7`       | The sort of the type
+| `bound`    | `u1`       | True if this is a bound variable
 
 Note that bound variables must depend only on themselves in `deps`, i.e. the `i`th bound variable should have `deps = 1 << i`. Also, the indexing of bound variables in `deps` skips non-bound variables, but otherwise matches the ordering of the `args` array. A non-bound variable cannot depend on bound variables that are declared later in the list.
 
@@ -104,19 +106,19 @@ The `ret` field of the `term_data` does not use `bound` and sets it to `0`; also
 The theorem table is an array `[thm; num_thms]` where `thm` is as follows:
 
 `sizeof(thm) = 8; align(thm) = 8; thm =`
-| Field      | Type            | Description                                         |
-| ---------- | --------------- | --------------------------------------------------- |
-| `num_args` | `u16`           | The number of (expression) arguments of the theorem |
-| `reserved` | `u16`           | Reserved, should be set to `0`.                     |
-| `p_data`   | `p32<thm_data>` | Pointer to additional information.                  |
+| Field      | Type            | Description
+| ---------- | --------------- | -----------
+| `num_args` | `u16`           | The number of (expression) arguments of the theorem
+| `reserved` | `u16`           | Reserved, should be set to `0`.
+| `p_data`   | `p32<thm_data>` | Pointer to additional information.
 
 The `p_data` field points to additional data `thm_data` for a theorem that cannot fit in these 8 bytes. Note that this data structure depends on the `num_args` field of the relevant entry in the theorem table.
 
 `sizeof(thm_data)` varies; `align(thm_data) = 8; thm_data =`
-| Field   | Type                | Description      |
-| ------- | ------------------- | ---------------- |
-| `args`  | `[arg; num_args]`   | The arguments    |
-| `unify` | `p32<unify_stream>` | The [unify stream](#unify-stream) |
+| Field   | Type                | Description
+| ------- | ------------------- | -----------
+| `args`  | `[arg; num_args]`   | The arguments
+| `unify` | `p32<unify_stream>` | The [unify stream](#unify-stream)
 
 The interpretation of `args` is the same as in the term table.
 
@@ -124,14 +126,14 @@ The interpretation of `args` is the same as in the term table.
 
 Definitions, axioms, and theorems contain a pointer to `unify_stream`, which is an unaligned list of `(cmd, data)` pairs (see [Encoding and types](#encoding-and-types)) which continues until `cmd = END = 0`. The valid commands in a unify stream (which are 6 bit opcodes) are:
 
-| Name         | Value  | `data`    | Summary (*)                                                |
-| ------------ | ------ | --------- | ---------------------------------------------------------- |
-| `UTerm`      | `0x30` | `term_id` | Apply term `term_id`                                       |
-| `UTermSave`  | `0x31` | `term_id` | Apply term `term_id`, and save this subterm to the heap    |
-| `URef`       | `0x32` | `heap_id` | Refer to heap element `heap_id`                            |
-| `UDummy`     | `0x33` | `sort_id` | Create a new dummy with sort `sort_id`, apply and save it (only in `def`) |
-| `UHyp`       | `0x36` | `0`       | Start reading a new hypothesis (only in `theorem`/`axiom`) |
-| `END`        | `0x00` | `0`       | Not a command, signals the end of the stream               |
+| Name         | Value  | `data`    | Summary (*)
+| ------------ | ------ | --------- | -----------
+| `UTerm`      | `0x30` | `term_id` | Apply term `term_id`
+| `UTermSave`  | `0x31` | `term_id` | Apply term `term_id`, and save this subterm to the heap
+| `URef`       | `0x32` | `heap_id` | Refer to heap element `heap_id`
+| `UDummy`     | `0x33` | `sort_id` | Create a new dummy with sort `sort_id`, apply and save it (only in `def`)
+| `UHyp`       | `0x36` | `0`       | Start reading a new hypothesis (only in `theorem`/`axiom`)
+| `END`        | `0x00` | `0`       | Not a command, signals the end of the stream
 
 (*) The summary column is not a complete description of the behavior of the command. See [Unification](#unification) for the full stack machine semantics.
 
@@ -141,7 +143,9 @@ Since a term is "saved" before the contents of the term are read, cyclic terms a
 
 For definitions, the unify stream encodes the value of the definition. For theorems and axioms, the unify stream has the pattern `UHyp, <h1>, UHyp, <h2>, ..., UHyp, <hn>, <concl>` for a theorem with `n` hypotheses, where each `<hi>` is the encoding of the hypothesis expression and `<concl>` is the encoding of the conclusion expression.
 
-The `CMD_END` terminator is redundant because it is possible to predict the end of the stream, since each `UTerm[Save]` must be followed by `num_args` subexpressions, `URef` and `UDummy` have no subexpressions, and `UHyp` has two subexpressions (the first hypothesis and the remainder of the hypotheses and conclusion). A unify stream that terminates too early or too late is malformed.
+The `END` terminator is redundant because it is possible to predict the end of the stream, since each `UTerm[Save]` must be followed by `num_args` subexpressions, `URef` and `UDummy` have no subexpressions, and `UHyp` has two subexpressions (the first hypothesis and the remainder of the hypotheses and conclusion). A unify stream that terminates too early or too late is malformed.
+
+To permit read-ahead, the `END` terminator must begin at least 5 bytes prior to the end of the file. This is generally not a problem since unify streams are usually in the middle of the file.
 
 ## Proof Stream
 
@@ -151,16 +155,16 @@ The first command in the stream is a *statement*, and the `data` field is a rela
 
 The valid statements are:
 
-| Name       | Value  | Has proof stream? | Description                                    |
-| ---------- | ------ | ----------------- | ---------------------------------------------- |
-| `Sort`     | `0x04` | No                | Declares a new `sort`                          |
-| `Term`     | `0x05` | No                | Declares a new `term`                          |
-| `Def`      | `0x05` | Yes               | Declares a new `pub def` (*)                   |
-| `LocalDef` | `0x0D` | Yes               | Declares a new `def`                           |
-| `Axiom`    | `0x02` | Yes               | Declares a new `axiom`                         |
-| `Thm`      | `0x06` | Yes               | Declares a new `theorem`                       |
-| `LocalThm` | `0x0E` | Yes               | Declares a new `local theorem`                 |
-| `END`      | `0x00` |                   | Not a statement, signals the end of the stream |
+| Name       | Value  | Has proof stream? | Description
+| ---------- | ------ | ----------------- | -----------
+| `Sort`     | `0x04` | No                | Declares a new `sort`
+| `Term`     | `0x05` | No                | Declares a new `term`
+| `Def`      | `0x05` | Yes               | Declares a new `pub def` (*)
+| `LocalDef` | `0x0D` | Yes               | Declares a new `def`
+| `Axiom`    | `0x02` | Yes               | Declares a new `axiom`
+| `Thm`      | `0x06` | Yes               | Declares a new `theorem`
+| `LocalThm` | `0x0E` | Yes               | Declares a new `local theorem`
+| `END`      | `0x00` |                   | Not a statement, signals the end of the stream
 
 (*) Note that `Term` and `Def` have the same value; this is because the actual indication of whether this is a `term` or `def` is by looking at the `is_def` field in the term table.
 
@@ -168,27 +172,29 @@ The verifier keeps track of how many `sort`, `term`/`def`, and `axiom`/`theorem`
 
 For statements that do not have a proof stream, the next command will be the next statement (and the `data` field for the statement will be the byte length of that single command). For statements that do have a proof stream, the next command will be a sequence of proof commands ending at `END`, and the `data` field will point immediately following the `END`.
 
+To permit read-ahead, the `END` terminator denoting the end of the last statement must begin at least 5 bytes prior to the end of the file. This is potentially an issue if the file has no debugging index, since then the proof stream will be the last thing in the file and 4 bytes of padding need to be added.
+
 The valid proof commands are:
 
-| Name        | Value  | `data`    | Summary (*)                                                 |
-| ----------- | ------ | --------- | ----------------------------------------------------------- |
-| `Term`      | `0x10` | `term_id` | Apply term `term_id`                                        |
-| `TermSave`  | `0x11` | `term_id` | Apply term `term_id`, and save this subterm to the heap     |
-| `Ref`       | `0x12` | `heap_id` | Put heap element `heap_id` on the stack                     |
-| `Dummy`     | `0x13` | `sort_id` | Create a new dummy with sort `sort_id`, apply and save it   |
-| `Thm`       | `0x14` | `thm_id`  | Apply theorem `thm_id`                                      |
-| `ThmSave`   | `0x15` | `thm_id`  | Apply theorem `thm_id`, and save it to the heap             |
-| `Hyp`       | `0x16` | `0`       | Add the expression just constructed as a hypothesis         |
-| `Conv`      | `0x17` | `0`       | Apply the conversion rule `e1 = e2 /\ proof e2 -> proof e1` |
-| `Refl`      | `0x18` | `0`       | Reflexivity conversion `e = e`                              |
-| `Sym`       | `0x19` | `0`       | Symmetry of conversion `e1 = e2 -> e2 = e1`                 |
-| `Cong`      | `0x1A` | `0`       | Congruence `e1 = e1' /\ ... /\ en = en' -> t es = t es'`    |
-| `Unfold`    | `0x1B` | `0`       | Unfolding: `e = e' -> D es = e'` if `D es` unfolds to `e`   |
-| `ConvCut`   | `0x1C` | `0`       | Prove a conversion `e1 = e2`                                |
-| `ConvSave`  | `0x1E` | `0`       | Save a conversion `e1 = e2` to the heap                     |
-| `Save`      | `0x1F` | `0`       | Save an element on the stack to the heap without popping it |
-| `Sorry`     | `0x20` | `0`       | Push a proof of anything, or a conversion (**)              |
-| `END`       | `0x00` | `0`       | Not a command, signals the end of the stream                |
+| Name        | Value  | `data`    | Summary (*)
+| ----------- | ------ | --------- | -----------
+| `Term`      | `0x10` | `term_id` | Apply term `term_id`
+| `TermSave`  | `0x11` | `term_id` | Apply term `term_id`, and save this subterm to the heap
+| `Ref`       | `0x12` | `heap_id` | Put heap element `heap_id` on the stack
+| `Dummy`     | `0x13` | `sort_id` | Create a new dummy with sort `sort_id`, apply and save it
+| `Thm`       | `0x14` | `thm_id`  | Apply theorem `thm_id`
+| `ThmSave`   | `0x15` | `thm_id`  | Apply theorem `thm_id`, and save it to the heap
+| `Hyp`       | `0x16` | `0`       | Add the expression just constructed as a hypothesis
+| `Conv`      | `0x17` | `0`       | Apply the conversion rule `e1 = e2 /\ proof e2 -> proof e1`
+| `Refl`      | `0x18` | `0`       | Reflexivity conversion `e = e`
+| `Sym`       | `0x19` | `0`       | Symmetry of conversion `e1 = e2 -> e2 = e1`
+| `Cong`      | `0x1A` | `0`       | Congruence `e1 = e1' /\ ... /\ en = en' -> t es = t es'`
+| `Unfold`    | `0x1B` | `0`       | Unfolding: `e = e' -> D es = e'` if `D es` unfolds to `e`
+| `ConvCut`   | `0x1C` | `0`       | Prove a conversion `e1 = e2`
+| `ConvSave`  | `0x1E` | `0`       | Save a conversion `e1 = e2` to the heap
+| `Save`      | `0x1F` | `0`       | Save an element on the stack to the heap without popping it
+| `Sorry`     | `0x20` | `0`       | Push a proof of anything, or a conversion (**)
+| `END`       | `0x00` | `0`       | Not a command, signals the end of the stream
 
 (*) The summary column is not a complete description of the behavior of the command. See [Proof checking](#proof-checking) for the full stack machine semantics.
 
@@ -236,7 +242,7 @@ Because `V` is used only in theorem proofs and `BV` only in definitions, `mm0-c`
 The proof opcodes have the following operation on the state:
 
 * ```
-  Term t: H; S, e1, ..., en --> H; S, (t e1 .. en)
+  Term t: H; S, e1, ..., en --> H; S, (t e1 ... en)
   ```
   `Term t` does the following:
   * Look up `term[t]`, which must be a valid `term` or `def`.
@@ -248,9 +254,9 @@ The proof opcodes have the following operation on the state:
 
 * ```
   TermSave t = Term t, Save
-  TermSave t: H; S, e1, ..., en --> H, (t e1 .. en); S, (t e1 .. en)
+  TermSave t: H; S, e1, ..., en --> H, (t e1 ... en); S, (t e1 ... en)
   ```
-  `TermSave t` has exactly the same effect as `Term t, Save`. Specifically, it constructs the expression `(t e1 .. en)`, and puts it on both the stack and on the heap.
+  `TermSave t` has exactly the same effect as `Term t, Save`. Specifically, it constructs the expression `(t e1 ... en)`, and puts it on both the stack and on the heap.
 
 * ```
   Ref i: H; S, e1 =?= e2 --> H; S    (if H[i] = (e1 = e2))
@@ -392,7 +398,7 @@ The action of the unify commands is as follows:
   UTermSave t = USave, UTerm t
   UTermSave t: H; S, (t e1 ... en) --> H, (t e1 ... en); S, en, ..., e1
   ```
-  `UTermSave t` has exactly the same effect as `USave, UTerm t`. Specifically, it pops the expression `(t e1 .. en)`, puts it on the heap, and puts the subexpressions on the stack.
+  `UTermSave t` has exactly the same effect as `USave, UTerm t`. Specifically, it pops the expression `(t e1 ... en)`, puts it on the heap, and puts the subexpressions on the stack in reverse order.
 
 * ```
   UDummy s: H; S, x --> H, x; S
@@ -421,68 +427,68 @@ The action of the unify commands is as follows:
 The `p_index` field in the header points to an `index` which contains a list of index entries.
 
 `sizeof(index)` varies; `align(index) = 8; index =`
-| Field         | Type                         | Description                 |
-| ------------- | ---------------------------- | --------------------------- |
-| `num_entries` | `u64`                        | The number of index entries |
-| `entries`     | `[index_entry; num_entries]` | The index entries           |
+| Field         | Type                         | Description
+| ------------- | ---------------------------- | -----------
+| `num_entries` | `u64`                        | The number of index entries
+| `entries`     | `[index_entry; num_entries]` | The index entries
 
 Each index entry has a `type` which determines the meaning of the fields.
 
 `sizeof(index_entry) = 16; align(index_entry) = 8; index_entry =`
-| Field  | Type   | Description       |
-| ------ | ------ | ----------------- |
-| `type` | `str4` | The type of table |
-| `data` | `u32`  | Varies            |
-| `ptr`  | `u64`  | Varies            |
+| Field  | Type   | Description
+| ------ | ------ | -----------
+| `type` | `str4` | The type of table
+| `data` | `u32`  | Varies
+| `ptr`  | `u64`  | Varies
 
 The collection of valid `type` settings is open-ended, but extensions should coordinate in order to avoid overlaps. The following table types are defined:
 
-| `type`                | `data` | `ptr`            | Description                                 |
-| --------------------- | ------ | ---------------- | ------------------------------------------- |
-| `"Name" = 0x656D614E` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems |
-| `"VarN" = 0x4E726156` | `0`    | `p64<var_names>` | String names for variables                  |
-| `"HypN" = 0x4E726156` | `0`    | `p64<hyp_names>` | String names for hypotheses                 |
+| `type`                | `data` | `ptr`            | Description
+| --------------------- | ------ | ---------------- | -----------
+| `"Name" = 0x656D614E` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems
+| `"VarN" = 0x4E726156` | `0`    | `p64<var_names>` | String names for variables
+| `"HypN" = 0x4E726156` | `0`    | `p64<hyp_names>` | String names for hypotheses
 
 ## The `Name` table: names for statements
 
 `align(names) = 8; names =`
-| Field   | Type                      | Description           |
-| ------- | ------------------------- | --------------------- |
-| `sorts` | `[name_entry; num_sorts]` | The names of sorts    |
-| `terms` | `[name_entry; num_terms]` | The names of terms    |
-| `thms`  | `[name_entry; num_thms]`  | The names of theorems |
+| Field   | Type                      | Description
+| ------- | ------------------------- | -----------
+| `sorts` | `[name_entry; num_sorts]` | The names of sorts
+| `terms` | `[name_entry; num_terms]` | The names of terms
+| `thms`  | `[name_entry; num_thms]`  | The names of theorems
 
 Each name entry consists of a pointer to the statement in the proof stream where it was introduced, and a UTF-8 C string with the name. (MM0 itself doesn't support non-ASCII names, but the names listed here are allowed to include arbitrary unicode.)
 
 `sizeof(name_entry) = 16; align(name_entry) = 8; name_entry =`
-| Field   | Type                 | Description                                     |
-| ------- | -------------------- | ----------------------------------------------- |
-| `proof` | `p64?<proof_stream>` | A pointer to this statement in the proof stream |
-| `name`  | `p64?<cstr>`         | A pointer to the name string                    |
+| Field   | Type                 | Description
+| ------- | -------------------- | -----------
+| `proof` | `p64?<proof_stream>` | A pointer to this statement in the proof stream
+| `name`  | `p64?<cstr>`         | A pointer to the name string
 
 ## The `VarN` table: names for variables
 
 `align(var_names) = 8; var_names =`
-| Field       | Type                          | Description                                  |
-| ----------- | ----------------------------- | -------------------------------------------- |
-| `term_vars` | `[p64?<str_list>; num_terms]` | The list of variables in a `term`/`def`      |
-| `thm_vars`  | `[p64?<str_list>; num_thms]`  | The list of variables in a `axiom`/`theorem` |
+| Field       | Type                          | Description
+| ----------- | ----------------------------- | -----------
+| `term_vars` | `[p64?<str_list>; num_terms]` | The list of variables in a `term`/`def`
+| `thm_vars`  | `[p64?<str_list>; num_thms]`  | The list of variables in a `axiom`/`theorem`
 
 The `str_list` type is just a list of pointers to UTF-8 null-terminated strings:
 
 `sizeof(str_list)` varies; `align(str_list) = 8; str_list =`
-| Field      | Type                     | Description                       |
-| ---------- | ------------------------ | --------------------------------- |
-| `num_strs` | `u64`                    | The number of strings in the list |
-| `strs`     | `[p64?<cstr>; num_strs]` | A list of string pointers         |
+| Field      | Type                     | Description
+| ---------- | ------------------------ | -----------
+| `num_strs` | `u64`                    | The number of strings in the list
+| `strs`     | `[p64?<cstr>; num_strs]` | A list of string pointers
 
 The list `term_vars[t]` is the list of variable names in `term[t]` in the order of declaration, but the list continues past `num_args` to include the dummies, named by order of appearance of `Dummy` steps in the proof stream, which happens to coincide with the order of `UDummy` steps in the unify stream version. Similarly, the `thm_vars[T]` list gives the variable names in `thm[T]`, including the dummy variables.
 
 ## The `HypN` table: names for hypotheses
 
 `align(hyp_names) = 8; hyp_names =`
-| Field       | Type                         | Description                                   |
-| ----------- | ---------------------------- | --------------------------------------------- |
-| `thm_hyps`  | `[p64?<str_list>; num_thms]` | The list of hypotheses in a `axiom`/`theorem` |
+| Field       | Type                         | Description
+| ----------- | ---------------------------- | -----------
+| `thm_hyps`  | `[p64?<str_list>; num_thms]` | The list of hypotheses in a `axiom`/`theorem`
 
 The `hyp_names` table is similar to `var_names`, and reuses the `str_list` type. The list gives the names of hypotheses in the order of `Hyp` commands in the statement.
