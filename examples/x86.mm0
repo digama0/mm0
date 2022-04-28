@@ -147,9 +147,9 @@ theorem RM_memT (si base q: nat):
 def RM_isMem (rm: nat): wff = $ odd rm $;
 
 def readDisplacement (mod q l .b .w: nat): wff =
-$ (mod = 0 /\ q = 0 /\ l = 0) \/
-  (E. b (b e. u8 /\ mod = 1 /\ q = sExtq 8 b /\ l = b : 0)) \/
-  (E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w)) $;
+$ mod = 0 /\ q = 0 /\ l = 0 \/
+  E. b (b e. u8 /\ mod = 1 /\ q = sExtq 8 b /\ l = b : 0) \/
+  E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w) $;
 theorem readDisplacementT (mod q l: nat):
   $ readDisplacement mod q l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $;
@@ -197,9 +197,9 @@ theorem readOpcodeModRM_T (rex v rm l: nat):
   $ readOpcodeModRM rex v rm l -> v e. Bits 3 /\ rm e. RM /\ l e. List u8 $;
 
 def readPrefixes (rex l .b .rex2: nat): wff =
-$ (rex = 0 /\ l = 0) \/ (E. b E. rex2 (
+$ rex = 0 /\ l = 0 \/ E. b E. rex2 (
     splitBits ((4, rex2) : (4, 4) : 0) b /\
-    rex = suc rex2 /\ l = b : 0)) $;
+    rex = suc rex2 /\ l = b : 0) $;
 theorem readPrefixesT (rex l: nat):
   $ readPrefixes rex l -> rex e. REX /\ l e. List u8 $;
 
@@ -689,11 +689,11 @@ $ ifp (true hi)
         n = 6 /\ ast = xastPush (immRM_rm r))))
     (n = 0 /\ E. imm (readImm sz imm l /\
         ast = xastBinop binopTst sz (Rm_i r imm)) \/
-      (l = 0 /\ (
+      l = 0 /\ (
         n = 2 /\ ast = xastUnop unopNot sz r \/
         n = 3 /\ ast = xastUnop unopNeg sz r \/
         n = 4 /\ ast = xastMul sz r \/
-        n = 6 /\ ast = xastDiv sz r))) $;
+        n = 6 /\ ast = xastDiv sz r)) $;
 theorem decodeHiAuxT (v sz r hi n ast l: nat):
   $ sz e. WSize /\ r e. RM /\
     decodeHiAux v sz r hi n ast l -> ast e. XAST $;

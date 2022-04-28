@@ -887,7 +887,7 @@ impl Elaborator {
           None if d.k == DeclKind::Axiom => ThmKind::Axiom,
           None => ThmKind::Thm(None),
           Some(e) => ThmKind::Thm({
-            if self.check_proofs {
+            if self.options.check_proofs {
               (|| -> Result<Option<Proof>> {
                 let mut de: Dedup<ProofHash> = de.map_proof();
                 let mut is2 = Vec::new();
@@ -1186,7 +1186,7 @@ impl Elaborator {
       if !DeclKind::Thm.allowed_visibility(thm.vis) {
         return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
       }
-      Some(if self.check_proofs {
+      Some(if self.options.check_proofs {
         let mut de = de.map_proof();
         let var_map = nh.var_map;
         let is = is.into_iter().enumerate().filter_map(|(i, (a, j, ty))| {

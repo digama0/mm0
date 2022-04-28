@@ -327,7 +327,7 @@ theorem readDisplacement_ifp (mod):
 $ readDisplacement mod q l <->
   ifp (mod = 0) (q = 0 /\ l = 0) (
   ifp (mod = 1) (E. b (b e. u8 /\ q = sExtq 8 b /\ l = b : 0)) (
-  (mod = 2 /\ E. w (w e. u32 /\ q = sExtq 32 w /\ l = u32Bytes w)))) $ =
+  mod = 2 /\ E. w (w e. u32 /\ q = sExtq 32 w /\ l = u32Bytes w))) $ =
 '(bitr (bitr orass @ oreq anass @ oreq
     (bian1exi @ bian11i @ bian11i ancomb)
     (bian1exi @ bian11i @ bian11i ancomb)) @
@@ -335,20 +335,20 @@ $ readDisplacement mod q l <->
 
 theorem decodeHiAux_ifp:
 $ decodeHiAux v sz r hi n ast l <-> ifp (true hi)
-    (l = 0 /\ (
+    (l = 0 /\
       ifp (n = 0) (ast = xastUnop unopInc sz r) (
       ifp (n = 1) (ast = xastUnop unopDec sz r) (
-      true v /\ (
+      true v /\
         ifp (n = 2) (ast = xastCall (immRM_rm r)) (
         ifp (n = 4) (ast = xastJump r) (
-        n = 6 /\ ast = xastPush (immRM_rm r))))))))
+        n = 6 /\ ast = xastPush (immRM_rm r))))))
     (ifp (n = 0) (E. imm (readImm sz imm l /\
         ast = xastBinop binopTst sz (Rm_i r imm)))
-      (l = 0 /\ (
+      (l = 0 /\
         ifp (n = 2) (ast = xastUnop unopNot sz r) (
         ifp (n = 3) (ast = xastUnop unopNeg sz r) (
         ifp (n = 4) (ast = xastMul sz r) (
-        n = 6 /\ ast = xastDiv sz r)))))) $ =
+        n = 6 /\ ast = xastDiv sz r))))) $ =
 (focus
   (def (bd x) '(orifp_bd ,x ,norm_num))
   (def (anr x) '(orifp_anr ,x)) (def (ass x) '(orifp_ass ,x))

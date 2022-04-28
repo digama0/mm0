@@ -393,7 +393,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         ast: &ast,
         path: path.clone(),
         mm0_mode: path.has_extension("mm0"),
-        check_proofs: crate::get_check_proofs(),
+        options: crate::get_options(),
         report_upstream_errors: false,
         cancel: Arc::default(),
         old: None,

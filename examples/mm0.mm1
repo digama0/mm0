@@ -53,16 +53,16 @@ $ \ e, srec (\ ih, case V (\\ f, \ x, F @ (f, x, map ih x)) @ size (Dom ih)) e $
 theorem SExprRec_val: $ SExprRec V F @ e =
   case V (\\ f, \ x, F @ (f, x, map (SExprRec V F |` upto e) x)) @ e $ =
 (named '(eqtr (applame sreceq2) @
-  ! eqtr _ $ _ @ (lower (SExprRec V F |` _)) $ _ srecval @
+  ! eqtr _ $ _ @ lower (SExprRec V F |` _) $ _ srecval @
   applame @ appeqd
     (caseeq2d @ slameqd @ lameqd @ appeq2d @ preq2d @
       preq2d @ mapeq1d @ bi2 @ eqlower2 @ finlam finns)
     sreclem));
 
-theorem SExprRec_Var: $ SExprRec V F @ (SVar v) = V @ v $ =
+theorem SExprRec_Var: $ SExprRec V F @ SVar v = V @ v $ =
 (named '(eqtr SExprRec_val casel));
 theorem SExprRec_App:
-  $ SExprRec V F @ (SApp f es) = F @ (f, es, map (SExprRec V F) es) $ =
+  $ SExprRec V F @ SApp f es = F @ (f, es, map (SExprRec V F) es) $ =
 (named '(eqtr SExprRec_val @ eqtr caser @
   appslame @ applamed @ appeq2d @ preqd anl @ preqd anr @ syl6eq
     (mapeqg @ mpbir allal @ !! ax_gen e @ syl resapp @ sylibr elupto SApp_ltid)
@@ -689,7 +689,7 @@ theorem CExprRec_val: $ CExprRec R S C U @ e = case
     (\\ f, \ cs, C @ (f, cs, map (CExprRec R S C U |` upto e) cs))
     (\\ f, \\ es, \\ zs, \ c, U @ (f, es, zs, c, (CExprRec R S C U |` upto e) @ c))) @ e $ =
 (named '(eqtr (applame sreceq2) @
-  ! eqtr _ $ _ @ (lower (CExprRec R S C U |` _)) $ _ srecval @
+  ! eqtr _ $ _ @ lower (CExprRec R S C U |` _) $ _ srecval @
   applame @ appeqd
     (rsyl (bi2 @ eqlower2 @ finlam finns) @
       caseeqd (caseeq2d @ lameqd @ appeq2d @ preq2d appeq1) @
@@ -778,7 +778,7 @@ theorem VExprRec_val: $ VExprRec H T C @ e = case
     (\\ a, \\ h, \\ r, \\ es, \ ps, T @ (a, h, r, es, ps, map (VExprRec H T C |` upto e) ps)))
   (\\ c, \ p, C @ (c, p, (VExprRec H T C |` upto e) @ p)) @ e $ =
 (named '(eqtr (applame sreceq2) @
-  ! eqtr _ $ _ @ (lower (VExprRec H T C |` _)) $ _ srecval @
+  ! eqtr _ $ _ @ lower (VExprRec H T C |` _) $ _ srecval @
   applame @ appeqd
     (rsyl (bi2 @ eqlower2 @ finlam finns) @
       caseeqd (caseeq2d @ slameqd @ slameqd @ slameqd @ slameqd @ lameqd @
@@ -827,12 +827,12 @@ $ CExprRec
     (\\ f, \\ cs, \ ih, lower (S\ e1, S\ e2, {s |
       E. args E. ret E. o E. es1 E. es2 (
         e1 = SApp f es1 /\ e2 = SApp f es2 /\
-        getTerm env f args ret o /\ (
-          E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len args = n /\
+        getTerm env f args ret o /\
+        E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len args = n /\
           A. i A. c A. e1 A. e2 A. bi (nth i ih = suc c ->
             nth i es1 = suc e1 -> nth i es2 = suc e2 -> nth i args = suc bi ->
             ExprBi env ctx e1 bi /\ ExprBi env ctx e2 bi /\
-            e1, e2, binderSort bi e. c))) /\
+            e1, e2, binderSort bi e. c)) /\
         s = fst ret)}))
     (\\ f, \\ es, \\ zs, \\ c, \ ih, lower (S\ e1, S\ e2, {s |
       E. args E. ret E. ys E. val (
@@ -1080,14 +1080,14 @@ theorem VerifyProof_aux_Thm:
 pub theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
   {args e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
-    (getThm env args2 hs2 ret2 /\
+      getThm env args2 hs2 ret2 /\
       es, args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
       ps, hs2 e. all2 (S\ p, {h | VerifyProof env ctx hs p (substExpr es h)}) /\
-      substExpr es ret2 = ret) $ =
+      substExpr es ret2 = ret $ =
 (named @ focus
   '(bitr (elneq2 VerifyProof_aux_Thm) @ bitr (ellower _) @ elabe @ aneq2d eqeq2)
   '(finss (mpbi ssab1 @ ax_gen @ sylibr elsn @ eqcomd anr) finns));
@@ -1539,7 +1539,7 @@ theorem el_regexLineComment: $ s e. regexLineComment <->
 theorem regexLineComment_n0: $ s e. regexLineComment -> s != 0 $ =
 (named '(sylbi el_regexLineComment @ eex @ anwr sucne0));
 
-theorem regexLineComment_hd: $ (x : t) e. regexLineComment -> x = _hyphen /\ t != 0 $ =
+theorem regexLineComment_hd: $ x : t e. regexLineComment -> x = _hyphen /\ t != 0 $ =
 (named '(sylbi el_regexLineComment @ eex @ anwr @ sylbi consinj @ anim2 sucne0));
 
 theorem regex_asymm_lem
@@ -1571,28 +1571,28 @@ theorem regexLineComment_asymm (hs: $ G -> s e. regexLineComment $) (ht: $ G -> 
 $ ((\ c, c : 0) '' white) u. regexLineComment $;
 
 theorem el_whitespace: $ s e. whitespace <->
-  (E. c (c e. white /\ s = c : 0)) \/ s e. regexLineComment $ = '(bitr elun @ oreq1i ellamima);
+  E. c (c e. white /\ s = c : 0) \/ s e. regexLineComment $ = '(bitr elun @ oreq1i ellamima);
 
 theorem whitespace_n0: $ s e. whitespace -> s != 0 $ =
 '(sylbi el_whitespace @ eor (!! eex x @ anwr sucne0) regexLineComment_n0);
 
-theorem whitespace_hd: $ (x : t) e. whitespace -> x e. white \/ x = _hyphen $ =
+theorem whitespace_hd: $ x : t e. whitespace -> x e. white \/ x = _hyphen $ =
 (named '(sylbi el_whitespace @ orim
   (eex @ impcom @ bi2d @ sylbi consinj @ anwl eleq1)
   (anld regexLineComment_hd)));
 
-theorem whitespace_lt_0: $ (x : t) e. whitespace -> x < _0 $ =
+theorem whitespace_lt_0: $ x : t e. whitespace -> x < _0 $ =
 (focus
   '(rsyl whitespace_hd @ eor (sylbi el_white @ eor _ _) _)
   (def (p) @ focus '(mpbiri {_ : $ch < ch$} lteq1) norm_num)
   (p) (p) (p));
 
-theorem whitespace_hd_RLC: $ (x : t) e. whitespace -> x = _hyphen -> (x : t) e. regexLineComment $ =
+theorem whitespace_hd_RLC: $ x : t e. whitespace -> x = _hyphen -> x : t e. regexLineComment $ =
 (named '(syl5 (con2 @ eex @ syl ltne @ syl white_lt_hyphen @
     impcom @ bi2d @ eleq1d @ sylbi consinj anl) @
   bi1 el_whitespace));
 
-theorem whitespace_hd_white: $ (x : t) e. whitespace -> x != _hyphen -> x e. white /\ t = 0 $ =
+theorem whitespace_hd_white: $ x : t e. whitespace -> x != _hyphen -> x e. white /\ t = 0 $ =
 '(sylbi el_whitespace @ eor
   (a1d @ !! eex y @ imp @ syl5bi consinj @ anim1d @ com12 @ bi2d eleq1)
   (syl absurdr @ anld regexLineComment_hd));
@@ -1634,7 +1634,7 @@ theorem regexMath_asymm (hs: $ G -> s e. regexMath $) (ht: $ G -> t e. regexMath
 (named @ focus '(regex_asymm_lem _ hs ht h)
   '(imaeq1 @ lameqi @ eqtr3 (appendeq1 append1) appendass));
 
-theorem regexMath_hd: $ (x : t) e. regexMath -> x = _dollar $ =
+theorem regexMath_hd: $ x : t e. regexMath -> x = _dollar $ =
 (named '(sylbi el_regexMath @ eex @ anwr @ sylbi (eqeq2 appendS) @ sylbi consinj anl));
 
 theorem regexMath_maxPrefix: $ s e. regexMath <-> maxPrefix regexMath (s ++ t) = suc (s, t) $ =
@@ -1687,12 +1687,12 @@ theorem el_regexIdent: $ s e. regexIdent <->
 theorem regexIdent_n0: $ s e. regexIdent -> s != 0 $ =
 (named '(sylbi el_regexIdent @ eex @ eex @ rsyl anll sucne0));
 
-theorem regexIdent_cons: $ (x : t) e. regexIdent <-> x e. IdentStart /\ all IdentRest t $ =
+theorem regexIdent_cons: $ x : t e. regexIdent <-> x e. IdentStart /\ all IdentRest t $ =
 (named '(bitr el_regexIdent @ bitr (exeqi @ bitr (exeqi @
     bitr anass @ bitr (aneq1i @ bitr eqcomb consinj) anass) exan1) @
   exeqe @ syl6bb (exeqe @ aneq2d alleq2) (exeqd @ aneq2d @ aneq1d eleq1)));
 
-theorem regexIdent_bound: $ (x : t) e. regexIdent -> _A <= x /\ x <= _z $ =
+theorem regexIdent_bound: $ x : t e. regexIdent -> _A <= x /\ x <= _z $ =
 '(sylbi regexIdent_cons @ anwl IdentStart_bound);
 
 --| `s e. isNumber` is true if `s` denotes a natural number.
@@ -1715,7 +1715,7 @@ theorem isNumber_allDigits: $ l e. isNumber -> all digits l $ =
   eex @ eex @ mpbird (alleq2d an3l) @ sylibr allS @
   anim1 @ sylibr eldigits @ anim1 @ anwr @ letr _0_le_1));
 
-theorem isNumber_hd: $ (x : t) e. isNumber -> _0 <= x /\ x <= _9 $ =
+theorem isNumber_hd: $ x : t e. isNumber -> _0 <= x /\ x <= _9 $ =
 '(rsyl isNumber_allDigits @ sylbi allS @ sylib eldigits anl);
 
 --| The set of MM0 punctuation characters in the "outer syntax": `* . : ; ( ) > { } =`
@@ -1783,14 +1783,14 @@ $ srec (\ f, N[size (Dom f) / s1]
     Tokenize_aux f s1 regexMath (\\ x, \ t, MATH x : t) (
     0))))))) s $;
 
-theorem symbols_cons: $ (x : b) e. ((\ c, c : 0) '' A) <-> x e. A /\ b = 0 $ =
+theorem symbols_cons: $ x : b e. (\ c, c : 0) '' A <-> x e. A /\ b = 0 $ =
 '(bitr ellamima @ bitr (exeqi @ bitr (aneq2i @
     bitr consinj @ aneq1i eqcomb) anlass) @ exeqe @ aneq1d eleq1);
 
-theorem symbols_n0: $ x e. ((\ c, c : 0) '' A) -> x != 0 $ = '(sylbi ellamima @ eex @ anwr sucne0);
+theorem symbols_n0: $ x e. (\ c, c : 0) '' A -> x != 0 $ = '(sylbi ellamima @ eex @ anwr sucne0);
 
 theorem symbols_asymm:
-  $ x e. ((\ c, c : 0) '' A) /\ y e. ((\ c, c : 0) '' A) /\ prefix x y -> x = y $ =
+  $ x e. (\ c, c : 0) '' A /\ y e. (\ c, c : 0) '' A /\ prefix x y -> x = y $ =
 (named '(imp @ imp @ sylbi ellamima @
   syl5bi (bitr ellamima @ cbvex @ aneqd eleq1 @ eqeq2d conseq1) @
   eex @ eexda @ mpbiri (sylbi prefix_S @ conseq1d anl) @
@@ -1837,7 +1837,7 @@ pub theorem TokenizeWS (s x: nat):
 
 theorem Tokenize_ne_lem {a b c y} (p: wff a b c)
   (hA: $ x e. A -> x != 0 $) (hB: $ y e. B -> y != 0 $)
-  (h1: $ (a : b) e. A -> p $) (h2: $ (a : c) e. B -> ~p $):
+  (h1: $ a : b e. A -> p $) (h2: $ a : c e. B -> ~p $):
   $ maxPrefix A s = suc (x, r) -> maxPrefix B s = 0 $ =
 (named @ focus
   '(mpd (sylib excons @ syl hA maxPrefixSi2) @ eexd @ eexda @ syl contra @
@@ -2600,7 +2600,7 @@ theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
 --| prefix declaration `c` for `x` at precedence `p`.
 --|
 --| `getPfx: List AST -> Set (Ident, String, Prec)`
-@_ def getPfx (ast: nat): nat =
+@_ abstract def getPfx (ast: nat): nat =
 $ lower (S\ x, S\ c, {p | E. fmla (
     ASTNota (NotaPfx (x, b1 fmla, p)) IN ast /\
     simpleTokenize fmla = c : 0)}) $;
@@ -2626,7 +2626,7 @@ pub theorem getPfxEl {fmla: nat} (ast x c p: nat):
 --| infix(r) declaration `c` for `x` at precedence `p`.
 --|
 --| `getInfix: List AST -> Bool -> Set (Ident, String, Prec)`
-@_ def getInfix (ast r: nat): nat =
+@_ abstract def getInfix (ast r: nat): nat =
 $ lower (S\ x, S\ c, {p | E. fmla (
     ASTNota (NotaInfix r (x, b1 fmla, p)) IN ast /\
     simpleTokenize fmla = c : 0)}) $;
@@ -2651,7 +2651,7 @@ pub theorem getInfixEl {fmla: nat} (ast r x c p: nat):
 --| `n e. getNota ast` says that the AST contains a notation declaration `n`.
 --|
 --| `getNota: List AST -> Set (Ident, List ASTBinder, ASTDepType, List Literal)`
-@_ def getNota (ast: nat): nat = $ lower {z | ASTNota (NotaGen z) IN ast} $;
+@_ abstract def getNota (ast: nat): nat = $ lower {z | ASTNota (NotaGen z) IN ast} $;
 pub theorem getNotaEl (ast x: nat):
   $ x e. getNota ast <-> ASTNota (NotaGen x) IN ast $ =
 (named @ focus
@@ -2662,7 +2662,7 @@ pub theorem getNotaEl (ast x: nat):
 --| `c e. getNota ast` says that the AST contains a coercion declaration `c`.
 --|
 --| `getCoe: List AST -> Set (Ident, Ident, Ident)`
-@_ def getCoe (ast: nat): nat = $ lower {z | ASTNota (NotaCoe z) IN ast} $;
+@_ abstract def getCoe (ast: nat): nat = $ lower {z | ASTNota (NotaCoe z) IN ast} $;
 pub theorem getCoeEl (ast x: nat):
   $ x e. getCoe ast <-> ASTNota (NotaCoe x) IN ast $ =
 (named @ focus
@@ -2673,7 +2673,7 @@ pub theorem getCoeEl (ast x: nat):
 --| `m <=p n` is the `<=` relation for precedences. `0` represents `max`,
 --| so it is ordered after everything else and the other numbers are in the usual order.
 --| `precle: Prec -> Prec -> Bool`
-@_ def precle (m n: nat): wff = $ n = 0 \/ (m != 0 /\ m - 1 <= n - 1) $;
+@_ abstract def precle (m n: nat): wff = $ n = 0 \/ m != 0 /\ m - 1 <= n - 1 $;
 infixl precle: $<=p$ prec 50;
 pub theorem precle02 (n: nat): $ n <=p 0 $ = '(orl eqid);
 pub theorem precle01 (m: nat): $ ~ 0 <=p suc m $ =
@@ -2682,14 +2682,14 @@ pub theorem precleS (m n: nat): $ suc m <=p suc n <-> m <= n $ =
 '(bitr (bior1 peano1) @ bitr (bian1 peano1) @ leeq sucsub1 sucsub1);
 
 --| The successor operation on precedences. `precSuc: Prec -> Prec`
-@_ def precSuc (n: nat): nat = $ if (n = 0) 0 (suc n) $;
+@_ abstract def precSuc (n: nat): nat = $ if (n = 0) 0 (suc n) $;
 pub theorem precSuc0: $ precSuc 0 = 0 $ = '(ifpos eqid);
 pub theorem precSucS (n: nat): $ precSuc (suc n) = suc (suc n) $ = '(ifneg peano1);
 
 --| Extracts the precedence of a variable given the list of literals that follow.
 --| `litsPrec: List Literal -> Prec -> Prec`
-@_ def litsPrec (lits q: nat): nat =
-$ if (lits = 0) q (case (\\ c, \ p, precSuc p) (\ v, 0) @ (fst (lits - 1))) $;
+@_ abstract def litsPrec (lits q: nat): nat =
+$ if (lits = 0) q (case (\\ c, \ p, precSuc p) (\ v, 0) @ fst (lits - 1)) $;
 pub theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $ = (named '(ifpos eqid));
 theorem litsPrecS:
   $ litsPrec (z : lits) q = case (\\ c, \ p, precSuc p) (\ v, 0) @ z $ =
@@ -2878,7 +2878,7 @@ $ pt e. Sum
             e = SApp f (es2 |> e2))})
         (S\ f, {xs |
           E. bis E. ty E. c E. q E. lits E. es (
-            f, bis, ty, (b0 (c, q) : lits) e. getNota (pi21 eac) /\
+            f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
             len bis = len es /\
             A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
             ptCheckNotaLs_aux eac bis lits ih xs es q /\
@@ -2916,7 +2916,7 @@ theorem ptCheck_aux_Pfx: $ ptCheck_aux1 eac ih p (PTPfx f c xs) e <->
   elsabe @ elsabed @ elabed ,eqtac));
 theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
   E. bis E. ty E. c E. q E. lits E. es (
-    f, bis, ty, (b0 (c, q) : lits) e. getNota (pi21 eac) /\
+    f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
     len bis = len es /\
     A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
     ptCheckNotaLs_aux eac bis lits ih xs es q /\
@@ -3086,7 +3086,7 @@ pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
 pub theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
-      f, bis, ty, (b0 (c, q) : lits) e. getNota (pi21 eac) /\
+      f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
       len bis = len es /\
       A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
       ptCheckNotaLs eac bis lits xs es q /\
@@ -3376,7 +3376,7 @@ theorem Elaborate_auxS {ih}
   (p: wff args bis ctx ctx2 ds e hyps hyps2 i n o o2 ret ret2 sd t x)
   (h: $ ih = sep (upto (e2, ast |> d)) {i | Elaborate_aux i} ->
     (,(foldr '(2 2 2 3 1 2 1 0 3) (get-decl 'Elaborate_aux_val) nth) <-> p) $):
-  $ Elaborate_aux (e2, (ast |> d)) <-> p $ =
+  $ Elaborate_aux (e2, ast |> d) <-> p $ =
 (named '(Elaborate_aux_val @ syl5bb (ifpneg snocne0) @
   syl5bb (bitr (exeqi @
       bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @

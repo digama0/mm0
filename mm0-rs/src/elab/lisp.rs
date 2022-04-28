@@ -1387,7 +1387,12 @@ str_enum! {
     /// * `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
     NewDummy: "dummy!",
     /// `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
+    /// Enabled by default.
     CheckProofs: "check-proofs",
+    /// `(warn-unnecessary-parens b)` turns on (`b = #t`) or off (`b = #f`)
+    /// the warning for using unnecessary parentheses in math expressions.
+    /// Disabled by default.
+    WarnUnnecessaryParens: "warn-unnecessary-parens",
     /// * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`)
     ///   error reporting for error type `type`, which can be `'error`, `'info` or `'warn`.
     ///   (Compilation will still be aborted if there are errors, even if the

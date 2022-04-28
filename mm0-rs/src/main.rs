@@ -13,6 +13,7 @@ fn main() -> std::io::Result<()> {
     (@subcommand compile =>
       (about: "Compile MM1 files into MMB")
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
+      (@arg check_parens: --("warn-unnecessary-parens") "Warn on unnecessary parentheses")
       (@arg quiet: -q --quiet "Hide diagnostic messages")
       (@arg strip: -s --("strip") "Don't add debugging data to .mmb files")
       (@arg output: -o --output [FILE]
@@ -43,6 +44,7 @@ fn main() -> std::io::Result<()> {
     (@subcommand server =>
       (about: "MM1 LSP server")
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
+      (@arg check_parens: --("warn-unnecessary-parens") "Warn on unnecessary parentheses")
       (@arg debug: -d --debug "Enable debug logging")
       (@arg no_log_errors: -q --quiet "Don't print errors in server output log")));
 
@@ -51,6 +53,7 @@ fn main() -> std::io::Result<()> {
   match m.subcommand() {
     ("compile", Some(m)) => {
       if m.is_present("no_proofs") { mm0_rs::set_check_proofs(false) }
+      if m.is_present("check_parens") { mm0_rs::set_check_parens(true) }
       mm0_rs::compiler::main(m)?
     }
     ("join", Some(m)) => mm0_rs::joiner::main(m)?,
@@ -59,6 +62,7 @@ fn main() -> std::io::Result<()> {
     #[cfg(feature = "server")]
     ("server", Some(m)) => {
       if m.is_present("no_proofs") { mm0_rs::set_check_proofs(false) }
+      if m.is_present("check_parens") { mm0_rs::set_check_parens(true) }
       mm0_rs::server::main(m)
     }
     _ => unreachable!()

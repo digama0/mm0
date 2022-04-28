@@ -10,7 +10,7 @@
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::{self, Display};
-use mm1_parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
+use mm1_parser::{Parser, ParseError, ident_start, ident_rest, whitespace, ErrorLevel};
 use crate::elab::{Elaborator, ElabError, ObjectKind};
 use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
@@ -83,10 +83,11 @@ impl Elaborator {
         idx: f.0.start + 1,
         restart_pos: Some(0), // skip command checks
       },
+      check_parens: self.options.check_parens,
       spans: &mut self.spans,
     };
     p.ws();
-    let expr = p.expr(Prec::Prec(0))?;
+    let expr = p.expr(Prec::Prec(0))?.0;
     if let Some(tk) = p.token() {
       return Err(ElabError::new_e(tk, "expected '$'"))
     }
@@ -97,6 +98,7 @@ impl Elaborator {
 }
 
 struct MathParser<'a> {
+  check_parens: bool,
   p: Parser<'a>,
   pe: &'a ParserEnv,
   spans: &'a mut Spans<ObjectKind>,
@@ -149,7 +151,7 @@ impl<'a> MathParser<'a> {
     for lit in lits {
       match *lit {
         Literal::Var(i, q) => {
-          let e = self.expr(q)?;
+          let e = self.expr(q)?.0;
           end = e.span.end;
           res.set(i, e);
         },
@@ -166,7 +168,7 @@ impl<'a> MathParser<'a> {
     Ok(end)
   }
 
-  fn prefix(&mut self, p: Prec) -> Result<QExpr, ParseError> {
+  fn prefix(&mut self, p: Prec) -> Result<(QExpr, Prec, Option<Prec>), ParseError> {
     let start = self.idx;
     let c = match self.cur() {
       b',' if {
@@ -175,14 +177,15 @@ impl<'a> MathParser<'a> {
       } => {
         self.idx += 1;
         let e = self.sexpr()?;
-        return Ok(QExpr {span: (start..e.span.end).into(), k: QExprKind::Unquote(e) })
+        let e = QExpr {span: (start..e.span.end).into(), k: QExprKind::Unquote(e) };
+        return Ok((e, Prec::Max, None))
       }
       b'(' => {
         self.idx += 1;
         self.ws();
-        let mut e = self.expr(Prec::Prec(0))?;
+        let (mut e, actual) = self.expr(Prec::Prec(0))?;
         e.span = (start..self.chr_err(b')')?).into();
-        return Ok(e)
+        return Ok((e, Prec::Max, Some(actual)))
       }
       c => c
     };
@@ -199,7 +202,7 @@ impl<'a> MathParser<'a> {
           // Safety: We checked in elab_gen_nota that the lits array contains every index,
           // so every item in `args` gets initialized exactly once by the literals() call
           let k = QExprKind::App(sp, info.term, unsafe { args.assume_init() });
-          return Ok(QExpr { span, k })
+          return Ok((QExpr { span, k }, q, None))
         }
       }
     } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
@@ -207,19 +210,35 @@ impl<'a> MathParser<'a> {
       let mut start = self.idx;
       let mut span = sp;
       if p <= APP_PREC {
-        while let Ok(e) = self.expr(Prec::Max) {
+        while let Ok((e, _)) = self.expr(Prec::Max) {
           span.end = e.span.end;
           start = self.idx;
           args.push(e);
         }
       }
       self.idx = start;
-      return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())})
+      let actual = if args.is_empty() { Prec::Max } else { APP_PREC };
+      let e = QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())};
+      return Ok((e, actual, None))
     } else {}
     Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))
   }
 
-  fn lhs(&mut self, p: Prec, mut lhs: QExpr) -> Result<QExpr, ParseError> {
+  fn check_paren(&mut self, e: &mut (QExpr, Prec, Option<Prec>), p: Prec) {
+    if !self.check_parens { return }
+    if let Some(actual) = e.2.take() {
+      if p <= actual {
+        self.p.errors.push(ParseError {
+          pos: e.0.span, level: ErrorLevel::Warning,
+          msg: "unnecessary parentheses".into()
+        })
+      }
+    }
+  }
+
+  fn lhs(&mut self,
+    p: Prec, mut lhs: (QExpr, Prec, Option<Prec>),
+  ) -> Result<(QExpr, Prec, Option<Prec>), ParseError> {
     let mut tok_end = self.peek_token();
     while let Some(tk) = tok_end.0 {
       let s = self.span(tk);
@@ -228,9 +247,12 @@ impl<'a> MathParser<'a> {
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
       self.idx = tok_end.1;
       let mut args = SliceUninit::new(info.nargs);
-      let start = lhs.span.start;
+      let start = lhs.0.span.start;
       let lits = match info.lits.split_first() {
-        Some((&Literal::Var(i, _), lits)) => {args.set(i, lhs); lits}
+        Some((&Literal::Var(i, q), lits)) => {
+          self.check_paren(&mut lhs, q);
+          args.set(i, lhs.0); lits
+        }
         _ => unreachable!()
       };
       let mut consts = vec![tk];
@@ -247,8 +269,9 @@ impl<'a> MathParser<'a> {
           if !(if assoc {q >= p1} else {q > p1}) {break}
           rhs = self.lhs(q, rhs)?;
         }
-        end = rhs.span.end;
-        args.set(i, rhs)
+        self.check_paren(&mut rhs, q);
+        end = rhs.0.span.end;
+        args.set(i, rhs.0)
       } else if lits.is_empty() {
         end = tk.end
       } else {
@@ -262,13 +285,16 @@ impl<'a> MathParser<'a> {
       // we skip lits[1] in the cases above, every item in `args` gets initialized
       // exactly once by the literals() call, because all the indices are in Var(..) entries
       let k = QExprKind::App(tk, info.term, unsafe { args.assume_init() });
-      lhs = QExpr { span, k };
+      lhs.0 = QExpr { span, k };
+      lhs.1 = lhs.1.min(p1);
     }
     Ok(lhs)
   }
 
-  fn expr(&mut self, p: Prec) -> Result<QExpr, ParseError> {
+  fn expr(&mut self, p: Prec) -> Result<(QExpr, Prec), ParseError> {
     let lhs = self.prefix(p)?;
-    self.lhs(p, lhs)
+    let mut e = self.lhs(p, lhs)?;
+    self.check_paren(&mut e, p);
+    Ok((e.0, e.1))
   }
 }

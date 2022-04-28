@@ -705,11 +705,11 @@ theorem hoareCfg_setException (h: $ e2 e. Option Exception $):
 --| and if the data at `a` is readable then the value is `v`.
 @_ local def s_mem1 (p a v): set =
 $ ^s (a e. u64 /\ v e. u8 /\ p e. Prot) /\s
-    sn (sn (X86P_Mem a, ((p, v), suc p))) $;
+    sn (sn (X86P_Mem a, (p, v), suc p)) $;
 
 theorem el_s_mem1: $ h e. s_mem1 p a v <->
   a e. u64 /\ v e. u8 /\ p e. Prot /\
-  h = sn (X86P_Mem a, ((p, v), suc p)) $ =
+  h = sn (X86P_Mem a, (p, v), suc p) $ =
 '(bitr el_s_an @ bitr (aneq el_s_lift elsn) @
   aneq1a @ syl bian1 @ mpbiri isfsn @ isfeqd nseq);
 
@@ -810,7 +810,7 @@ infixl s_pto: $>->m$ prec 80;
 
 theorem el_s_pto: $ h e. a >->m v <-> a e. u64 /\ v e. u8 /\
   E. p (p e. Prot /\ PROT_READ C_ p /\
-    h = sn (X86P_Mem a, ((p, v), suc p))) $ =
+    h = sn (X86P_Mem a, (p, v), suc p)) $ =
 '(bitr4 el_s_ex @ bitr3 exan1 @ exeqi @ bitr anlass @ bitr4 anass @
   aneq2a @ syl5bb el_s_an @ syl5bb (aneq1a @
     syl5bb el_s_lift @ syl bian1 @ el_sstop s_mem1_sstop) @
@@ -956,7 +956,7 @@ theorem hoareCfg_writeMem {p x}
   (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x, p e. P -> x, p e. Q $):
   $ G -> hoareCfg k {k2 | writeMem k a v k2}
     (s_OK *s s_mem P a w)
-    (s_ERR \/s (s_OK *s s_mem Q a v)) $ =
+    (s_ERR \/s s_OK *s s_mem Q a v) $ =
 (named @ focus
   (have 'H1 '(anwr @ s_sat_ss_lift @ s_sepssr s_mem_T))
   (have 'H2 '(syl (u64le1 leaddid1) (anld H1)))
@@ -1847,8 +1847,8 @@ $ text_start >=>c c *s RIP>-> ip *s s_OK *s flags>->. *s stack_layout sp n L $;
 --| Both `P` and `Q` are allowed to depend on common logical variables `vs`.
 @_ local def func_ok (T c ip P Q): wff =
 $ A. vs A. ret (ret e. u64 -> hoare T
-    (main_layout c 8 ip (2 ^ 12) (L_1 (u64Bytes ret)) *s (P @' vs))
-    (main_layout c 0 ret 8 L_emp *s (Q @' vs))) $;
+    (main_layout c 8 ip (2 ^ 12) (L_1 (u64Bytes ret)) *s P @' vs)
+    (main_layout c 0 ret 8 L_emp *s Q @' vs)) $;
 
 --| The correctness predicate for a jump target.
 --| * `T, c`: Global parameters

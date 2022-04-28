@@ -1334,7 +1334,13 @@ make_builtins! { self, tail, sp1, sp2, args,
   },
   CheckProofs: Exact(1) => {
     if let Some(b) = args[0].as_bool() {
-      self.check_proofs = b;
+      self.options.check_proofs = b;
+    } else {try1!(Err("invalid arguments"))}
+    Stack::Undef
+  },
+  WarnUnnecessaryParens: Exact(1) => {
+    if let Some(b) = args[0].as_bool() {
+      self.options.check_parens = b;
     } else {try1!(Err("invalid arguments"))}
     Stack::Undef
   },

@@ -144,7 +144,7 @@ theorem bitOr_eq_add: $ a i^i b == 0 -> bitOr a b = a + b $ =
 @_ abstract def bitDif (a b: nat): nat = $ lower (a i^i Compl b) $;
 pub theorem bitDifEq (a b: nat): $ bitDif a b == a i^i Compl b $ =
 '(eqscom @ mpbi eqlower @ infin1 finns);
-theorem elbitDif (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $ =
+theorem elbitDif (a b i: nat): $ i e. bitDif a b <-> i e. a /\ ~i e. b $ =
 '(bitr (eleq2 bitDifEq) @ bitr elin @ aneq2i elcpl);
 
 theorem bitDif01: $ bitDif 0 a = 0 $ = '(axext @ eqstr bitDifEq in01);
@@ -293,7 +293,7 @@ theorem b0Bitsi (h1: $ a = b0 a2 $) (h2: $ a2 e. Bits n $): $ a e. Bits (suc n) 
 theorem b1Bitsi (h1: $ a = b1 a2 $) (h2: $ a2 e. Bits n $): $ a e. Bits (suc n) $ =
 '(mpbir (eleq1 h1) @ mpbi b1Bits h2);
 
-theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
+theorem mod_el_Bits: $ a % 2 ^ k e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
 theorem h2nT (h: hex): $ h e. Bits 4 $ =
 '(mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt);
@@ -529,7 +529,7 @@ theorem chopZ_b1_2: $ a e. Bits k -> chopZ k (b1 a) + suc a = 2 ^ k $ =
 '(eqtrd (addeq1d chopZ_b1) @ sylbi elBits2 npcan);
 
 theorem hex_divmod256:
-  $ (a :x b :x c) // 256 = a /\ (a :x b :x c) % 256 = b :x c $ =
+  $ a :x b :x c // 256 = a /\ a :x b :x c % 256 = b :x c $ =
 '(trud @ eqdivmod (a1i @ mpbi elu8_2 @ mpbi (eleq1 c2nch) c2nT) @
   a1i @ eqtr3 addass @ addeq1 @
   eqtr4 (addeq1 @ eqtr4 mulcom @ eqtr mulass @ muleq2 d16mul16) addmul);
@@ -1517,9 +1517,9 @@ theorem readDisplacement_lem: $ x < 3 <-> x e. Bits 2 /\ x != 3 $ =
 '(bitr4 ltlene @ aneq1i @ bitr elBits2 @ bitr4 (lteq2 d2pow2) leltsuc);
 
 @_ def readDisplacement (mod q l .b .w: nat): wff =
-$ (mod = 0 /\ q = 0 /\ l = 0) \/
-  (E. b (b e. u8 /\ mod = 1 /\ q = sExtq 8 b /\ l = b : 0)) \/
-  (E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w)) $;
+$ mod = 0 /\ q = 0 /\ l = 0 \/
+  E. b (b e. u8 /\ mod = 1 /\ q = sExtq 8 b /\ l = b : 0) \/
+  E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w) $;
 pub theorem readDisplacementT (mod q l: nat):
   $ readDisplacement mod q l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $ =
@@ -1796,9 +1796,9 @@ theorem readOpcodeModRM_I
     iexde @ mpbird ,eqtac @ iand an3l anlr));
 
 @_ def readPrefixes (rex l .b .rex2: nat): wff =
-$ (rex = 0 /\ l = 0) \/ (E. b E. rex2 (
+$ rex = 0 /\ l = 0 \/ E. b E. rex2 (
     splitBits ((4, rex2) : (4, 4) : 0) b /\
-    rex = suc rex2 /\ l = b : 0)) $;
+    rex = suc rex2 /\ l = b : 0) $;
 pub theorem readPrefixesT (rex l: nat):
   $ readPrefixes rex l -> rex e. REX /\ l e. List u8 $ =
 (named '(eor
@@ -2605,11 +2605,11 @@ $ ifp (true hi)
         n = 6 /\ ast = xastPush (immRM_rm r))))
     (n = 0 /\ E. imm (readImm sz imm l /\
         ast = xastBinop binopTst sz (Rm_i r imm)) \/
-      (l = 0 /\ (
+      l = 0 /\ (
         n = 2 /\ ast = xastUnop unopNot sz r \/
         n = 3 /\ ast = xastUnop unopNeg sz r \/
         n = 4 /\ ast = xastMul sz r \/
-        n = 6 /\ ast = xastDiv sz r))) $;
+        n = 6 /\ ast = xastDiv sz r)) $;
 pub theorem decodeHiAuxT (v sz r hi n ast l: nat):
   $ sz e. WSize /\ r e. RM /\
     decodeHiAux v sz r hi n ast l -> ast e. XAST $ =
@@ -4169,7 +4169,7 @@ theorem PageMappingss: $ PageMapping M C_ Arrow u64 (Option Prot) $ =
 theorem finPageMapping: $ finite (PageMapping M) $ =
 '(finss PageMappingss @ Arrowfin finns @ optfin finiteProt);
 
-theorem elPageMapping0: $ (\. a e. u64, 0) e. PageMapping M $ =
+theorem elPageMapping0: $ \. a e. u64, 0 e. PageMapping M $ =
 (named '(mpbir elPageMapping @ iani (mpbir rlamArrow @ ax_gen @ a1i opt0) @
   ax_gen @ ax_gen @ sylbi elrlam @ eex @ anwr @ sylbi prth @ anwr @ absurd peano1));
 

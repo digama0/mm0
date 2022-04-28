@@ -73,7 +73,7 @@ $ y = x + len s /\ (y e. u64 -> s, x e. P) $;
 $ s != 0 /\ assembleN s x y P $;
 
 @mmc-th local def assembleA (A B: set): set =
-$ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1, x e. A /\ t2, (x + len t1) e. B)} $;
+$ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1, x e. A /\ t2, x + len t1 e. B)} $;
 infixr assembleA: $++asm$ prec 120;
 
 @mmc-th theorem assembleA_I (s t x y z A B)
@@ -154,7 +154,7 @@ $ A. l (readPrefixes rex l -> parseInstN p ip (l ++ opc : s) I) $;
   $ parseInst p ip (ch x4 rex ': s1 opc) I $ =
 '(mpbi (parseInstNeq3 @ sconseq2 s2nscons0) @ parseInst11 h);
 
-@_ local def guarded (x: nat) (F: set): wff = $ x != 0 /\ (x - 1) e. F $;
+@_ local def guarded (x: nat) (F: set): wff = $ x != 0 /\ x - 1 e. F $;
 
 @_ local def guard (p: wff) (x: nat): nat = $ if p x 0 $;
 
@@ -798,7 +798,7 @@ $ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p, t1, 0 e. A
 --| string where relevant (using `asmAt`), so that the existential is uniquely determined.
 @_ local def assembledN (c: nat) (P: set): wff =
 $ E. x E. s (s != 0 /\ sublistAt x c s /\
-  text_start + x + len s e. u64 /\ s, (text_start + x) e. P) $;
+  text_start + x + len s e. u64 /\ s, text_start + x e. P) $;
 
 @mmc-th local def isU64 (n: nat): wff = $ n e. u64 $;
 

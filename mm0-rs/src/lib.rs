@@ -88,14 +88,25 @@ pub use elab::{environment::*,
   frozen::{FrozenAtomData, FrozenEnv, FrozenLispKind, FrozenLispVal},
   lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, Uncons},
   local_context::{try_get_span, LocalContext},
-  ElabError, Elaborator};
+  ElabError, Elaborator, ElabOptions};
 pub use mm0_util::*;
 pub use mm1_parser::{ast, DocComment, ErrorLevel};
 pub use mm0b_parser::MAX_BOUND_VARS;
 
 static CHECK_PROOFS: AtomicBool = AtomicBool::new(true);
-pub(crate) fn get_check_proofs() -> bool { CHECK_PROOFS.load(Ordering::Relaxed) }
+static CHECK_PARENS: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn get_options() -> ElabOptions {
+  ElabOptions {
+    check_proofs: CHECK_PROOFS.load(Ordering::Relaxed),
+    check_parens: CHECK_PARENS.load(Ordering::Relaxed),
+  }
+}
 
 /// Set the initial proof checking behavior at the start of an MM1 file
 /// before a `(check-proofs)` command is found.
 pub fn set_check_proofs(b: bool) { CHECK_PROOFS.store(b, Ordering::Relaxed) }
+
+/// Set the initial parenthesis warn behavior at the start of an MM1 file
+/// before a `(warn-unnecessary-parens)` command is found.
+pub fn set_check_parens(b: bool) { CHECK_PARENS.store(b, Ordering::Relaxed) }

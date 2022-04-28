@@ -217,6 +217,21 @@ impl std::fmt::Debug for GoalListener {
   }
 }
 
+/// The persistent elaborator options (which can be set at the command line)
+#[derive(Copy, Clone, Debug)]
+pub struct ElabOptions {
+  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
+  pub check_proofs: bool,
+  /// If true, the math parser will report a warning on unnecessary parentheses.
+  pub check_parens: bool,
+}
+
+impl Default for ElabOptions {
+    fn default() -> Self {
+        Self { check_proofs: true, check_parens: false }
+    }
+}
+
 /// The [`Elaborator`] struct contains the working data for elaboration, and is the
 /// main interface to MM1 operations (along with [`Evaluator`](lisp::eval::Evaluator),
 /// which a lisp execution context).
@@ -245,8 +260,8 @@ pub struct Elaborator {
   pub(crate) spans: Spans<ObjectKind>,
   /// True if we are currently elaborating an MM0 file
   mm0_mode: bool,
-  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
-  check_proofs: bool,
+  /// The persistent elaborator options (which can be set at the command line)
+  options: ElabOptions,
   /// The current reporting mode, whether we will report each severity of error
   reporting: ReportMode,
   /// Should we report backtraces in lisp errors?
@@ -283,7 +298,7 @@ impl Elaborator {
   ///   the elaboration before completion.
   /// - `recv_goal`: A listener for goal view events.
   #[must_use] pub fn new(ast: Arc<Ast>, path: FileRef,
-      mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
+      mm0_mode: bool, options: ElabOptions, cancel: Arc<AtomicBool>,
       recv_goal: Option<GoalListener>,
     ) -> Elaborator {
     Elaborator {
@@ -296,7 +311,7 @@ impl Elaborator {
       lc: LocalContext::new(),
       spans: Spans::new(),
       mm0_mode,
-      check_proofs,
+      options,
       backtrace: ReportMode {error: true, warn: false, info: false},
       inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
@@ -627,8 +642,8 @@ pub struct ElaborateBuilder<'a, F> {
   pub path: FileRef,
   /// True if we are currently elaborating an MM0 file
   pub mm0_mode: bool,
-  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
-  pub check_proofs: bool,
+  /// The initial elaborator options.
+  pub options: ElabOptions,
   /// If true, an error will be reported if a file in an import itself
   /// has an error. This can be disabled to avoid reporting the same error many times.
   pub report_upstream_errors: bool,
@@ -793,7 +808,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
     let mut recv_dep = self.recv_dep;
     let mut recv = HashMap::new();
     let mut elab = Elaborator::new(self.ast.clone(),
-      self.path, self.mm0_mode, self.check_proofs, self.cancel, self.recv_goal);
+      self.path, self.mm0_mode, self.options, self.cancel, self.recv_goal);
     elab.arena.install_thread_local();
     for &(sp, ref f) in &self.ast.imports {
       (|| -> Result<_> {

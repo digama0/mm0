@@ -540,7 +540,9 @@ MM0-specific builtin functions
 
 * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`) error reporting for error type `type`, which can be `'error`, `'info` or `'warn`. (Compilation will still be aborted if there are errors, even if the display is suppressed.) `(set-reporting b)` will set the error reporting to `b` for all error types.
 
-* `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
+* `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems. Enabled by default.
+
+* `(warn-unnecessary-parens b)` turns on (`b = #t`) or off (`b = #f`) the warning for using unnecessary parentheses in math expressions. Disabled by default.
 
 * `(set-backtrace b)` turns on (`b = #t`) or off (`b = #f`) backtraces in lisp for theorems.
   `(set-backtrace type b)` does the same but for specific error type `type`,

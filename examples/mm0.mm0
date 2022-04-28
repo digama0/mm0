@@ -375,14 +375,14 @@ theorem VerifyProofHyp (env ctx hs n ret: nat):
 theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
   {args e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
-    (getThm env args2 hs2 ret2 /\
+      getThm env args2 hs2 ret2 /\
       es, args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
       ps, hs2 e. all2 (S\ p, {h | VerifyProof env ctx hs p (substExpr es h)}) /\
-      substExpr es ret2 = ret) $;
+      substExpr es ret2 = ret $;
 theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
   $ VerifyProof env ctx hs (VConv c p) ret <->
     E. e1 E. s (
@@ -1146,7 +1146,7 @@ theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
 theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
-      f, bis, ty, (b0 (c, q) : lits) e. getNota (pi21 eac) /\
+      f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
       len bis = len es /\
       A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
       ptCheckNotaLs eac bis lits xs es q /\
