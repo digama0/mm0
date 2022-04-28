@@ -99,16 +99,16 @@ macro_rules! make_index_trait {
     impl<$($lft),*, A: $trait<$($lft),*>, B: $trait<$($lft),*>> $trait<$($lft),*> for (A, B) {
       #[inline]
       fn $f(&self) -> Option<&$ty<$($lft),*>> {
-        match self.0.$f() {
+        match self.0 .$f() {
           Some(e) => Some(e),
-          None => self.1.$f()
+          None => self.1 .$f()
         }
       }
       #[inline]
       fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>> {
-        match self.0.$f_mut() {
+        match self.0 .$f_mut() {
           Some(e) => Some(e),
-          None => self.1.$f_mut()
+          None => self.1 .$f_mut()
         }
       }
     }
