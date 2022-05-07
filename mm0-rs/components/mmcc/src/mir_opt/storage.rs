@@ -170,6 +170,7 @@ impl TyKind {
       TyKind::Ghost(_) => Some(Meta::from_size(0)),
       TyKind::Bool => Some(Meta::from_size(1)),
       TyKind::Own(_) |
+      TyKind::Shr(_, _) |
       TyKind::RefSn(_) => Some(Meta::from_size(8)),
       TyKind::User(_, _, _) | // TODO
       TyKind::Var(_) => None, // TODO: monomorphize first
@@ -334,7 +335,7 @@ impl Cfg {
           Statement::Let(ref lk, r, ref ty, rv) => {
             let (v, ty) = match lk {
               LetKind::Let(v, _) => (v.k, ty),
-              LetKind::Own([_, (v, ty)]) => (v.k, ty),
+              LetKind::Ptr([_, (v, ty)]) => (v.k, ty),
             };
             if !*r { continue }
             let mut copy = None;

@@ -185,8 +185,11 @@ pub enum TyKind {
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty, Expr),
   /// `own T` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  /// `x :> own T` iff `E. v: T, x |-> v`.
   Own(Ty),
+  /// `& a T` is a type of shared pointers. The typehood predicate is
+  /// `x :> &'a T` iff `E. v: ref a T, x = &v`.
+  Shr(Lifetime, Ty),
   /// `(ref T)` is a type of borrowed values. This type is elaborated to
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
@@ -264,10 +267,8 @@ impl std::fmt::Debug for TyKind {
       TyKind::Bool => write!(f, "bool"),
       TyKind::Int(ity) => write!(f, "{}", ity),
       TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
-      TyKind::Own(ty) => match &**ty {
-        TyKind::Ref(lft, ty) => write!(f, "&'{:?} {:?}", lft, ty),
-        _ => write!(f, "own {:?}", ty)
-      },
+      TyKind::Own(ty) => write!(f, "own {:?}", ty),
+      TyKind::Shr(lft, ty) => write!(f, "&'{:?} {:?}", lft, ty),
       TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
       TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
       TyKind::Sn(e, ty) => write!(f, "sn({:?}: {:?})", e, ty),
@@ -316,6 +317,7 @@ impl TyKind {
       TyKind::Var(_) => true,
       TyKind::Own(ty) |
       TyKind::Ref(_, ty) |
+      TyKind::Shr(_, ty) |
       TyKind::Not(ty) |
       TyKind::Ghost(ty) |
       TyKind::Uninit(ty) |
@@ -359,6 +361,7 @@ impl HasAlpha for TyKind {
       &TyKind::Int(ity) => TyKind::Int(ity),
       TyKind::Array(ty, n) => TyKind::Array(a!(ty), a!(n)),
       TyKind::Own(ty) => TyKind::Own(a!(ty)),
+      TyKind::Shr(lft, ty) => TyKind::Shr(a!(lft), a!(ty)),
       TyKind::Ref(lft, ty) => TyKind::Ref(a!(lft), a!(ty)),
       TyKind::RefSn(e) => TyKind::RefSn(a!(e)),
       TyKind::Sn(a, ty) => TyKind::Sn(a!(a), a!(ty)),
@@ -1529,9 +1532,9 @@ pub enum LetKind {
   /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
   /// variable is non-ghost.
   Let(Spanned<VarId>, Option<Expr>),
-  /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
-  /// value `x` and a pointer `p: &sn x`.
-  Own([(Spanned<VarId>, Ty); 2]),
+  /// `Ptr(x, T, p, &sn x)` is an existential pattern match on `(own T)` or `(& T)`,
+  /// producing a value `x` and a pointer `p: &sn x`.
+  Ptr([(Spanned<VarId>, Ty); 2]),
 }
 
 impl std::fmt::Debug for LetKind {
@@ -1548,7 +1551,7 @@ impl LetKind {
         if let Some(e) = e { write!(f, " => {:?}", e)? }
         Ok(())
       },
-      Self::Own([(v1, _), (v2, _)]) =>
+      Self::Ptr([(v1, _), (v2, _)]) =>
         write!(f, "(ghost {:?}, {}{:?})", v1.k, if r {""} else {"ghost "}, v2.k),
     }
   }
@@ -1635,7 +1638,7 @@ impl Statement {
   #[must_use] pub fn num_defs(&self) -> usize {
     match self {
       Self::Let(LetKind::Let(..), ..) => 1,
-      Self::Let(LetKind::Own(..), ..) => 2,
+      Self::Let(LetKind::Ptr(..), ..) => 2,
       Self::Assign(_, _, _, vars) => vars.len(),
       Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => 0,
     }
@@ -1647,7 +1650,7 @@ impl Statement {
   ) {
     match self {
       Self::Let(LetKind::Let(v, e), r, ty, _) => f(v, *r, e.as_ref(), ty),
-      Self::Let(LetKind::Own([(x, xt), (y, yt)]), yr, _, _) => {
+      Self::Let(LetKind::Ptr([(x, xt), (y, yt)]), yr, _, _) => {
         f(x, false, None, xt);
         f(y, *yr, None, yt);
       }

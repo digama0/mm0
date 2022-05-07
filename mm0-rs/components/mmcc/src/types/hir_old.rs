@@ -535,16 +535,15 @@ pub enum Type {
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Box<Type>, Rc<PureExpr>),
   /// `own T` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  /// `x :> own T` iff `E. v: T, x |-> v`.
   Own(Box<Type>),
+  /// `& a T` is a type of shared pointers. The typehood predicate is
+  /// `x :> &'a T` iff `E. v: ref a T, x = &v`.
+  Shr(Lifetime, Box<Type>),
   /// `(ref T)` is a type of borrowed values. This type is elaborated to
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
   Ref(Lifetime, Box<Type>),
-  /// `(& T)` is a type of borrowed pointers. This type is elaborated to
-  /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
-  /// (see [`Lifetime`]).
-  Shr(Lifetime, Box<Type>),
   /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
   RefSn(Box<Place>),
   /// `(A, B, C)` is a tuple type with elements `A, B, C`;

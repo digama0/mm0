@@ -272,7 +272,8 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
         TupleMatchKind::List |
         TupleMatchKind::Struct |
         TupleMatchKind::Sn |
-        TupleMatchKind::Own => write!(f, "({:?})", args.iter().format(", ")),
+        TupleMatchKind::Own |
+        TupleMatchKind::Shr => write!(f, "({:?})", args.iter().format(", ")),
         TupleMatchKind::Array => write!(f, "[{:?}]", args.iter().format(", ")),
         TupleMatchKind::And => write!(f, "<{:?}>", args.iter().format(", ")),
       }
@@ -304,6 +305,8 @@ pub enum TupleMatchKind {
   Sn,
   /// An `own` pattern match `(x, h): own T` returns `& x`.
   Own,
+  /// A `&` pattern match `(x, h): & T` returns `& x`.
+  Shr,
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(TupleMatchKind);
 
@@ -476,8 +479,11 @@ pub enum TyKind<'a> {
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty<'a>, Expr<'a>),
   /// `own T` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  /// `x :> own T` iff `E. v: T, x |-> v`.
   Own(Ty<'a>),
+  /// `& a T` is a type of shared pointers. The typehood predicate is
+  /// `x :> &'a T` iff `E. v: ref a T, x = &v`.
+  Shr(Lifetime, Ty<'a>),
   /// `(ref T)` is a type of borrowed values. This type is elaborated to
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
@@ -587,6 +593,7 @@ impl<'a> TyS<'a> {
       TyKind::Imp(p, q) |
       TyKind::Wand(p, q) => {p.visit(f); q.visit(f)}
       TyKind::Own(ty) |
+      TyKind::Shr(_, ty) |
       TyKind::Ref(_, ty) |
       TyKind::Ghost(ty) |
       TyKind::Uninit(ty) |
@@ -648,6 +655,7 @@ impl AddFlags for TyKind<'_> {
         *f |= ty;
       }
       TyKind::Own(ty) => *f |= (Flags::IS_NON_COPY | Flags::IS_RELEVANT, ty),
+      TyKind::Shr(lft, ty) => {*f |= (Flags::IS_RELEVANT, lft, ty); f.remove(Flags::IS_NON_COPY)}
       TyKind::Not(ty) => *f |= ty,
       TyKind::Ghost(ty) => {*f |= ty; f.remove(Flags::IS_RELEVANT)}
       TyKind::Uninit(ty) |
@@ -700,10 +708,8 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TyKind<'a> {
       TyKind::Bool => "bool".fmt(f),
       TyKind::Int(ity) => ity.fmt(f),
       TyKind::Array(ty, n) => write!(f, "(array {} {})", p!(ty), p!(n)),
-      TyKind::Own(ty) => match ty.k {
-        TyKind::Ref(lft, ty) => write!(f, "(& {} {})", p!(&lft), p!(ty)),
-        _ => write!(f, "(own {})", p!(ty))
-      },
+      TyKind::Own(ty) => write!(f, "(own {})", p!(ty)),
+      TyKind::Shr(lft, ty) => write!(f, "(& {} {})", p!(&lft), p!(ty)),
       TyKind::Ref(lft, ty) => write!(f, "(ref {} {})", p!(&lft), p!(ty)),
       TyKind::RefSn(x) => write!(f, "(&sn {})", p!(x)),
       TyKind::List(tys) => write!(f, "(list {})", tys.iter().map(|&ty| p!(ty)).format(" ")),
@@ -751,10 +757,8 @@ impl std::fmt::Debug for TyKind<'_> {
       TyKind::Bool => write!(f, "bool"),
       TyKind::Int(ity) => write!(f, "{}", ity),
       TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
-      TyKind::Own(ty) => match ty.k {
-        TyKind::Ref(lft, ty) => write!(f, "&'{:?} {:?}", &lft, ty),
-        _ => write!(f, "own {:?}", ty)
-      },
+      TyKind::Own(ty) => write!(f, "own {:?}", ty),
+      TyKind::Shr(lft, ty) => write!(f, "&'{:?} {:?}", &lft, ty),
       TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
       TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
       TyKind::List(tys) => write!(f, "[{:?}]", tys.iter().format(", ")),

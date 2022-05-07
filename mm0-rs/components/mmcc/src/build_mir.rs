@@ -61,6 +61,7 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
       ty::TyKind::Int(ity) => TyKind::Int(ity),
       ty::TyKind::Array(ty, n) => TyKind::Array(ty.tr(tr), n.tr(tr)),
       ty::TyKind::Own(ty) => TyKind::Own(ty.tr(tr)),
+      ty::TyKind::Shr(lft, ty) => TyKind::Shr(lft.tr(tr), ty.tr(tr)),
       ty::TyKind::Ref(lft, ty) => TyKind::Ref(lft.tr(tr), ty.tr(tr)),
       ty::TyKind::RefSn(e) => TyKind::RefSn(e.tr(tr)),
       ty::TyKind::List(tys) => tr.tr_list(tys),
@@ -320,7 +321,8 @@ impl<'a> Translator<'a, '_> {
           self.tr_tup_pat(pats[0], e);
           self.tr_tup_pat(pats[1], Rc::new(ExprKind::Unit));
         }
-        TupleMatchKind::Own => panic!("existential pattern match in proof relevant position")
+        TupleMatchKind::Own |
+        TupleMatchKind::Shr => panic!("existential pattern match in proof relevant position")
       }
       TuplePatternKind::Error(_) => unreachable!()
     }
@@ -581,7 +583,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     match &stmt {
       Statement::Let(LetKind::Let(v, e), r, ty, _) =>
         self.extend_ctx(v.clone(), *r, (e.clone(), ty.clone())),
-      Statement::Let(LetKind::Own([(v, ty), (h, ty2)]), hr, _, _) => {
+      Statement::Let(LetKind::Ptr([(v, ty), (h, ty2)]), hr, _, _) => {
         self.extend_ctx(v.clone(), false, (None, ty.clone()));
         self.extend_ctx(h.clone(), *hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
@@ -1094,11 +1096,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           TupleMatchKind::Array => ListKind::Array,
           TupleMatchKind::And => ListKind::And,
           TupleMatchKind::Sn => ListKind::Sn,
-          TupleMatchKind::Own => let_unchecked!([vpat, hpat] = *pats, {
+          TupleMatchKind::Own |
+          TupleMatchKind::Shr => let_unchecked!([vpat, hpat] = *pats, {
             let tgt = self.tr(pat.k.ty);
             let v = self.tr(vpat.k.var);
             let h = self.tr(hpat.k.var);
-            let lk = LetKind::Own([
+            let lk = LetKind::Ptr([
               (Spanned { span: span.clone(), k: v }, self.tr(vpat.k.ty)),
               (Spanned { span: span.clone(), k: h }, self.tr(hpat.k.ty))
             ]);

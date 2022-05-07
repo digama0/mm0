@@ -45,12 +45,16 @@
 
 \begin{document}
 
+\acmJournal{JACM}
+
 \title{Metamath C technical appendix}
 
 %% Author with single affiliation.
 \author{Mario Carneiro}
 \affiliation{
   \institution{Carnegie Mellon University}
+  \city{Pittsburgh}
+  \country{USA}
 }
 
 % \begin{abstract}
@@ -586,22 +590,22 @@ Thus far the rules have only talked about local variables and mutation of local 
 
 \subsubsection{Singleton pointers}
 
-The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x$, where $\eta\mathrel{@}x$ means that $\eta$ is stored in memory at location $x$; see section \ref{sec:semantics}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
+The simplest pointer type is $\&^\mathbf{sn}\eta$, which is defined as $\mathsf{sn}\;\&\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=(x=\&\eta)$, where $\&\eta$ is the location that $\eta$ is stored in memory; see section \ref{sec:semantics}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^\mathbf{sn}\eta\and
   \mathrm{Expr}::=\dots\mid {}^\ast e\mid \& e\and
-  \&^\mathbf{sn}\eta\;\mathsf{copy}\and
-  \boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x\\
-  \infer[ty-snp]
+  \mathrm{PureExpr}::=\dots\mid \&\eta\and
+  \&^\mathbf{sn}\eta:=\mathsf{sn}\;\&\eta\\
+  \infer[tye-snp]
     {\Gamma \proves \eta\;\mathsf{place}}
-    {\Gamma \proves \&^\mathbf{sn}\eta\;\mathsf{type}}\and
+    {\Gamma \proves \&\eta:\N_{64}}\and
   \infer[tye-deref]
     {\Gamma;\delta \proves e:\&^\mathbf{sn}\eta\makes\delta'}
     {\Gamma;\delta \proves {}^* e\Rightarrow \eta\makes\delta'\;\mathsf{place}}\and
   \infer[tye-shr]
     {\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}}
-    {\Gamma;\delta \proves \&e:\&^\mathbf{sn}\eta\makes\delta'}\and
+    {\Gamma;\delta \proves \&e\Rightarrow\&\eta:\&^\mathbf{sn}\eta\makes\delta'}\and
 \end{mathparpagebreakable}
 To use these generalized lvalues, we need operations to read and write them:
 
@@ -712,8 +716,8 @@ In fact, we can't even really read a ref; the value read is only available as a 
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^a\tau\and
-  \core{\&^a\tau}=\N_{64}\and
-  \boxed{x:\&^a\tau}=\exists v:\mathsf{ref}^a\;\tau,x\mapsto v\\
+  \&^a\tau:=\exists v:\mathsf{ref}^a\;\tau,\ \&^\mathbf{sn}v\and
+  \core{\&^a\tau}=\N_{64}\\
   \infer[ty-shr]
     {\mathrm{Var}(a)\subseteq \Gamma\quad
       \Gamma \proves \tau\;\mathsf{type}}

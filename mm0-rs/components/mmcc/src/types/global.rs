@@ -248,8 +248,11 @@ pub enum TyKind {
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty, Expr),
   /// `own T` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  /// `x :> own T` iff `E. v: T, x |-> v`.
   Own(Ty),
+  /// `& a T` is a type of shared pointers. The typehood predicate is
+  /// `x :> &'a T` iff `E. v: ref a T, x = &v`.
+  Shr(Lifetime, Ty),
   /// `(ref T)` is a type of borrowed values. This type is elaborated to
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
@@ -333,6 +336,7 @@ impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
       ty::TyKind::Int(ity) => TyKind::Int(ity),
       ty::TyKind::Array(ty, n) => TyKind::Array(ty.to_global(ctx), n.to_global(ctx)),
       ty::TyKind::Own(ty) => TyKind::Own(ty.to_global(ctx)),
+      ty::TyKind::Shr(lft, ty) => TyKind::Shr(lft.to_global(ctx), ty.to_global(ctx)),
       ty::TyKind::Ref(lft, ty) => TyKind::Ref(lft.to_global(ctx), ty.to_global(ctx)),
       ty::TyKind::RefSn(e) => TyKind::RefSn(e.to_global(ctx)),
       ty::TyKind::List(tys) => TyKind::List(tys.to_global(ctx)),

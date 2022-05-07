@@ -259,7 +259,7 @@ impl Cfg {
           Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) |
           Statement::Let(_, false, _, _) => {}
           Statement::Let(lk, true, _, rv) => {
-            let (LetKind::Let(v, _) | LetKind::Own([_, (v, _)])) = lk;
+            let (LetKind::Let(v, _) | LetKind::Ptr([_, (v, _)])) = lk;
             if d.vars.contains(&v.k) { d.apply_rvalue(loc.block, rv) }
           }
           Statement::Assign(_, _, rhs, vars) => {
@@ -341,7 +341,7 @@ impl Cfg {
       let get = |v| res.contains(&v);
       for stmt in &mut bl.stmts {
         match stmt {
-          Statement::Let(LetKind::Let(v, _) | LetKind::Own([_, (v, _)]), r, _, _) => *r = get(v.k),
+          Statement::Let(LetKind::Let(v, _) | LetKind::Ptr([_, (v, _)]), r, _, _) => *r = get(v.k),
           Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to.k) }
           Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }

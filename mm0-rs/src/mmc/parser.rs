@@ -1265,7 +1265,7 @@ impl<'a, C> Parser<'a, C> {
           (PrimType::Own, [ty]) => TypeKind::Own(ty!(ty)),
           (PrimType::Ref, [ty]) => TypeKind::Ref(None, ty!(ty)),
           (PrimType::RefSn, [e]) => TypeKind::RefSn(expr!(e.clone())),
-          (PrimType::Shr, [ty]) => TypeKind::shr(span.clone(), None, ty!(ty)),
+          (PrimType::Shr, [ty]) => TypeKind::Shr(None, ty!(ty)),
           (PrimType::Sn, [e]) => TypeKind::Sn(expr!(e.clone())),
           (PrimType::List | PrimType::Star, _) => TypeKind::List(tys!(args)),
           (PrimType::Struct, _) => {

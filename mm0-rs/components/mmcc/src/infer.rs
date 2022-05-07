@@ -768,6 +768,14 @@ impl<'a> Subst<'a> {
       TyKind::Error => ty,
       TyKind::Array(t, e) => subst!(TyKind::Array; t; e),
       TyKind::Own(t) => subst!(|t, _| TyKind::Own(t); t;),
+      TyKind::Shr(lft, t) => {
+        let lft2 =
+          if let Some(lft2) = self.subst_lft(ctx, sp, lft) { lft2 }
+          else { return ctx.common.t_error };
+        let t2 = self.subst_ty(ctx, sp, t);
+        if lft == lft2 && t == t2 { return ty }
+        intern!(ctx, TyKind::Shr(lft2, t2))
+      }
       TyKind::Ref(lft, t) => {
         let lft2 =
           if let Some(lft2) = self.subst_lft(ctx, sp, lft) { lft2 }
@@ -919,6 +927,7 @@ impl<'a> FromGlobal<'a> for global::TyKind {
       &global::TyKind::Int(ity) => TyKind::Int(ity),
       global::TyKind::Array(ty, n) => TyKind::Array(ty.from_global(c), n.from_global(c)),
       global::TyKind::Own(ty) => TyKind::Own(ty.from_global(c)),
+      global::TyKind::Shr(lft, ty) => TyKind::Shr(*lft, ty.from_global(c)),
       global::TyKind::Ref(lft, ty) => TyKind::Ref(*lft, ty.from_global(c)),
       global::TyKind::RefSn(e) => TyKind::RefSn(e.from_global(c)),
       global::TyKind::List(tys) => TyKind::List(tys.from_global(c)),
@@ -1384,7 +1393,7 @@ impl TupleMatchKind {
         }))))
       }
       Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
-      Self::Own => (*exprs.get(1)?)?,
+      Self::Own | Self::Shr => (*exprs.get(1)?)?,
     })
   }
 
@@ -1396,7 +1405,7 @@ impl TupleMatchKind {
     match self {
       Self::Unit | Self::True => return ctx.common.e_unit,
       Self::Sn => return if idx == 0 { e } else { ctx.common.e_unit },
-      Self::Own => return if idx == 0 { ctx.as_pure(span, Err(span)) } else { ctx.common.e_unit },
+      Self::Own | Self::Shr => return if idx == 0 { ctx.as_pure(span, Err(span)) } else { e },
       Self::And => return e,
       Self::List | Self::Struct => if let ExprKind::List(es) = e.k {
         if es.len() == num { return es[idx as usize] }
@@ -1436,6 +1445,9 @@ enum TupleIter<'a> {
   /// An `own` pattern `{(v x) : (own T)}`, which expands to the expected type
   /// `{v : T} {x : &sn v}`.
   Own(Ty<'a>),
+  /// A `&` pattern `{(v x) : (& a T)}`, which expands to the expected type
+  /// `{v : (ref a T)} {x : s&sn v}`.
+  Shr(Lifetime, Ty<'a>),
 }
 
 impl Default for TupleIter<'_> {
@@ -1472,6 +1484,7 @@ impl<'a> TupleIter<'a> {
       Self::List(it) => it.next().copied(),
       Self::Args(args) => Some(args.subst.subst_ty(ctx, args.span, args.first.k.ty)),
       Self::Own(ty) => Some(ty),
+      Self::Shr(lft, ty) => Some(intern!(ctx, TyKind::Ref(*lft, ty))),
     }
   }
 
@@ -1490,7 +1503,7 @@ impl<'a> TupleIter<'a> {
         let_unchecked!(Self::Args(args) = mem::take(self),
           *self = Self::mk_args(ctx, args.span, args.subst, args.rest))
       }
-      Self::Own(_) => *self = Self::Ty(Some(intern!(ctx, TyKind::RefSn({
+      Self::Own(_) | Self::Shr(_, _) => *self = Self::Ty(Some(intern!(ctx, TyKind::RefSn({
         if let ExprKind::Var(v) = val.k {
           intern!(ctx, PlaceKind::Var(v))
         } else {
@@ -1888,6 +1901,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       TyKind::Int(_) |
       TyKind::Array(_, _) |
       TyKind::Own(_) |
+      TyKind::Shr(_, _) |
       TyKind::RefSn(_) |
       TyKind::List(_) |
       TyKind::Sn(_, _) |
@@ -2000,6 +2014,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       TyKind::Ghost(_) => self.common.num(0),
       TyKind::Bool => self.common.num(1),
       TyKind::Own(_) |
+      TyKind::Shr(_, _) |
       TyKind::RefSn(_) => self.common.num(8),
       TyKind::User(_, _, _) | // TODO
       TyKind::Infer(_) |
@@ -2189,6 +2204,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         if !coes.is_empty() { unimplemented!() }
         return Ok(coes)
       }
+      (TyKind::Shr(lft_a, a1), TyKind::Shr(lft_b, b1)) |
       (TyKind::Ref(lft_a, a1), TyKind::Ref(lft_b, b1)) => {
         check!(uninit, ghost);
         self.equate_lft(lft_a, lft_b)?;
@@ -2551,6 +2567,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         expect!(2);
         TuplePatternResult::Tuple(TupleMatchKind::Own, TupleIter::Own(ty))
       }
+      TyKind::Shr(lft, ty) => {
+        expect!(2);
+        TuplePatternResult::Tuple(TupleMatchKind::Shr, TupleIter::Shr(lft, ty))
+      }
       TyKind::List(tys) | TyKind::And(tys) => {
         expect!(tys.len());
         let tys = if wty.is_ty() { tys } else {
@@ -2696,6 +2716,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::TypeKind::Own(ty) => {
         let ty = self.lower_ty(ty, ExpectTy::Any);
         intern!(self, TyKind::Own(ty))
+      }
+      ast::TypeKind::Shr(lft, ty) => {
+        let lft = self.lower_opt_lft(&ty.span, lft);
+        let ty = self.lower_ty(ty, ExpectTy::Any);
+        intern!(self, TyKind::Shr(lft, ty))
       }
       ast::TypeKind::Ref(lft, ty) => {
         let lft = self.lower_opt_lft(&ty.span, lft);
@@ -3386,6 +3411,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             TyKind::Unit |
             TyKind::Array(_, _) |
             TyKind::Own(_) |
+            TyKind::Shr(_, _) |
             TyKind::List(_) |
             TyKind::Sn(_, _) |
             TyKind::Struct(_) |
@@ -3480,6 +3506,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             ret![List(ListKind::Struct, es), val, tgt]
           }
           TyKind::Own(_) => unimplemented!("malloc"),
+          TyKind::Shr(_, _) => unimplemented!("&T constructor"),
           TyKind::Sn(_, _) => {
             expect!(2);
             let_unchecked!((x, h) as [x, h] = &**es);
@@ -3559,7 +3586,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             }
           }
           else {
-            if matches!(ty.k, TyKind::Own(_) | TyKind::RefSn(_)) &&
+            if matches!(ty.k, TyKind::Own(_) | TyKind::Shr(_, _) | TyKind::RefSn(_)) &&
               matches!(tgt.k, TyKind::Int(ity) if IntTy::UInt(Size::S64) <= ity) {
               let tgt = self.common.t_uint(Size::S64);
               ret![Cast(Box::new(e), ty, hir::CastKind::Ptr), pe, tgt]

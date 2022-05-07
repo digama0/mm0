@@ -1055,7 +1055,7 @@ impl<'a> LowerCtx<'a> {
         match stmt {
           Statement::Let(lk, _, ty, rv) => {
             let ((LetKind::Let(v, _), ty) |
-              (LetKind::Own([_, (v, ty)]), _)) = (lk, ty);
+              (LetKind::Ptr([_, (v, ty)]), _)) = (lk, ty);
             let a = self.allocs.get(v.k);
             assert_ne!(a, AllocId::ZERO);
             if let RValue::Pun(_, p) = rv {

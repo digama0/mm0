@@ -168,8 +168,11 @@ pub enum TypeKind {
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Box<Type>, Box<Expr>),
   /// `own T` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  /// `x :> own T` iff `E. v: T, x |-> v`.
   Own(Box<Type>),
+  /// `& a T` is a type of shared pointers. The typehood predicate is
+  /// `x :> &'a T` iff `E. v: ref a T, x = &v`.
+  Shr(Option<Box<Spanned<Lifetime>>>, Box<Type>),
   /// `(ref T)` is a type of borrowed values. This type is elaborated to
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
@@ -244,12 +247,6 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-  /// Construct a shared reference `&'lft ty`, which is sugar for `&sn (ref 'lft ty)`.
-  #[must_use]
-  pub fn shr(span: FileSpan, lft: Option<Box<Spanned<Lifetime>>>, ty: Box<Type>) -> Self {
-    Self::Own(Box::new(Spanned {span, k: Self::Ref(lft, ty)}))
-  }
-
   /// Construct an existential type `exists (x1:T) .. (xn:Tn), ty`, which is sugar for
   /// `struct (x1: T1) .. (xn: Tn) (_: ty)`, where the last argument is anonymous.
   /// `v` is a fresh variable associated to this anonymous argument.

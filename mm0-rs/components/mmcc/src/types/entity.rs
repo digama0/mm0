@@ -215,7 +215,7 @@ make_prims! {
     /// The output token (passed to functions that produce output)
     Output: "Output",
     /// `own T` is a type of owned pointers. The typehood predicate is
-    /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+    /// `x :> own T` iff `E. v: T, x |-> v`.
     Own: "own",
     /// `(ref T)` is a type of borrowed values. This type is elaborated to
     /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
