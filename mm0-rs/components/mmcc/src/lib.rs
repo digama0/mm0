@@ -130,7 +130,8 @@ pub use types::Idx;
 pub use symbol::{Symbol, Interner, intern, init_dense_symbol_map};
 pub use nameck::DeclarationError;
 pub use ty::{CtxPrint, CtxDisplay, DisplayCtx};
-pub use linker::{LinkedCode, TEXT_START};
+pub use build_vcode::LowerErr;
+pub use linker::{LinkedCode, LinkerErr, TEXT_START};
 use types::{IdxVec, VarId, LambdaId, ty, ast, hir};
 
 /// Global configuration for the compiler.
@@ -282,7 +283,7 @@ impl<C: Config> Compiler<C> {
   /// The compiler is reset to the initial state after this operation, except for the user state
   /// [`Compiler::config`], so it can be used to compile another program but the library functions
   /// must first be loaded in again.
-  pub fn finish(&mut self) -> LinkedCode {
+  pub fn finish(&mut self) -> Result<Box<LinkedCode>, LinkerErr> {
     let names = std::mem::replace(&mut self.names, symbol::Interner::with(Self::make_names));
     let mir = std::mem::take(&mut self.mir);
     assert!(!self.has_type_errors);

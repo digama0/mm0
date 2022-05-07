@@ -34,12 +34,15 @@ pub(crate) type VCode = vcode::VCode<Inst>;
 /// edges to unvisited basic blocks as long as possible. Then start over somewhere else.
 /// This ordering is good for code placement since a jump or branch to the immediately following
 /// block can be elided.
-fn visit_blocks<'a>(cfg: &'a Cfg, mut f: impl FnMut(BlockId, &'a BasicBlock)) {
+fn visit_blocks<'a, E>(
+  cfg: &'a Cfg,
+  mut f: impl FnMut(BlockId, &'a BasicBlock) -> Result<(), E>
+) -> Result<(), E> {
   let mut visited: BitSet<BlockId> = BitSet::default();
   for (mut i, mut bl) in cfg.blocks() {
     if visited.insert(i) && !bl.is_dead() && bl.reachable {
       while let Some((_, j)) = {
-        f(i, bl);
+        f(i, bl)?;
         bl.successors().find(|&(_, j)| visited.insert(j))
       } {
         i = j;
@@ -47,6 +50,7 @@ fn visit_blocks<'a>(cfg: &'a Cfg, mut f: impl FnMut(BlockId, &'a BasicBlock)) {
       }
     }
   }
+  Ok(())
 }
 
 struct TyCtx<'a> {
@@ -114,6 +118,15 @@ impl From<&VRetAbi> for ArgAbi {
   }
 }
 
+struct GhostErr(VarId);
+
+/// Errors that can occur during lowering. Several user-level errors make it to this stage;
+/// the main one is that a ghost variable is used in a computationally relevant position.
+#[derive(Debug)]
+pub enum LowerErr {
+  /// A ghost variable was used in an operation that requires it to not be ghost.
+  GhostVarUsed(Spanned<VarId>),
+}
 /// The ABI expected by the caller.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum VCodeCtx<'a> {
@@ -206,14 +219,14 @@ impl<'a> LowerCtx<'a> {
     }), m.size)
   }
 
-  fn get_var(&self, v: VarId) -> &(RegMem, Size) {
+  fn get_var(&self, v: VarId) -> Result<&(RegMem, Size), GhostErr> {
     let a = self.allocs.get(v);
-    assert_ne!(a, AllocId::ZERO);
-    &self.var_map[&a]
+    if a == AllocId::ZERO { return Err(GhostErr(v)) }
+    Ok(&self.var_map[&a])
   }
 
-  fn get_place(&mut self, p: &Place) -> (RegMem, cl::Place) {
-    let mut rm = self.get_var(p.local).0;
+  fn get_place(&mut self, p: &Place) -> Result<(RegMem, cl::Place), GhostErr> {
+    let mut rm = self.get_var(p.local)?.0;
     let mut cl = cl::Place { projs: 0 };
     for proj in &p.proj {
       cl.projs += 1;
@@ -262,7 +275,7 @@ impl<'a> LowerCtx<'a> {
           if stride == 0 {
             cl::Projection::Ghost
           } else {
-            let (v, sz) = *self.get_var(i);
+            let (v, sz) = *self.get_var(i)?;
             let (v, cl) = v.into_reg(&mut self.code, sz);
             match &mut rm {
               RegMem::Reg(_) => panic!("register should be address-taken"),
@@ -277,7 +290,7 @@ impl<'a> LowerCtx<'a> {
       };
       self.code.trace.projs.push(proj);
     }
-    (rm, cl)
+    Ok((rm, cl))
   }
 
   fn get_const(&self, c: &Constant) -> (u32, ConstRef) {
@@ -329,47 +342,47 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn get_operand(&mut self, o: &Operand) -> (RegMemImm<u64>, cl::Operand) {
-    match o.place() {
+  fn get_operand(&mut self, o: &Operand) -> Result<(RegMemImm<u64>, cl::Operand), GhostErr> {
+    Ok(match o.place() {
       Ok(p) => {
-        let (p, cl) = self.get_place(p);
+        let (p, cl) = self.get_place(p)?;
         (p.into(), cl::Operand::Place(cl))
       }
       Err(c) => match self.get_const(c).1 {
         ConstRef::Value(val) => (val.into(), cl::Operand::Const(cl::Const::Value)),
         ConstRef::Ptr(addr) => (AMode::const_(addr).into(), cl::Operand::Const(cl::Const::Ptr)),
       }
-    }
+    })
   }
 
-  fn get_operand_reg(&mut self, o: &Operand, sz: Size) -> (VReg, cl::OperandReg) {
-    let (o, cl) = self.get_operand(o);
+  fn get_operand_reg(&mut self, o: &Operand, sz: Size) -> Result<(VReg, cl::OperandReg), GhostErr> {
+    let (o, cl) = self.get_operand(o)?;
     let (reg, cl2) = o.into_reg(&mut self.code, sz);
-    (reg, (cl, cl2))
+    Ok((reg, (cl, cl2)))
   }
 
-  fn get_operand_rm(&mut self, o: &Operand, sz: Size) -> (RegMem, cl::OperandRM) {
-    let (o, cl) = self.get_operand(o);
+  fn get_operand_rm(&mut self, o: &Operand, sz: Size) -> Result<(RegMem, cl::OperandRM), GhostErr> {
+    let (o, cl) = self.get_operand(o)?;
     let (rm, cl2) = o.into_rm(&mut self.code, sz);
-    (rm, (cl, cl2))
+    Ok((rm, (cl, cl2)))
   }
 
-  fn get_operand_32(&mut self, o: &Operand) -> (RegMemImm, cl::Operand32) {
-    let (o, cl) = self.get_operand(o);
+  fn get_operand_32(&mut self, o: &Operand) -> Result<(RegMemImm, cl::Operand32), GhostErr> {
+    let (o, cl) = self.get_operand(o)?;
     let (rmi, cl2) = o.into_rmi_32(&mut self.code);
-    (rmi, (cl, cl2))
+    Ok((rmi, (cl, cl2)))
   }
 
   fn build_shift_or_zero(&mut self,
     sz: Size, dst: RegMem, kind: ShiftKind, o1: &Operand, o2: &Operand
-  ) -> cl::RValue {
+  ) -> Result<cl::RValue, GhostErr> {
     let bits = sz.bits().expect("unbounded");
-    let (src1, cl1) = self.get_operand_reg(o1, sz);
-    cl::RValue::Shift(cl1, match self.get_operand(o2) {
+    let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+    Ok(cl::RValue::Shift(cl1, match self.get_operand(o2)? {
       (RegMemImm::Imm(n), _) => {
         if n >= bits.into() {
           let _ = self.code.emit_copy(sz, dst, 0_u64);
-          return cl::RValue::Shift(cl1, cl::Shift::Zero)
+          return Ok(cl::RValue::Shift(cl1, cl::Shift::Zero))
         }
         #[allow(clippy::cast_possible_truncation)]
         let temp = self.code.emit_shift(sz, kind, src1, Ok(n as u8));
@@ -383,34 +396,36 @@ impl<'a> LowerCtx<'a> {
         let temp = cond.select(sz, zero, temp);
         cl::Shift::Var((cl2, cl3), self.code.emit_copy(sz, dst, temp))
       }
-    })
+    }))
   }
 
   fn build_binop(&mut self,
     sz: Size, dst: RegMem, op: VBinop, o1: &Operand, o2: &Operand
-  ) -> cl::RValue {
+  ) -> Result<cl::RValue, GhostErr> {
     assert_ne!(sz, Size::Inf);
-    let (src1, cl1) = self.get_operand_reg(o1, sz);
-    let (src2, cl2) = self.get_operand_32(o2);
+    let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+    let (src2, cl2) = self.get_operand_32(o2)?;
     let temp = self.code.emit_binop(sz, op, src1, src2);
     let cl3 = self.code.emit_copy(sz, dst, temp);
-    cl::RValue::Binop(cl1, cl2, cl3)
+    Ok(cl::RValue::Binop(cl1, cl2, cl3))
 }
 
-  fn build_cmp(&mut self, sz: Size, dst: RegMem, cc: CC, o1: &Operand, o2: &Operand) -> cl::RValue {
+  fn build_cmp(&mut self,
+    sz: Size, dst: RegMem, cc: CC, o1: &Operand, o2: &Operand
+  ) -> Result<cl::RValue, GhostErr> {
     assert_ne!(sz, Size::Inf);
-    let (src1, cl1) = self.get_operand_reg(o1, sz);
-    let (src2, cl2) = self.get_operand_32(o2);
+    let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+    let (src2, cl2) = self.get_operand_32(o2)?;
     let temp = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2).into_reg();
     let cl3 = self.code.emit_copy(Size::S8, dst, temp);
-    cl::RValue::Cmp(cl1, cl2, cl3)
+    Ok(cl::RValue::Cmp(cl1, cl2, cl3))
   }
 
   fn build_as(&mut self, dst: RegMem, from: IntTy, to: IntTy, o: &Operand
-  ) -> (cl::OperandRM, cl::As) {
+  ) -> Result<(cl::OperandRM, cl::As), GhostErr> {
     let sz = from.size().min(to.size()); assert_ne!(sz, Size::Inf);
-    let (src, cl1) = self.get_operand_rm(o, sz);
-    (cl1, match ExtMode::new(sz, to.size()) {
+    let (src, cl1) = self.get_operand_rm(o, sz)?;
+    Ok((cl1, match ExtMode::new(sz, to.size()) {
       None => cl::As::Truncate(self.code.emit_copy(sz, dst, src)),
       Some(ext_mode) => {
         let temp = self.code.fresh_vreg();
@@ -420,7 +435,7 @@ impl<'a> LowerCtx<'a> {
         });
         cl::As::Extend(self.code.emit_copy(to.size(), dst, temp))
       }
-    })
+    }))
   }
 
   fn build_memcpy(&mut self, _tysize: u64, sz: Size, dst: RegMem, src: AMode) -> cl::Copy {
@@ -431,57 +446,59 @@ impl<'a> LowerCtx<'a> {
     }
   }
 
-  fn build_move(&mut self, _tysize: u64, sz: Size, dst: RegMem, o: &Operand) -> cl::Move {
+  fn build_move(&mut self,
+    _tysize: u64, sz: Size, dst: RegMem, o: &Operand
+  ) -> Result<cl::Move, GhostErr> {
     if sz == Size::Inf {
       unimplemented!("large copy");
     } else {
-      let (src, cl1) = self.get_operand(o);
-      cl::Move::Small(cl1, self.code.emit_copy(sz, dst, src))
+      let (src, cl1) = self.get_operand(o)?;
+      Ok(cl::Move::Small(cl1, self.code.emit_copy(sz, dst, src)))
     }
   }
 
   fn build_rvalue(&mut self,
     ty: &TyKind, tysize: u64, sz: Size, dst: RegMem, rv: &RValue
-  ) -> cl::RValue {
-    match rv {
-      RValue::Use(o) => cl::RValue::Use(self.build_move(tysize, sz, dst, o)),
+  ) -> Result<cl::RValue, GhostErr> {
+    Ok(match rv {
+      RValue::Use(o) => cl::RValue::Use(self.build_move(tysize, sz, dst, o)?),
       RValue::Unop(Unop::Not, o) => {
         assert_ne!(sz, Size::Inf);
-        let (src, cl1) = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz)?;
         let temp = self.code.emit_binop(sz, VBinop::Xor, src, 1);
         cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Unop(Unop::Neg(_), o) => {
         assert_ne!(sz, Size::Inf);
-        let (src, cl1) = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz)?;
         let temp = self.code.emit_unop(sz, VUnop::Neg, src);
         cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Unop(Unop::BitNot(_), o) => {
         assert_ne!(sz, Size::Inf);
-        let (src, cl1) = self.get_operand_reg(o, sz);
+        let (src, cl1) = self.get_operand_reg(o, sz)?;
         let temp = self.code.emit_unop(sz, VUnop::Not, src);
         cl::RValue::Unop(cl1, self.code.emit_copy(sz, dst, temp))
       }
       &RValue::Unop(Unop::As(from, to), ref o) => {
-        let (cl1, cl2) = self.build_as(dst, from, to, o);
+        let (cl1, cl2) = self.build_as(dst, from, to, o)?;
         cl::RValue::As(cl1, cl2)
       }
       RValue::Binop(Binop::Add(ity), o1, o2) =>
-        self.build_binop(ity.size(), dst, VBinop::Add, o1, o2),
+        self.build_binop(ity.size(), dst, VBinop::Add, o1, o2)?,
       RValue::Binop(Binop::Mul(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let (src1, cl1) = self.get_operand_reg(o1, sz);
-        let (src2, cl2) = self.get_operand_rm(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+        let (src2, cl2) = self.get_operand_rm(o2, sz)?;
         let temp = self.code.emit_mul(sz, src1, src2).0;
         cl::RValue::Mul(cl1, cl2, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Binop(Binop::Sub(ity), o1, o2) =>
-        self.build_binop(ity.size(), dst, VBinop::Sub, o1, o2),
+        self.build_binop(ity.size(), dst, VBinop::Sub, o1, o2)?,
       RValue::Binop(Binop::Max(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let (src1, cl1) = self.get_operand_reg(o1, sz);
-        let (src2, cl2) = self.get_operand_reg(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+        let (src2, cl2) = self.get_operand_reg(o2, sz)?;
         let cc = if ity.signed() { CC::LE } else { CC::BE };
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2);
         let temp = cond.select(sz, src2, src1);
@@ -489,48 +506,48 @@ impl<'a> LowerCtx<'a> {
       }
       RValue::Binop(Binop::Min(ity), o1, o2) => {
         let sz = ity.size(); assert_ne!(sz, Size::Inf);
-        let (src1, cl1) = self.get_operand_reg(o1, sz);
-        let (src2, cl2) = self.get_operand_reg(o2, sz);
+        let (src1, cl1) = self.get_operand_reg(o1, sz)?;
+        let (src2, cl2) = self.get_operand_reg(o2, sz)?;
         let cc = if ity.signed() { CC::LE } else { CC::BE };
         let cond = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2);
         let temp = cond.select(sz, src1, src2);
         cl::RValue::Min(cl1, cl2, self.code.emit_copy(sz, dst, temp))
       }
       RValue::Binop(Binop::And, o1, o2) =>
-        self.build_binop(Size::S8, dst, VBinop::And, o1, o2),
+        self.build_binop(Size::S8, dst, VBinop::And, o1, o2)?,
       RValue::Binop(Binop::Or, o1, o2) =>
-        self.build_binop(Size::S8, dst, VBinop::Or, o1, o2),
+        self.build_binop(Size::S8, dst, VBinop::Or, o1, o2)?,
       RValue::Binop(Binop::BitAnd(ity), o1, o2) =>
-        self.build_binop(ity.size(), dst, VBinop::And, o1, o2),
+        self.build_binop(ity.size(), dst, VBinop::And, o1, o2)?,
       RValue::Binop(Binop::BitOr(ity), o1, o2) =>
-        self.build_binop(ity.size(), dst, VBinop::Or, o1, o2),
+        self.build_binop(ity.size(), dst, VBinop::Or, o1, o2)?,
       RValue::Binop(Binop::BitXor(ity), o1, o2) =>
-        self.build_binop(ity.size(), dst, VBinop::Xor, o1, o2),
+        self.build_binop(ity.size(), dst, VBinop::Xor, o1, o2)?,
       RValue::Binop(Binop::Shl(_), o1, o2) =>
-        self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2),
+        self.build_shift_or_zero(sz, dst, ShiftKind::Shl, o1, o2)?,
       RValue::Binop(Binop::Shr(ity), o1, o2) => {
         let kind = if ity.signed() { ShiftKind::ShrA } else { ShiftKind::ShrL };
-        self.build_shift_or_zero(sz, dst, kind, o1, o2)
+        self.build_shift_or_zero(sz, dst, kind, o1, o2)?
       }
       RValue::Binop(Binop::Lt(ity), o1, o2) =>
-        self.build_cmp(ity.size(), dst, if ity.signed() { CC::L } else { CC::B }, o1, o2),
+        self.build_cmp(ity.size(), dst, if ity.signed() { CC::L } else { CC::B }, o1, o2)?,
       RValue::Binop(Binop::Le(ity), o1, o2) =>
-        self.build_cmp(ity.size(), dst, if ity.signed() { CC::LE } else { CC::BE }, o1, o2),
-      RValue::Binop(Binop::Eq(ity), o1, o2) => self.build_cmp(ity.size(), dst, CC::Z, o1, o2),
-      RValue::Binop(Binop::Ne(ity), o1, o2) => self.build_cmp(ity.size(), dst, CC::NZ, o1, o2),
+        self.build_cmp(ity.size(), dst, if ity.signed() { CC::LE } else { CC::BE }, o1, o2)?,
+      RValue::Binop(Binop::Eq(ity), o1, o2) => self.build_cmp(ity.size(), dst, CC::Z, o1, o2)?,
+      RValue::Binop(Binop::Ne(ity), o1, o2) => self.build_cmp(ity.size(), dst, CC::NZ, o1, o2)?,
       &RValue::Eq(ref ty, invert, ref o1, ref o2) => {
         let meta = ty.meta(self.names).expect("size of type not a compile time constant");
         let sz = Size::from_u64(meta.size);
         if meta.on_stack {
           unimplemented!("memcmp")
         } else {
-          self.build_cmp(sz, dst, if invert { CC::NZ } else { CC::Z }, o1, o2)
+          self.build_cmp(sz, dst, if invert { CC::NZ } else { CC::Z }, o1, o2)?
         }
       }
       RValue::Pun(..) => unreachable!("handled in build()"),
       RValue::Cast(_, o, tyin) =>
         if let (Some(from), Some(to)) = (tyin.as_int_ty(), ty.as_int_ty()) {
-          let (cl1, cl2) = self.build_as(dst, from, to, o);
+          let (cl1, cl2) = self.build_as(dst, from, to, o)?;
           cl::RValue::Cast(cl1, cl2)
         } else {
           unimplemented!("casting between non-integral types: {:?} -> {:?}", tyin, ty)
@@ -556,7 +573,7 @@ impl<'a> LowerCtx<'a> {
                 }
               }
               last_off = sz;
-              cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), rm, o))
+              cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), rm, o)?)
             }
           };
           self.code.trace.lists.push(elem);
@@ -564,7 +581,7 @@ impl<'a> LowerCtx<'a> {
         cl::RValue::List(os.len().try_into().expect("overflow"))
       }
       RValue::Array(os) => if let [ref o] = **os {
-        cl::RValue::Array1(self.build_move(tysize, sz, dst, o))
+        cl::RValue::Array1(self.build_move(tysize, sz, dst, o)?)
       } else {
         let ty = if let TyKind::Array(ty, _) = ty { ty } else { unreachable!() };
         let sz64 = ty.sizeof(self.names).expect("impossible");
@@ -578,7 +595,7 @@ impl<'a> LowerCtx<'a> {
             RegMem::Mem(a) => a
           };
           for o in &**os {
-            let elem = cl::Elem::Move(self.build_move(sz64, sz, RegMem::Mem(a), o));
+            let elem = cl::Elem::Move(self.build_move(sz64, sz, RegMem::Mem(a), o)?);
             a = &a + sz32;
             self.code.trace.lists.push(elem);
           }
@@ -589,14 +606,14 @@ impl<'a> LowerCtx<'a> {
       RValue::Mm0(..) |
       RValue::Typeof(_) => cl::RValue::Ghost,
       RValue::Borrow(p) => {
-        let (rm, cl1) = self.get_place(p);
+        let (rm, cl1) = self.get_place(p)?;
         let temp = match rm {
           RegMem::Reg(_) => panic!("register should be address-taken"),
           RegMem::Mem(a) => self.code.emit_lea(Size::S64, a),
         };
         cl::RValue::Borrow(cl1, self.code.emit_copy(sz, dst, temp))
       }
-    }
+    })
   }
 
   fn build_jump(&mut self,
@@ -604,7 +621,7 @@ impl<'a> LowerCtx<'a> {
     block_args: &ChunkVec<BlockId, VReg>,
     tgt: BlockId,
     args: &[(VarId, bool, Operand)]
-  ) -> cl::Terminator {
+  ) -> Result<cl::Terminator, GhostErr> {
     let params = &block_args[tgt];
     let mut params_it = params.iter().peekable();
     for &(v, r, ref o) in args {
@@ -615,7 +632,7 @@ impl<'a> LowerCtx<'a> {
         if let RegMem::Reg(v) = dst {
           if params_it.peek() == Some(&&v) { params_it.next(); }
         }
-        cl::Elem::Move(self.build_move(size, sz, dst, o))
+        cl::Elem::Move(self.build_move(size, sz, dst, o)?)
       } else {
         cl::Elem::Ghost
       };
@@ -626,10 +643,10 @@ impl<'a> LowerCtx<'a> {
       dst: VBlockId(tgt.0),
       params: params.iter().map(|&v| ROperand::reg_use(v.0)).collect()
     })));
-    cl::Terminator::Jump(args.len().try_into().expect("overflow"))
+    Ok(cl::Terminator::Jump(args.len().try_into().expect("overflow")))
   }
 
-  fn build_ret(&mut self, args: &[(VarId, bool, Operand)]) {
+  fn build_ret(&mut self, args: &[(VarId, bool, Operand)]) -> Result<(), GhostErr> {
     assert!(self.can_return);
     assert_eq!(args.len(), self.abi_rets.len());
     let incoming = AMode::spill(SpillId::INCOMING);
@@ -640,29 +657,30 @@ impl<'a> LowerCtx<'a> {
         VRetAbi::Ghost => cl::Elem::Ghost,
         VRetAbi::Reg(reg, sz) => {
           let dst = self.code.fresh_vreg();
-          let (src, cl1) = self.get_operand(o);
+          let (src, cl1) = self.get_operand(o)?;
           let _ = self.code.emit_copy(sz, dst.into(), src);
           params.push(ROperand::reg_fixed_use(dst.0, reg.0));
           cl::Elem::Operand(cl1)
         }
         VRetAbi::Mem { off, sz } => {
           let sz = sz.into();
-          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), (&incoming + off).into(), o))
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), (&incoming + off).into(), o)?)
         }
         VRetAbi::Boxed { reg: (dst, _), sz } => {
           let sz = sz.into();
-          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(dst).into(), o))
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(dst).into(), o)?)
         }
         VRetAbi::BoxedMem { off, sz } => {
           let ptr = self.code.fresh_vreg();
           self.code.emit(Inst::load_mem(Size::S64, ptr, &incoming + off));
           let sz = sz.into();
-          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(ptr).into(), o))
+          cl::Elem::Move(self.build_move(sz, Size::from_u64(sz), AMode::reg(ptr).into(), o)?)
         }
       };
       self.code.trace.lists.push(cl);
     }
     self.code.emit(Inst::Epilogue { params: params.into() });
+    Ok(())
   }
 
   fn build_call(&mut self,
@@ -672,7 +690,7 @@ impl<'a> LowerCtx<'a> {
     reach: bool,
     tgt: BlockId,
     rets: &[(bool, VarId)],
-  ) -> cl::Terminator {
+  ) -> Result<cl::Terminator, GhostErr> {
     let fabi = &self.funcs[f];
     assert!(fabi.args.len() == args.len());
     let outgoing = AMode::spill(SpillId::OUTGOING);
@@ -682,7 +700,7 @@ impl<'a> LowerCtx<'a> {
         match *arg {
           ArgAbi::Ghost => cl::Elem::Ghost,
           ArgAbi::Reg(reg, sz) => {
-            let (src, cl1) = self.get_operand(o);
+            let (src, cl1) = self.get_operand(o)?;
             let temp = self.code.fresh_vreg();
             let _ = self.code.emit_copy(sz, temp.into(), src);
             operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
@@ -690,12 +708,13 @@ impl<'a> LowerCtx<'a> {
           }
           ArgAbi::Mem { off, sz } => {
             let sz64 = sz.into();
-            cl::Elem::Move(self.build_move(sz64, Size::from_u64(sz64), (&outgoing + off).into(), o))
+            cl::Elem::Move(
+              self.build_move(sz64, Size::from_u64(sz64), (&outgoing + off).into(), o)?)
           }
           ArgAbi::Boxed { reg, sz } => {
             let sz64 = sz.into();
             let sz = Size::from_u64(sz64);
-            let (o, cl1) = self.get_operand(o);
+            let (o, cl1) = self.get_operand(o)?;
             let (src, cl2) = o.into_mem(&mut self.code, sz);
             let temp = self.code.emit_lea(Size::S64, src);
             operands.push(ROperand::reg_fixed_use(temp.0, reg.0));
@@ -704,7 +723,7 @@ impl<'a> LowerCtx<'a> {
           ArgAbi::BoxedMem { off, sz } => {
             let sz64 = sz.into();
             let sz = Size::from_u64(sz64);
-            let (o, cl1) = self.get_operand(o);
+            let (o, cl1) = self.get_operand(o)?;
             let (src, cl2) = o.into_mem(&mut self.code, sz);
             let temp = self.code.emit_lea(Size::S64, src);
             let _ = self.code.emit_copy(Size::S64, (&outgoing + off).into(), temp);
@@ -784,7 +803,7 @@ impl<'a> LowerCtx<'a> {
     } else {
       self.emit(Inst::CallKnown { f, operands: operands.into(), clobbers: None });
     }
-    cl::Terminator::Call(f)
+    Ok(cl::Terminator::Call(f))
   }
 
   fn build_intrinsic(&mut self,
@@ -793,37 +812,37 @@ impl<'a> LowerCtx<'a> {
     args: &[(bool, Operand)],
     tgt: BlockId,
     rets: &[(bool, VarId)],
-  ) -> cl::Terminator {
+  ) -> Result<cl::Terminator, GhostErr> {
     const CV: cl::Operand = cl::Operand::Const(cl::Const::Value);
     let mut rmis = ArrayVec::<(RegMemImm<u64>, cl::Operand), 6>::new();
     let (f, (ret_used, ret)) = match (intrinsic, rets, args) {
       (IntrinsicProc::Open, &[ret], [(true, fname)]) => {
-        rmis.extend([self.get_operand(fname), (0.into(), CV), (0.into(), CV)]);
+        rmis.extend([self.get_operand(fname)?, (0.into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
       }
       (IntrinsicProc::Create, &[ret], [(true, fname)]) => {
-        rmis.extend([self.get_operand(fname), ((1 + (1<<6) + (1<<9)).into(), CV), (0.into(), CV)]);
+        rmis.extend([self.get_operand(fname)?, ((1 + (1<<6) + (1<<9)).into(), CV), (0.into(), CV)]);
         (SysCall::Open, ret)
       }
       (IntrinsicProc::Read, &[ret], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
-        rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
+        rmis.extend([self.get_operand(fd)?, self.get_operand(p)?, self.get_operand(count)?]);
         (SysCall::Read, ret)
       }
       (IntrinsicProc::Write, &[ret], [(true, fd), (true, count), (_, _buf), (true, p)]) => {
-        rmis.extend([fd, p, count].map(|x| self.get_operand(x)));
+        rmis.extend([self.get_operand(fd)?, self.get_operand(p)?, self.get_operand(count)?]);
         (SysCall::Write, ret)
       }
       (IntrinsicProc::FStat, &[(_, _buf_new), ret], [(true, fd), (_, _buf_old), (true, p)]) => {
-        rmis.extend([fd, p].map(|x| self.get_operand(x)));
+        rmis.extend([self.get_operand(fd)?, self.get_operand(p)?]);
         (SysCall::FStat, ret)
       }
       (IntrinsicProc::MMap, &[ret], [(true, len), (true, prot), (true, fd)]) => {
         rmis.extend([
           (0.into(), CV),
-          self.get_operand(len),
-          self.get_operand(prot),
+          self.get_operand(len)?,
+          self.get_operand(prot)?,
           (2.into(), CV),
-          self.get_operand(fd),
+          self.get_operand(fd)?,
           (0.into(), CV),
         ]);
         (SysCall::MMap, ret)
@@ -831,8 +850,8 @@ impl<'a> LowerCtx<'a> {
       (IntrinsicProc::MMapAnon, &[ret], [(true, len), (true, prot)]) => {
         rmis.extend([
           (0.into(), CV),
-          self.get_operand(len),
-          self.get_operand(prot),
+          self.get_operand(len)?,
+          self.get_operand(prot)?,
           ((2+32).into(), CV),
           (u64::from(u32::MAX).into(), CV),
           (0.into(), CV),
@@ -852,7 +871,7 @@ impl<'a> LowerCtx<'a> {
       None
     };
     self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough { dst: VBlockId(tgt.0) })));
-    cl::Terminator::Intrinsic(intrinsic, cl2)
+    Ok(cl::Terminator::Intrinsic(intrinsic, cl2))
   }
 
   fn build_syscall(&mut self, f: SysCall, args: &[(RegMemImm<u64>, cl::Operand)], dst: VReg) {
@@ -873,9 +892,9 @@ impl<'a> LowerCtx<'a> {
 
   fn build_terminator(&mut self,
     block_args: &ChunkVec<BlockId, VReg>, vbl: VBlockId, term: &Terminator
-  ) -> cl::Terminator {
-    match *term {
-      Terminator::Jump(tgt, ref args, _) => self.build_jump(vbl, block_args, tgt, args),
+  ) -> Result<cl::Terminator, GhostErr> {
+    Ok(match *term {
+      Terminator::Jump(tgt, ref args, _) => self.build_jump(vbl, block_args, tgt, args)?,
       Terminator::Jump1(tgt) => {
         self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
@@ -883,7 +902,7 @@ impl<'a> LowerCtx<'a> {
         cl::Terminator::Jump1
       }
       Terminator::Return(_, ref args) => {
-        self.build_ret(args);
+        self.build_ret(args)?;
         cl::Terminator::Return
       }
       Terminator::Exit(_) => {
@@ -892,13 +911,13 @@ impl<'a> LowerCtx<'a> {
         cl::Terminator::Exit
       }
       Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
-        let (src, cl) = self.get_operand_reg(o, Size::S8);
+        let (src, cl) = self.get_operand_reg(o, Size::S8)?;
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));
         cl::Terminator::If(cl)
       }
       Terminator::Assert(ref o, _, true, bl) => {
-        let (src, cl1) = self.get_operand_reg(o, Size::S8);
+        let (src, cl1) = self.get_operand_reg(o, Size::S8)?;
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.assert(VBlockId(bl.0))));
         cl::Terminator::Assert(cl1)
@@ -910,18 +929,18 @@ impl<'a> LowerCtx<'a> {
       Terminator::Call { f, ref tys, ref args, reach, tgt, ref rets, .. } => {
         if !tys.is_empty() { unimplemented!("monomorphization") }
         if let Some(&f) = self.func_mono.get(&f) {
-          self.build_call(vbl, f, args, reach, tgt, rets)
+          self.build_call(vbl, f, args, reach, tgt, rets)?
         } else if let Some(&Entity::Proc(Spanned {
           k: ProcTc::Typed(ProcTy {intrinsic: Some(intrinsic), ..}), ..
         })) = self.names.get(&f) {
-          self.build_intrinsic(vbl, intrinsic, args, tgt, rets)
+          self.build_intrinsic(vbl, intrinsic, args, tgt, rets)?
         } else {
           panic!("function ABI not found");
         }
       }
       Terminator::Unreachable(_) |
       Terminator::Dead => unreachable!(),
-    }
+    })
   }
 
   fn build_block_args(&mut self) -> ChunkVec<BlockId, VReg> {
@@ -1025,7 +1044,54 @@ impl<'a> LowerCtx<'a> {
     self.code.grow_spill(SpillId::INCOMING, off);
   }
 
-  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) {
+  fn build_block(&mut self,
+    block_args: &ChunkVec<BlockId, VReg>, bl: &'a BasicBlock, vblock: VBlockId
+  ) -> Result<(), GhostErr> {
+    self.code.trace.stmts.push_new();
+    let proj_start = self.code.trace.projs.len().try_into().expect("overflow");
+    let list_start = self.code.trace.lists.len().try_into().expect("overflow");
+    for stmt in &bl.stmts {
+      let cl = if stmt.relevant() {
+        match stmt {
+          Statement::Let(lk, _, ty, rv) => {
+            let ((LetKind::Let(v, _), ty) |
+              (LetKind::Own([_, (v, ty)]), _)) = (lk, ty);
+            let a = self.allocs.get(v.k);
+            assert_ne!(a, AllocId::ZERO);
+            if let RValue::Pun(_, p) = rv {
+              let (rm, cl) = self.get_place(p)?;
+              self.var_map.entry(a).or_insert_with(||
+                (rm, Size::from_u64(self.allocs[a].m.size)));
+              cl::Statement::Let(cl::RValue::Pun(cl))
+            } else {
+              let (&(dst, sz), size) = self.get_alloc(a);
+              // self.code.emit(Inst::LetStart { size: size.try_into().expect("too large") });
+              let cl = self.build_rvalue(ty, size, sz, dst, rv)?;
+              // self.code.emit(Inst::LetEnd { dst });
+              cl::Statement::Let(cl)
+            }
+          }
+          Statement::Assign(p, ty, o, _) => {
+            let size = ty.sizeof(self.names).expect("size of type not a compile time constant");
+            let (dst, cl) = self.get_place(p)?;
+            cl::Statement::Assign(cl, self.build_move(size, Size::from_u64(size), dst, o)?)
+          }
+          Statement::LabelGroup(..) | Statement::PopLabelGroup |
+          Statement::DominatedBlock(..) => cl::Statement::Ghost
+        }
+      } else {
+        cl::Statement::Ghost
+      };
+      self.code.trace.stmts.extend_last(cl);
+      stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v.k, &v.span, ty.clone()));
+    }
+    let cl = self.build_terminator(block_args, vblock, bl.terminator())?;
+    self.code.trace.block.push(cl::Block { proj_start, list_start, term: cl });
+    self.code.finish_block();
+    Ok(())
+  }
+
+  fn build_blocks(&mut self, block_args: &ChunkVec<BlockId, VReg>, ctx: VCodeCtx<'_>) -> Result<(), LowerErr> {
     visit_blocks(self.cfg, move |i, bl| {
       assert!(!bl.is_dead()); // dead blocks are not reachable from the entry
       let vblock = self.code.new_block(i, block_args[i].iter().copied());
@@ -1039,48 +1105,12 @@ impl<'a> LowerCtx<'a> {
         let val = self.get_alloc(a).0 .0;
         self.code.emit(Inst::BlockParam { var: v.k, val });
       }
-      self.code.trace.stmts.push_new();
-      let proj_start = self.code.trace.projs.len().try_into().expect("overflow");
-      let list_start = self.code.trace.lists.len().try_into().expect("overflow");
-      for stmt in &bl.stmts {
-        let cl = if stmt.relevant() {
-          match stmt {
-            Statement::Let(lk, _, ty, rv) => {
-              let ((LetKind::Let(v, _), ty) |
-                (LetKind::Own([_, (v, ty)]), _)) = (lk, ty);
-              let a = self.allocs.get(v.k);
-              assert_ne!(a, AllocId::ZERO);
-              if let RValue::Pun(_, p) = rv {
-                let (rm, cl) = self.get_place(p);
-                self.var_map.entry(a).or_insert_with(||
-                  (rm, Size::from_u64(self.allocs[a].m.size)));
-                cl::Statement::Let(cl::RValue::Pun(cl))
-              } else {
-                let (&(dst, sz), size) = self.get_alloc(a);
-                // self.code.emit(Inst::LetStart { size: size.try_into().expect("too large") });
-                let cl = self.build_rvalue(ty, size, sz, dst, rv);
-                // self.code.emit(Inst::LetEnd { dst });
-                cl::Statement::Let(cl)
-              }
-            }
-            Statement::Assign(p, ty, o, _) => {
-              let size = ty.sizeof(self.names).expect("size of type not a compile time constant");
-              let (dst, cl) = self.get_place(p);
-              cl::Statement::Assign(cl, self.build_move(size, Size::from_u64(size), dst, o))
-            }
-            Statement::LabelGroup(..) | Statement::PopLabelGroup |
-            Statement::DominatedBlock(..) => cl::Statement::Ghost
-          }
-        } else {
-          cl::Statement::Ghost
-        };
-        self.code.trace.stmts.extend_last(cl);
-        stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v.k, &v.span, ty.clone()))
-      }
-      let cl = self.build_terminator(block_args, vblock, bl.terminator());
-      self.code.trace.block.push(cl::Block { proj_start, list_start, term: cl });
-      self.code.finish_block();
-    });
+      self.build_block(block_args, bl, vblock).map_err(|GhostErr(v)| {
+        let span = self.ctx.ctx.get(&v)
+          .unwrap_or_else(|| unreachable!("missing variable {:?}", v)).0.clone();
+        LowerErr::GhostVarUsed(Spanned { span, k: v })
+      })
+    })
   }
 
   fn finish(self) -> VCode {
@@ -1118,9 +1148,9 @@ pub(crate) fn build_vcode(
   cfg: &Cfg,
   allocs: &Allocations,
   ctx: VCodeCtx<'_>,
-) -> VCode {
+) -> Result<VCode, LowerErr> {
   let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs, ctx);
   let block_args = lctx.build_block_args();
-  lctx.build_blocks(&block_args, ctx);
-  lctx.finish()
+  lctx.build_blocks(&block_args, ctx)?;
+  Ok(lctx.finish())
 }

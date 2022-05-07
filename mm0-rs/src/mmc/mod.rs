@@ -11,7 +11,7 @@ mod parser;
 mod proof;
 
 use std::{collections::HashMap, rc::Rc};
-use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}};
+use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkerErr};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
@@ -168,7 +168,12 @@ impl Compiler {
     if compiler.has_type_errors() {
       return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
     }
-    proof::render_proof(&self.predef, elab, sp, name, &compiler.finish().proof())
+    let code = compiler.finish().map_err({
+      |LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v))| {
+        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position")
+      }
+    })?;
+    proof::render_proof(&self.predef, elab, sp, name, &code.proof())
   }
 
   /// Main entry point to the compiler. Does basic parsing and forwards to

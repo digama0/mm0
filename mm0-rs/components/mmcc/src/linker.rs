@@ -2,17 +2,17 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::build_vcode::VCodeCtx;
+use crate::build_vcode::{VCodeCtx, build_vcode};
 use crate::codegen::FUNCTION_ALIGN;
 use crate::mir_opt::storage::{Allocations, AllocId};
-use crate::regalloc::{PCode, regalloc_vcode};
+use crate::regalloc::PCode;
 use crate::types::global::{TyKind, ExprKind};
 use crate::types::entity::{ConstTc, Entity, ProcTc};
 use crate::types::mir::{
   Cfg, ConstKind, Constant, Place, Proc, Terminator, Ty, VarId, Visitor};
 use crate::types::vcode::{GlobalId, ProcId, ConstRef, ProcAbi};
 use crate::types::{IdxVec, Size};
-use crate::Symbol;
+use crate::{Symbol, LowerErr};
 
 type GenericCall = (Symbol, Box<[Ty]>);
 
@@ -230,6 +230,17 @@ pub struct LinkedCode {
   pub(crate) text_size: u32,
 }
 
+/// Errors that occur during linking.
+#[derive(Debug)]
+pub enum LinkerErr {
+  /// An error that occurred during `VCode` lowering
+  LowerErr(LowerErr),
+}
+
+impl From<LowerErr> for LinkerErr {
+  fn from(v: LowerErr) -> Self { Self::LowerErr(v) }
+}
+
 impl LinkedCode {
   pub(crate) fn link(
     names: &HashMap<Symbol, Entity>,
@@ -237,7 +248,7 @@ impl LinkedCode {
     init: Cfg,
     allocs: &Allocations,
     globals: &[(Symbol, bool, VarId, Ty)]
-  ) -> Self {
+  ) -> Result<Box<Self>, LinkerErr> {
     let mut coll = Collector::new(names, &mir);
     coll.collect_cfg(&init, &[]);
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
@@ -245,10 +256,11 @@ impl LinkedCode {
     for &f in &coll.postorder {
       let sym = coll.funcs.1[f];
       if let Some(proc) = mir.get(&sym) {
-        let (abi, code) = regalloc_vcode(
+        let (abi, code) = build_vcode(
           names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
           proc.allocs.as_deref().expect("optimized already"),
-          VCodeCtx::Proc(&proc.rets));
+          VCodeCtx::Proc(&proc.rets)
+        )?.regalloc();
         // println!("mir {} = {:#?}", sym, proc);
         // println!("abi {} = {:#?}", sym, abi);
         // println!("code {} = {:#?}", sym, code);
@@ -267,8 +279,9 @@ impl LinkedCode {
       global_size += size;
       Some((g, off, size))
     }).collect();
-    let init_code = regalloc_vcode(
-      names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)).1;
+    let init_code = build_vcode(
+      names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)
+    )?.regalloc().1;
 
     let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     let funcs = func_code.0.into_iter().map(|code| {
@@ -278,7 +291,7 @@ impl LinkedCode {
       (cur, code)
     }).collect();
 
-    Self {
+    Ok(Box::new(Self {
       consts: coll.consts,
       globals: globals_out,
       global_size,
@@ -289,6 +302,6 @@ impl LinkedCode {
       postorder: coll.postorder,
       text_size: pos - TEXT_START,
       mir,
-    }
+    }))
   }
 }
