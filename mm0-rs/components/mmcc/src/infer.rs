@@ -872,7 +872,7 @@ impl<'a> FromGlobal<'a> for global::TuplePatternS {
       ty: self.ty.from_global(c),
       var: *c.tr_var.entry(self.var).or_insert_with(|| {
         let name = if let global::TuplePatternKind::Name(a) = self.k { a } else { Symbol::UNDER };
-        c.ic.fresh_var(name)
+        c.ic.fresh_var(Spanned::dummy(name))
       }),
       k: match self.k {
         global::TuplePatternKind::Name(a) => TuplePatternKind::Name(a),
@@ -1118,7 +1118,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C, I> {
   fn fmt_var(&self, v: VarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let (ic, inner) = &mut *self.inner.borrow_mut();
-    let name = ic.var_name(v);
+    let name = ic.var_name(v).k;
     let n = inner.vars.entry(name).or_default().get(v);
     if name == Symbol::UNDER {
       write!(f, "_{}", n+1)
@@ -1250,7 +1250,7 @@ pub struct InferCtx<'a, 'n> {
   /// The next generation.
   generation_count: GenId,
   /// The mapping from variables to their user-provided names.
-  var_names: IdxVec<VarId, Symbol>,
+  var_names: IdxVec<VarId, Spanned<Symbol>>,
   /// The set of labels in scope.
   labels: HashMap<VarId, LabelData<'a>>,
   /// The return type of the current function.
@@ -1571,7 +1571,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   pub fn new(
     alloc: &'a Bump,
     names: &'n mut HashMap<Symbol, Entity>,
-    var_names: IdxVec<VarId, Symbol>,
+    var_names: IdxVec<VarId, Spanned<Symbol>>,
   ) -> Self {
     let mut interner = Default::default();
     let common = Common::new(&mut interner, alloc);
@@ -1609,12 +1609,12 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     ToGlobalCtx::new(&mut self.mvars, &mut self.errors, self.common.t_error, self.common.e_error)
   }
 
-  fn var_name(&self, v: VarId) -> Symbol { self.var_names[v] }
+  fn var_name(&self, v: VarId) -> &Spanned<Symbol> { &self.var_names[v] }
 
-  fn fresh_var(&mut self, name: Symbol) -> VarId { self.var_names.push(name) }
+  fn fresh_var(&mut self, name: Spanned<Symbol>) -> VarId { self.var_names.push(name) }
 
   fn fresh_var2(&mut self, v: VarId) -> VarId {
-    let name = self.var_name(v);
+    let name = self.var_name(v).clone();
     self.fresh_var(name)
   }
 
@@ -2366,7 +2366,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       ast::TuplePatternKind::Tuple(pats) => {
         let tgt = expect_t.unwrap_or_else(|| self.new_ty_mvar(span));
-        let v = self.fresh_var(Symbol::UNDER);
+        let v = self.fresh_var(Spanned { span: span.clone(), k: Symbol::UNDER });
         let (k, e) = match self.tuple_pattern_tuple(span, pats.len(), tgt) {
           TuplePatternResult::Indeterminate => {
             let (pats, _) = self.lower_tuple_pattern_tuple_with(pats, TupleIter::Ty(None));
@@ -2379,7 +2379,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             if report {
               self.errors.push(hir::Spanned {span, k: TypeError::PatternMatch(tgt, ty)});
             }
-            let v1 = self.fresh_var(Symbol::UNDER);
+            let v1 = self.fresh_var(Spanned { span: span.clone(), k: Symbol::UNDER });
             let ctx = self.new_context_next(v1, None, ty);
             self.dc.context = ctx.into();
             let pat = Box::new(UnelabTupPat {span, ctx, k: UnelabTupPatKind::Tuple(pats)});
@@ -2655,12 +2655,14 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     (intern!(self, TuplePatternS { var, k, ty }), e)
   }
 
-  fn finish_tuple_pattern(&mut self, pat: &UnelabTupPat<'a>) -> TuplePattern<'a> {
+  fn finish_tuple_pattern(&mut self,
+    pat: &UnelabTupPat<'a>
+  ) -> hir::Spanned<'a, TuplePattern<'a>> {
     self.dc.context = pat.ctx.parent;
     let base = self.dc.context;
     let (res, _) = self.finish_tuple_pattern_inner(pat, None);
     self.dc.context = base;
-    res
+    hir::Spanned { span: pat.span, k: res }
   }
 
   fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: &Option<Box<Spanned<ast::Lifetime>>>) -> Lifetime {
@@ -2728,7 +2730,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }).collect::<Vec<_>>();
         let mut ty = self.lower_ty(ty, ExpectTy::Any);
         for pat in pats.into_iter().rev() {
-          let pat = self.finish_tuple_pattern(&pat);
+          let pat = self.finish_tuple_pattern(&pat).k;
           ty = intern!(self, TyKind::All(pat, ty))
         }
         ty
@@ -3579,7 +3581,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           })))
         } else {
           hir::CastKind::subtype(h.as_deref().map(|h| Box::new({
-            let v = self.fresh_var(Symbol::UNDER);
+            let v = self.fresh_var(Spanned { span: span.clone(), k: Symbol::UNDER });
             let x = intern!(self, ExprKind::Var(v));
             // A. x: ty, [x: ty] -* [x: tgt]
             let hty = intern!(self, TyKind::All(
@@ -3644,11 +3646,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (v, lens) = if let Some(x) = Self::build_lens(plhs) { x } else { error!() };
         let (rhs, prhs) = self.lower_expr(rhs, ExpectExpr::HasTy(lhs.ty()));
         let (_, _, ty) = self.dc.get_var(v);
-        let old = if let Some(&(_, old)) = oldmap.iter().find(|p| p.0 == v) {old} else {
+        let old = if let Some((_, old)) = oldmap.iter().find(|p| p.0.k == v) {old} else {
           error!(span, MissingAssignWith(v))
         };
-        let e = Some(intern!(self, ExprKind::Var(old)));
-        self.dc.context = self.new_context_next(old, e, ty).into();
+        let e = Some(intern!(self, ExprKind::Var(old.k)));
+        self.dc.context = self.new_context_next(old.k, e, ty).into();
         let newgen = self.new_generation();
         let val = if let Ok(val) = prhs {
           lens(self, val)
@@ -3656,10 +3658,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           intern!(self, ExprKind::Var(v))
         };
         self.dc.gen_vars.insert(v, (newgen, val, ty)); // FIXME: ty is not correct here
+        let v = lhs.map(|_| v);
         let e = hir::ExprKind::Assign {
           lhs: Box::new(lhs),
           rhs: Box::new(rhs),
-          map: Box::new([(v, old, (Some(val), ty))]),
+          map: Box::new([(v, old.as_ref(), (Some(val), ty))]),
           gen: newgen,
         };
         ret![e, Ok(unit!()), self.common.t_unit]
@@ -3712,25 +3715,27 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         ret![Block(bl), pe, ty]
       }
 
-      &ast::ExprKind::If {ik, hyp, ref cond, ref then, ref els} => {
+      &ast::ExprKind::If {ik, ref hyp, ref cond, ref then, ref els} => {
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let (dc1, dc2, e1, e2);
         let base = self.dc.clone();
-        if let Some([v1, v2]) = hyp {
+        let hyp = if let Some([v1, v2]) = hyp {
           let pe = self.as_pure(cond.span, pe);
           let ty = intern!(self, TyKind::Pure(pe));
-          let ctx1 = self.new_context_next(v1, Some(unit!()), ty);
+          let ctx1 = self.new_context_next(v1.k, Some(unit!()), ty);
           self.dc.context = ctx1.into();
           e1 = self.check_expr(then, tgt);
           dc1 = mem::replace(&mut self.dc, base.clone());
           let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
-          let ctx2 = self.new_context_next(v2, Some(unit!()), ty);
+          let ctx2 = self.new_context_next(v2.k, Some(unit!()), ty);
           self.dc.context = ctx2.into();
+          Some([v1.as_ref(), v2.as_ref()])
         } else {
           e1 = self.check_expr(then, tgt);
           dc1 = mem::replace(&mut self.dc, base.clone());
-        }
+          None
+        };
         e2 = self.check_expr(els, tgt);
         dc2 = mem::replace(&mut self.dc, base);
         let muts = self.merge(span, &mut [dc1, dc2]);
@@ -3744,7 +3749,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         ret![If {hyp, cond: Box::new(cond), cases, gen: self.dc.generation, muts}, pe, tgt]
       }
 
-      &ast::ExprKind::While {label, mut hyp, ref cond, ref muts, ref var, ref body, has_break} => {
+      &ast::ExprKind::While {label, ref hyp, ref cond, ref muts, ref var, ref body, has_break} => {
         if !muts.is_empty() {
           let newgen = self.new_generation();
           for &v in &**muts {
@@ -3765,22 +3770,26 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);
         let mut after = self.dc.clone();
         self.labels.get_mut(&label).expect("just added").dcs.push(after.clone());
+        let mut vhyp = hyp.as_ref().map(|h| h.k);
         let trivial = if_chain! {
           if let Ok(e) = pe;
           if let ExprKind::Bool(b) = self.whnf_expr(cond.span, e).k;
           then {
-            if hyp.is_none() { hyp = Some(self.fresh_var(Symbol::UNDER)) }
+            if vhyp.is_none() {
+              vhyp = Some(self.fresh_var(Spanned { span: cond.span.clone(), k: Symbol::UNDER }))
+            }
             Some(b)
           }
           else { None }
         };
-        if let Some(v) = hyp {
+        if let Some(v) = vhyp {
           let pe = self.as_pure(cond.span, pe);
           let ty = intern!(self, TyKind::Pure(pe));
           let ctx1 = self.new_context_next(v, Some(unit!()), ty);
           self.dc.context = ctx1.into();
           self.dc.diverged |= trivial == Some(false);
         }
+        let hyp = hyp.as_ref().map(|hyp| hyp.as_ref());
         let ret = if has_break { self.common.t_unit } else {
           pe.ok().map_or(self.common.t_unit, |pe| {
             after.diverged |= trivial == Some(true);
@@ -4228,7 +4237,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
               tgt.0 = Err(pe2.err().unwrap_or(&body.span))
             }
           }
-          (bl2, args)
+          (body.map_hir(|_| bl2), args)
         }).collect::<Vec<_>>();
         let LabelData {labels, dcs, value, ..} =
           self.labels.remove(&v).expect("missing label group");
@@ -4306,8 +4315,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           };
           let ctx = self.new_context_next(out.var, None, ty);
           self.dc.context = ctx.into();
-          rets2.push((ArgAttr::GHOST, UnelabArgKind::Lam(
-            UnelabTupPat { span, ctx, k: UnelabTupPatKind::Name(false, out.name) })));
+          rets2.push((ArgAttr::GHOST, UnelabArgKind::Lam(UnelabTupPat {
+            span: &out.name.span,
+            ctx,
+            k: UnelabTupPatKind::Name(false, out.name.k)
+          })));
           out.input
         }).collect::<Box<[_]>>();
         rets2.extend(rets.iter().map(|pat| (ArgAttr::empty(), UnelabArgKind::Lam(
@@ -4368,7 +4380,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ItemKind::Global(intrinsic, lhs, rhs) => {
         if let Some(intrinsic) = intrinsic { match *intrinsic {} }
         let ctx = self.dc.context;
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
+        let lhs_span = &lhs.span;
+        let lhs = self.lower_tuple_pattern(lhs_span, &lhs.k, None, None).0;
         self.dc.context = ctx;
         let (rhs, _) = self.check_expr(rhs, lhs.ctx.ty);
         let lhs = self.finish_tuple_pattern_inner(&lhs, None).0;
@@ -4388,7 +4401,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             Entry::Vacant(e) => { e.insert(item); }
           }
         } else { todo!() }
-        hir::ItemKind::Global {lhs, rhs}
+        hir::ItemKind::Global { lhs: hir::Spanned { span: lhs_span, k: lhs }, rhs }
       }
       ast::ItemKind::Const(intrinsic, lhs, rhs) => {
         if let Some(intrinsic) = intrinsic { match *intrinsic {} }

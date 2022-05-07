@@ -120,7 +120,7 @@ mod codegen;
 pub mod proof;
 
 use std::collections::HashMap;
-use types::{entity::Entity, mir};
+use types::{entity::Entity, mir, Spanned};
 use bumpalo::Bump;
 use infer::TypeError;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
@@ -235,7 +235,7 @@ impl<C: Config> Compiler<C> {
   /// performing typehecking but not code generation.
   /// This should be called repeatedly to add all top level function items,
   /// finally calling [`finish`](Self::finish) to complete code generation.
-  pub fn add(&mut self, item: &ast::Item, var_names: IdxVec<VarId, Symbol>,
+  pub fn add(&mut self, item: &ast::Item, var_names: IdxVec<VarId, Spanned<Symbol>>,
     mut ic: impl ItemContext<C>
   ) -> Result<(), C::Error> {
     let Compiler {names, mir, init, main, has_type_errors, ..} = self;

@@ -44,7 +44,7 @@ impl<'a> Legalizer<'a> {
     for (i, s) in stmts.iter().enumerate() {
       s.foreach_def(|v, r, _, ty| if r {
         if let Some(ity) = ty.as_int_ty() {
-          if ity.size() == Size::Inf { infinite_vars.insert(v, i); }
+          if ity.size() == Size::Inf { infinite_vars.insert(v.k, i); }
         }
       })
     }
@@ -63,7 +63,7 @@ impl<'a> Legalizer<'a> {
     };
     if let Some(res) = self.generated.get(&(v, pred)) { return Some(res.clone()) }
     let res = (|| match &self.stmts[i] {
-      Statement::Let(LetKind::Let(_, e), _, _, rv) => {
+      Statement::Let(LetKind::Let(lk, e), _, _, rv) => {
         if let RValue::Use(o) | RValue::Cast(_, o, _) = rv {
           return self.try_legalize_operand(o, pred)
         }
@@ -74,7 +74,7 @@ impl<'a> Legalizer<'a> {
               let o = self.try_legalize_operand(o, Predicate::As(ity))?.unpack();
               let v = self.max_var.fresh();
               self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(v, e.as_ref().map(|e|
+                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
                   Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
                 true, Ty::new(TyKind::Int(ity)),
                 RValue::Unop(op, o)));
@@ -86,7 +86,7 @@ impl<'a> Legalizer<'a> {
               let o2 = self.try_legalize_operand(o2, Predicate::As(ity))?.unpack();
               let v = self.max_var.fresh();
               self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(v, e.as_ref().map(|e|
+                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
                   Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
                 true, Ty::new(TyKind::Int(ity)),
                 RValue::Binop(op, o1, o2)));

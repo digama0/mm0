@@ -27,7 +27,7 @@ impl GenId {
 }
 
 /// A spanned expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<'a, T> {
   /// The span of the expression
@@ -42,6 +42,16 @@ impl<'a, T> Spanned<'a, T> {
   pub fn map_into<U>(self, f: impl FnOnce(T) -> U) -> Spanned<'a, U> {
     Spanned { span: self.span, k: f(self.k) }
   }
+  /// Transform a `&Spanned<'a, T>` into `Spanned<'a, U>` given `f: &T -> U`.
+  pub fn map<'b, U>(&'b self, f: impl FnOnce(&'b T) -> U) -> Spanned<'a, U> {
+    Spanned { span: self.span, k: f(&self.k) }
+  }
+  /// Transform a `Spanned<'a, T>` into `Spanned<U>` given `f: T -> U`.
+  pub fn map_clone<U>(self, f: impl FnOnce(T) -> U) -> super::Spanned<U> {
+    super::Spanned { span: self.span.clone(), k: f(self.k) }
+  }
+  /// Transform a `Spanned<'a, T>` into `Spanned<T>`.
+  pub fn cloned(self) -> super::Spanned<T> { self.map_clone(|v| v) }
 }
 
 impl<T> super::Spanned<T> {
@@ -49,6 +59,8 @@ impl<T> super::Spanned<T> {
   pub fn map_hir<U>(&self, f: impl FnOnce(&T) -> U) -> Spanned<'_, U> {
     Spanned { span: &self.span, k: f(&self.k) }
   }
+  /// Transform a `&'a Spanned<T>` into `hir::Spanned<'a, T>`.
+  pub fn as_ref(&self) -> Spanned<'_, T> where T: Clone { self.map_hir(T::clone) }
 }
 
 /// The type of variant, or well founded order that recursions decrease.
@@ -78,16 +90,16 @@ pub type Arg<'a> = (ty::ArgAttr, ArgKind<'a>);
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind<'a> {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
-  Lam(ty::TuplePattern<'a>),
+  Lam(Spanned<'a, ty::TuplePattern<'a>>),
   /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
   /// invocations, they act as let binders in the remainder of the arguments.)
-  Let(ty::TuplePattern<'a>, ty::Expr<'a>, Option<Box<Expr<'a>>>),
+  Let(Spanned<'a, ty::TuplePattern<'a>>, ty::Expr<'a>, Option<Box<Expr<'a>>>),
 }
 
 impl<'a> ArgKind<'a> {
   /// Get the variable part of this argument.
-  #[must_use] pub fn var(&self) -> ty::TuplePattern<'a> {
-    match self { Self::Lam(pat) | Self::Let(pat, ..) => pat }
+  #[must_use] pub fn var(&self) -> Spanned<'a, ty::TuplePattern<'a>> {
+    match *self { Self::Lam(pat) | Self::Let(pat, ..) => pat }
   }
 
   fn debug_with_attr(&self,
@@ -115,8 +127,8 @@ impl Debug for ArgKind<'_> {
 impl<'a> From<&ArgKind<'a>> for ty::ArgKind<'a> {
   fn from(arg: &ArgKind<'a>) -> Self {
     match *arg {
-      ArgKind::Lam(pat) => Self::Lam(pat),
-      ArgKind::Let(pat, e, _) => Self::Let(pat, e),
+      ArgKind::Lam(pat) => Self::Lam(pat.k),
+      ArgKind::Let(pat, e, _) => Self::Let(pat.k, e),
     }
   }
 }
@@ -131,7 +143,7 @@ pub struct Label<'a> {
   /// The variant, for recursive calls
   pub variant: Option<Variant<'a>>,
   /// The code that is executed when you jump to the label
-  pub body: Block<'a>,
+  pub body: Spanned<'a, Block<'a>>,
 }
 
 /// A block is a list of statements, with an optional terminating expression.
@@ -178,7 +190,7 @@ pub enum StmtKind<'a> {
   /// A let binding.
   Let {
     /// A tuple pattern, containing variable bindings.
-    lhs: ty::TuplePattern<'a>,
+    lhs: Spanned<'a, ty::TuplePattern<'a>>,
     /// The expression to evaluate.
     rhs: Expr<'a>,
   },
@@ -216,7 +228,7 @@ impl StmtKind<'_> {
             if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
           }
           indent(i, f)?; writeln!(f, ") = {{")?;
-          lab.body.debug_indent(i+1, f)?;
+          lab.body.k.debug_indent(i+1, f)?;
           indent(i, f)?; writeln!(f, "}};")?;
         }
         Ok(())
@@ -248,7 +260,7 @@ pub struct While<'a> {
   /// The name of this loop, which can be used as a target for jumps.
   pub label: VarId,
   /// A hypothesis that the condition is true in the loop.
-  pub hyp: Option<VarId>,
+  pub hyp: Option<Spanned<'a, VarId>>,
   /// The loop condition.
   pub cond: Box<Expr<'a>>,
   /// The variant, which must decrease on every round around the loop.
@@ -579,7 +591,7 @@ pub enum ExprKind<'a> {
     /// through any number of writes to it, while non-updatable `old` variables are created
     /// by the various assignments.)
     /// The type `ty` is the type of `new` after the mutation.
-    map: Box<[(VarId, VarId, ty::ExprTy<'a>)]>,
+    map: Box<[(Spanned<'a, VarId>, Spanned<'a, VarId>, ty::ExprTy<'a>)]>,
     /// The generation after the mutation.
     gen: GenId,
   },
@@ -593,7 +605,7 @@ pub enum ExprKind<'a> {
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
     /// The hypothesis name.
-    hyp: Option<[VarId; 2]>,
+    hyp: Option<[Spanned<'a, VarId>; 2]>,
     /// The if condition.
     cond: Box<Expr<'a>>,
     /// The then/else cases.
@@ -752,7 +764,7 @@ impl ExprKind<'_> {
         write!(f, " <- ")?;
         rhs.k.0.debug_indent(i, f)?;
         write!(f, " with [")?;
-        for (new, old, _) in &**map { write!(f, "{} <- {}, ", new, old)? }
+        for (new, old, _) in &**map { write!(f, "{} <- {}, ", new.k, old.k)? }
         write!(f, "]")
       }
       ExprKind::Call(c) => {
@@ -779,12 +791,12 @@ impl ExprKind<'_> {
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "if ")?;
-        if let Some([h, _]) = hyp { write!(f, "{}: ", h)? }
+        if let Some([h, _]) = hyp { write!(f, "{}: ", h.k)? }
         cond.k.0.debug_indent(i+1, f)?;
         writeln!(f, " {{")?;
         cases[0].k.0.debug_indent(i+1, f)?;
         indent(i, f)?; writeln!(f, "}} else ")?;
-        if let Some([_, h]) = hyp { write!(f, "{}: ", h)? }
+        if let Some([_, h]) = hyp { write!(f, "{}: ", h.k)? }
         writeln!(f, "{{")?;
         cases[1].k.0.debug_indent(i+1, f)?;
         indent(i, f)?; write!(f, "}}")
@@ -796,7 +808,7 @@ impl ExprKind<'_> {
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "{}: while ", w.label)?;
-        if let Some(h) = w.hyp { write!(f, "{}: ", h)? }
+        if let Some(h) = w.hyp { write!(f, "{}: ", h.k)? }
         w.cond.k.0.debug_indent(i+1, f)?;
         if let Some(var) = &w.variant {
           writeln!(f)?;
@@ -902,7 +914,7 @@ pub enum ItemKind<'a> {
   /// A global variable declaration.
   Global {
     /// The variable(s) being declared
-    lhs: ty::TuplePattern<'a>,
+    lhs: Spanned<'a, ty::TuplePattern<'a>>,
     /// The value of the declaration
     rhs: Expr<'a>,
   },

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
+use mm0_util::FileSpan;
 use regalloc2::Operand as ROperand;
 
 use crate::linker::ConstData;
@@ -50,18 +51,18 @@ fn visit_blocks<'a>(cfg: &'a Cfg, mut f: impl FnMut(BlockId, &'a BasicBlock)) {
 
 struct TyCtx<'a> {
   cfg: &'a Cfg,
-  ctx: HashMap<VarId, Ty>,
+  ctx: HashMap<VarId, (&'a FileSpan, Ty)>,
 }
 
 impl<'a> TyCtx<'a> {
   fn new(cfg: &'a Cfg) -> Self { Self { cfg, ctx: Default::default() } }
 
-  fn insert(&mut self, v: VarId, ty: Ty) { self.ctx.insert(v, ty); }
+  fn insert(&mut self, v: VarId, sp: &'a FileSpan, ty: Ty) { self.ctx.insert(v, (sp, ty)); }
 
-  fn start_block(&mut self, bl: &BasicBlock) {
+  fn start_block(&mut self, bl: &'a BasicBlock) {
     self.ctx.clear();
     for (v, _, (_, ty)) in bl.ctx_rev_iter(&self.cfg.ctxs) {
-      self.insert(v, ty.clone());
+      self.insert(v.k, &v.span, ty.clone());
     }
   }
 }
@@ -988,7 +989,7 @@ impl<'a> LowerCtx<'a> {
 
     self.abi_args = bl.ctx_iter(&self.cfg.ctxs).map(|(v, b, _)| {
       if !b { return ArgAbi::Ghost }
-      let a = self.allocs.get(v);
+      let a = self.allocs.get(v.k);
       assert_ne!(a, AllocId::ZERO);
       let (&(dst, sz), size) = self.get_alloc(a);
       match (dst, arg_regs.next()) {
@@ -1033,10 +1034,10 @@ impl<'a> LowerCtx<'a> {
       if i == BlockId::ENTRY { self.build_prologue(bl, ctx) }
       for (v, r, _) in bl.ctx_iter(&self.cfg.ctxs) {
         if !r { continue }
-        let a = self.allocs.get(v);
+        let a = self.allocs.get(v.k);
         assert_ne!(a, AllocId::ZERO);
         let val = self.get_alloc(a).0 .0;
-        self.code.emit(Inst::BlockParam { var: v, val });
+        self.code.emit(Inst::BlockParam { var: v.k, val });
       }
       self.code.trace.stmts.push_new();
       let proj_start = self.code.trace.projs.len().try_into().expect("overflow");
@@ -1045,9 +1046,9 @@ impl<'a> LowerCtx<'a> {
         let cl = if stmt.relevant() {
           match stmt {
             Statement::Let(lk, _, ty, rv) => {
-              let ((&LetKind::Let(v, _), &ref ty) |
-                (&LetKind::Own([_, (v, ref ty)]), _)) = (lk, ty);
-              let a = self.allocs.get(v);
+              let ((LetKind::Let(v, _), ty) |
+                (LetKind::Own([_, (v, ty)]), _)) = (lk, ty);
+              let a = self.allocs.get(v.k);
               assert_ne!(a, AllocId::ZERO);
               if let RValue::Pun(_, p) = rv {
                 let (rm, cl) = self.get_place(p);
@@ -1074,7 +1075,7 @@ impl<'a> LowerCtx<'a> {
           cl::Statement::Ghost
         };
         self.code.trace.stmts.extend_last(cl);
-        stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v, ty.clone()))
+        stmt.foreach_def(|v, _, _, ty| self.ctx.insert(v.k, &v.span, ty.clone()))
       }
       let cl = self.build_terminator(block_args, vblock, bl.terminator());
       self.code.trace.block.push(cl::Block { proj_start, list_start, term: cl });

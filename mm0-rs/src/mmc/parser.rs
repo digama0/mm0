@@ -280,11 +280,13 @@ enum ExprOrStmt {
   Let(FileSpan, LispVal, LispVal, Renames),
 }
 
-impl From<(&FileSpan, RenameError)> for ElabError {
-  fn from((span, e): (&FileSpan, RenameError)) -> ElabError {
+impl From<RenameError> for ElabError {
+  fn from(e: RenameError) -> ElabError {
     match e {
-      RenameError::RenameUnder => ElabError::new_e(span, "can't rename variable '_'"),
-      RenameError::MissingVar(v) => ElabError::new_e(span, format!("unknown variable '{}'", v)),
+      RenameError::RenameUnder(sp) =>
+        ElabError::new_e(&sp, "can't rename variable '_'"),
+      RenameError::MissingVar(v) =>
+        ElabError::new_e(&v.span, format!("unknown variable '{}'", v.k)),
     }
   }
 }
@@ -303,7 +305,7 @@ impl<'a, C> Parser<'a, C> {
     }
   }
 
-  pub(crate) fn finish(self) -> (IdxVec<VarId, Symbol>, IdxVec<LambdaId, Mm0ExprNode>) {
+  pub(crate) fn finish(self) -> (IdxVec<VarId, Spanned<Symbol>>, IdxVec<LambdaId, Mm0ExprNode>) {
     (self.ba.var_names, self.lambdas)
   }
 
@@ -440,10 +442,10 @@ impl<'a, C> Parser<'a, C> {
           if let Some(name) = e.as_atom();
           then {
             let name = self.as_symbol(name);
-            let v = self.ba.fresh_var(name);
+            let v = self.ba.fresh_var(Spanned { span: span.clone(), k: name });
             ArgKind::Lam(TuplePatternKind::Name(false, name, v))
           } else {
-            let v = self.ba.fresh_var(Symbol::UNDER);
+            let v = self.ba.fresh_var(Spanned { span: span.clone(), k: Symbol::UNDER });
             let under = Box::new(Spanned {
               span: span.clone(), k: TuplePatternKind::Name(true, Symbol::UNDER, v)});
             let ty = Box::new(self.parse_ty(&span, &e)?);
@@ -461,8 +463,9 @@ impl<'a, C> Parser<'a, C> {
   ) -> Result<Box<[(VarId, TuplePattern)]>> {
     u.map(|e| {
       let pat = self.push_tuple_pattern(base, ghost, e)?;
-      let v = pat.k.as_single_name()
-        .map_or_else(|| self.ba.fresh_var(Symbol::UNDER), |(_, _, v)| v);
+      let v = pat.k.as_single_name().map_or_else(|| {
+        self.ba.fresh_var(Spanned { span: pat.span.clone(), k: Symbol::UNDER })
+      }, |(_, _, v)| v);
       Ok((v, pat))
     }).collect::<Result<_>>()
   }
@@ -495,7 +498,7 @@ impl<'a, C> Parser<'a, C> {
     let span = try_get_fspan(base, &e);
     let k = if let Some(a) = e.as_atom() {
       let name = self.as_symbol(a);
-      let v = self.ba.push_fresh(name);
+      let v = self.ba.push_fresh(Spanned { span: span.clone(), k: name });
       TuplePatternKind::Name(ghost || name == Symbol::UNDER, name, v)
     } else if e.is_list() {
       match self.head_keyword(&e) {
@@ -574,19 +577,31 @@ impl<'a, C> Parser<'a, C> {
 
   fn parse_rename(&mut self, base: &FileSpan, e: &LispVal, with: &mut Renames) -> Result<bool> {
     match self.head_keyword(e) {
-      Some((Keyword::ArrowL, mut u)) => if let (Some(to), Some(from), true) =
-        (u.next().and_then(|e| e.as_atom()), u.next().and_then(|e| e.as_atom()), u.is_empty()) {
-        with.new.push((self.as_symbol(from), self.as_symbol(to)));
+      Some((Keyword::ArrowL, mut u)) => if let (Some(to), Some(from), true) = (
+        u.next().and_then(|e| Some((try_get_fspan(base, &e), e.as_atom()?))),
+        u.next().and_then(|e| Some((try_get_fspan(base, &e), e.as_atom()?))),
+        u.is_empty()
+      ) {
+        with.new.push((
+          Spanned { span: from.0, k: self.as_symbol(from.1) },
+          Spanned { span: to.0, k: self.as_symbol(to.1) },
+        ));
         return Ok(true)
       },
-      Some((Keyword::ArrowR, mut u)) => if let (Some(from), Some(to), true) =
-        (u.next().and_then(|e| e.as_atom()), u.next().and_then(|e| e.as_atom()), u.is_empty()) {
-        with.old.push((self.as_symbol(from), self.as_symbol(to)));
+      Some((Keyword::ArrowR, mut u)) => if let (Some(from), Some(to), true) = (
+        u.next().and_then(|e| Some((try_get_fspan(base, &e), e.as_atom()?))),
+        u.next().and_then(|e| Some((try_get_fspan(base, &e), e.as_atom()?))),
+        u.is_empty()
+      ) {
+        with.old.push((
+          Spanned { span: from.0, k: self.as_symbol(from.1) },
+          Spanned { span: to.0, k: self.as_symbol(to.1) },
+        ));
         return Ok(true)
       },
       _ => if let Some(a) = e.as_atom() {
-        let a = self.as_symbol(a);
-        with.new.push((a, a));
+        let a = Spanned { span: try_get_fspan(base, e), k: self.as_symbol(a) };
+        with.new.push((a.clone(), a));
         return Ok(true)
       } else { return Ok(false) }
     }
@@ -620,7 +635,7 @@ impl<'a, C> Parser<'a, C> {
         // let lhs = self.push_tuple_pattern(&span, false, lhs, None)?;
         let lhs = Box::new(self.parse_expr(&span, lhs)?);
         let rhs = Box::new(self.parse_expr(&span, rhs)?);
-        let oldmap = self.ba.mk_oldmap(&lhs, with).map_err(|e| (&span, e))?;
+        let oldmap = self.ba.mk_oldmap(&lhs, with)?;
         Ok(ExprOrStmt::Expr(Spanned {span, k: ExprKind::Assign {lhs, rhs, oldmap}}))
       }
     }
@@ -677,9 +692,12 @@ impl<'a, C> Parser<'a, C> {
             let (hyp, cond) = match this.head_keyword(&cond) {
               Some((Keyword::Colon, mut u)) =>
                 if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
+                  let h_span = try_get_fspan(&span, &h);
                   let h = h.as_atom().ok_or_else(||
-                    ElabError::new_e(try_get_span(&span, &h), "expecting hypothesis name"))?;
-                  (if h == AtomId::UNDER {None} else {Some(this.as_symbol(h))}, cond)
+                    ElabError::new_e(&h_span, "expecting hypothesis name"))?;
+                  (if h == AtomId::UNDER { None } else {
+                    Some(Spanned { span: h_span, k: this.as_symbol(h)})
+                  }, cond)
                 } else {
                   return Err(ElabError::new_e(try_get_span(&span, &cond), "':' syntax error"))
                 },
@@ -688,10 +706,10 @@ impl<'a, C> Parser<'a, C> {
             let cond = Box::new(this.parse_expr(&span, cond)?);
             branches.push(if let Some(h) = hyp {
               let (h1, then) = this.with_ctx(|this| {
-                let h1 = this.ba.push_fresh(h);
+                let h1 = this.ba.push_fresh_span(h.clone());
                 this.parse_expr(&span, then).map(|then| (h1, Box::new(then)))
               })?;
-              (Some([h1, this.ba.push_fresh(h)]), cond, then)
+              (Some([h1, this.ba.push_fresh_span(h)]), cond, then)
             } else {
               (None, cond, Box::new(this.parse_expr(&span, then)?))
             });
@@ -750,10 +768,10 @@ impl<'a, C> Parser<'a, C> {
             } else {break}
             u.next();
           }
-          let mk = self.ba.build_while(muts.into());
+          let mk = self.ba.build_while(span.clone(), muts.into());
           let cond = Box::new(self.parse_expr(&span, cond)?);
           let (hyp, body) = self.with_ctx(|this| -> Result<_> { Ok((
-            hyp.as_ref().map(|h| this.ba.push_fresh(h.k)),
+            hyp.as_ref().map(|h| this.ba.push_fresh_span(h.clone())),
             Box::new(this.parse_block(&span, u)?),
           ))})?;
           mk.finish(&mut self.ba, var, cond, hyp, body)
@@ -808,7 +826,8 @@ impl<'a, C> Parser<'a, C> {
   }
 
   fn push_jumps(&mut self, jumps: Vec<Spanned<PLabel>>) -> Result<(VarId, Box<[Label]>)> {
-    let group = self.ba.push_label_group(jumps.iter().map(|j| j.k.name));
+    let span = jumps[0].span.clone();
+    let group = self.ba.push_label_group(span, jumps.iter().map(|j| j.k.name));
     let jumps = jumps.into_iter().map(|Spanned {span, k: PLabel {name: _, args: u1, body}}| {
       self.with_ctx(|this| {
         let mut args = vec![];
@@ -846,9 +865,9 @@ impl<'a, C> Parser<'a, C> {
           ExprOrStmt::Let(e_span, lhs, rhs, Renames {old, new}) => {
             clear_jumps!();
             let rhs = this.parse_expr(span, rhs)?;
-            this.ba.apply_rename(&old).map_err(|e| (span, e))?;
+            this.ba.apply_rename(&old)?;
             let lhs = this.push_tuple_pattern(span, false, lhs)?;
-            this.ba.apply_rename(&new).map_err(|e| (span, e))?;
+            this.ba.apply_rename(&new)?;
             stmts.push(Spanned {span: e_span, k: ast::StmtKind::Let {lhs, rhs}})
           }
           ExprOrStmt::Expr(e) => {
@@ -878,7 +897,7 @@ impl<'a, C> Parser<'a, C> {
   ) -> Result<Item> {
     struct OutVal {
       input: u32,
-      name: Symbol,
+      name: Spanned<Symbol>,
       used: bool,
     }
     let e = match u.next() {
@@ -922,11 +941,12 @@ impl<'a, C> Parser<'a, C> {
           }
           if attr.mut_ {
             if let Some((_, name, _)) = pat.var().as_single_name() {
-              if outmap.iter().any(|p| p.name == name) {
+              if outmap.iter().any(|p| p.name.k == name) {
                 return Err(ElabError::new_e(&span, "'mut' variables cannot shadow"))
               }
               outmap.push(OutVal {
-                name, used: false,
+                name: Spanned { span: span.clone(), k: name },
+                used: false,
                 input: args.len().try_into().expect("too many arguments"),
               });
             } else { return Err(ElabError::new_e(&span, "cannot use tuple pattern with 'mut'")) }
@@ -943,7 +963,7 @@ impl<'a, C> Parser<'a, C> {
               if *name == Symbol::UNDER {
                 if let Some(v) = pat.var().as_single_name() {*name = v.1}
               }
-              if let Some(OutVal {used, ..}) = outmap.iter_mut().find(|p| p.name == *name) {
+              if let Some(OutVal {used, ..}) = outmap.iter_mut().find(|p| p.name.k == *name) {
                 if std::mem::replace(used, true) {
                   return Err(ElabError::new_e(&span, "two 'out' arguments to one 'mut'"))
                 }
@@ -956,8 +976,8 @@ impl<'a, C> Parser<'a, C> {
             Ok(())
           })?
         }
-        outs.extend(outmap.iter().filter(|val| !val.used).map(|&OutVal { input, name, .. }| {
-          OutArg { input, name, var: this.ba.push_fresh(name), ty: None }
+        outs.extend(outmap.iter().filter(|val| !val.used).map(|&OutVal { input, ref name, .. }| {
+          OutArg { input, var: this.ba.push_fresh(name.clone()), name: name.clone(), ty: None }
         }));
         for (span, attr, pat) in rets1 {
           if attr.mut_ {
@@ -976,9 +996,9 @@ impl<'a, C> Parser<'a, C> {
               outs.push(loop {
                 match pat {
                   TuplePatternKind::Name(_, name2, var) => {
-                    let &OutVal {input, ..} =
-                      outmap.iter().find(|p| p.name == name).expect("checked");
-                    break OutArg { input, name: name2, var, ty }
+                    let &OutVal {input, name: Spanned {ref span, ..}, ..} =
+                      outmap.iter().find(|p| p.name.k == name).expect("checked");
+                    break OutArg { input, name: Spanned { span: span.clone(), k: name2 }, var, ty }
                   }
                   TuplePatternKind::Typed(pat2, ty2) => {
                     if ty.replace(ty2).is_some() {
@@ -1138,9 +1158,11 @@ impl<'a, C> Parser<'a, C> {
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(e) {
         Some((Keyword::Colon, mut u)) =>
           if let (Some(h), Some(p), true) = (u.next(), u.next(), u.is_empty()) {
+            let h_span = try_get_fspan(base, &h);
             let h = self.as_symbol_or(base, &h, || "expecting hypothesis name")?;
-            pb.hyped(&span, h, &mut self.ba).map_err(|BadBinding|
-              ElabError::new_e(&span, "can't bind variables in this context"))?;
+            pb.hyped(&span, Spanned { span: h_span.clone(), k: h }, &mut self.ba)
+              .map_err(|BadBinding|
+                ElabError::new_e(&h_span, "can't bind variables in this context"))?;
             self.parse_pattern(&span, pb, &p)?.hyped(&span)
           } else {
             return Err(ElabError::new_e(try_get_span(base, e), "':' syntax error"))
@@ -1183,7 +1205,7 @@ impl<'a, C> Parser<'a, C> {
         if let Some((Keyword::Arrow, mut u)) = this.head_keyword(&e) {
           if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
             let span = try_get_fspan(base, &lhs);
-            let mut pb = mb.branch(&mut this.ba).map_err(|UnreachablePattern|
+            let mut pb = mb.branch(&span, &mut this.ba).map_err(|UnreachablePattern|
               ElabError::new_e(&span, "unreachable pattern"))?;
             let pat = this.parse_pattern(base, &mut pb, &lhs)?;
             let rhs = this.with_ctx(|this| {
@@ -1268,8 +1290,9 @@ impl<'a, C> Parser<'a, C> {
             let args = args.into_iter().map(|e| {
               this.push_tuple_pattern(base, false, e)
             }).collect::<Result<_>>()?;
-            let v = this.ba.fresh_var(Symbol::UNDER);
-            Ok(TypeKind::ex(span.clone(), args, v, Box::new(this.parse_ty(&span, &last)?)))
+            let ty = Box::new(this.parse_ty(&span, &last)?);
+            let v = this.ba.fresh_var(Spanned { span: ty.span.clone(), k: Symbol::UNDER });
+            Ok(TypeKind::ex(span.clone(), args, v, ty))
           })?,
           (PrimType::Imp, [e1, e2]) => TypeKind::Imp(ty!(e1), ty!(e2)),
           (PrimType::Wand, [e1, e2]) => TypeKind::Wand(ty!(e1), ty!(e2)),

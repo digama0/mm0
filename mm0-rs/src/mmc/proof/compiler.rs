@@ -871,19 +871,19 @@ impl<'a> ProcProver<'a> {
       mctx: MCtx::new(&mut self.thm), // TODO
     });
     let mut l = tctx.mk(&mut self.thm);
-    for &(v, _, (ref e, ref ty)) in self.proc.cfg.ctxs.iter_range(base..bl.block().ctx) {
+    for (v, _, (e, ty)) in self.proc.cfg.ctxs.iter_range(base..bl.block().ctx) {
       let (l2, th) = match e {
         Some(e) if match **e {
-          ExprKind::Var(u) if u == v => false,
+          ExprKind::Var(u) if u == v.k => false,
           ExprKind::Unit => false,
           _ => true,
         } => {
           let ty = app!(self.thm, (ok0)); // TODO
-          tctx.push_hyp(l, &mut self.thm, &self.hex, v, VarKind::Typed, ty)
+          tctx.push_hyp(l, &mut self.thm, &self.hex, v.k, VarKind::Typed, ty)
         }
         _ => {
           let ty = app!(self.thm, (ok0)); // TODO
-          tctx.push_var(l, &mut self.thm, &self.hex, v, ty).1
+          tctx.push_var(l, &mut self.thm, &self.hex, v.k, ty).1
         }
       };
       l = l2;
@@ -955,18 +955,18 @@ impl<'a> ProcProver<'a> {
     let mut args = app!(self.thm, (arg0));
     let mut th = thm!(self.thm, accumArgs0(): (accumArgs args {vctx.e} {*vctx.nvars}));
     let mut mctx = MCtx::new(&mut self.thm);
-    for (&(v, _, (ref e, ref ty)), abi) in self.proc.cfg.ctxs.iter(..bl_ctx).zip(abi) {
+    for ((v, _, (e, ty)), abi) in self.proc.cfg.ctxs.iter(..bl_ctx).zip(abi) {
       let (vctx1, n1) = (vctx.e, vctx.nvars);
       let args2;
       th = match e {
         Some(e) if match **e {
-          ExprKind::Var(u) if u == v => false,
+          ExprKind::Var(u) if u == v.k => false,
           ExprKind::Unit => false,
           _ => true,
         } => {
           let ty = app!(self.thm, (ok0)); // TODO
           let e = app!(self.thm, (vHyp ty));
-          let h2 = vctx.push(&mut self.thm, v, VarKind::Hyp, e);
+          let h2 = vctx.push(&mut self.thm, v.k, VarKind::Hyp, e);
           args2 = app!(self.thm, (argS args (aHyp ty)));
           thm!(self.thm, ((accumArgs args2 {vctx.e} {*vctx.nvars})) =>
             accumArgsHyp(args, *n1, ty, vctx1, vctx.e, th, h2))
@@ -977,7 +977,7 @@ impl<'a> ProcProver<'a> {
             ArgAbi::Reg(r, _) => {
               let r = r.index();
               let var = app!(self.thm, (eVar {*n1}));
-              let value = MCtxRegValue::Expr((Expr::Var(v), var));
+              let value = MCtxRegValue::Expr((Expr::Var(v.k), var));
               let t = app!(self.thm, REG[self.hex[r], var]);
               MCtx::push_reg::<NoProof>(&mut mctx, &mut self.thm, ((r, value), t));
             }
@@ -987,7 +987,7 @@ impl<'a> ProcProver<'a> {
           }
           let ty = app!(self.thm, (ok0)); // TODO
           let e = app!(self.thm, (vVar {*n1} ty));
-          let h2 = vctx.push(&mut self.thm, v, VarKind::Var, e);
+          let h2 = vctx.push(&mut self.thm, v.k, VarKind::Var, e);
           let (n2, h3) = self.hex.suc(&mut self.thm, n1);
           vctx.nvars = n2;
           args2 = app!(self.thm, (argS args (aVar {*n1} ty)));

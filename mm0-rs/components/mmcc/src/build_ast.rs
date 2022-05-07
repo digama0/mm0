@@ -19,14 +19,13 @@ use crate::types::{Binop, Spanned, FieldName, VarId, IdxVec, ast::{self, LabelId
 
 #[derive(Debug)]
 enum Ctx {
-  Var(Symbol, VarId),
+  Var(VarId),
   Label(Symbol, LabelId),
 }
 
-fn let_var(sp: &FileSpan, name: Symbol, v: VarId, rhs: ast::Expr) -> ast::Stmt {
+fn let_var(sp: &FileSpan, name: Spanned<Symbol>, v: VarId, rhs: ast::Expr) -> ast::Stmt {
   Spanned {span: sp.clone(), k: ast::StmtKind::Let {
-    lhs: Spanned {span: sp.clone(), k:
-      ast::TuplePatternKind::Name(false, name, v)},
+    lhs: name.map_into(|name| ast::TuplePatternKind::Name(false, name, v)),
     rhs
   }}
 }
@@ -57,26 +56,35 @@ pub struct BuildAst {
   /// The list of type variables in scope.
   tyvars: Vec<Symbol>,
   /// The mapping from allocated variables to their user facing names.
-  pub var_names: IdxVec<VarId, Symbol>,
+  pub var_names: IdxVec<VarId, Spanned<Symbol>>,
 }
+
+macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
 
 impl BuildAst {
   /// Get a fresh variable name. Every new binding expression calls this function to prevent scope
   /// confusion issues when variable names are reused in multiple scopes.
-  pub fn fresh_var(&mut self, name: Symbol) -> VarId { self.var_names.push(name) }
+  pub fn fresh_var(&mut self, name: Spanned<Symbol>) -> VarId { self.var_names.push(name) }
 
   /// Get a fresh variable name, and also push it to the context. References to `name` after this
   /// point will resolve to this variable, until the current scope is closed.
-  pub fn push_fresh(&mut self, name: Symbol) -> VarId {
+  pub fn push_fresh(&mut self, name: Spanned<Symbol>) -> VarId {
+    let name_s = name.k;
     let v = self.fresh_var(name);
-    self.push(name, v);
+    self.push(name_s, v);
     v
+  }
+
+  /// Get a fresh variable name, and also push it to the context. References to `name` after this
+  /// point will resolve to this variable, until the current scope is closed.
+  pub fn push_fresh_span(&mut self, name: Spanned<Symbol>) -> Spanned<VarId> {
+    sp!(name.span, self.push_fresh(name))
   }
 
   /// Push a variable with a given name to the context. (This is not exposed because we would like
   /// to prevent reuse of variables in new binding scopes.)
   fn push(&mut self, name: Symbol, v: VarId) {
-    self.ctx.push(Ctx::Var(name, v));
+    self.ctx.push(Ctx::Var(v));
     self.name_map.entry(name).or_default().push(v);
   }
 
@@ -89,8 +97,8 @@ impl BuildAst {
 
   /// Push a label group from a list of names. Uses of any of the names will target this label
   /// group, until the scope is closed.
-  pub fn push_label_group(&mut self, it: impl Iterator<Item=Symbol>) -> VarId {
-    let group = self.fresh_var(Symbol::UNDER);
+  pub fn push_label_group(&mut self, span: FileSpan, it: impl Iterator<Item=Symbol>) -> VarId {
+    let group = self.fresh_var(Spanned { span, k: Symbol::UNDER });
     for (i, name) in it.enumerate() {
       self.push_label(name, LabelId(group, i.try_into().expect("label number overflow")));
     }
@@ -149,8 +157,12 @@ impl BuildAst {
 
   fn pop(&mut self) {
     match self.ctx.pop().expect("stack underflow") {
-      Ctx::Var(name, _) => {self.name_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");}
-      Ctx::Label(name, _) => {self.label_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");}
+      Ctx::Var(v) => {
+        self.name_map.get_mut(&self.var_names[v].k).and_then(Vec::pop).expect("stack underflow");
+      }
+      Ctx::Label(name, _) => {
+        self.label_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");
+      }
     }
   }
 
@@ -179,8 +191,8 @@ impl BuildAst {
   /// Start a while loop, providing the list of variable mutations up front and deferring the rest
   /// of the arguments to `WhileBuilder::finish`. Between these two calls, anonymous `break` and
   /// `continue` will target the loop under construction.
-  pub fn build_while(&mut self, muts: Box<[VarId]>) -> WhileBuilder {
-    let label = self.fresh_var(Symbol::UNDER);
+  pub fn build_while(&mut self, span: FileSpan, muts: Box<[VarId]>) -> WhileBuilder {
+    let label = self.fresh_var(Spanned { span, k: Symbol::UNDER });
     self.loops.push((label, false));
     WhileBuilder { muts, label }
   }
@@ -192,7 +204,7 @@ impl WhileBuilder {
   pub fn finish(self, ba: &mut BuildAst,
     var: Option<Box<ast::Variant>>,
     cond: Box<ast::Expr>,
-    hyp: Option<VarId>,
+    hyp: Option<Spanned<VarId>>,
     body: Box<ast::Block>,
   ) -> ast::ExprKind {
     let WhileBuilder {muts, label} = self;
@@ -209,20 +221,20 @@ pub struct Renames {
   /// `{from -> to}` means that the variable `from` should be renamed to `to`
   /// (after evaluation of the main expression).
   /// The elements of this list are `(from, to)` pairs.
-  pub old: Vec<(Symbol, Symbol)>,
+  pub old: Vec<(Spanned<Symbol>, Spanned<Symbol>)>,
   /// `{to <- from}` means that the new value of the variable `from` should be called `to`,
   /// so that the old value of variable `from` is available by that name.
   /// The elements of this list are `(from, to)` pairs.
-  pub new: Vec<(Symbol, Symbol)>,
+  pub new: Vec<(Spanned<Symbol>, Spanned<Symbol>)>,
 }
 
 /// The errors that can occur when parsing a `old -> new` rename expression in a let or assignment.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RenameError {
   /// can't rename variable '_'
-  RenameUnder,
+  RenameUnder(FileSpan),
   /// variable not found
-  MissingVar(Symbol),
+  MissingVar(Spanned<Symbol>),
 }
 
 impl BuildAst {
@@ -230,30 +242,32 @@ impl BuildAst {
   /// references to `b` after the operation will refer to the variable that was previously called
   /// `a`. Renames are scoped, meaning that when the current scope ends, the variable will be back
   /// to being called `a` (unless `a` itself goes out of scope).
-  pub fn apply_rename(&mut self, renames: &[(Symbol, Symbol)]) -> Result<(), RenameError> {
+  pub fn apply_rename(&mut self,
+    renames: &[(Spanned<Symbol>, Spanned<Symbol>)]
+  ) -> Result<(), RenameError> {
     let mut vec = vec![];
-    for &(from, to) in renames {
-      if from == Symbol::UNDER { return Err(RenameError::RenameUnder) }
-      if from == to { continue }
-      let var = self.get_var(from).ok_or(RenameError::MissingVar(from))?;
-      vec.push((var, to));
+    for (from, to) in renames {
+      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
+      if from.k == to.k { continue }
+      let var = self.get_var(from.k).ok_or(RenameError::MissingVar(from.clone()))?;
+      vec.push((var, to.k));
     }
     for (var, to) in vec { self.push(to, var) }
     Ok(())
   }
 
   fn mk_split(&mut self, Renames {old, new}: Renames
-  ) -> Result<HashMap<VarId, (VarId, Symbol, Symbol)>, RenameError> {
+  ) -> Result<HashMap<VarId, (VarId, Spanned<Symbol>, Spanned<Symbol>)>, RenameError> {
     let mut map = HashMap::new();
     for (from, to) in old {
-      if from == Symbol::UNDER { return Err(RenameError::RenameUnder) }
-      map.entry(self.get_var(from).ok_or(RenameError::MissingVar(from))?)
-        .or_insert_with(|| (self.fresh_var(from), from, from)).2 = to;
+      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
+      map.entry(self.get_var(from.k).ok_or_else(|| RenameError::MissingVar(from.clone()))?)
+        .or_insert_with(|| (self.fresh_var(from.clone()), from.clone(), from.clone())).2 = to;
     }
     for (from, to) in new {
-      if from == Symbol::UNDER { return Err(RenameError::RenameUnder) }
-      map.entry(self.get_var(from).ok_or(RenameError::MissingVar(from))?)
-        .or_insert_with(|| (self.fresh_var(from), from, from)).1 = to;
+      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
+      map.entry(self.get_var(from.k).ok_or_else(|| RenameError::MissingVar(from.clone()))?)
+        .or_insert_with(|| (self.fresh_var(from.clone()), from.clone(), from.clone())).1 = to;
     }
     Ok(map)
   }
@@ -278,20 +292,25 @@ impl BuildAst {
   /// Consume a parsed `Renames` object to construct the `oldmap` argument that is used in
   /// `Assign` expression nodes.
   pub fn mk_oldmap(&mut self, lhs: &ast::Expr, with: Renames
-  ) -> Result<Box<[(VarId, VarId)]>, RenameError> {
+  ) -> Result<Box<[(Spanned<VarId>, Spanned<VarId>)]>, RenameError> {
     let mut split = self.mk_split(with)?;
     Self::add_origins(lhs, &mut |var| {
       if let Entry::Vacant(e) = split.entry(var) {
-        if let Some(from) = self.ctx.iter().find_map(|v| match *v { Ctx::Var(a, v) if v == var => Some(a), _ => None}) {
-          e.insert((self.fresh_var(from), from, from));
+        if let Some(from) = self.ctx.iter().find_map(|v| match v {
+          &Ctx::Var(v) if v == var => Some(self.var_names[v].clone()),
+          _ => None
+        }) {
+          e.insert((self.fresh_var(from.clone()), from.clone(), from));
         }
       }
       Ok(())
     })?;
     let oldmap = split.into_iter().map(|(vnew, (vold, new, old))| {
-      self.push(old, vold);
-      self.push(new, vnew);
-      (vnew, vold)
+      let vnew_s = Spanned { span: new.span, k: vnew };
+      let vold_s = Spanned { span: old.span, k: vold };
+      self.push(old.k, vold);
+      self.push(new.k, vnew);
+      (vnew_s, vold_s)
     }).collect();
     Ok(oldmap)
   }
@@ -307,7 +326,7 @@ pub trait BuildMatch: Sized {
   /// `hyp` will only be `None` if `ALLOW_HYPS` is false; otherwise, if it is `Some([vtru, vfal])`
   /// then in `es = [etru, efal]`, `etru` will have `vtru: cond` in scope,
   /// and `efal` will have `vfal: !cond` in scope.
-  fn mk_if(hyp: Option<[VarId; 2]>, cond: Box<ast::Expr>, es: [Box<Spanned<Self>>; 2]) -> Self;
+  fn mk_if(hyp: Option<[Spanned<VarId>; 2]>, cond: Box<ast::Expr>, es: [Box<Spanned<Self>>; 2]) -> Self;
 
   /// Construct a block expression from a list of statements. `stmts` will always be empty if
   /// `ALLOW_HYPS` is false.
@@ -316,7 +335,7 @@ pub trait BuildMatch: Sized {
 
 impl BuildMatch for ast::ExprKind {
   const ALLOW_HYPS: bool = true;
-  fn mk_if(hyp: Option<[VarId; 2]>, cond: Box<ast::Expr>, [then, els]: [Box<Spanned<Self>>; 2]) -> Self {
+  fn mk_if(hyp: Option<[Spanned<VarId>; 2]>, cond: Box<ast::Expr>, [then, els]: [Box<Spanned<Self>>; 2]) -> Self {
     ast::ExprKind::If {ik: ast::IfKind::If, hyp, cond, then, els}
   }
   fn mk_block(stmts: Vec<ast::Stmt>, e: Spanned<Self>) -> Self {
@@ -326,7 +345,7 @@ impl BuildMatch for ast::ExprKind {
 
 impl BuildMatch for ast::TypeKind {
   const ALLOW_HYPS: bool = false;
-  fn mk_if(_: Option<[VarId; 2]>, c: Box<ast::Expr>, [t, e]: [Box<Spanned<Self>>; 2]) -> Self {
+  fn mk_if(_: Option<[Spanned<VarId>; 2]>, c: Box<ast::Expr>, [t, e]: [Box<Spanned<Self>>; 2]) -> Self {
     ast::TypeKind::If(c, t, e)
   }
   fn mk_block(_: Vec<ast::Stmt>, e: Spanned<Self>) -> Self { e.k }
@@ -336,7 +355,7 @@ impl BuildMatch for ast::TypeKind {
 #[derive(Debug)]
 struct PreparedBranch<T> {
   /// The hypotheses on the positive and negative branches.
-  hyp: Option<[VarId; 2]>,
+  hyp: Option<[Spanned<VarId>; 2]>,
   /// The condition to branch on.
   cond: Box<ast::Expr>,
   /// The true branch.
@@ -371,13 +390,11 @@ pub struct MatchBuilder<T> {
 #[derive(Clone, Debug)]
 pub struct Incomplete(pub Rc<ast::Expr>);
 
-macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
-
 impl BuildAst {
   /// Start building a match expression. We expect the expression `e` in `match e ...`, aka the
   /// "scrutinee".
   pub fn build_match<T: BuildMatch>(&mut self, span: FileSpan, e: ast::Expr) -> MatchBuilder<T> {
-    let scvar = if T::ALLOW_HYPS { Some(self.fresh_var(Symbol::UNDER)) } else { None };
+    let scvar = if T::ALLOW_HYPS { Some(self.fresh_var(sp!(e.span, Symbol::UNDER))) } else { None };
     MatchBuilder { span, scvar, scrut: Rc::new(e), stack: vec![], ready: None }
   }
 }
@@ -386,16 +403,16 @@ impl<T: BuildMatch> MatchBuilder<T> {
   /// Start building a new match branch. This will return a `PatternBuilder` that is used to parse
   /// the pattern. If we have already exhaustively matched, then we return the `UnreachablePattern`
   /// error.
-  pub fn branch(&mut self, ba: &mut BuildAst) -> Result<PatternBuilder<T>, UnreachablePattern> {
+  pub fn branch(&mut self, span: &FileSpan, ba: &mut BuildAst) -> Result<PatternBuilder<T>, UnreachablePattern> {
     if self.ready.is_some() { return Err(UnreachablePattern) }
-    let hyp1 = ba.fresh_var(Symbol::UNDER);
-    let hyp2 = ba.fresh_var(Symbol::UNDER);
+    let hyp1 = ba.fresh_var(sp!(span, Symbol::UNDER));
+    let hyp2 = ba.fresh_var(sp!(span, Symbol::UNDER));
     let mk = |hyp| -> Option<Box<dyn Fn() -> ast::Expr>> {
-      let span = self.span.clone();
+      let span = span.clone();
       Some(Box::new(move || sp!(span, ast::ExprKind::Var(hyp))))
     };
     Ok(PatternBuilder {
-      hyp: [hyp1, hyp2],
+      hyp: [Spanned { span: span.clone(), k: hyp1 }, Spanned { span: span.clone(), k: hyp2 }],
       pos: mk(hyp1),
       neg: mk(hyp2),
       uses_hyp: false,
@@ -417,7 +434,7 @@ impl<T: BuildMatch> MatchBuilder<T> {
         e = sp!(self.span, T::mk_if(hyp, cond, [tru, Box::new(e)]));
       }
       if let Some(v) = self.scvar {
-        e = sp_block(&self.span, vec![let_var(&self.span, Symbol::UNDER, v,
+        e = sp_block(&self.span, vec![let_var(&self.span, sp!(self.span, Symbol::UNDER), v,
             sp!(self.span, ast::ExprKind::Rc(self.scrut.clone())))], e)
       }
       Ok(e)
@@ -433,7 +450,7 @@ impl<T: BuildMatch> MatchBuilder<T> {
 /// * `Done`: A pattern has been matched. `prepare_rhs` can be used to set up the context
 ///    for parsing the RHS of the pattern, and `finish` will return to the `MatchBuilder` context.
 pub struct PatternBuilder<T> {
-  hyp: [VarId; 2],
+  hyp: [Spanned<VarId>; 2],
   pos: Option<Box<dyn Fn() -> ast::Expr>>,
   neg: Option<Box<dyn Fn() -> ast::Expr>>,
   scvar: Option<VarId>,
@@ -518,16 +535,16 @@ impl<T: BuildMatch> PatternBuilder<T> {
   /// Returns `Err(BadBinding)` if hypotheses are not allowed in this context.
   /// Transitions the pattern builder to accept `pat`. The resulting pattern for `pat`
   /// can be transformed to a hyped pattern using [`Pattern::hyped`].
-  pub fn hyped(&mut self, sp: &FileSpan, h: Symbol, ba: &mut BuildAst) -> Result<(), BadBinding> {
+  pub fn hyped(&mut self, sp: &FileSpan, h: Spanned<Symbol>, ba: &mut BuildAst) -> Result<(), BadBinding> {
     if !T::ALLOW_HYPS || self.pos.is_none() && self.neg.is_none() { return Err(BadBinding) }
     self.uses_hyp = true;
     if let Some(f) = self.pos.take() {
-      let (v, sp) = (ba.fresh_var(h), sp.clone());
-      self.posblock.push(let_var(&sp, h, v, f()));
+      let (v, sp) = (ba.fresh_var(h.clone()), sp.clone());
+      self.posblock.push(let_var(&sp, h.clone(), v, f()));
       self.pos = Some(Box::new(move || sp!(sp, ast::ExprKind::Var(v))))
     }
     if let Some(f) = self.neg.take() {
-      let (v, sp) = (ba.fresh_var(h), sp.clone());
+      let (v, sp) = (ba.fresh_var(h.clone()), sp.clone());
       self.negblock.push(let_var(&sp, h, v, f()));
       self.neg = Some(Box::new(move || sp!(sp, ast::ExprKind::Var(v))))
     }
@@ -683,19 +700,19 @@ impl BuildAst {
           op: Binop, v0: VarId, v1: VarId, e2: ast::Expr, mut it: std::vec::IntoIter<ast::Expr>
         ) -> ast::Expr {
           and(sp, op, v0, v1, if let Some(e3) = it.next() {
-            let v2 = this.fresh_var(Symbol::UNDER);
+            let v2 = this.fresh_var(sp!(sp, Symbol::UNDER));
             block![sp;
-              let_var(sp, Symbol::UNDER, v2, e2);
+              let_var(sp, sp!(sp, Symbol::UNDER), v2, e2);
               mk_and(this, sp, op, v1, v2, e3, it)]
           } else {
             binop(sp, op, v1, e2)
           })
         }
-        let v_1 = self.fresh_var(Symbol::UNDER);
-        let v_2 = self.fresh_var(Symbol::UNDER);
+        let v_1 = self.fresh_var(sp!(sp, Symbol::UNDER));
+        let v_2 = self.fresh_var(sp!(sp, Symbol::UNDER));
         block![sp;
-          let_var(sp, Symbol::UNDER, v_1, arg_1),
-          let_var(sp, Symbol::UNDER, v_2, arg_2);
+          let_var(sp, sp!(sp, Symbol::UNDER), v_1, arg_1),
+          let_var(sp, sp!(sp, Symbol::UNDER), v_2, arg_2);
           mk_and(self, sp, op, v_1, v_2, arg_3, it)]
       } else {
         binop!(sp, op, arg_1, arg_2)

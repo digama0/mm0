@@ -472,7 +472,7 @@ pub enum ExprKind {
     /// (This ordering is chosen so that the variable ID retains its "newest" value
     /// through any number of writes to it, while non-updatable `old` variables are created
     /// by the various assignments.)
-    oldmap: Box<[(VarId, VarId)]>,
+    oldmap: Box<[(Spanned<VarId>, Spanned<VarId>)]>,
   },
   /// A function call.
   Call {
@@ -496,7 +496,7 @@ pub enum ExprKind {
     /// Distinguishes if statements from short-circuiting boolean operators.
     ik: IfKind,
     /// The hypothesis name.
-    hyp: Option<[VarId; 2]>,
+    hyp: Option<[Spanned<VarId>; 2]>,
     /// The if condition.
     cond: Box<Expr>,
     /// The then case.
@@ -511,7 +511,7 @@ pub enum ExprKind {
     /// The variables that are mutated in the loop.
     muts: Box<[VarId]>,
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<VarId>,
+    hyp: Option<Spanned<VarId>>,
     /// The loop condition.
     cond: Box<Expr>,
     /// The variant, which must decrease on every round around the loop.
@@ -664,7 +664,7 @@ impl ExprKind {
         rhs.k.debug_indent(i, f)?;
         if !oldmap.is_empty() {
           write!(f, " with [")?;
-          for (new, old) in &**oldmap { write!(f, "{} <- {}, ", new, old)? }
+          for (new, old) in &**oldmap { write!(f, "{} <- {}, ", new.k, old.k)? }
           write!(f, "]")?
         }
         Ok(())
@@ -698,12 +698,12 @@ impl ExprKind {
       }
       ExprKind::If { ik: _, hyp, cond, then, els } => {
         write!(f, "if ")?;
-        if let Some([h, _]) = hyp { write!(f, "{}: ", h)? }
+        if let Some([h, _]) = hyp { write!(f, "{}: ", h.k)? }
         cond.k.debug_indent(i+1, f)?;
         writeln!(f, " {{")?;
         then.k.debug_indent(i+1, f)?;
         indent(i, f)?; writeln!(f, "}} else ")?;
-        if let Some([_, h]) = hyp { write!(f, "{}: ", h)? }
+        if let Some([_, h]) = hyp { write!(f, "{}: ", h.k)? }
         writeln!(f, "{{")?;
         els.k.debug_indent(i+1, f)?;
         indent(i, f)?; write!(f, "}}")
@@ -715,7 +715,7 @@ impl ExprKind {
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "{}: while ", label)?;
-        if let Some(h) = hyp { write!(f, "{}: ", h)? }
+        if let Some(h) = hyp { write!(f, "{}: ", h.k)? }
         cond.k.debug_indent(i+1, f)?;
         if let Some(var) = var {
           writeln!(f)?;
@@ -856,7 +856,7 @@ pub struct OutArg {
   /// The index of the argument in the inputs
   pub input: u32,
   /// The name of the binder
-  pub name: Symbol,
+  pub name: Spanned<Symbol>,
   /// The variable in the binder
   pub var: VarId,
   /// The type, if provided

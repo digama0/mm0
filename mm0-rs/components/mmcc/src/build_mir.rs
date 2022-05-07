@@ -3,7 +3,7 @@
 use std::{rc::Rc, fmt::Debug, mem};
 use std::collections::{HashMap, hash_map::Entry};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
-use mm0_util::u32_as_usize;
+use mm0_util::{u32_as_usize, FileSpan};
 use smallvec::SmallVec;
 use types::{IntTy, Size};
 use crate::{Idx, Symbol};
@@ -192,6 +192,13 @@ impl<'a, T: Translate<'a> + Copy> Translate<'a> for &'a [T] {
   type Output = Box<[T::Output]>;
   fn tr(self, tr: &mut Translator<'a, '_>) -> Box<[T::Output]> {
     self.iter().map(|&e| e.tr(tr)).collect()
+  }
+}
+
+impl<'a, T: Translate<'a>> Translate<'a> for hir::Spanned<'a, T> {
+  type Output = hir::Spanned<'a, T::Output>;
+  fn tr(self, tr: &mut Translator<'a, '_>) -> hir::Spanned<'a, T::Output> {
+    self.map_into(|v| v.tr(tr))
   }
 }
 
@@ -396,10 +403,10 @@ enum PreVar {
 
 /// A destination designator for expressions that are to be placed in a memory location.
 /// See [`PreVar`].
-type Dest = Option<PreVar>;
+type Dest<'a> = Option<hir::Spanned<'a, PreVar>>;
 
 /// A variant on `Dest` for values that are going out of a block via `break`.
-type BlockDest = Option<VarId>;
+type BlockDest<'a> = Option<hir::Spanned<'a, VarId>>;
 
 /// A `JoinBlock` represents a potential jump location, together with the information needed to
 /// correctly pass all the updated values of mutable variables from the current context.
@@ -418,14 +425,14 @@ struct JoinBlock(BlockId, JoinPoint);
 type LabelData = (BlockId, Rc<[(VarId, bool)]>);
 
 #[derive(Debug)]
-struct LabelGroupData {
+struct LabelGroupData<'a> {
   /// This is `Some(((gen, muts), labs))` if jumping to this label is valid. `gen, muts` are
   /// parameters to the [`JoinBlock`] (which are shared between all labels), and
   /// `labs[i] = (tgt, args)` give the target block and the list of variable names to pass
   jumps: Option<(JoinPoint, Rc<[LabelData]>)>,
   /// The [`JoinBlock`] for breaking to this label, as well as a `BlockDest` which receives the
   /// `break e` expression.
-  brk: Option<(JoinBlock, BlockDest)>,
+  brk: Option<(JoinBlock, BlockDest<'a>)>,
 }
 
 #[derive(Default, Debug)]
@@ -498,7 +505,7 @@ pub(crate) struct BuildMir<'a, 'n> {
   /// function
   tr: Translator<'a, 'n>,
   /// The stack of labels in scope
-  labels: Vec<(HVarId, LabelGroupData)>,
+  labels: Vec<(HVarId, LabelGroupData<'a>)>,
   /// The in-progress parts of the `BlockTree`
   tree: BlockTreeBuilder,
   /// If this is `Some(_)` then returning is possible at this point.
@@ -544,6 +551,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn fresh_var(&mut self) -> VarId { self.tr.fresh_var() }
+  fn fresh_var_span(&mut self, span: FileSpan) -> Spanned<VarId> {
+    Spanned { span, k: self.fresh_var() }
+  }
 
   #[inline] fn cur(&self) -> (BlockId, CtxId, GenId) {
     (self.cur_block, self.cur_ctx, self.tr.cur_gen)
@@ -563,20 +573,20 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     bl
   }
 
-  fn extend_ctx(&mut self, var: VarId, r: bool, ty: ExprTy) {
+  fn extend_ctx(&mut self, var: Spanned<VarId>, r: bool, ty: ExprTy) {
     self.cur_ctx = self.cfg.ctxs.extend(self.cur_ctx, var, r, ty)
   }
 
   fn push_stmt(&mut self, stmt: Statement) {
-    match stmt {
-      Statement::Let(LetKind::Let(v, ref e), r, ref ty, _) =>
-        self.extend_ctx(v, r, (e.clone(), ty.clone())),
-      Statement::Let(LetKind::Own([(v, ref ty), (h, ref ty2)]), hr, _, _) => {
-        self.extend_ctx(v, false, (None, ty.clone()));
-        self.extend_ctx(h, hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
+    match &stmt {
+      Statement::Let(LetKind::Let(v, e), r, ty, _) =>
+        self.extend_ctx(v.clone(), *r, (e.clone(), ty.clone())),
+      Statement::Let(LetKind::Own([(v, ty), (h, ty2)]), hr, _, _) => {
+        self.extend_ctx(v.clone(), false, (None, ty.clone()));
+        self.extend_ctx(h.clone(), *hr, (Some(Rc::new(ExprKind::Unit)), ty2.clone()));
       }
-      Statement::Assign(_, _, _, ref vars) => for v in &**vars {
-        self.extend_ctx(v.to, v.rel, v.ety.clone())
+      Statement::Assign(_, _, _, vars) => for v in &**vars {
+        self.extend_ctx(v.to.clone(), v.rel, v.ety.clone())
       }
       Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
     }
@@ -591,42 +601,44 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn as_temp(&mut self, e: hir::Expr<'a>) -> Block<VarId> {
     let v = self.fresh_var();
-    self.expr(e, Some(PreVar::Ok(v)))?;
+    let dest = hir::Spanned { span: e.span, k: PreVar::Ok(v) };
+    self.expr(e, Some(dest))?;
     Ok(v)
   }
 
-  fn assert(&mut self, v_cond: Operand, cond: Expr) -> VarId {
+  fn assert(&mut self, span: FileSpan, v_cond: Operand, cond: Expr) -> VarId {
     let vh = self.fresh_var();
-    self.extend_ctx(vh, false, (None, Rc::new(TyKind::Pure(cond))));
+    self.extend_ctx(Spanned { span, k: vh }, false, (None, Rc::new(TyKind::Pure(cond))));
     let tgt = self.new_block();
     self.cur_block().terminate(Terminator::Assert(v_cond, vh, true, tgt));
     self.cur_block = tgt;
     vh
   }
 
-  fn index_projection(&mut self, idx: hir::Expr<'a>,
-    hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
+  fn index_projection(&mut self, span: &'a FileSpan,
+    idx: hir::Expr<'a>, hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
   ) -> Block<Projection> {
     let vi = self.as_temp(idx)?;
     Ok(Projection::Index(vi, match hyp_or_n {
       Ok(hyp) => self.as_temp(hyp)?,
       Err(n) => {
         let vn = self.as_temp(n)?;
-        let vb = self.fresh_var();
+        let vb_s = self.fresh_var_span(span.clone());
+        let vb = vb_s.k;
         let cond = Rc::new(ExprKind::Binop(types::Binop::Lt,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(vb, Some(cond.clone())), true, Rc::new(TyKind::Bool),
+          LetKind::Let(vb_s, Some(cond.clone())), true, Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Lt(IntTy::NAT),
             Operand::Copy(vi.into()), vn.into())));
-        self.assert(vb.into(), cond)
+        self.assert(span.clone(), vb.into(), cond)
       }
     }))
   }
 
-  fn slice_projection(&mut self, idx: hir::Expr<'a>, len: hir::Expr<'a>,
-    hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
+  fn slice_projection(&mut self, span: &'a FileSpan,
+    idx: hir::Expr<'a>, len: hir::Expr<'a>, hyp_or_n: Result<hir::Expr<'a>, hir::Expr<'a>>
   ) -> Block<Projection> {
     let vi = self.as_temp(idx)?;
     let vl = self.as_temp(len)?;
@@ -634,23 +646,25 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       Ok(hyp) => self.as_temp(hyp)?,
       Err(n) => {
         let vn = self.as_temp(n)?;
-        let v_add = self.fresh_var();
+        let v_add_s = self.fresh_var_span(span.clone());
+        let v_add = v_add_s.k;
         let add = Rc::new(ExprKind::Binop(types::Binop::Add,
           Rc::new(ExprKind::Var(vi)),
           Rc::new(ExprKind::Var(vl))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(v_add, Some(add.clone())), true,
+          LetKind::Let(v_add_s, Some(add.clone())), true,
           Rc::new(TyKind::Int(IntTy::INT)),
           RValue::Binop(Binop::Add(IntTy::NAT),
             Operand::Copy(vi.into()), Operand::Copy(vl.into()))));
-        let v_cond = self.fresh_var();
+        let v_cond_s = self.fresh_var_span(span.clone());
+        let v_cond = v_cond_s.k;
         let cond = Rc::new(ExprKind::Binop(types::Binop::Le,
           add, Rc::new(ExprKind::Var(vn))));
         self.push_stmt(Statement::Let(
-          LetKind::Let(v_cond, Some(cond.clone())), true,
+          LetKind::Let(v_cond_s, Some(cond.clone())), true,
           Rc::new(TyKind::Bool),
           RValue::Binop(Binop::Le(IntTy::NAT), v_add.into(), vn.into())));
-        self.assert(v_cond.into(), cond)
+        self.assert(span.clone(), v_cond.into(), cond)
       }
     }))
   }
@@ -663,11 +677,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       }
       hir::PlaceKind::Index(args) => {
         let (ty, arr, idx, hyp_or_n) = *args;
-        self.place(arr)?.proj((self.tr(ty), self.index_projection(idx, hyp_or_n)?))
+        self.place(arr)?.proj((self.tr(ty), self.index_projection(e.span, idx, hyp_or_n)?))
       }
       hir::PlaceKind::Slice(args) => {
         let (ty, arr, [idx, len], hyp_or_n) = *args;
-        self.place(arr)?.proj((self.tr(ty), self.slice_projection(idx, len, hyp_or_n)?))
+        self.place(arr)?.proj((self.tr(ty), self.slice_projection(e.span, idx, len, hyp_or_n)?))
       }
       hir::PlaceKind::Proj(pk, e, i) => {
         self.place(e.1)?.proj((self.tr(e.0), Projection::Proj(pk.into(), i)))
@@ -709,11 +723,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       }
       hir::ExprKind::Index(args) => {
         let (ty, [arr, idx], hyp_or_n) = *args;
-        self.expr_place(arr)?.proj((self.tr(ty), self.index_projection(idx, hyp_or_n)?))
+        self.expr_place(arr)?.proj((self.tr(ty), self.index_projection(e.span, idx, hyp_or_n)?))
       }
       hir::ExprKind::Slice(args) => {
         let (ty, [arr, idx, len], hyp_or_n) = *args;
-        self.expr_place(arr)?.proj((self.tr(ty), self.slice_projection(idx, len, hyp_or_n)?))
+        self.expr_place(arr)?.proj((self.tr(ty), self.slice_projection(e.span, idx, len, hyp_or_n)?))
       }
       hir::ExprKind::Proj(pk, e, i) =>
         self.expr_place(e.1)?.proj((self.tr(e.0), Projection::Proj(pk.into(), i))),
@@ -821,13 +835,16 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
       hir::ExprKind::Sizeof(ty) => Constant::sizeof(Size::Inf, self.tr(ty)).into(),
       hir::ExprKind::Typeof(e) => RValue::Typeof(self.operand(*e)?),
-      hir::ExprKind::Assert(e) => if let Some(pe) = e.k.1 .0 {
-        let e = self.operand(*e)?;
-        let cond = self.tr(pe);
-        self.assert(e, cond).into()
-      } else {
-        let v = self.as_temp(*e)?;
-        self.assert(Operand::Move(v.into()), Rc::new(ExprKind::Var(v))).into()
+      hir::ExprKind::Assert(e) => {
+        let span = e.span.clone();
+        if let Some(pe) = e.k.1 .0 {
+          let e = self.operand(*e)?;
+          let cond = self.tr(pe);
+          self.assert(span, e, cond).into()
+        } else {
+          let v = self.as_temp(*e)?;
+          self.assert(span, Operand::Move(v.into()), Rc::new(ExprKind::Var(v))).into()
+        }
       }
       hir::ExprKind::Assign {..} => {
         self.expr(e, None)?;
@@ -837,10 +854,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       if matches!(call.rk, hir::ReturnKind::Struct(_)) => {
         let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
         let_unchecked!(n as hir::ReturnKind::Struct(n) = call.rk);
-        let dest = (0..n).map(|_| PreVar::Ok(self.fresh_var())).collect::<Vec<_>>();
-        self.expr_call(call, e.k.1 .1, &dest)?;
+        let dest = (0..n).map(|_| {
+          hir::Spanned { span: e.span, k: PreVar::Ok(self.fresh_var()) }
+        }).collect::<Vec<_>>();
+        self.expr_call(e.span, call, e.k.1 .1, &dest)?;
         RValue::List(dest.into_iter().map(|v| {
-          let_unchecked!(PreVar::Ok(v) = v, v.into())
+          let_unchecked!(PreVar::Ok(v) = v.k, v.into())
         }).collect())
       }
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
@@ -883,13 +902,13 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn fulfill_unit_dest<R>(&mut self, ety: ty::ExprTy<'a>,
-    dest: Dest, f: impl FnOnce(&mut Self, Dest) -> Block<R>
+    dest: Dest<'a>, f: impl FnOnce(&mut Self, Dest<'a>) -> Block<R>
   ) -> Block<R> {
     if let Some(v) = dest {
       if !ety.1.is_unit_dest() { return f(self, dest) }
       let r = f(self, None)?;
       let rv = self.as_unit_const(ety.1);
-      let v = self.tr(v);
+      let v = self.tr(v).cloned();
       let rel = !ety.1.ghostly();
       let (e, ty) = self.tr(ety);
       self.push_stmt(Statement::Let(LetKind::Let(v, e), rel, ty, rv.into()));
@@ -897,16 +916,16 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     } else { f(self, dest) }
   }
 
-  fn expr_unit(&mut self, dest: Dest) {
+  fn expr_unit(&mut self, dest: Dest<'a>) {
     if let Some(v) = dest {
       let rv = Constant::unit();
       let (e, ty) = rv.ety.clone();
-      let v = self.tr(v);
+      let v = self.tr(v).cloned();
       self.push_stmt(Statement::Let(LetKind::Let(v, e), false, ty, rv.into()));
     }
   }
 
-  fn expr(&mut self, e: hir::Expr<'a>, dest: Dest) -> Block<()> {
+  fn expr(&mut self, e: hir::Expr<'a>, dest: Dest<'a>) -> Block<()> {
     self.fulfill_unit_dest(e.k.1, dest, |this, dest| {
       match e.k.0 {
         hir::ExprKind::If {hyp, cond, cases, gen, muts} =>
@@ -914,7 +933,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         hir::ExprKind::Block(bl) => return this.block(bl, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
-          return this.expr_call(call, e.k.1 .1, &[dest.unwrap_or(PreVar::Fresh)])
+          return this.expr_call(e.span, call, e.k.1 .1,
+            &[dest.unwrap_or_else(|| hir::Spanned { span: e.span, k: PreVar::Fresh })])
         }
         _ => {}
       }
@@ -963,7 +983,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ExprKind::List(_, es) => for e in es { this.expr(e, None)? }
           hir::ExprKind::Mm0(e) => for e in e.subst { this.expr(e, None)? }
           hir::ExprKind::Assert(_) => {
-            this.expr(e, Some(PreVar::Fresh))?;
+            let span = dest.map_or(e.span, |v| v.span);
+            this.expr(e, Some(hir::Spanned { span, k: PreVar::Fresh }))?
           }
           hir::ExprKind::Assign {lhs, rhs, map, gen} => {
             let ty = lhs.ty();
@@ -971,11 +992,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             let rhs = this.operand(*rhs)?;
             let ty = this.tr(ty);
             let varmap = map.iter()
-              .map(|&(new, old, _)| (old, this.tr(new))).collect::<HashMap<_, _>>();
+              .map(|(new, old, _)| (old.k, this.tr(new.k))).collect::<HashMap<_, _>>();
             this.tr.add_gen(this.tr.cur_gen, gen, varmap);
             let vars = map.into_vec().into_iter().map(|(new, _, ety)| Rename {
-              from: this.tr(new),
-              to: this.tr_gen(new, gen),
+              from: this.tr(new.k),
+              to: Spanned { span: new.span.clone(), k: this.tr_gen(new.k, gen) },
               rel: true,
               ety: this.tr_gen(ety, gen)
             }).collect::<Box<[_]>>();
@@ -986,10 +1007,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ExprKind::While {..} => { this.rvalue(e)?; }
           hir::ExprKind::Call(call) => match call.rk {
             hir::ReturnKind::Unreachable |
-            hir::ReturnKind::Unit => this.expr_call(call, e.k.1 .1, &[])?,
+            hir::ReturnKind::Unit => this.expr_call(e.span, call, e.k.1 .1, &[])?,
             hir::ReturnKind::One => unreachable!(),
             hir::ReturnKind::Struct(n) =>
-              this.expr_call(call, e.k.1 .1, &vec![PreVar::Fresh; n.into()])?,
+              this.expr_call(e.span, call, e.k.1 .1,
+                &vec![hir::Spanned { span: e.span, k: PreVar::Fresh }; n.into()])?,
           }
           hir::ExprKind::Unreachable(h) => {
             let h = this.as_temp(*h)?;
@@ -1014,7 +1036,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
               .1.brk.as_ref().expect("label does not expect break").clone();
             let args = match dest {
               None => { this.expr(*e, None)?; vec![] }
-              Some(v) => vec![(v, !e.k.1 .1.ghostly(), this.operand(*e)?)]
+              Some(v) => vec![(v.k, !e.k.1 .1.ghostly(), this.operand(*e)?)]
             };
             this.join(&jb, args, None)
           }
@@ -1035,7 +1057,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         Some(dest) => {
           let ety = e.k.1;
           let rv = this.rvalue(e)?;
-          let dest = this.tr(dest);
+          let dest = this.tr(dest).cloned();
           let rel = !ety.1.ghostly();
           let (e, ty) = this.tr(ety);
           this.push_stmt(Statement::Let(LetKind::Let(dest, e), rel, ty, rv))
@@ -1045,14 +1067,16 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })
   }
 
-  fn tup_pat(&mut self, global: bool, pat: TuplePattern<'a>, e_src: EPlace, src: &mut Place) {
+  fn tup_pat(&mut self, span: &'a FileSpan,
+    global: bool, pat: TuplePattern<'a>, e_src: EPlace, src: &mut Place
+  ) {
     match pat.k.k {
       TuplePatternKind::Name(name) => {
         let v = self.tr(pat.k.var);
         let src = if global {
           let tgt = self.tr(pat.k.ty);
           let r = !pat.k.ty.ghostly();
-          let lk = LetKind::Let(v, None);
+          let lk = LetKind::Let(Spanned { span: span.clone(), k: v }, None);
           self.push_stmt(Statement::Let(lk, r, tgt.clone(), src.clone().into()));
           self.globals.push((name, r, v, tgt));
           (Rc::new(EPlaceKind::Var(v)), v.into())
@@ -1072,10 +1096,13 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             let tgt = self.tr(pat.k.ty);
             let v = self.tr(vpat.k.var);
             let h = self.tr(hpat.k.var);
-            let lk = LetKind::Own([(v, self.tr(vpat.k.ty)), (h, self.tr(hpat.k.ty))]);
+            let lk = LetKind::Own([
+              (Spanned { span: span.clone(), k: v }, self.tr(vpat.k.ty)),
+              (Spanned { span: span.clone(), k: h }, self.tr(hpat.k.ty))
+            ]);
             self.push_stmt(Statement::Let(lk, true, tgt, src.clone().into()));
-            self.tup_pat(global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
-            self.tup_pat(global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
+            self.tup_pat(span, global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+            self.tup_pat(span, global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
             return
           }),
         };
@@ -1084,7 +1111,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let ty = self.tr(pat.k.ty);
           src.proj.push((ty.clone(), Projection::Proj(pk, i)));
           let e_src = Rc::new(EPlaceKind::Proj(e_src.clone(), ty, i));
-          self.tup_pat(global, pat, e_src, src);
+          self.tup_pat(span, global, pat, e_src, src);
           src.proj.pop();
         }
       }
@@ -1098,10 +1125,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let mut vs = Vec::with_capacity(args.len());
     for arg in args {
       if let hir::ArgKind::Lam(pat) = arg.1 {
-        let var = self.tr(pat.k.var);
-        vs.push((var, !pat.k.ty.ghostly()));
-        let ty = self.tr(pat.k.ty);
+        let var = self.tr(pat.k.k.var);
+        vs.push((var, !pat.k.k.ty.ghostly()));
+        let ty = self.tr(pat.k.k.ty);
         f(arg.0, var, &ty);
+        let var = Spanned { span: pat.span.clone(), k: var };
         self.extend_ctx(var, !arg.0.contains(ty::ArgAttr::GHOST), (None, ty));
       }
     }
@@ -1121,19 +1149,20 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         hir::ArgKind::Lam(pat) => {
           // Safety: In push_args_raw we push exactly one element for every Lam(..) in args
           let v = unsafe { it.next().unwrap_unchecked().0 };
-          self.tr.tr_tup_pat(pat, Rc::new(ExprKind::Var(v)));
-          self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
-          pats.push(pat);
+          self.tr.tr_tup_pat(pat.k, Rc::new(ExprKind::Var(v)));
+          self.tup_pat(pat.span, false, pat.k, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+          pats.push(pat.k);
         }
         hir::ArgKind::Let(pat, pe, e) => {
           if let Some(e) = e {
-            let v = self.tr(pat.k.var);
-            self.expr(*e, Some(PreVar::Ok(v))).expect("pure expressions can't diverge");
-            self.tup_pat(false, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+            let v = self.tr(pat.k.k.var);
+            self.expr(*e, Some(pat.map_into(|_| PreVar::Ok(v))))
+              .expect("pure expressions can't diverge");
+            self.tup_pat(pat.span, false, pat.k, Rc::new(EPlaceKind::Var(v)), &mut v.into());
           }
           let pe = self.tr(pe);
-          self.tr.tr_tup_pat(pat, pe);
-          pats.push(pat);
+          self.tr.tr_tup_pat(pat.k, pe);
+          pats.push(pat.k);
         }
       }
     }
@@ -1148,7 +1177,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       let from = self.tr(v);
       let to = self.tr_gen(v, gen);
       if from == to {return None}
-      let r = self.cfg.ctxs.rev_iter(ctx).find(|&&(u, _, _)| from == u)?.1;
+      let r = self.cfg.ctxs.rev_iter(ctx).find(|(u, _, _)| from == u.k)?.1;
       Some((to, r, from.into()))
     }));
   }
@@ -1163,35 +1192,39 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.cur_block().terminate(Terminator::Jump(tgt, args.into(), variant))
   }
 
-  fn let_stmt(&mut self, global: bool, lhs: ty::TuplePattern<'a>, rhs: hir::Expr<'a>) -> Block<()> {
+  fn let_stmt(&mut self, global: bool,
+    lhs: hir::Spanned<'a, ty::TuplePattern<'a>>, rhs: hir::Expr<'a>
+  ) -> Block<()> {
     if_chain! {
       if let hir::ExprKind::Call(hir::Call {rk: hir::ReturnKind::Struct(n), ..}) = rhs.k.0;
-      if let ty::TuplePatternKind::Tuple(pats, _) = lhs.k.k;
+      if let ty::TuplePatternKind::Tuple(pats, _) = lhs.k.k.k;
       if pats.len() == usize::from(n);
       then {
         let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
-        let dest = pats.iter().map(|&pat| PreVar::Pre(pat.k.var)).collect::<Vec<_>>();
-        self.expr_call(call, rhs.k.1 .1, &dest)?;
+        let dest = pats.iter()
+          .map(|&pat| lhs.map_into(|_| PreVar::Pre(pat.k.var)))
+          .collect::<Vec<_>>();
+        self.expr_call(rhs.span, call, rhs.k.1 .1, &dest)?;
         for (&pat, v) in pats.iter().zip(dest) {
-          let v = self.tr(v);
-          self.tup_pat(global, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+          let v = self.tr(v.k);
+          self.tup_pat(lhs.span, global, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
         }
         return Ok(())
       }
     }
-    let v = PreVar::Pre(lhs.k.var);
-    self.expr(rhs, Some(v))?;
+    let v = PreVar::Pre(lhs.k.k.var);
+    self.expr(rhs, Some(lhs.map_into(|_| v)))?;
     let v = self.tr(v);
-    self.tup_pat(global, lhs, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+    self.tup_pat(lhs.span, global, lhs.k, Rc::new(EPlaceKind::Var(v)), &mut v.into());
     Ok(())
   }
 
-  fn stmt(&mut self, stmt: hir::Stmt<'a>, brk: Option<&(JoinBlock, BlockDest)>) -> Block<()> {
+  fn stmt(&mut self, stmt: hir::Stmt<'a>, brk: Option<&(JoinBlock, BlockDest<'a>)>) -> Block<()> {
     match stmt.k {
       hir::StmtKind::Let { lhs, rhs } => self.let_stmt(false, lhs, rhs),
       hir::StmtKind::Expr(e) => self.expr(hir::Spanned {span: stmt.span, k: e}, None),
       hir::StmtKind::Label(v, has_jump, labs) => {
-        let &(ref brk, dest) = brk.expect("we need a join point for the break here");
+        let (brk, dest) = brk.expect("we need a join point for the break here");
         if has_jump {
           let base_ctx = self.cur_ctx;
           let base_bl = self.cur_block;
@@ -1199,7 +1232,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let mut bodies = vec![];
           let jumps = labs.into_vec().into_iter().map(|lab| {
             let (bl, args) = self.push_args(lab.args, |_, _, _| {});
-            bodies.push(lab.body);
+            bodies.push(lab.body.k);
             self.cur_ctx = base_ctx;
             (bl, args)
           }).collect::<Rc<[_]>>();
@@ -1208,15 +1241,16 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.tree.push_group(bls);
           self.labels.push((v, LabelGroupData {
             jumps: Some(((base_gen, brk.1 .1.clone()), jumps.clone())),
-            brk: Some((brk.clone(), dest))
+            brk: Some((brk.clone(), dest.clone()))
           }));
           for (&(bl, _), body) in jumps.iter().zip(bodies) {
             self.cur_ctx = self.cfg[bl].ctx;
             self.cur_block = bl;
             self.tr.cur_gen = base_gen;
             self.tree.push(bl);
-            if let Ok(()) = self.block(body, dest.map(PreVar::Ok)) {
-              let args = match dest { None => vec![], Some(v) => vec![(v, true, v.into())] };
+            let dest2 = dest.as_ref().map(|v| v.map_into(PreVar::Ok));
+            if let Ok(()) = self.block(body, dest2) {
+              let args = match dest { None => vec![], Some(v) => vec![(v.k, true, v.k.into())] };
               self.join(brk, args, None)
             }
           }
@@ -1224,19 +1258,23 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.cur_block = base_bl;
           self.tr.cur_gen = base_gen;
         } else {
-          self.labels.push((v, LabelGroupData { jumps: None, brk: Some((brk.clone(), dest)) }));
+          self.labels.push((v, LabelGroupData {
+            jumps: None, brk: Some((brk.clone(), dest.clone()))
+          }));
         }
         Ok(())
       }
     }
   }
 
-  fn block(&mut self, hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest) -> Block<()> {
+  fn block(&mut self,
+    hir::Block {stmts, expr, gen, muts}: hir::Block<'a>, dest: Dest<'a>
+  ) -> Block<()> {
     let reset = (self.labels.len(), self.tree.groups.len());
     self.tr.try_add_gen(self.tr.cur_gen, gen);
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
       let base_ctx = self.cur_ctx;
-      let dest2 = dest.map(|v| self.tr_gen(v, gen));
+      let dest2 = dest.map(|dest| self.tr_gen(dest, gen));
       Some((JoinBlock(self.dominated_block(base_ctx), (gen, muts.into())), dest2))
     } else { None };
     let r = (|| {
@@ -1259,12 +1297,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   #[allow(clippy::too_many_arguments)]
   fn expr_if(&mut self,
     ety: ty::ExprTy<'a>,
-    hyp: Option<[HVarId; 2]>,
+    hyp: Option<[hir::Spanned<'a, HVarId>; 2]>,
     cond: hir::Expr<'a>,
     [e_tru, e_fal]: [hir::Expr<'a>; 2],
     gen: GenId,
     muts: Vec<HVarId>,
-    dest: Dest,
+    dest: Dest<'a>,
   ) -> Block<()> {
     // In the general case, we generate:
     //   v_cond := cond
@@ -1278,21 +1316,23 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     //   goto after(v)
     // after(dest: T):
     let pe = cond.k.1 .0;
+    let cond_span = cond.span;
     //   v_cond := cond
     let v_cond = self.as_temp(cond)?;
     let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
-    let (vh1, vh2) = match hyp {
-      None => (self.fresh_var(), self.fresh_var()),
-      Some([vh1, vh2]) => (self.tr(vh1), self.tr(vh2)),
+    let (vh1_s, vh2_s) = match hyp {
+      None => (self.fresh_var_span(cond_span.clone()), self.fresh_var_span(cond_span.clone())),
+      Some([vh1, vh2]) => (self.tr(vh1).cloned(), self.tr(vh2).cloned()),
     };
+    let (vh1, vh2) = (vh1_s.k, vh2_s.k);
     let base@(_, base_ctx, base_gen) = self.cur();
     self.tr.try_add_gen(base_gen, gen);
     // tru_ctx is the current context with `vh: cond`
-    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1, false,
+    let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1_s, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
     let tru = self.cfg.new_block(tru_ctx);
     // fal_ctx is the current context with `vh: !cond`
-    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh2, false,
+    let fal_ctx = self.cfg.ctxs.extend(base_ctx, vh2_s, false,
       (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
     let fal = self.cfg.new_block(fal_ctx);
     //   if v_cond {vh. goto tru(vh)} else {vh. goto fal(vh)}
@@ -1301,8 +1341,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let (trans, dest) = match dest {
       None => (None, None),
       Some(v) => {
-        let v = self.tr_gen(v, gen);
-        (Some(v), Some(PreVar::Ok(v)))
+        let x = self.tr_gen(v.k, gen);
+        (Some(v.map_into(|_| x)), Some(v.map_into(|_| PreVar::Ok(x))))
       }
     };
     // tru(h: cond):
@@ -1334,11 +1374,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.set(base);
         if let Some(v) = trans {
           let ety = self.tr_gen(ety, gen);
-          self.extend_ctx(v, true, ety)
+          self.extend_ctx(v.cloned(), true, ety)
         }
         let join = JoinBlock(self.dominated_block(base_ctx), (gen, muts.into()));
         self.set(tru);
-        let args = match trans { None => vec![], Some(v) => vec![(v, true, v.into())] };
+        let args = match trans { None => vec![], Some(v) => vec![(v.k, true, v.k.into())] };
         self.join(&join, args.clone(), None);
         self.set(fal);
         self.join(&join, args, None);
@@ -1449,27 +1489,31 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let pe = self.tr(pe);
           let vh = self.tr(hyp);
           self.push_stmt(Statement::Let(
-            LetKind::Let(vh, Some(Rc::new(ExprKind::Unit))), false,
+            LetKind::Let(vh.cloned(), Some(Rc::new(ExprKind::Unit))), false,
             Rc::new(TyKind::Pure(pe)),
             Constant::itrue().into()));
         }
       } else {
         // Otherwise, this is a proper while loop.
         //   v_cond := cond
+        let cond_span = cond.span;
         let v_cond = self.as_temp(*cond)?;
         let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
-        let vh = self.tr(hyp.map_or(PreVar::Fresh, PreVar::Pre));
+        let vh = match hyp {
+          None => self.fresh_var_span(cond_span.clone()),
+          Some(hyp) => self.tr(hyp).cloned()
+        };
         let test = self.cur();
         // tru_ctx is the current context with `vh: cond`
-        let tru_ctx = self.cfg.ctxs.extend(test.1, vh, false,
+        let tru_ctx = self.cfg.ctxs.extend(test.1, vh.clone(), false,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Pure(pe.clone()))));
         let tru = self.cfg.new_block(tru_ctx);
         // fal_ctx is the current context with `vh: !cond`
-        let fal_ctx = self.cfg.ctxs.extend(test.1, vh, false,
+        let fal_ctx = self.cfg.ctxs.extend(test.1, vh.clone(), false,
           (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Not(Rc::new(TyKind::Pure(pe))))));
         let fal = self.cfg.new_block(fal_ctx);
         //   if v_cond {vh. goto main(vh)} else {vh. goto after(vh)}
-        self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh, tru), (vh, fal)]));
+        self.cur_block().terminate(Terminator::If(v_cond.into(), [(vh.k, tru), (vh.k, fal)]));
 
         // If `brk` is set (to `after`) then that means `has_break` is true so we want to jump to
         // `after` and ignore the `vh: !cond` in the false case.
@@ -1482,7 +1526,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.cfg[fal].stmts.push(Statement::PopLabelGroup);
           // Set `exit_point` to the `after` block (the false branch of the if),
           // and `vh: !cond` is the output
-          exit_point = Ok(((fal, fal_ctx, test.2), vh.into()));
+          exit_point = Ok(((fal, fal_ctx, test.2), vh.k.into()));
         }
         // Prepare to generate the `main` label
         self.set((tru, tru_ctx, test.2));
@@ -1520,10 +1564,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     }
   }
 
-  fn expr_call(&mut self,
+  fn expr_call(&mut self, span: &'a FileSpan,
     hir::Call {f, side_effect: se, tys, args, variant, gen, rk}: hir::Call<'a>,
     tgt: ty::Ty<'a>,
-    dest: &[PreVar],
+    dest: &[hir::Spanned<'a, PreVar>],
   ) -> Block<()> {
     if variant.is_some() {
       unimplemented!("recursive functions not supported")
@@ -1536,8 +1580,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.tr.cur_gen = gen;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
-        let v = self.fresh_var();
-        self.extend_ctx(v, false, (None, Rc::new(TyKind::False)));
+        let v_s = self.fresh_var_span(span.clone());
+        let v = v_s.k;
+        self.extend_ctx(v_s, false, (None, Rc::new(TyKind::False)));
         let bl = self.dominated_block(base_ctx);
         self.cur_block().terminate(Terminator::Call {
           f: f.k, se, tys, args, reach: false, tgt: bl, rets: Box::new([(false, v)])
@@ -1552,8 +1597,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let v = self.tr(dest[0]);
         let vr = !tgt.ghostly();
         let tgt = self.tr(tgt);
-        self.extend_ctx(v, vr, (None, tgt));
-        Box::new([(vr, v)])
+        self.extend_ctx(v.cloned(), vr, (None, tgt));
+        Box::new([(vr, v.k)])
       }
       hir::ReturnKind::Struct(_) => {
         let tgt = self.tr(tgt);
@@ -1563,9 +1608,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           let v = self.tr(dest);
           let ty = alph.alpha(ty);
           let vr = !attr.contains(ArgAttr::GHOST);
-          self.extend_ctx(v, vr, (None, ty));
-          if !attr.contains(ArgAttr::NONDEP) { alph.push(var, v) }
-          (vr, v)
+          self.extend_ctx(v.cloned(), vr, (None, ty));
+          if !attr.contains(ArgAttr::NONDEP) { alph.push(var, v.k) }
+          (vr, v.k)
         }).collect()
       }
     };
@@ -1596,6 +1641,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     init: &mut Initializer,
     it: hir::Item<'a>
   ) -> Option<Symbol> {
+    self.cfg.span = it.span.clone();
     match it.k {
       hir::ItemKind::Proc { kind, name, tyargs, args, gen, outs, rets, variant, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
@@ -1607,7 +1653,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         if variant.is_some() {
           unimplemented!("recursive functions not supported")
         }
-        let outs2 = outs.iter().map(|&i| args[u32_as_usize(i)].1.var().k.var)
+        let outs2 = outs.iter().map(|&i| args[u32_as_usize(i)].1.var().k.k.var)
           .collect::<Box<[_]>>();
         let mut args2 = Vec::with_capacity(args.len());
         assert_eq!(self.push_args(args, |attr, var, ty| {
@@ -1673,8 +1719,9 @@ impl Initializer {
         let body = &mir[&main];
         let (rets, o): (Box<[_]>, _) = match *body.rets {
           [ref ret] => {
-            let v = build.fresh_var();
-            build.extend_ctx(v, false, (None, ret.ty.clone()));
+            let v_s = build.fresh_var_span(body.name.span.clone());
+            let v = v_s.k;
+            build.extend_ctx(v_s, false, (None, ret.ty.clone()));
             (Box::new([(false, v)]), v.into())
           }
           [] => (Box::new([]), Constant::unit().into()),

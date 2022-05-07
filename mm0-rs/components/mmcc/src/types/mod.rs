@@ -150,7 +150,7 @@ impl std::fmt::Display for VarId {
 }
 
 /// A spanned expression.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<T> {
   /// The span of the expression
@@ -158,6 +158,10 @@ pub struct Spanned<T> {
   /// The data (the `k` stands for `kind` because it's often a `*Kind` enum
   /// but it can be anything).
   pub k: T,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Spanned<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.k.fmt(f) }
 }
 
 impl<T> Spanned<T> {

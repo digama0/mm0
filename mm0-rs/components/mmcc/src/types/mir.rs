@@ -3,6 +3,7 @@
 use std::{collections::HashMap, ops::{Index, IndexMut, Range, RangeTo}, rc::Rc};
 use std::mem;
 use bit_vec::BitVec;
+use mm0_util::FileSpan;
 use num::BigInt;
 use smallvec::SmallVec;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
@@ -711,7 +712,7 @@ impl Contexts {
   }
 
   /// Given a context, extend it with a variable and type to produce a new context.
-  pub fn extend(&mut self, mut ctx: CtxId, var: VarId, r: bool, ty: ExprTy) -> CtxId {
+  pub fn extend(&mut self, mut ctx: CtxId, var: Spanned<VarId>, r: bool, ty: ExprTy) -> CtxId {
     self.unshare(&mut ctx).vars.push((var, r, ty));
     ctx.1 += 1;
     ctx
@@ -772,7 +773,7 @@ impl Contexts {
   }
 
   /// Get the last variable pushed on a context, and its type. Panics if used on the root context.
-  #[must_use] pub fn head(&self, id: CtxId) -> &(VarId, bool, ExprTy) {
+  #[must_use] pub fn head(&self, id: CtxId) -> &(Spanned<VarId>, bool, ExprTy) {
     self.rev_iter(id).next().expect("not the root context")
   }
 
@@ -792,7 +793,7 @@ impl Contexts {
     let mut rel = BitVec::from_elem(u32_as_usize(buf.size + id.1), false);
     loop {
       for (i, (v, r, _)) in (buf.size..buf.size + id.1).zip(&mut buf.vars[..u32_as_usize(id.1)]) {
-        let new = vars(*v);
+        let new = vars(v.k);
         *r = new;
         rel.set(u32_as_usize(i), new);
       }
@@ -808,11 +809,11 @@ impl Contexts {
 pub struct CtxRevIter<'a> {
   ctxs: &'a Contexts,
   buf: CtxBufId,
-  iter: std::slice::Iter<'a, (VarId, bool, ExprTy)>,
+  iter: std::slice::Iter<'a, (Spanned<VarId>, bool, ExprTy)>,
 }
 
 impl<'a> Iterator for CtxRevIter<'a> {
-  type Item = &'a (VarId, bool, ExprTy);
+  type Item = &'a (Spanned<VarId>, bool, ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
     loop {
       if let Some(v) = self.iter.next_back() {return Some(v)}
@@ -830,7 +831,7 @@ impl ExactSizeIterator for CtxRevIter<'_> {
 
 /// The iterator struct returned by [`Contexts::iter`].
 pub type CtxIter<'a> = std::iter::Flatten<std::iter::Rev<
-  std::vec::IntoIter<&'a [(VarId, bool, ExprTy)]>>>;
+  std::vec::IntoIter<&'a [(Spanned<VarId>, bool, ExprTy)]>>>;
 
 /// The iterator struct returned by [`BasicBlock::ctx_rev_iter`].
 pub type CtxRevIterWithRel<'a> = WithRel<CtxRevIter<'a>, std::iter::Rev<bit_vec::Iter<'a>>>;
@@ -851,12 +852,12 @@ impl<I, J> std::fmt::Debug for WithRel<I, J> {
 
 impl<'a, I, J> Iterator for WithRel<I, J>
 where
-  I: Iterator<Item = &'a (VarId, bool, ExprTy)>,
+  I: Iterator<Item = &'a (Spanned<VarId>, bool, ExprTy)>,
   J: ExactSizeIterator<Item = bool>
 {
-  type Item = (VarId, bool, &'a ExprTy);
+  type Item = (&'a Spanned<VarId>, bool, &'a ExprTy);
   fn next(&mut self) -> Option<Self::Item> {
-    let (v, _, ref ety) = *self.iter.next()?;
+    let (v, _, ety) = self.iter.next()?;
     Some((v, self.rel.next()?, ety))
   }
   fn size_hint(&self) -> (usize, Option<usize>) { self.rel.size_hint() }
@@ -865,7 +866,7 @@ where
 
 impl<'a, I, J> ExactSizeIterator for WithRel<I, J>
 where
-  I: Iterator<Item = &'a (VarId, bool, ExprTy)>,
+  I: Iterator<Item = &'a (Spanned<VarId>, bool, ExprTy)>,
   J: ExactSizeIterator<Item = bool>
 {
   fn len(&self) -> usize { self.rel.len() }
@@ -879,7 +880,7 @@ impl CtxVisitor {
   /// Visit all variables in the given `CtxId`, not including any variables
   /// returned by previous calls to `visit`.
   pub fn visit<'a>(&mut self,
-    ctxs: &'a Contexts, mut id: CtxId, mut f: impl FnMut(&'a [(VarId, bool, ExprTy)])
+    ctxs: &'a Contexts, mut id: CtxId, mut f: impl FnMut(&'a [(Spanned<VarId>, bool, ExprTy)])
   ) {
     loop {
       if self.0[id.0] >= id.1 { break }
@@ -901,6 +902,8 @@ pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Cfg {
+  /// The span of the item that uses this CFG.
+  pub span: FileSpan,
   /// The set of logical contexts for the basic blocks.
   pub ctxs: Contexts,
   /// The set of basic blocks, containing the actual code.
@@ -1037,7 +1040,7 @@ pub struct CtxBuf {
   /// The cached size of the parent context
   pub size: u32,
   /// The additional variables that this buffer adds to the context.
-  pub vars: Vec<(VarId, bool, ExprTy)>,
+  pub vars: Vec<(Spanned<VarId>, bool, ExprTy)>,
 }
 
 /// The different kinds of projection, used in defining places.
@@ -1525,10 +1528,10 @@ impl From<VarId> for RValue {
 pub enum LetKind {
   /// A declaration of a variable with a value, `let x: T = rv;`. The `bool` is true if this
   /// variable is non-ghost.
-  Let(VarId, Option<Expr>),
+  Let(Spanned<VarId>, Option<Expr>),
   /// `Own(x, T, p, &sn x)` is an existential pattern match on `(own T)`, producing a
   /// value `x` and a pointer `p: &sn x`.
-  Own([(VarId, Ty); 2]),
+  Own([(Spanned<VarId>, Ty); 2]),
 }
 
 impl std::fmt::Debug for LetKind {
@@ -1539,14 +1542,14 @@ impl std::fmt::Debug for LetKind {
 
 impl LetKind {
   fn fmt_rel(&self, r: bool, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match *self {
-      Self::Let(v, ref e) => {
-        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
+    match self {
+      Self::Let(v, e) => {
+        write!(f, "{}{:?}", if r {""} else {"ghost "}, v.k)?;
         if let Some(e) = e { write!(f, " => {:?}", e)? }
         Ok(())
       },
       Self::Own([(v1, _), (v2, _)]) =>
-        write!(f, "(ghost {:?}, {}{:?})", v1, if r {""} else {"ghost "}, v2),
+        write!(f, "(ghost {:?}, {}{:?})", v1.k, if r {""} else {"ghost "}, v2.k),
     }
   }
 }
@@ -1558,7 +1561,7 @@ pub struct Rename {
   /// The variable before the rename.
   pub from: VarId,
   /// The variable after the rename.
-  pub to: VarId,
+  pub to: Spanned<VarId>,
   /// True if variable `to` is relevant (non-ghost).
   pub rel: bool,
   /// The type of the variable after the rename.
@@ -1639,16 +1642,18 @@ impl Statement {
   }
 
   /// (Internal) iteration over the variables created by a statement.
-  pub fn foreach_def<'a>(&'a self, mut f: impl FnMut(VarId, bool, Option<&'a Expr>, &'a Ty)) {
+  pub fn foreach_def<'a>(&'a self,
+    mut f: impl FnMut(&'a Spanned<VarId>, bool, Option<&'a Expr>, &'a Ty)
+  ) {
     match self {
-      &Self::Let(LetKind::Let(v, ref e), r, ref ty, _) => f(v, r, e.as_ref(), ty),
-      &Self::Let(LetKind::Own([(x, ref xt), (y, ref yt)]), yr, _, _) => {
+      Self::Let(LetKind::Let(v, e), r, ty, _) => f(v, *r, e.as_ref(), ty),
+      Self::Let(LetKind::Own([(x, xt), (y, yt)]), yr, _, _) => {
         f(x, false, None, xt);
-        f(y, yr, None, yt);
+        f(y, *yr, None, yt);
       }
       Self::Assign(_, _, _, vars) =>
         vars.iter().for_each(|Rename {to, rel, ety: (e, ty), ..}| {
-          f(*to, *rel, e.as_ref(), ty)
+          f(to, *rel, e.as_ref(), ty)
         }),
       Self::LabelGroup(..) | Self::PopLabelGroup | Self::DominatedBlock(..) => {}
     }
@@ -1973,7 +1978,7 @@ impl BasicBlock {
       if self.relevance.is_some() {
         for (v, r, (e, ty)) in self.ctx_iter(ctxs) { write(v, r, e, ty)? }
       } else {
-        for &(v, r, (ref e, ref ty)) in ctxs.iter(..self.ctx) { write(v, r, e, ty)? }
+        for (v, r, (e, ty)) in ctxs.iter(..self.ctx) { write(v, *r, e, ty)? }
       }
       write!(f, ")")?
     } else {

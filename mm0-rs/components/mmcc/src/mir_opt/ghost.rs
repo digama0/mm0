@@ -116,11 +116,11 @@ impl Cfg {
           if reach1 == reachable[tgt2].reach() { continue }
           let_unchecked!(Some(Terminator::If(_, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
             if reach1 { mem::swap(&mut vtgt1, &mut vtgt2) }
-            let (_, ty1) = &self.ctxs.head(self[vtgt1.1].ctx).2;
-            let (e2, ty2) = &self.ctxs.head(self[vtgt2.1].ctx).2;
+            let (_, _, (_, ty1)) = &self.ctxs.head(self[vtgt1.1].ctx);
+            let (v2, _, (e2, ty2)) = &self.ctxs.head(self[vtgt2.1].ctx);
             bl = &mut self.blocks[id];
             bl.stmts.push(Statement::Let(
-              LetKind::Let(vtgt2.0, e2.clone()), false, ty2.clone(),
+              LetKind::Let(v2.clone().map_into(|_| vtgt2.0), e2.clone()), false, ty2.clone(),
               Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
             ));
             bl.term = Some(Terminator::Jump1(tgt2));
@@ -261,12 +261,12 @@ impl Cfg {
           Statement::Let(_, false, _, _) => {}
           Statement::Let(lk, true, _, rv) => {
             let (LetKind::Let(v, _) | LetKind::Own([_, (v, _)])) = lk;
-            if d.vars.contains(v) { d.apply_rvalue(loc.block, rv) }
+            if d.vars.contains(&v.k) { d.apply_rvalue(loc.block, rv) }
           }
           Statement::Assign(_, _, rhs, vars) => {
             let mut needed = false;
             for v in &**vars {
-              if v.rel && d.vars.contains(&v.to) {
+              if v.rel && d.vars.contains(&v.to.k) {
                 needed = true;
                 d.apply_local(v.from);
               }
@@ -342,8 +342,8 @@ impl Cfg {
       let get = |v| res.contains(&v);
       for stmt in &mut bl.stmts {
         match stmt {
-          Statement::Let(LetKind::Let(v, _) | LetKind::Own([_, (v, _)]), r, _, _) => *r = get(*v),
-          Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to) }
+          Statement::Let(LetKind::Let(v, _) | LetKind::Own([_, (v, _)]), r, _, _) => *r = get(v.k),
+          Statement::Assign(_, _, _, vs) => for v in &mut **vs { v.rel = get(v.to.k) }
           Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
       }
@@ -357,7 +357,7 @@ impl Cfg {
           let BasicBlock {ctx: tgt_ctx, relevance: ref rel, ..} = blocks[tgt.0 as usize];
           let rel = rel.as_ref().expect("impossible");
           let s = cache[tgt].get_or_insert_with(|| {
-            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0).collect()
+            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0.k).collect()
           });
           for (v, r, _) in &mut **args { *r = s.contains(v) }
         }
@@ -367,7 +367,7 @@ impl Cfg {
           let BasicBlock {ctx: tgt_ctx, relevance: ref rel, ..} = blocks[tgt.0 as usize];
           let rel = rel.as_ref().expect("impossible");
           let s = cache[tgt].get_or_insert_with(|| {
-            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0).collect()
+            ctxs.rev_iter_with_rel(tgt_ctx, rel).filter(|p| p.1).map(|p| p.0.k).collect()
           });
           for (r, v) in &mut **rets { *r = s.contains(v) }
         }

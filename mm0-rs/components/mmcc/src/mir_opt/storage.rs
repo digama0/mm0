@@ -244,7 +244,7 @@ impl Cfg {
     let mut allocs = Allocations::default();
 
     let init = self.blocks.0.iter().map(|bl| {
-      bl.ctx_rev_iter(&self.ctxs).filter(|p| p.1).map(|p| p.0).collect()
+      bl.ctx_rev_iter(&self.ctxs).filter(|p| p.1).map(|p| p.0.k).collect()
     }).collect();
     for (_, bl) in self.blocks.enum_iter_mut() {
       if bl.is_dead() { continue }
@@ -254,10 +254,9 @@ impl Cfg {
       let mut to_ghost = vec![];
       let rel = bl.relevance.as_mut().expect("ghost analysis not done yet");
       for (i, (v, r, (e, ty))) in self.ctxs.rev_iter_with_rel(bl.ctx, rel).enumerate() {
-        if r {
-          live.insert(v, (e.as_ref(), ty));
-          if allocs.push(v, || meta(ty)) == AllocId::ZERO { to_ghost.push(i) }
-        }
+        if !r { continue }
+        live.insert(v.k, (e.as_ref(), ty));
+        if allocs.push(v.k, || meta(ty)) == AllocId::ZERO { to_ghost.push(i) }
       }
 
       for (i, s) in bl.stmts.iter_mut().enumerate() {
@@ -320,7 +319,7 @@ impl Cfg {
                 let old = allocs.vars[&r.from];
                 let v = self.max_var.fresh();
                 patch.insert(i, Statement::Let(
-                  LetKind::Let(v, e.cloned()), true, ty.clone(),
+                  LetKind::Let(r.to.clone().map_into(|_| v), e.cloned()), true, ty.clone(),
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
                 let new = allocs.push(v, || meta(ty));
@@ -329,13 +328,13 @@ impl Cfg {
               } else if split {
                 a = interfere(allocs.split(r.from), &allocs)
               }
-              allocs.insert(a, r.to, meta(&r.ety.1));
+              allocs.insert(a, r.to.k, meta(&r.ety.1));
             }
           }
-          Statement::Let(lk, r, ref ty, rv) => {
+          Statement::Let(ref lk, r, ref ty, rv) => {
             let (v, ty) = match lk {
-              LetKind::Let(v, _) => (*v, ty),
-              LetKind::Own([_, (v, ref ty)]) => (*v, ty),
+              LetKind::Let(v, _) => (v.k, ty),
+              LetKind::Own([_, (v, ty)]) => (v.k, ty),
             };
             if !*r { continue }
             let mut copy = None;
@@ -365,7 +364,7 @@ impl Cfg {
           }
           Statement::LabelGroup(..) | Statement::PopLabelGroup | Statement::DominatedBlock(..) => {}
         }
-        s.foreach_def(|v, r, e, ty| if r { live.insert(v, (e, ty)); })
+        s.foreach_def(|v, r, e, ty| if r { live.insert(v.k, (e, ty)); })
       }
 
       for i in to_ghost { rel.set(i, false); }

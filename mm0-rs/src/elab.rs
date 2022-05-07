@@ -227,9 +227,7 @@ pub struct ElabOptions {
 }
 
 impl Default for ElabOptions {
-    fn default() -> Self {
-        Self { check_proofs: true, check_parens: false }
-    }
+  fn default() -> Self { Self { check_proofs: true, check_parens: false } }
 }
 
 /// The [`Elaborator`] struct contains the working data for elaboration, and is the
