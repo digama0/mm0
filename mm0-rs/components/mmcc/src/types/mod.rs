@@ -619,7 +619,7 @@ impl std::fmt::Display for Binop {
 }
 
 fn indent(i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-  (0..i).try_for_each(|_| write!(f, "  "))
+  write!(f, "{:1$}", "", 2 * i)
 }
 
 /// A field accessor.

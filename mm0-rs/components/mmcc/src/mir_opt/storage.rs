@@ -51,6 +51,7 @@ pub(crate) struct Meta {
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Meta);
 
 impl Meta {
+  const GHOST: Self = Self { size: 0, on_stack: false };
   fn from_size(size: u64) -> Self {
     Self { size, on_stack: false }
   }
@@ -237,7 +238,7 @@ impl Cfg {
   #[must_use] fn build_allocations(&mut self,
     names: &HashMap<Symbol, Entity>
   ) -> Allocations {
-    let meta = |ty: &Ty| ty.meta(names).expect("can't get size of type");
+    let meta = |ty: &Ty| ty.meta(names).unwrap_or(Meta::GHOST);
 
     // let mut interference = Interference::default();
 
@@ -256,7 +257,7 @@ impl Cfg {
       for (i, (v, r, (e, ty))) in self.ctxs.rev_iter_with_rel(bl.ctx, rel).enumerate() {
         if !r { continue }
         live.insert(v.k, (e.as_ref(), ty));
-        if allocs.push(v.k, || meta(ty)) == AllocId::ZERO { to_ghost.push(i) }
+        if allocs.push(v.k, || meta(ty)) == AllocId::ZERO { to_ghost.push(rel.len() - 1 - i) }
       }
 
       for (i, s) in bl.stmts.iter_mut().enumerate() {
@@ -323,8 +324,7 @@ impl Cfg {
                   Operand::Move(r.from.into()).into()));
                 patch.replace(i, StorageEdit::ChangeAssignTarget(r.from, v));
                 let new = allocs.push(v, || meta(ty));
-                assert!(new != AllocId::ZERO);
-                a = interfere((old, new), &allocs);
+                a = if new == AllocId::ZERO { new } else { interfere((old, new), &allocs) };
               } else if split {
                 a = interfere(allocs.split(r.from), &allocs)
               }

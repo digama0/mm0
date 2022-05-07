@@ -1388,9 +1388,8 @@ impl TupleMatchKind {
     })
   }
 
-  /// Constructs an expression from a list of expressions for the sub-pattern matches.
-  /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
-  /// type error.
+  /// Projects the value out of a tuple-like construction.
+  /// Equivalent to `let (..., xi, ...) = e; xi` where `xi` is the `idx`th element in the list.
   fn proj<'a>(self, ctx: &mut InferCtx<'a, '_>,
     span: &'a FileSpan, e: Expr<'a>, num: usize, idx: u32
   ) -> Expr<'a> {
@@ -3123,11 +3122,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let (e, pe) = self.lower_expr(x, expect2);
     let ty = e.ty();
     let y = self.as_pure(&x.span, pe);
-    let x = if let ExpectExpr::Sn(x, _) = expect {x} else {self.new_expr_mvar(span)};
-    let h = h.map(|h| Box::new({
-      let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Binop(Binop::Eq, x, y))));
-      self.check_expr(h, ty).0
-    }));
+    let (x, h) = if let Some(h) = h {
+      let x = if let ExpectExpr::Sn(x, _) = expect {x} else {self.new_expr_mvar(span)};
+      let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Binop(Binop::Eq, y, x))));
+      (x, Some(Box::new(self.check_expr(h, ty).0)))
+    } else {
+      (y, None)
+    };
     (hir::ExprKind::Sn(Box::new(e), h), y, intern!(self, TyKind::Sn(x, ty)))
   }
 
@@ -3478,7 +3479,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
                 self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
             ret![List(ListKind::Struct, es), val, tgt]
           }
-          TyKind::Own(_) |
+          TyKind::Own(_) => unimplemented!("malloc"),
           TyKind::Sn(_, _) => {
             expect!(2);
             let_unchecked!((x, h) as [x, h] = &**es);
@@ -3796,7 +3797,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))))
           })
         };
-        let body = Box::new(self.check_block(span, body, self.common.t_unit).0);
+        let ret_ty =
+          if crate::proof::VERIFY_TERMINATION { self.common.t_false }
+          else { self.common.t_unit };
+        let body = Box::new(self.check_block(span, body, ret_ty).0);
         let LabelData {labels, dcs, ..} =
           self.labels.remove(&label).expect("labels should be well scoped");
 

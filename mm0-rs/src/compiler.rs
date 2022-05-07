@@ -479,9 +479,9 @@ pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").expect("required arg");
   let path: FileRef = fs::canonicalize(path)?.into();
+  QUIET.store(args.is_present("quiet"), Ordering::Relaxed);
   let (file, env) = elab_for_result(path.clone())?;
   let env = env.unwrap_or_else(|| std::process::exit(1));
-  QUIET.store(args.is_present("quiet"), Ordering::Relaxed);
   if let Some(s) = args.value_of_os("output") {
     if let Err((fsp, e)) =
       if s == "-" { env.run_output(io::stdout()) }
@@ -500,7 +500,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
       env.export_mmu(w)?;
     } else {
-      fn report(lvl: ErrorLevel, err: &str) {
+      let mut report = |lvl: ErrorLevel, err: &str| {
         println!("{}\n", DisplayList::from(Snippet {
           title: Some(Annotation {
             label: Some(err),
@@ -511,8 +511,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
           slices: vec![],
           opt: FormatOptions { color: true, ..Default::default() },
         }))
-      }
-      let mut report = report;
+      };
       let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
       ex.run(!args.is_present("strip"))?;
       ex.finish()?;

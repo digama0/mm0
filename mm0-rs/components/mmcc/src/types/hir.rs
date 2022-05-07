@@ -807,7 +807,7 @@ impl ExprKind<'_> {
           for &v in &*w.muts { write!(f, " {}", v)? }
           writeln!(f, "]")?; indent(i, f)?;
         }
-        write!(f, "{}: while ", w.label)?;
+        write!(f, "{:?}: while ", w.label)?;
         if let Some(h) = w.hyp { write!(f, "{}: ", h.k)? }
         w.cond.k.0.debug_indent(i+1, f)?;
         if let Some(var) = &w.variant {
@@ -817,7 +817,7 @@ impl ExprKind<'_> {
         } else {
           writeln!(f, " {{")?;
         }
-        w.body.debug_indent(i+1, f)?;
+        w.body.debug_indent(i+1, f)?; writeln!(f)?;
         indent(i, f)?; write!(f, "}}")
       }
       ExprKind::Unreachable(e) => {
@@ -825,7 +825,7 @@ impl ExprKind<'_> {
         e.k.0.debug_indent(i, f)
       }
       ExprKind::Jump(lab, j, es, var) => {
-        write!(f, "jump {}.{}(", lab, j)?;
+        writeln!(f, "jump {:?}.{}(", lab, j)?;
         for e in es {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }

@@ -80,6 +80,8 @@ pub enum ConstRef {
   /// The value is stored at this relative offset into the read-only section.
   Ptr(u32),
 }
+#[cfg(feature = "memory")]
+mm0_deepsize::deep_size_0!(ConstRef);
 
 /// A type for instruction data in a `VCode<I>`.
 pub trait Inst: Sized {

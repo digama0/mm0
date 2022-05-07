@@ -241,7 +241,7 @@ pub struct TuplePatternS<'a> {
 impl std::fmt::Debug for TuplePatternS<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.k {
-      TuplePatternKind::Name(name) => write!(f, "{}{{{}}}: {:?}", self.var, name, self.ty),
+      TuplePatternKind::Name(name) => write!(f, "{:?}{{{}}}: {:?}", self.var, name, self.ty),
       TuplePatternKind::Tuple(..) => write!(f, "{:?}", self.k),
       TuplePatternKind::Error(pat) => write!(f, "{:?} ??as {:?}", pat, self.ty),
     }

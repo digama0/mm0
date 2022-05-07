@@ -240,7 +240,7 @@ impl<'a> Translate<'a> for ty::Lifetime {
     match self {
       ty::Lifetime::Extern => Lifetime::Extern,
       ty::Lifetime::Place(v) => Lifetime::Place(v.tr(tr)),
-      ty::Lifetime::Infer(_) => unreachable!(),
+      ty::Lifetime::Infer(_) => Lifetime::Extern, // FIXME
     }
   }
 }
@@ -1028,7 +1028,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
               Ok((v, r, this.operand(e)?))
             }).collect::<Block<Vec<_>>>()?;
             let variant = variant.map(|v| this.operand(*v)).transpose()?;
-            this.join(&jb, args, variant)
+            this.join(&jb, args, variant);
+            return Err(Diverged)
           }
           hir::ExprKind::Break(lab, e) => {
             let (jb, dest) = this.labels.iter()
@@ -1038,7 +1039,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
               None => { this.expr(*e, None)?; vec![] }
               Some(v) => vec![(v.k, !e.k.1 .1.ghostly(), this.operand(*e)?)]
             };
-            this.join(&jb, args, None)
+            this.join(&jb, args, None);
+            return Err(Diverged)
           }
           hir::ExprKind::Return(es) =>
             match this.expr_return(|_| es.into_iter(), Self::expr_place)? {}

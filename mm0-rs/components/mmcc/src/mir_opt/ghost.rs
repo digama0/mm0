@@ -39,8 +39,7 @@ impl Domain for Reachability {
 
 /// The result of ghost analysis, the list of all computationally relevant variables in each
 /// basic block.
-#[derive(Debug)]
-pub struct GhostAnalysisResult(BlockVec<im::HashSet<VarId>>);
+type GhostAnalysisResult = BlockVec<im::HashSet<VarId>>;
 
 impl Cfg {
   /// This function computes the reachability for each block in the CFG.
@@ -327,15 +326,15 @@ impl Cfg {
 
     let mut analysis = GhostAnalysis { reachable, returns };
     let result = analysis.iterate_to_fixpoint(self);
-    GhostAnalysisResult((0..self.blocks.len()).map(BlockId::from_usize).map(|id| {
+    (0..self.blocks.len()).map(BlockId::from_usize).map(|id| {
       analysis.get_applied(self, &result, id).vars
-    }).collect())
+    }).collect()
   }
 
   /// Modify the CFG in place to apply the result of ghost analysis.
   pub fn apply_ghost_analysis(&mut self, result: &GhostAnalysisResult) {
     self.ctxs.reset_ghost();
-    for (id, res) in result.0.enum_iter() {
+    for (id, res) in result.enum_iter() {
       let bl = &mut self.blocks[id];
       if bl.is_dead() { continue }
       bl.relevance = Some(self.ctxs.set_ghost(bl.ctx, |v| res.contains(&v)));
