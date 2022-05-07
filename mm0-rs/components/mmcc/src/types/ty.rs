@@ -209,6 +209,8 @@ impl BitOrAssign<Lifetime> for Flags {
 pub enum Coercion<'a> {
   /// The value can be typed at the target type, without regard for the source.
   TypedPure(Ty<'a>),
+  /// Coercion from `&sn x` to `& T` when `x: T`.
+  Shr(Ty<'a>, Ty<'a>),
   /// An error coercion maps `X -> Y` for any `X, Y`. To use this variant,
   /// an error must have been previously reported regarding this type error.
   Error,
@@ -217,7 +219,7 @@ pub enum Coercion<'a> {
 impl<'a> BitOrAssign<Coercion<'a>> for Flags {
   fn bitor_assign(&mut self, coe: Coercion<'a>) {
     match coe {
-      Coercion::TypedPure(_) => {}
+      Coercion::TypedPure(_) | Coercion::Shr(..) => {}
       Coercion::Error => *self |= Flags::HAS_ERROR,
     }
   }

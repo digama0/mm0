@@ -2187,6 +2187,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       (TyKind::Int(ity_a), TyKind::Int(ity_b))
       if matches!(rel, Relation::Subtype | Relation::Coerce) && ity_a <= ity_b =>
         return Ok(vec![]),
+      (TyKind::RefSn(_), TyKind::Shr(_, _))
+      if matches!(rel, Relation::Coerce) && from.is_ty() && to.is_ty() => {
+        return Ok(vec![Coercion::Shr(from.ty, to.ty)])
+      }
       (TyKind::Array(ty_a, e_a), TyKind::Array(ty_b, e_b)) => {
         if rel == Relation::Subtype { rel = Relation::SubtypeEqSize }
         let coes = self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
@@ -2831,23 +2835,41 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn apply_coe(&mut self, c: Coercion<'a>, e: Expr<'a>) -> Expr<'a> {
     match c {
-      Coercion::TypedPure(_) => e,
+      Coercion::TypedPure(_) |
+      Coercion::Shr(..) => e,
       Coercion::Error => self.common.e_error,
     }
   }
 
-  fn apply_coe_expr(&mut self, c: Coercion<'a>, e: hir::Expr<'a>) -> hir::Expr<'a> {
-    match c {
+  fn apply_coe_expr(&mut self, c: Coercion<'a>,
+    (e, pe): (hir::Expr<'a>, RExpr<'a>)
+  ) -> (hir::Expr<'a>, RExpr<'a>) {
+    (match c {
       Coercion::TypedPure(ty) => {
-        let pe = e.k.1 .0;
+        let pe1 = e.k.1 .0;
         hir::Spanned {
           span: e.span,
-          k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Wand(None)), (pe, ty))
+          k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Wand(None)), (pe1, ty))
+        }
+      }
+      Coercion::Shr(p, ty) => {
+        let_unchecked!(ty as TyKind::Shr(_, ty) = ty.k);
+        let_unchecked!(p as TyKind::RefSn(p) = p.k);
+        let ppe = self.place_to_expr(p);
+        let pty = self.place_type(e.span, p).expect("bad place");
+        if self.relate_ty(e.span, Some(ppe), pty, ty, Relation::SubtypeEqSize).is_err() {
+          let ret = (hir::ExprKind::Error, (Some(self.common.e_error), self.common.t_error));
+          return (e.map_into(|_| ret), pe)
+        }
+        let pe1 = e.k.1 .0;
+        hir::Spanned {
+          span: e.span,
+          k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Shr), (pe1, ty))
         }
       }
       Coercion::Error => e.map_into(|_|
         (hir::ExprKind::Error, (Some(self.common.e_error), self.common.t_error))),
-    }
+    }, pe)
   }
 
   fn coerce_pure_expr(&mut self,
@@ -2956,13 +2978,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn check_array(&mut self, span: &'a FileSpan,
     a: &'a ast::Expr, ty: Ty<'a>, n: Expr<'a>
-  ) -> (Ty<'a>, hir::Expr<'a>, RExpr<'a>) {
+  ) -> (Ty<'a>, (hir::Expr<'a>, RExpr<'a>)) {
     let arrty = intern!(self, TyKind::Array(ty, n));
     let (mut e_a, a) = self.lower_expr(a, ExpectExpr::HasTy(arrty));
     while let TyKind::Ref(_, aty2) = e_a.ty().k {
       e_a = hir::Expr {span, k: (hir::ExprKind::Rval(Box::new(e_a)), (a.ok(), aty2))};
     }
-    (arrty, self.coerce_expr(e_a, a, arrty), a)
+    (arrty, self.coerce_expr((e_a, a), arrty))
   }
 
   fn build_lens(mut origin: Place<'a>
@@ -3260,9 +3282,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e1.ty())),
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e2.ty())));
           let tyin2 = self.common.int_ty(ityin2);
-          let e1 = self.coerce_expr(e1, pe1, tyin1);
-          let e2 = self.coerce_expr(e2, pe2, tyin2);
-          (ityin2, (e1, pe1), (e2, pe2), tyout)
+          let e1 = self.coerce_expr((e1, pe1), tyin1);
+          let e2 = self.coerce_expr((e2, pe2), tyin2);
+          (ityin2, e1, e2, tyout)
         } else {
           (IntTy::INT,
            self.check_expr(e1, self.common.t_bool),
@@ -3283,7 +3305,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Index(arr, idx, hyp) => {
         let ty = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let n = self.new_expr_mvar(span);
-        let (arrty, e_a, arr) = self.check_array(span, arr, ty, n);
+        let (arrty, (e_a, arr)) = self.check_array(span, arr, ty, n);
         let (e_i, idx) = self.check_expr(idx, self.common.nat());
         let hyp = match hyp {
           Some(h) => {
@@ -3305,7 +3327,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           .and_then(|ty| if let TyKind::Array(ty, _) = ty.k {Some(ty)} else {None})
           .unwrap_or_else(|| self.new_ty_mvar(span));
         let n = self.new_expr_mvar(span);
-        let (arrty, e_a, arr) = self.check_array(span, arr, ty, n);
+        let (arrty, (e_a, arr)) = self.check_array(span, arr, ty, n);
         let (e_i, idx) = self.check_expr(idx, self.common.nat());
         let (e_l, len) = self.check_expr(len, self.common.nat());
         let pe_l = self.as_pure(e_l.span, len);
@@ -4009,16 +4031,18 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     self.lower_expr_kind(span, k, expect)
   }
 
-  fn coerce_expr(&mut self, mut e: hir::Expr<'a>, pe: RExpr<'a>, to: Ty<'a>) -> hir::Expr<'a> {
-    if let Err(coe) = self.relate_ty(e.span, pe.ok(), e.ty(), to, Relation::Coerce) {
+  fn coerce_expr(&mut self,
+    mut e: (hir::Expr<'a>, RExpr<'a>), to: Ty<'a>
+  ) -> (hir::Expr<'a>, RExpr<'a>) {
+    if let Err(coe) = self.relate_ty(e.0.span, e.1.ok(), e.0.ty(), to, Relation::Coerce) {
       for c in coe { e = self.apply_coe_expr(c, e) }
     }
     e
   }
 
   fn check_expr(&mut self, e: &'a ast::Expr, tgt: Ty<'a>) -> (hir::Expr<'a>, RExpr<'a>) {
-    let (e, pe) = self.lower_expr(e, ExpectExpr::HasTy(tgt));
-    (self.coerce_expr(e, pe, tgt), pe)
+    let e = self.lower_expr(e, ExpectExpr::HasTy(tgt));
+    self.coerce_expr(e, tgt)
   }
 
   fn check_args<'b, A>(&'b mut self,
@@ -4314,11 +4338,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn check_block(&mut self, span: &'a FileSpan, bl: &'a ast::Block, tgt: Ty<'a>) -> (hir::Block<'a>, RExpr<'a>) {
-    let (mut bl, (pe, ty)) = self.lower_block(span, bl, ExpectExpr::HasTy(tgt));
+    let (mut bl, (mut pe, ty)) = self.lower_block(span, bl, ExpectExpr::HasTy(tgt));
     if let Err(coe) = self.relate_ty(span, pe.ok(), ty, tgt, Relation::Coerce) {
       let mut e = bl.expr.take().map_or_else(|| hir::Spanned {span, k:
         (hir::ExprKind::Unit, (Some(self.common.e_unit), self.common.t_unit))}, |e| *e);
-      for c in coe { e = self.apply_coe_expr(c, e) }
+      for c in coe { (e, pe) = self.apply_coe_expr(c, (e, pe)) }
       bl.expr = Some(Box::new(e))
     }
     (bl, pe)

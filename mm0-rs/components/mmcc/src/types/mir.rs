@@ -1423,6 +1423,8 @@ pub enum CastKind {
   /// Convert between integral types `ity <= ity2`. The sizes are determined
   /// by the size of the input and output types.
   Int,
+  /// Casting a `&sn x` to `&T` assuming `x: T`
+  Shr,
   /// Proof that `A` is a subtype of `B`
   Subtype(Operand),
   /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast

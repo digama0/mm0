@@ -828,6 +828,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let ck = match ck {
           hir::CastKind::Int => CastKind::Int,
           hir::CastKind::Ptr => unreachable!(),
+          hir::CastKind::Shr => CastKind::Shr,
           hir::CastKind::Subtype(h) => CastKind::Subtype(self.operand(*h)?),
           hir::CastKind::Wand(h) => CastKind::Wand(h.map(|h| self.operand(*h)).transpose()?),
           hir::CastKind::Mem(h) => CastKind::Mem(self.operand(*h)?),

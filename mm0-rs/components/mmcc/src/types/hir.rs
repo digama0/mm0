@@ -862,6 +862,8 @@ pub enum CastKind<'a> {
   Int,
   /// Casting a pointer type to `u64`
   Ptr,
+  /// Casting a `&sn x` to `&T` assuming `x: T`
+  Shr,
   /// Proof that `A` is a subtype of `B`
   Subtype(Box<Expr<'a>>),
   /// Proof that `[x : A] -* [x : B]` for the particular `x` in the cast
