@@ -239,9 +239,9 @@ impl<'a> Translate<'a> for ty::Lifetime {
   type Output = Lifetime;
   fn tr(self, tr: &mut Translator<'a, '_>) -> Lifetime {
     match self {
+      ty::Lifetime::Infer(_) | // FIXME
       ty::Lifetime::Extern => Lifetime::Extern,
       ty::Lifetime::Place(v) => Lifetime::Place(v.tr(tr)),
-      ty::Lifetime::Infer(_) => Lifetime::Extern, // FIXME
     }
   }
 }
@@ -937,7 +937,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
           return this.expr_call(e.span, call, e.k.1 .1,
-            &[dest.unwrap_or_else(|| hir::Spanned { span: e.span, k: PreVar::Fresh })])
+            &[dest.unwrap_or(hir::Spanned { span: e.span, k: PreVar::Fresh })])
         }
         _ => {}
       }
@@ -1247,7 +1247,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.tree.push_group(bls);
           self.labels.push((v, LabelGroupData {
             jumps: Some(((base_gen, brk.1 .1.clone()), jumps.clone())),
-            brk: Some((brk.clone(), dest.clone()))
+            brk: Some((brk.clone(), *dest))
           }));
           for (&(bl, _), body) in jumps.iter().zip(bodies) {
             self.cur_ctx = self.cfg[bl].ctx;
@@ -1265,7 +1265,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.tr.cur_gen = base_gen;
         } else {
           self.labels.push((v, LabelGroupData {
-            jumps: None, brk: Some((brk.clone(), dest.clone()))
+            jumps: None, brk: Some((brk.clone(), *dest))
           }));
         }
         Ok(())

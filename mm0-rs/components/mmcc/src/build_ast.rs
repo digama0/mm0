@@ -249,23 +249,24 @@ impl BuildAst {
     for (from, to) in renames {
       if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
       if from.k == to.k { continue }
-      let var = self.get_var(from.k).ok_or(RenameError::MissingVar(from.clone()))?;
+      let var = self.get_var(from.k).ok_or_else(|| RenameError::MissingVar(from.clone()))?;
       vec.push((var, to.k));
     }
     for (var, to) in vec { self.push(to, var) }
     Ok(())
   }
 
+  #[allow(clippy::type_complexity)]
   fn mk_split(&mut self, Renames {old, new}: Renames
   ) -> Result<HashMap<VarId, (VarId, Spanned<Symbol>, Spanned<Symbol>)>, RenameError> {
     let mut map = HashMap::new();
     for (from, to) in old {
-      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
+      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span)) }
       map.entry(self.get_var(from.k).ok_or_else(|| RenameError::MissingVar(from.clone()))?)
         .or_insert_with(|| (self.fresh_var(from.clone()), from.clone(), from.clone())).2 = to;
     }
     for (from, to) in new {
-      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span.clone())) }
+      if from.k == Symbol::UNDER { return Err(RenameError::RenameUnder(from.span)) }
       map.entry(self.get_var(from.k).ok_or_else(|| RenameError::MissingVar(from.clone()))?)
         .or_insert_with(|| (self.fresh_var(from.clone()), from.clone(), from.clone())).1 = to;
     }
@@ -291,6 +292,7 @@ impl BuildAst {
 
   /// Consume a parsed `Renames` object to construct the `oldmap` argument that is used in
   /// `Assign` expression nodes.
+  #[allow(clippy::type_complexity)]
   pub fn mk_oldmap(&mut self, lhs: &ast::Expr, with: Renames
   ) -> Result<Box<[(Spanned<VarId>, Spanned<VarId>)]>, RenameError> {
     let mut split = self.mk_split(with)?;

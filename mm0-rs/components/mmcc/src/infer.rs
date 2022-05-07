@@ -3839,7 +3839,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           self.dc.context = ctx1.into();
           self.dc.diverged |= trivial == Some(false);
         }
-        let hyp = hyp.as_ref().map(|hyp| hyp.as_ref());
+        let hyp = hyp.as_ref().map(Spanned::as_ref);
         let ret = if has_break { self.common.t_unit } else {
           pe.ok().map_or(self.common.t_unit, |pe| {
             after.diverged |= trivial == Some(true);
