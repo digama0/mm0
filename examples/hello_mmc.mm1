@@ -30,3 +30,5 @@ do {
   (mmc-finish 'test)
   '_mmc_test_main_ok
 };
+
+-- output string: (mmc->string);

@@ -8,6 +8,9 @@ do {
   (def mmc-add
     (def c mmc-compiler)
     (fn xs (apply c '+ xs)))
+  (def mmc->string
+    (def c mmc-compiler)
+    (fn xs (apply c '->string xs)))
   (def mmc-finish
     (def c mmc-compiler)
     (fn xs (apply c 'finish xs)))

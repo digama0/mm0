@@ -11,7 +11,7 @@ mod parser;
 mod proof;
 
 use std::{collections::HashMap, rc::Rc};
-use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkerErr};
+use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkedCode, LinkerErr};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
@@ -90,11 +90,37 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
   }
 }
 
+#[derive(Clone, DeepSizeOf, Default)]
+struct CompilerInner {
+  inner: mmcc::Compiler<Config>,
+  code: Option<Box<mmcc::LinkedCode>>,
+}
+
+impl CompilerInner {
+  /// Get the linked code, calling `finish` on the compiler if necessary.
+  fn linked_code(&mut self, sp: Span) -> Result<&LinkedCode, ElabError> {
+    if self.inner.has_type_errors() {
+      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
+    }
+    if let Some(code) = &self.code {
+      #[allow(clippy::useless_transmute)]
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
+      unsafe { return Ok(std::mem::transmute::<&LinkedCode, &LinkedCode>(code)) }
+    }
+    let code = self.inner.finish().map_err({
+      |LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v))| {
+        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position")
+      }
+    })?;
+    Ok(self.code.get_or_insert(code))
+  }
+}
+
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
 #[derive(Clone, DeepSizeOf)]
 pub struct Compiler {
-  inner: Rc<mmcc::Compiler<Config>>,
+  inner: Rc<CompilerInner>,
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.
   predef: proof::Predefs,
@@ -138,12 +164,13 @@ impl Compiler {
     elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>
   ) -> Result<()> {
     let compiler = Rc::make_mut(&mut self.inner);
+    compiler.code = None;
     let fsp = FileSpan {file: elab.path.clone(), span: sp};
     let mut cache = HashMap::default();
     for e in it {
       let mut it = ItemIter::new(e);
       loop {
-        let mut p = Parser::new(elab, &mut cache, compiler);
+        let mut p = Parser::new(elab, &mut cache, &mut compiler.inner);
         let item = match p.parse_next_item(&fsp, &mut it) {
           Err(e) => { elab.report(e); continue }
           Ok(Some(item)) => item,
@@ -151,7 +178,7 @@ impl Compiler {
         };
         let (var_names, lambdas) = p.finish();
         let mut errors = vec![];
-        compiler.add(&item, var_names, ItemContext {
+        compiler.inner.add(&item, var_names, ItemContext {
           elab,
           lambdas: &lambdas,
           errors: &mut errors
@@ -162,17 +189,19 @@ impl Compiler {
     Ok(())
   }
 
+  /// Get the compiled ELF file as a byte string.
+  pub fn to_str(&mut self, sp: Span) -> Result<Vec<u8>> {
+    let compiler = Rc::make_mut(&mut self.inner);
+    let code = compiler.linked_code(sp)?;
+    let mut out = Vec::new();
+    code.write_elf(&mut out).expect("IO error in string write");
+    Ok(out)
+  }
+
   /// Once we are done adding functions, this function performs final linking to produce an executable.
   pub fn finish(&mut self, elab: &mut Elaborator, sp: Span, name: AtomId) -> Result<()> {
     let compiler = Rc::make_mut(&mut self.inner);
-    if compiler.has_type_errors() {
-      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
-    }
-    let code = compiler.finish().map_err({
-      |LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v))| {
-        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position")
-      }
-    })?;
+    let code = compiler.linked_code(sp)?;
     proof::render_proof(&self.predef, elab, sp, name, &code.proof())
   }
 
@@ -185,6 +214,10 @@ impl Compiler {
       Some(Keyword::Add) => {
         self.add(elab, sp, it)?;
         Ok(LispVal::undef())
+      }
+      Some(Keyword::ToString) => {
+        self.add(elab, sp, it)?;
+        Ok(LispVal::string(self.to_str(sp)?.into()))
       }
       Some(Keyword::Finish) => {
         let name = it.next().and_then(|e| e.as_atom()).ok_or_else(||

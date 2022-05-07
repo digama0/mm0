@@ -98,6 +98,7 @@ mk_id! {
   PInstId(Debug("pi"))
 }
 
+#[derive(Clone)]
 pub(crate) struct PCode {
   pub(crate) insts: IdxVec<PInstId, PInst>,
   pub(crate) block_map: HashMap<mir::BlockId, BlockId>,

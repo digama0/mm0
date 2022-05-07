@@ -104,6 +104,7 @@ make_keywords! {
   Proc: "proc",
   Star: "*",
   Struct: "struct",
+  ToString: "->string",
   Typedef: "typedef",
   Variant: "variant",
   While: "while",

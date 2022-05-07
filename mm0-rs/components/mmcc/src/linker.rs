@@ -18,7 +18,7 @@ type GenericCall = (Symbol, Box<[Ty]>);
 
 type ConstVal = (u32, ConstRef);
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ConstData {
   pub(crate) map: HashMap<Symbol, ConstVal>,
   pub(crate) ordered: Vec<Symbol>,
@@ -216,7 +216,7 @@ pub const TEXT_START: u32 = 0x40_0078;
 
 //// A completed code object. This includes the list of instructions,
 /// and can be serialized to a list of bytes using the [`LinkedCode::write_elf`] method.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LinkedCode {
   pub(crate) mir: HashMap<Symbol, Proc>,
   pub(crate) consts: ConstData,
@@ -229,6 +229,8 @@ pub struct LinkedCode {
   pub(crate) postorder: Vec<ProcId>,
   pub(crate) text_size: u32,
 }
+#[cfg(feature = "memory")]
+mm0_deepsize::deep_size_0!({!Copy} LinkedCode);
 
 /// Errors that occur during linking.
 #[derive(Debug)]

@@ -232,7 +232,7 @@ pub enum ArgAbi {
 }
 
 /// The representation of a monomorphized function's calling convention.
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct ProcAbi {
   /// The arguments of the procedure.
   pub args: Box<[ArgAbi]>,
