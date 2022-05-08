@@ -30,7 +30,7 @@
   clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
   clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  // clippy::undocumented_unsafe_blocks, // disabled because of ICE on 1.58.1 stable
+  clippy::undocumented_unsafe_blocks,
   clippy::unwrap_used)]
 // all the clippy lints we don't want
 #![allow(clippy::cognitive_complexity, clippy::comparison_chain,
@@ -39,6 +39,8 @@
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
   clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::redundant_pub_crate,
   clippy::semicolon_if_nothing_returned, clippy::shadow_unrelated, clippy::too_many_lines,
+  clippy::trait_duplication_in_bounds, // rust-clippy#8757, rust-clippy#8771
+  clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self)]
 
 #[macro_use] extern crate lazy_static;

@@ -247,10 +247,12 @@ pub fn scope_ast_source<R>(source: &LinedString, f: impl FnOnce() -> R) -> R {
 
 /// Get a [`FormatEnv`] within the scope of a `scope_ast_source` call.
 pub fn with_format_env<R>(env: &Environment, f: impl FnOnce(Option<FormatEnv<'_>>) -> R) -> R {
-  // Safety: SCOPED_SRC is only non-null within the scope of a `scope_ast_source` call, which
-  // ensures that the value is still alive. We tie this to the lifetime of the `FormatEnv<'a>`
-  // passed to `f`, so this function does not need to be unsafe.
-  SCOPED_SRC.with(|k| f(unsafe { k.get().as_ref() }.map(|source| FormatEnv {source, env})))
+  SCOPED_SRC.with(|k| {
+    // Safety: SCOPED_SRC is only non-null within the scope of a `scope_ast_source` call, which
+    // ensures that the value is still alive. We tie this to the lifetime of the `FormatEnv<'a>`
+    // passed to `f`, so this function does not need to be unsafe.
+    f(unsafe { k.get().as_ref() }.map(|source| FormatEnv {source, env}))
+  })
 }
 
 thread_local! {

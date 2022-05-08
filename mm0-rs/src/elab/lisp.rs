@@ -1572,19 +1572,19 @@ impl Iterator for Uncons {
               LispKind::Ref(m) => {temp = m.unref(); inner = &temp}
               LispKind::Annot(_, v) => inner = v,
               LispKind::List(es) => {
-                *self = Uncons::List(OwningRef::from(e.clone()).map(|_|
+                *self = Uncons::List(OwningRef::from(e.clone()).map(|_| {
                   // Safety: The lifetime of this value is tied to the original
                   // `e` (or clones made via `temp`), while the provided value
                   // `_` is a clone of it, which has the same lifetime.
                   unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
-                ));
+                }));
                 continue 'l
               }
               LispKind::DottedList(es, r) => {
-                *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_|
+                *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_| {
                   // Safety: same as above
                   unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
-                ), r.clone());
+                }), r.clone());
                 continue 'l
               }
               _ => return None

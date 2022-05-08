@@ -166,10 +166,10 @@ impl AxiomUse {
 
   fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmId) -> &'a BitSet {
     if let Some(bs) = self.axiom_use.get(&tid) {
+      #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
-      #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
       return unsafe { std::mem::transmute(bs) }
     }
     let mut bs = BitSet::new();

@@ -741,7 +741,8 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
         };
         let mut out = String::new();
         // Safety: render_fmt doesn't clone the expression
-        fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).expect("impossible"));
+        let e = unsafe { e.thaw() };
+        fe.pretty(|p| p.expr(e).render_fmt(80, &mut out).expect("impossible"));
         { use std::fmt::Write; write!(out, ": {}", fe.to(&s)).expect("impossible"); }
         ((sp1, mk_mm0(out)), doc)
       }
@@ -1051,6 +1052,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
         FrozenLispKind::Ref(_) => CompletionItemKind::VALUE,
         FrozenLispKind::Syntax(_) => CompletionItemKind::EVENT,
         FrozenLispKind::Proc(ref p) if
+          // Safety: we don't clone any rc's here
           match *unsafe {p.thaw()} {
             Proc::Builtin(p) => p.to_str() == ad.name().as_str(),
             _ => false,

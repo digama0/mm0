@@ -55,7 +55,7 @@ impl From<bool> for Stack {
   fn from(v: bool) -> Self { Self::Bool(v) }
 }
 
-impl<'a> From<LispVal> for Stack {
+impl From<LispVal> for Stack {
   fn from(v: LispVal) -> Self { Self::Val(v) }
 }
 
@@ -1451,6 +1451,7 @@ impl<'a> Evaluator<'a> {
       match func {
         &Proc::Builtin(func) => self.evaluate_builtin(tail, sp, func, args)?,
         Proc::Lambda {pos, env, code, ..} => {
+          #[allow(clippy::useless_transmute)]
           // Safety: Unfortunately we're fighting the borrow checker here. The problem is that
           // ir is borrowed in the Stack type, with most IR being owned outside the
           // function, but when you apply a lambda, the Proc::LambdaExact constructor
@@ -1459,7 +1460,6 @@ impl<'a> Evaluator<'a> {
           // ir (which is borrowed from f). We solve the problem by storing an Arc of
           // the IR inside the Ret instruction above, so that it won't get deallocated
           // while in use. Rust doesn't reason about other owners of an Arc though, so...
-          #[allow(clippy::useless_transmute)]
           let code2 = unsafe { std::mem::transmute::<&[Ir], &[Ir]>(&**code) };
           let fsp = self.fspan(sp.0);
           self.call(tail, code2, Some(code.clone()), fsp, pos.clone(), (**env).into());

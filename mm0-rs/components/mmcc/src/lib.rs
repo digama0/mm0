@@ -57,6 +57,8 @@
   clippy::shadow_unrelated,
   clippy::single_match_else,
   clippy::too_many_lines,
+  clippy::trait_duplication_in_bounds, // rust-clippy#8757, rust-clippy#8771
+  clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self
 )]
 

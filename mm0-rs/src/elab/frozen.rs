@@ -379,8 +379,10 @@ impl Remap for FrozenMergeStrategyInner {
 impl Remap for FrozenMergeStrategy {
   type Target = MergeStrategy;
   fn remap(&self, r: &mut Remapper) -> MergeStrategy {
-    // Safety: Input is frozen already
-    self.0.as_ref().map(|m| Rc::new(unsafe { m.freeze() }.remap(r)))
+    self.0.as_ref().map(|m| {
+      // Safety: Input is frozen already
+      Rc::new(unsafe { m.freeze() }.remap(r))
+    })
   }
 }
 
