@@ -3153,7 +3153,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       })();
       (ity, self.common.int_ty(ity))
     } else {
-      (IntTy::INT, self.common.t_bool)
+      let ity = match (ty1(self), ty2(self)) {
+        (Some(ity1), Some(ity2)) if ity1 == ity2 => ity1,
+        (Some(IntTy::UInt(sz1)), Some(IntTy::UInt(sz2))) => IntTy::UInt(std::cmp::max(sz1, sz2)),
+        (Some(IntTy::Int(sz1)), Some(IntTy::Int(sz2))) => IntTy::Int(std::cmp::max(sz1, sz2)),
+        _ => IntTy::INT,
+      };
+      (ity, self.common.t_bool)
     }
   }
 
@@ -3274,13 +3280,16 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }
         let opty = op.ty();
         let (ity, (e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
-          let ityin = self.as_int_ty(span, expect).unwrap_or(IntTy::INT);
+          let ityin_o = self.as_int_ty(span, expect);
+          let (e1, pe1) = self.lower_expr(e1,
+            ExpectExpr::has_ty(ityin_o.map(|ityin| self.common.int_ty(ityin))));
+          let ityin = e1.ty().as_int_ty().unwrap_or(ityin_o.unwrap_or(IntTy::INT));
           let tyin1 = self.common.int_ty(ityin);
-          let (e1, pe1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin1));
-          let tyin2 = if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
-            self.common.t_uint(sz)
-          } else { tyin1 };
-          let (e2, pe2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin2));
+          let (e2, pe2) = self.lower_expr(e2, ExpectExpr::has_ty(ityin_o.map(|ityin| {
+            if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
+              self.common.t_uint(sz)
+            } else { tyin1 }
+          })));
           let (ityin2, tyout) = self.binop_ty(op,
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e1.ty())),
             |this| this.as_int_ty(span, ExpectExpr::HasTy(e2.ty())));
