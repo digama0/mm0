@@ -907,7 +907,7 @@ impl<'a> LowerCtx<'a> {
   ) -> Result<cl::Terminator, GhostErr> {
     Ok(match *term {
       Terminator::Jump(tgt, ref args, _) => self.build_jump(vbl, block_args, tgt, args)?,
-      Terminator::Jump1(tgt) => {
+      Terminator::Jump1(_, tgt) => {
         self.unpatched.push((vbl, self.code.emit(Inst::Fallthrough {
           dst: VBlockId(tgt.0)
         })));
@@ -922,7 +922,7 @@ impl<'a> LowerCtx<'a> {
         self.build_syscall(SysCall::Exit, &[(0.into(), cl::Operand::Const(cl::Const::Value))], dst);
         cl::Terminator::Exit
       }
-      Terminator::If(ref o, [(_, bl1), (_, bl2)]) => {
+      Terminator::If(_, ref o, [(_, bl1), (_, bl2)]) => {
         let (src, cl) = self.get_operand_reg(o, Size::S8)?;
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));

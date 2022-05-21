@@ -668,7 +668,7 @@ mk_fold! {
         self.do_epilogue(it);
       }
       (Terminator::Exit, _) => self.do_syscall(SysCall::Exit, &[None], None, it),
-      (Terminator::If(cl), mir::Terminator::If(o, _)) => {
+      (Terminator::If(cl), mir::Terminator::If(_, o, _)) => {
         self.do_operand_reg(o, cl, it);
         self.do_insts(3, it);
       }

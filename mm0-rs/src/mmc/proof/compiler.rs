@@ -1155,7 +1155,7 @@ impl<'a> ProcProver<'a> {
         } else if let Some(x) = tctx.viter.term.take() {
           match x {
             Terminator::Jump(_, _, _) => todo!(),
-            &Terminator::Jump1(tgt) => {
+            &Terminator::Jump1(_, tgt) => {
               tctx.viter.kind = StatementIterKind::Jump1(tgt);
               continue
             }
@@ -1171,9 +1171,9 @@ impl<'a> ProcProver<'a> {
                 okEpilogue_code(self.bctx, code, self.epi, self.ret, l1, l3, h1, h2, h3)))
             }
             Terminator::Unreachable(_) => todo!(),
-            Terminator::If(_, _) => todo!(),
+            Terminator::If(_, _, _) => todo!(),
             Terminator::Assert(_, _, _, _) => todo!(),
-            &Terminator::Call { f, se, ref tys, ref args, reach, tgt: block, ref rets } => {
+            &Terminator::Call { ctx: _, f, se, ref tys, ref args, reach, tgt: block, ref rets } => {
               let f = self.elf_proof.get_func(f).expect("missing function");
               let abi = self.elf_proof.proc_abi(f);
               let proc_thm = *self.proc_proof.get(&Some(f))

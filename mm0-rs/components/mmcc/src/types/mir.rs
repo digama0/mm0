@@ -695,7 +695,7 @@ impl Default for Contexts {
 impl Contexts {
   /// The number of allocated context buffers.
   #[allow(clippy::len_without_is_empty)]
-  #[must_use] pub fn len(&self) -> usize { self.0.len() }
+  #[must_use] pub fn num_buffers(&self) -> usize { self.0.len() }
 
   /// Given a context ID, retrieve a context buffer, ensuring that it can be directly extended by
   /// allocating a new context buffer if necessary.
@@ -719,6 +719,21 @@ impl Contexts {
     self.unshare(&mut ctx).vars.push((var, r, ty));
     ctx.1 += 1;
     ctx
+  }
+
+  /// Get the number of variables in the given context.
+  pub fn len(&self, id: CtxId) -> usize { self.rev_iter(id).len() }
+
+  /// Returns an iterator over the variables and their values, in reverse order (from most
+  /// recently added to least recent). This is more efficient than forward iteration, which must
+  /// keep a stack.
+  pub fn truncate(&self, mut id: CtxId, n: u32) -> CtxId {
+    loop {
+      let ctx = &self[id.0];
+      debug_assert!(n <= ctx.size + id.1);
+      if n > ctx.size || id.0 == CtxBufId::ROOT { return CtxId(id.0, n - ctx.size) }
+      id = ctx.parent;
+    }
   }
 
   /// Returns an iterator over the variables and their values, in reverse order (from most
@@ -924,7 +939,7 @@ pub struct Cfg {
 impl std::fmt::Debug for Cfg {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     // writeln!(f, "ctxs: {:?}", self.ctxs)?;
-    for (i, bl) in self.blocks() { bl.debug_fmt(Some(i), Some(&self.ctxs), f)? }
+    for (i, bl) in self.blocks() { bl.debug_fmt(Some(i), Some(&self.ctxs), true, f)? }
     Ok(())
   }
 }
@@ -933,8 +948,8 @@ impl Cfg {
   /// Start a new basic block with the given initial context. This block starts unfinished, that
   /// is, with an empty `Terminator`; the terminator must be filled by the time MIR construction is
   /// complete.
-  pub fn new_block(&mut self, parent: CtxId) -> BlockId {
-    self.blocks.push(BasicBlock::new(parent, None))
+  pub fn new_block(&mut self, ctx: CtxId, parent: usize) -> BlockId {
+    self.blocks.push(BasicBlock::new(ctx, parent as u32, None))
   }
 
   /// Calculate the predecessor information for this CFG, bypassing the cache.
@@ -1112,7 +1127,7 @@ impl<'a> Iterator for Successors<'a> {
   fn next(&mut self) -> Option<Self::Item> {
     match self.0 {
       SuccessorsState::New(t) => match *t {
-        Terminator::If(_, [(_, bl1), (_, bl2)]) => {
+        Terminator::If(_, _, [(_, bl1), (_, bl2)]) => {
           self.0 = SuccessorsState::IfNeg(bl2);
           Some((Edge::If(true), bl1))
         }
@@ -1120,7 +1135,7 @@ impl<'a> Iterator for Successors<'a> {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Jump, bl))
         }
-        Terminator::Jump1(bl) => {
+        Terminator::Jump1(_, bl) => {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Jump1, bl))
         }
@@ -1619,9 +1634,9 @@ impl std::fmt::Debug for Statement {
       }
       Self::Assign(lhs, ty, rhs, renames) =>
         write!(f, "{:?}: {:?} <- {:?}, with {:?}", lhs, ty, rhs, renames),
-      Self::LabelGroup(bls, _) => write!(f, "label_group({:?})", bls.iter().format(", ")),
+      Self::LabelGroup(bls, ctx) => write!(f, "{ctx:?} := label_group({:?})", bls.iter().format(", ")),
       Self::PopLabelGroup => write!(f, "pop_label_group"),
-      Self::DominatedBlock(bl, _) => write!(f, "dominated_block({:?})", bl),
+      Self::DominatedBlock(bl, ctx) => write!(f, "{ctx:?} := dominated_block({bl:?})"),
     }
   }
 }
@@ -1689,7 +1704,7 @@ pub enum Terminator {
   Jump(BlockId, Box<[(VarId, bool, Operand)]>, Option<Operand>),
   /// Semantically equivalent to `Jump(tgt, [])`, with the additional guarantee that this jump is
   /// the only incoming edge to the target block. This is used to cheaply append basic blocks.
-  Jump1(BlockId),
+  Jump1(CtxId, BlockId),
   /// A `return((out z)*, (x -> arg)*);` statement - unconditionally return from the function.
   /// The `x -> arg` values assign values to variables, where `x` is a variable in the function
   /// returns and `arg` is an operand evaluated in the current basic block context.
@@ -1702,7 +1717,7 @@ pub enum Terminator {
   /// A branch expression `if cond {h. goto l1} else {h'. goto l2}`.
   /// We require that context of `l1` extends the current one with `h: cond`,
   /// and the context of `l2` extends the current one with `h': !cond`.
-  If(Operand, [(VarId, BlockId); 2]),
+  If(CtxId, Operand, [(VarId, BlockId); 2]),
   /// An assert expression `if cond {h. goto l1} else {fail}`.
   /// This is lowered the same as a branch, but there is no actual `fail` basic block to
   /// jump to.
@@ -1711,6 +1726,8 @@ pub enum Terminator {
   /// A `f(tys, es) -> l(xs)` function call, which calls `f` with type arguments `tys` and
   /// values `es`, and jumps to `l`, using `xs` to store the return values.
   Call {
+    /// The context as of the call.
+    ctx: CtxId,
     /// The function to call.
     f: Symbol,
     /// Is this a side-effectful function?
@@ -1753,7 +1770,7 @@ impl std::fmt::Debug for Terminator {
         if let Some(var) = variant { write!(f, " variant {:?}", var)? }
         Ok(())
       },
-      Self::Jump1(bl) => write!(f, "jump {:?}", bl),
+      Self::Jump1(bl, ctx) => write!(f, "{ctx:?} := jump {:?}", bl),
       Self::Return(outs, args) => {
         write!(f, "return")?;
         for &v in &**outs { write!(f, " out {:?},", v)? }
@@ -1761,12 +1778,12 @@ impl std::fmt::Debug for Terminator {
         Ok(())
       }
       Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
-      Self::If(cond, [(v1, bl1), (v2, bl2)]) => write!(f,
-        "if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
+      Self::If(ctx, cond, [(v1, bl1), (v2, bl2)]) => write!(f,
+        "{ctx:?} := if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
       Self::Assert(cond, v, true, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
       Self::Assert(cond, _, false, _) => write!(f, "assert {:?} -> !", cond),
-      Self::Call { f: func, tys, args, reach, tgt, rets, .. } => {
-        write!(f, "call {}", func)?;
+      Self::Call { f: func, tys, args, reach, ctx, tgt, rets, .. } => {
+        write!(f, "{ctx:?} := call {func}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "(")?;
         let mut first = true;
@@ -1857,10 +1874,10 @@ pub(crate) trait Visitor {
       Terminator::Call { args, .. } => for (r, o) in &**args { if *r { self.visit_operand(o) } }
       Terminator::Unreachable(o) |
       Terminator::Exit(o) |
-      Terminator::If(o, _) |
+      Terminator::If(_, o, _) |
       Terminator::Assert(o, _, true, _) => self.visit_operand(o),
       Terminator::Assert(_, _, false, _) |
-      Terminator::Jump1(_) |
+      Terminator::Jump1(_, _) |
       Terminator::Dead => {}
     }
   }
@@ -1892,6 +1909,8 @@ impl<F: FnMut(VarId)> Visitor for UseVisitor<F> {
 pub struct BasicBlock {
   /// The initial context on entry to the block.
   pub ctx: CtxId,
+  /// The number of variables in the parent context (in `DominatedBlock`).
+  pub base: u32,
   /// The computational relevance of all the variables on entry to the block
   /// (filled by ghost propagation pass).
   pub relevance: Option<BitVec>,
@@ -1907,13 +1926,13 @@ pub struct BasicBlock {
 
 impl std::fmt::Debug for BasicBlock {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    self.debug_fmt(None, None, f)
+    self.debug_fmt(None, None, false, f)
   }
 }
 
 impl BasicBlock {
-  fn new(ctx: CtxId, term: Option<Terminator>) -> Self {
-    Self { ctx, relevance: None, reachable: true, stmts: vec![], term }
+  fn new(ctx: CtxId, base: u32, term: Option<Terminator>) -> Self {
+    Self { ctx, base, relevance: None, reachable: true, stmts: vec![], term }
   }
 
   /// Construct an iterator over the variables in the context, using the relevance values after
@@ -1950,6 +1969,7 @@ impl BasicBlock {
   /// A dead block constant, which can be used as the contents of a dead block.
   pub const DEAD: Self = BasicBlock {
     ctx: CtxId::ROOT,
+    base: 0,
     relevance: None,
     reachable: false,
     stmts: Vec::new(),
@@ -1961,29 +1981,38 @@ impl BasicBlock {
   pub fn is_dead(&self) -> bool { matches!(self.term, Some(Terminator::Dead)) }
 
   fn debug_fmt(&self,
-    name: Option<BlockId>, ctxs: Option<&Contexts>,
+    name: Option<BlockId>, ctxs: Option<&Contexts>, use_base: bool,
     f: &mut std::fmt::Formatter<'_>
   ) -> std::fmt::Result {
     if !self.reachable { write!(f, "ghost ")? }
     if let Some(n) = name { write!(f, "{:?}", n)? } else { write!(f, "bb?")? }
     if let Some(ctxs) = ctxs {
       write!(f, "(")?;
-      let long_layout = ctxs.rev_iter(self.ctx).len() > 3;
+      let (base_ctx, base);
+      if use_base {
+        base = self.base as usize;
+        base_ctx = ctxs.truncate(self.ctx, self.base);
+        write!(f, "{:?};", base_ctx)?
+      } else {
+        base = 0;
+        base_ctx = CtxId::ROOT
+      }
+      let long_layout = ctxs.len(self.ctx) - base > 3;
       if long_layout { writeln!(f)? }
       let mut first = true;
       let mut write = |v, r, e: &Option<_>, ty| {
-        if long_layout { write!(f, "    ")? }
-        else if !std::mem::take(&mut first) { write!(f, ", ")? }
-        write!(f, "{}{:?}", if r {""} else {"ghost "}, v)?;
+        if long_layout { write!(f, "   ")? }
+        else if !std::mem::take(&mut first) { write!(f, ",")? }
+        write!(f, " {}{:?}", if r {""} else {"ghost "}, v)?;
         if let Some(e) = e { write!(f, " => {:?}", e)? }
         write!(f, ": {:?}", ty)?;
         if long_layout { writeln!(f, ",")? }
         Ok(())
       };
       if self.relevance.is_some() {
-        for (v, r, (e, ty)) in self.ctx_iter(ctxs) { write(v, r, e, ty)? }
+        for (v, r, (e, ty)) in self.ctx_iter(ctxs).skip(base) { write(v, r, e, ty)? }
       } else {
-        for (v, r, (e, ty)) in ctxs.iter(..self.ctx) { write(v, *r, e, ty)? }
+        for (v, r, (e, ty)) in ctxs.iter_range(base_ctx..self.ctx) { write(v, *r, e, ty)? }
       }
       write!(f, ")")?
     } else {

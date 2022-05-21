@@ -332,7 +332,7 @@ mod test {
     use crate::{LinkedCode, mir::*};
     let names = Default::default();
     let mut cfg = Cfg::default();
-    let bl = cfg.new_block(CtxId::ROOT);
+    let bl = cfg.new_block(CtxId::ROOT, 0);
     cfg[bl].terminate(Terminator::Exit(Constant::unit().into()));
     // println!("before opt:\n{:#?}", cfg);
     cfg.optimize(&[]);
@@ -367,7 +367,7 @@ mod test {
     let mir = HashMap::default();
     let mut cfg = Cfg::default();
 
-    let bl1 = cfg.new_block(CtxId::ROOT);
+    let bl1 = cfg.new_block(CtxId::ROOT, 0);
     let [x1, x2] = [(); 2].map(|_| {
       let x = fresh_var.fresh();
       cfg[bl1].stmts.push(Statement::Let(
@@ -393,7 +393,7 @@ mod test {
     let y = fresh_var.fresh();
     let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None,
       Rc::new(TyKind::Pure(Rc::new(ExprKind::Var(eq))))));
-    let bl2 = cfg.new_block(bl2ctx);
+    let bl2 = cfg.new_block(bl2ctx, 0);
     cfg[bl1].terminate(Terminator::Assert(eq.into(), y, true, bl2));
     cfg[bl2].terminate(Terminator::Exit(Constant::unit().into()));
 

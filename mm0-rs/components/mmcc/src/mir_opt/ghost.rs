@@ -110,10 +110,10 @@ impl Cfg {
       match bl.term.as_mut() {
         Some(Terminator::Assert(_, _, reach, tgt) | Terminator::Call {reach, tgt, ..}) =>
           *reach = reachable[*tgt].reach(),
-        Some(&mut Terminator::If(_, [(_, tgt1), (_, tgt2)])) => {
+        Some(&mut Terminator::If(_, _, [(_, tgt1), (_, tgt2)])) => {
           let reach1 = reachable[tgt1].reach();
           if reach1 == reachable[tgt2].reach() { continue }
-          let_unchecked!(Some(Terminator::If(_, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
+          let_unchecked!(Some(Terminator::If(ctx, _, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
             if reach1 { mem::swap(&mut vtgt1, &mut vtgt2) }
             let (_, _, (_, ty1)) = &self.ctxs.head(self[vtgt1.1].ctx);
             let (v2, _, (e2, ty2)) = &self.ctxs.head(self[vtgt2.1].ctx);
@@ -122,7 +122,7 @@ impl Cfg {
               LetKind::Let(v2.clone().map_into(|_| vtgt2.0), e2.clone()), false, ty2.clone(),
               Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
             ));
-            bl.term = Some(Terminator::Jump1(tgt2));
+            bl.term = Some(Terminator::Jump1(ctx, tgt2));
           });
         }
         _ => {}
@@ -282,7 +282,8 @@ impl Cfg {
           id: BlockId, term: &Terminator, d: &mut GhostDom) {
         match term {
           Terminator::Jump(_, args, _) => {
-            let GhostDom {vars, ..} = mem::take(d);
+            let vars = d.vars.clone();
+            for (v, _, _) in &**args { d.vars.remove(v); }
             for &(v, vr, ref o) in &**args {
               if vr && vars.contains(&v) {
                 d.active = OptBlockId::new(id);
@@ -290,7 +291,7 @@ impl Cfg {
               }
             }
           }
-          Terminator::Jump1(_) |
+          Terminator::Jump1(_, _) |
           Terminator::Exit(_) => {}
           Terminator::Return(_, args) => {
             d.active = OptBlockId::new(id);
@@ -299,7 +300,7 @@ impl Cfg {
             }
           }
           Terminator::Unreachable(_) | Terminator::Dead => unreachable!(),
-          Terminator::If(o, _) => if d.active == OptBlockId::new(id) {
+          Terminator::If(_, o, _) => if d.active == OptBlockId::new(id) {
             d.apply_operand(o)
           }
           Terminator::Assert(o, _, _, _) => {

@@ -400,7 +400,7 @@ impl BasicBlock {
     };
     match *term {
       Terminator::Jump(id, ref args, _) => jump_implicits(id, args),
-      Terminator::Jump1(id) => jump_implicits(id, &[]),
+      Terminator::Jump1(_, id) => jump_implicits(id, &[]),
       _ => {}
     }
     let mut use_var = |i: usize, v: VarId| {
