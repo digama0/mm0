@@ -895,7 +895,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Const(_) |
       hir::ExprKind::Call(_) |
       hir::ExprKind::If {..} => self.operand(e)?.into(),
-      hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!(),
+      hir::ExprKind::Error => unreachable!(),
     })
   }
 
@@ -1052,8 +1052,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
               pl
             }))? {}
           }
-          hir::ExprKind::If {..} |
-          hir::ExprKind::Infer(_) | hir::ExprKind::Error => unreachable!()
+          hir::ExprKind::If {..} | hir::ExprKind::Error => unreachable!()
         }
         Some(dest) => {
           let ety = e.k.1;

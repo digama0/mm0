@@ -636,11 +636,6 @@ pub enum ExprKind<'a> {
   /// Same as `return`, but accepts a single argument of the sigma type and unpacks it
   /// into the returns.
   UnpackReturn(Box<(ty::Ty<'a>, Expr<'a>)>),
-  /// An inference hole `_`, which will give a compile error if it cannot be inferred
-  /// but queries the compiler to provide a type context. The `bool` is true if this variable
-  /// was created by the user through an explicit `_`, while compiler-generated inference
-  /// variables have it set to false.
-  Infer(bool),
   /// An upstream error.
   Error
 }
@@ -849,8 +844,6 @@ impl ExprKind<'_> {
         write!(f, "return ")?;
         e.1.k.0.debug_indent(i, f)
       },
-      ExprKind::Infer(true) => write!(f, "?_"),
-      ExprKind::Infer(false) => write!(f, "_"),
       ExprKind::Error => write!(f, "??"),
     }
   }
