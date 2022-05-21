@@ -24,6 +24,6 @@ theorem Verifier_terminates {input output: nat} (k mm0_file: nat):
 --| such that `mm0_file` is on standard in, and it runs to completion
 --| having consumed the input and produced no output with exit code 0,
 --| then the theorems in the input are derivable.
-theorem Verifier_Valid (k mm0_file i o: nat):
+theorem Verifier_Valid (k mm0_file: nat):
   $ initialConfig Verifier mm0_file k /\ succeeds k 0 0 ->
     Valid mm0_file $;
