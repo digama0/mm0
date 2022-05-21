@@ -112,6 +112,8 @@ impl CompilerInner {
         ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position"),
       LinkerErr::LowerErr(mmcc::LowerErr::EntryUnreachable(sp)) =>
         ElabError::new_e(&sp, "Function has an unconditional infinite loop"),
+      LinkerErr::LowerErr(mmcc::LowerErr::InfiniteOp(sp)) =>
+        ElabError::new_e(&sp, "Function has an computationally relevant infinite size operation"),
     })?;
     Ok(self.code.get_or_insert(code))
   }

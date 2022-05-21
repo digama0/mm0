@@ -121,7 +121,10 @@ impl From<&VRetAbi> for ArgAbi {
   }
 }
 
-struct GhostErr(VarId);
+enum GhostErr {
+  GhostVarUsed(VarId),
+  InfiniteOp,
+}
 
 /// Errors that can occur during lowering. Several user-level errors make it to this stage;
 /// the main one is that a ghost variable is used in a computationally relevant position.
@@ -129,6 +132,8 @@ struct GhostErr(VarId);
 pub enum LowerErr {
   /// A ghost variable was used in an operation that requires it to not be ghost.
   GhostVarUsed(Spanned<VarId>),
+  /// An operation on unbounded integers was used and could not be optimized away.
+  InfiniteOp(FileSpan),
   /// The entry point is unreachable, which means that there is an
   /// unconditional infinite loop in the function.
   EntryUnreachable(FileSpan),
@@ -227,7 +232,7 @@ impl<'a> LowerCtx<'a> {
 
   fn get_var(&self, v: VarId) -> Result<&(RegMem, Size), GhostErr> {
     let a = self.allocs.get(v);
-    if a == AllocId::ZERO { return Err(GhostErr(v)) }
+    if a == AllocId::ZERO { return Err(GhostErr::GhostVarUsed(v)) }
     Ok(&self.var_map[&a])
   }
 
@@ -398,7 +403,7 @@ impl<'a> LowerCtx<'a> {
         let (src2, cl3) = src2.into_reg(&mut self.code, sz);
         let temp = self.code.emit_shift(sz, kind, src1, Err(src2));
         let zero = self.code.emit_imm(sz, 0_u32);
-        let cond = self.code.emit_cmp(sz, Cmp::Cmp, CC::NB, src1, u32::from(bits));
+        let cond = self.code.emit_cmp(sz, Cmp::Cmp, CC::NB, src2, u32::from(bits));
         let temp = cond.select(sz, zero, temp);
         cl::Shift::Var((cl2, cl3), self.code.emit_copy(sz, dst, temp))
       }
@@ -408,7 +413,7 @@ impl<'a> LowerCtx<'a> {
   fn build_binop(&mut self,
     sz: Size, dst: RegMem, op: VBinop, o1: &Operand, o2: &Operand
   ) -> Result<cl::RValue, GhostErr> {
-    assert_ne!(sz, Size::Inf);
+    if sz == Size::Inf { return Err(GhostErr::InfiniteOp) }
     let (src1, cl1) = self.get_operand_reg(o1, sz)?;
     let (src2, cl2) = self.get_operand_32(o2)?;
     let temp = self.code.emit_binop(sz, op, src1, src2);
@@ -419,7 +424,7 @@ impl<'a> LowerCtx<'a> {
   fn build_cmp(&mut self,
     sz: Size, dst: RegMem, cc: CC, o1: &Operand, o2: &Operand
   ) -> Result<cl::RValue, GhostErr> {
-    assert_ne!(sz, Size::Inf);
+    if sz == Size::Inf { return Err(GhostErr::InfiniteOp) }
     let (src1, cl1) = self.get_operand_reg(o1, sz)?;
     let (src2, cl2) = self.get_operand_32(o2)?;
     let temp = self.code.emit_cmp(sz, Cmp::Cmp, cc, src1, src2).into_reg();
@@ -429,7 +434,8 @@ impl<'a> LowerCtx<'a> {
 
   fn build_as(&mut self, dst: RegMem, from: IntTy, to: IntTy, o: &Operand
   ) -> Result<(cl::OperandRM, cl::As), GhostErr> {
-    let sz = from.size().min(to.size()); assert_ne!(sz, Size::Inf);
+    let sz = from.size().min(to.size());
+    if sz == Size::Inf { return Err(GhostErr::InfiniteOp) }
     let (src, cl1) = self.get_operand_rm(o, sz)?;
     Ok((cl1, match ExtMode::new(sz, to.size()) {
       None => cl::As::Truncate(self.code.emit_copy(sz, dst, src)),
@@ -949,34 +955,43 @@ impl<'a> LowerCtx<'a> {
     })
   }
 
-  fn build_block_args(&mut self) -> ChunkVec<BlockId, VReg> {
+  fn build_block_args(&mut self) -> Result<ChunkVec<BlockId, VReg>, LowerErr> {
     let preds = self.cfg.predecessors();
 
     let cfg = self.cfg;
     let mut insert = |out: &mut Vec<_>, v| {
       let a = self.allocs.get(v);
-      assert_ne!(a, AllocId::ZERO);
+      if a == AllocId::ZERO { return Err(v) }
       if let RegMem::Reg(v) = self.get_alloc(a).0 .0 {
         if !out.contains(&v) { out.push(v) }
       }
+      Ok(())
     };
 
-    cfg.blocks.enum_iter().map(|(i, bl)| {
+    let mut block_args = ChunkVec::default();
+    for (i, bl) in cfg.blocks.enum_iter() {
       let mut out = vec![];
       if i != BlockId::ENTRY && !bl.is_dead() {
-        for &(e, j) in &preds[i] {
-          if !matches!(e, Edge::Jump | Edge::Call) { continue }
-          match cfg[j].terminator() {
-            Terminator::Jump(_, args, _) =>
-              for &(v, r, _) in &**args { if r { insert(&mut out, v) } }
-            Terminator::Call {rets, ..} =>
-              for &(r, v) in &**rets { if r { insert(&mut out, v) } }
-            _ => unreachable!()
+        (|| -> Result<_, VarId> {
+          for &(e, j) in &preds[i] {
+            if !matches!(e, Edge::Jump | Edge::Call) { continue }
+            match cfg[j].terminator() {
+              Terminator::Jump(_, args, _) =>
+                for &(v, r, _) in &**args { if r { insert(&mut out, v)? } }
+              Terminator::Call {rets, ..} =>
+                for &(r, v) in &**rets { if r { insert(&mut out, v)? } }
+              _ => unreachable!()
+            }
           }
-        }
+          Ok(())
+        })().map_err(|v| LowerErr::GhostVarUsed({
+          bl.ctx_rev_iter(&cfg.ctxs).find(|p| p.0.k == v)
+            .unwrap_or_else(|| unreachable!("missing variable {:?}", v)).0.clone()
+        }))?
       }
-      out
-    }).collect()
+      block_args.push(out);
+    }
+    Ok(block_args)
   }
 
   fn build_prologue(&mut self, bl: &'a BasicBlock, ctx: VCodeCtx<'_>) {
@@ -1114,10 +1129,13 @@ impl<'a> LowerCtx<'a> {
         let val = self.get_alloc(a).0 .0;
         self.code.emit(Inst::BlockParam { var: v.k, val });
       }
-      self.build_block(block_args, bl, vblock).map_err(|GhostErr(v)| {
-        let span = self.ctx.ctx.get(&v)
-          .unwrap_or_else(|| unreachable!("missing variable {:?}", v)).0.clone();
-        LowerErr::GhostVarUsed(Spanned { span, k: v })
+      self.build_block(block_args, bl, vblock).map_err(|err| match err {
+        GhostErr::GhostVarUsed(v) => {
+          let span = self.ctx.ctx.get(&v)
+            .unwrap_or_else(|| unreachable!("missing variable {:?}", v)).0.clone();
+          LowerErr::GhostVarUsed(Spanned { span, k: v })
+        }
+        GhostErr::InfiniteOp => LowerErr::InfiniteOp(self.cfg.span.clone()),
       })
     })
   }
@@ -1159,7 +1177,7 @@ pub(crate) fn build_vcode(
   ctx: VCodeCtx<'_>,
 ) -> Result<VCode, LowerErr> {
   let mut lctx = LowerCtx::new(names, func_mono, funcs, consts, cfg, allocs, ctx);
-  let block_args = lctx.build_block_args();
+  let block_args = lctx.build_block_args()?;
   lctx.build_blocks(&block_args, ctx)?;
   Ok(lctx.finish())
 }
