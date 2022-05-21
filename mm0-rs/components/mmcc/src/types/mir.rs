@@ -722,12 +722,13 @@ impl Contexts {
   }
 
   /// Get the number of variables in the given context.
-  pub fn len(&self, id: CtxId) -> usize { self.rev_iter(id).len() }
+  #[allow(clippy::len_without_is_empty)]
+  #[must_use] pub fn len(&self, id: CtxId) -> usize { self.rev_iter(id).len() }
 
   /// Returns an iterator over the variables and their values, in reverse order (from most
   /// recently added to least recent). This is more efficient than forward iteration, which must
   /// keep a stack.
-  pub fn truncate(&self, mut id: CtxId, n: u32) -> CtxId {
+  #[must_use] pub fn truncate(&self, mut id: CtxId, n: u32) -> CtxId {
     loop {
       let ctx = &self[id.0];
       debug_assert!(n <= ctx.size + id.1);
@@ -949,7 +950,7 @@ impl Cfg {
   /// is, with an empty `Terminator`; the terminator must be filled by the time MIR construction is
   /// complete.
   pub fn new_block(&mut self, ctx: CtxId, parent: usize) -> BlockId {
-    self.blocks.push(BasicBlock::new(ctx, parent as u32, None))
+    self.blocks.push(BasicBlock::new(ctx, parent.try_into().expect("overflow"), None))
   }
 
   /// Calculate the predecessor information for this CFG, bypassing the cache.

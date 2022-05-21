@@ -870,8 +870,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         }).collect())
       }
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
-      hir::ExprKind::Block(bl) => self.rvalue_block(&e.span, bl, Some(e.k.1))?,
-      hir::ExprKind::While(while_) => self.rvalue_while(&e.span, *while_)?,
+      hir::ExprKind::Block(bl) => self.rvalue_block(e.span, bl, Some(e.k.1))?,
+      hir::ExprKind::While(while_) => self.rvalue_while(e.span, *while_)?,
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
       hir::ExprKind::Break(_, _) |
@@ -1284,14 +1284,14 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   fn rvalue_block(&mut self,
     span: &'a FileSpan,
     hir::Block {stmts, expr, gen, muts}: hir::Block<'a>,
-    ret: Option<ty::ExprTy<'a>>,
+    ret_ety: Option<ty::ExprTy<'a>>,
   ) -> Block<RValue> {
     let reset = (self.labels.len(), self.tree.groups.len());
     self.tr.try_add_gen(self.tr.cur_gen, gen);
     let base_ctx = self.cur_ctx;
     let mut after_ctx = base_ctx;
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
-      let dest = ret.map(|ety| {
+      let dest = ret_ety.map(|ety| {
         let v = self.fresh_var();
         let rel = !ety.1.ghostly();
         let ety2 = self.tr_gen(ety, gen);
@@ -1484,8 +1484,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     // after:
     //   dest := ()
     let base_ctx = self.cur_ctx;
-    let base_len = self.cfg.ctxs.len(base_ctx);
-    let base_bl = self.new_block(base_len);
+    let base_ctx_len = self.cfg.ctxs.len(base_ctx);
+    let base_bl = self.new_block(base_ctx_len);
     let muts: Rc<[HVarId]> = muts.into();
     // if `has_break` then we need to be prepared to jump to `after` from inside the loop.
     let brk = if has_break {

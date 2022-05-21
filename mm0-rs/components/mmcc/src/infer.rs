@@ -3139,21 +3139,21 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   }
 
   fn binop_ty(&mut self, op: Binop,
-    ty1: impl FnOnce(&mut Self) -> Option<IntTy>,
-    ty2: impl FnOnce(&mut Self) -> Option<IntTy>,
+    get_ty1: impl FnOnce(&mut Self) -> Option<IntTy>,
+    get_ty2: impl FnOnce(&mut Self) -> Option<IntTy>,
   ) -> (IntTy, Ty<'a>) {
     let opty = op.ty();
     if opty.int_out() {
       let ity = (|| {
         if !op.preserves_nat() {return IntTy::INT}
-        let sz1 = if let Some(IntTy::UInt(sz1)) = ty1(self) {sz1} else {return IntTy::INT};
-        let sz2 = if let Some(IntTy::UInt(sz2)) = ty2(self) {sz2} else {return IntTy::INT};
+        let sz1 = if let Some(IntTy::UInt(sz1)) = get_ty1(self) {sz1} else {return IntTy::INT};
+        let sz2 = if let Some(IntTy::UInt(sz2)) = get_ty2(self) {sz2} else {return IntTy::INT};
         if op.preserves_usize() { IntTy::UInt(std::cmp::max(sz1, sz2)) }
         else { IntTy::NAT }
       })();
       (ity, self.common.int_ty(ity))
     } else {
-      let ity = match (ty1(self), ty2(self)) {
+      let ity = match (get_ty1(self), get_ty2(self)) {
         (Some(ity1), Some(ity2)) if ity1 == ity2 => ity1,
         (Some(IntTy::UInt(sz1)), Some(IntTy::UInt(sz2))) => IntTy::UInt(std::cmp::max(sz1, sz2)),
         (Some(IntTy::Int(sz1)), Some(IntTy::Int(sz2))) => IntTy::Int(std::cmp::max(sz1, sz2)),
@@ -3283,7 +3283,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           let ityin_o = self.as_int_ty(span, expect);
           let (e1, pe1) = self.lower_expr(e1,
             ExpectExpr::has_ty(ityin_o.map(|ityin| self.common.int_ty(ityin))));
-          let ityin = e1.ty().as_int_ty().unwrap_or(ityin_o.unwrap_or(IntTy::INT));
+          let ityin = e1.ty().as_int_ty().unwrap_or_else(|| ityin_o.unwrap_or(IntTy::INT));
           let tyin1 = self.common.int_ty(ityin);
           let (e2, pe2) = self.lower_expr(e2, ExpectExpr::has_ty(ityin_o.map(|ityin| {
             if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {

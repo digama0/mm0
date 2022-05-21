@@ -161,10 +161,10 @@ impl<I: Idx, T> ChunkVec<I, T> {
   pub fn push_new(&mut self) -> I { self.push_into(|_| ()) }
 
   /// Is the list empty?
-  pub fn is_empty(&self) -> bool { self.idxs.is_empty() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.idxs.is_empty() }
 
   /// Get the length of the list.
-  pub fn len(&self) -> usize { self.idxs.len() }
+  #[must_use] pub fn len(&self) -> usize { self.idxs.len() }
 
   /// Push a `T` to the last element of the list. The list must be nonempty.
   pub fn extend_last(&mut self, val: T) {
