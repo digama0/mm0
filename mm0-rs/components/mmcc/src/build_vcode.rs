@@ -34,13 +34,16 @@ pub(crate) type VCode = vcode::VCode<Inst>;
 /// edges to unvisited basic blocks as long as possible. Then start over somewhere else.
 /// This ordering is good for code placement since a jump or branch to the immediately following
 /// block can be elided.
-fn visit_blocks<'a, E>(
+fn visit_blocks<'a>(
   cfg: &'a Cfg,
-  mut f: impl FnMut(BlockId, &'a BasicBlock) -> Result<(), E>
-) -> Result<(), E> {
+  mut f: impl FnMut(BlockId, &'a BasicBlock) -> Result<(), LowerErr>
+) -> Result<(), LowerErr> {
+  if !cfg[BlockId::ENTRY].reachable {
+    return Err(LowerErr::EntryUnreachable(cfg.span.clone()))
+  }
   let mut visited: BitSet<BlockId> = BitSet::default();
   for (mut i, mut bl) in cfg.blocks() {
-    if visited.insert(i) && !bl.is_dead() && bl.reachable {
+    if visited.insert(i) && bl.reachable {
       while let Some((_, j)) = {
         f(i, bl)?;
         bl.successors().find(|&(_, j)| visited.insert(j))
@@ -126,6 +129,9 @@ struct GhostErr(VarId);
 pub enum LowerErr {
   /// A ghost variable was used in an operation that requires it to not be ghost.
   GhostVarUsed(Spanned<VarId>),
+  /// The entry point is unreachable, which means that there is an
+  /// unconditional infinite loop in the function.
+  EntryUnreachable(FileSpan),
 }
 /// The ABI expected by the caller.
 #[derive(Clone, Copy, Debug)]

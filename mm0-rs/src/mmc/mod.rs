@@ -99,18 +99,19 @@ struct CompilerInner {
 impl CompilerInner {
   /// Get the linked code, calling `finish` on the compiler if necessary.
   fn linked_code(&mut self, sp: Span) -> Result<&LinkedCode, ElabError> {
-    if self.inner.has_type_errors() {
-      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
-    }
     if let Some(code) = &self.code {
       #[allow(clippy::useless_transmute)]
       // Safety: NLL case 3 (polonius validates this borrow pattern)
       unsafe { return Ok(std::mem::transmute::<&LinkedCode, &LinkedCode>(code)) }
     }
-    let code = self.inner.finish().map_err({
-      |LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v))| {
-        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position")
-      }
+    if self.inner.has_type_errors() {
+      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
+    }
+    let code = self.inner.finish().map_err(|err| match err {
+      LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v)) =>
+        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position"),
+      LinkerErr::LowerErr(mmcc::LowerErr::EntryUnreachable(sp)) =>
+        ElabError::new_e(&sp, "Function has an unconditional infinite loop"),
     })?;
     Ok(self.code.get_or_insert(code))
   }
