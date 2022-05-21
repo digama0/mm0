@@ -264,10 +264,10 @@ do {
   (def (string->hex s)
     (def n (string-len s))
     @ letrec (
-      [(f i) @ if {i < n}
-        '(scons ,(number->ch @ string-nth i s) ,(f {i + 1}))
-        '(s0)])
-    (f 0))
+      [(f i out) @ if {i = 0} out @ begin
+        (def j {i - 1})
+        (f j '(scons ,(number->ch @ string-nth j s) ,out))])
+    (f n '(s0)))
 };
 
 do {
