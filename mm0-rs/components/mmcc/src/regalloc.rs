@@ -232,9 +232,9 @@ impl PCodeBuilder {
     let mut iter = code.blocks.0.iter();
     let mut cur = iter.next().expect("nonempty").1;
     for (id, inst) in code.insts.enum_iter() {
-      if id == cur {
+      while id == cur {
         code.block_addr.push(code.len);
-        if let Some(n) = iter.next() { cur = n.1 }
+        if let Some(n) = iter.next() { cur = n.1 } else { break }
       }
       code.len += u32::from(inst.len());
     }

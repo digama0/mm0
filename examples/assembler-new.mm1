@@ -347,8 +347,8 @@ do (for 0 8 @ fn (n) @ if (not {{n == 4} or {n == 5}}) @ begin
     '(iani ,norm_num @ orl ,norm_num))
   (mmc-th name));
 
-@mmc-th local def parseModRM2 (rex rm rm2 mod: nat) (l l2: string): wff =
-$ E. l1 (l = l1 ++ l2 /\ guarded rm {x | readModRM2 rex x rm2 mod l}) $;
+@mmc-th local def parseModRM2 (rex rmi rm2 mod: nat) (l l2: string): wff =
+$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM2 rex rm rm2 mod l)) $;
 
 @mmc-th theorem parseModRM2_reg (h1: $ REX_B rex = b $) (h2: $ splitBits31 rm2 b r $):
   $ parseModRM2 rex (IRM_reg r) rm2 3 s s $ = 'sorry;
@@ -383,8 +383,8 @@ $ E. l1 (l = l1 ++ l2 /\ guarded rm {x | readModRM2 rex x rm2 mod l}) $;
   (h4: $ parseDisplacement md disp l l2 $):
   $ parseModRM2 rex (IRM_mem 0 (base_reg r) disp) rm2 md l l2 $ = 'sorry;
 
-@_ local def parseModRM_N (rex rn rm l l2: nat): wff =
-$ E. l1 (l = l1 ++ l2 /\ readModRM rex rn rm l) $;
+@_ local def parseModRM_N (rex rn rmi l l2: nat): wff =
+$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM rex rn rm l)) $;
 
 @mmc-th local def parseModRM (rex: nat) (rn: hex) (rm: nat) (l l2: string): wff =
 $ parseModRM_N rex rn rm l l2 $;
@@ -461,7 +461,7 @@ $ S\ p, S\ s, {x | opc < x8 /\ opc != 6 -> E. ds (mkRegRMI dst src ds /\
 @mmc-th theorem parseBinopHi
   (h1: $ splitBits13 v 0 y $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ parseModRM rex opc dst l1 l2 $)
+  (h3: $ parseModRM rex opc (IRM_reg dst) l1 l2 $)
   (h4: $ parseImm8 src l2 $):
   $ parseOpc p ip l1 rex (ch xc y) (instShift opc sz dst (IRM_imm32 src)) $ = 'sorry;
 
@@ -474,7 +474,7 @@ $ S\ p, S\ s, {x | opc < x8 /\ opc != 6 -> E. ds (mkRegRMI dst src ds /\
 @mmc-th theorem parseBinopHiReg
   (h1: $ splitBits13 v 1 y $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ parseModRM rex opc dst l s0 $):
+  (h3: $ parseModRM rex opc (IRM_reg dst) l s0 $):
   $ parseOpc p ip l rex (ch xd y) (instShift opc sz dst (IRM_reg x1)) $ = 'sorry;
 
 @mmc-th local def instImm (sz: nat) (dst: hex) (src: nat): set =
@@ -632,7 +632,7 @@ $ S\ p, S\ s, {x | tgt e. u64 -> decode (xastJCC (suc c) (tgt -_64 (x + len s)))
 @mmc-th theorem parseJCC8
   (h1: $ tgt -ZN ip = imm $)
   (h2: $ parseImm8 imm l $):
-  $ parseOpc p ip s0 rex (ch x7 c) (instJCC c tgt) $ = 'sorry;
+  $ parseOpc p ip l rex (ch x7 c) (instJCC c tgt) $ = 'sorry;
 
 @mmc-th theorem parseJCCTwo
   (h1: $ tgt -ZN ip = imm $)

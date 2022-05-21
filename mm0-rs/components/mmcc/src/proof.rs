@@ -415,9 +415,15 @@ impl<'a> VBlock<'a> {
   /// Calls a visitor on the MIR block and its physical counterpart.
   pub fn visit(&self, v: &mut impl classify::Visitor<'a>) {
     let funcs = &self.ctx.code.func_abi;
-    let abi_rets = self.ctx.id.and_then(|id| funcs[id].rets.as_deref());
+    let (abi_args, abi_rets) = match self.ctx.id.map(|id| &funcs[id]) {
+      Some(func) => (&*func.args, func.rets.as_deref()),
+      None => (&[][..], None)
+    };
     let (mut iter, term) = self.ctx.proc.trace.iter(self.id, self.insts());
     let bl = self.mir_block();
+    if self.mir_id == BlockId::ENTRY {
+      v.do_prologue(self.ctx.saved_regs(), self.ctx.stack_size(), abi_args, abi_rets, &mut iter);
+    }
     for (stmt, cl) in bl.stmts.iter().zip(&self.ctx.proc.trace.stmts[self.id]) {
       v.do_stmt(stmt, cl, &mut iter);
     }

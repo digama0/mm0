@@ -1842,7 +1842,7 @@ impl PInst {
         let opc = match (sz, src) {
           (_, 0) => {
              // xor dst, dst
-             return layout_binop_lo(sz.min(Size::S32), dst, &PRegMemImm::Reg(dst))
+             return layout_binop_lo(Size::S32, dst, &PRegMemImm::Reg(dst))
           }
           (Size::S64, _) if src as i32 as u64 == src =>
             OpcodeLayout::MovImm(layout_opc_reg(&mut true, dst)),
@@ -2131,7 +2131,7 @@ impl PInst {
       (OpcodeLayout::Jump(b), &PInst::JmpKnown { short, dst }) => {
         let dst = buf.rip_relative_block(dst);
         assert!(short != b);
-        buf.push_u8(0xe9 + (u8::from(short) << 2));
+        buf.push_u8(0xe9 + (u8::from(short) << 1));
         push_u8_u32(b, buf, dst as u32);
       }
       (OpcodeLayout::Jcc8, &PInst::JmpCond { cc, short: true, dst }) => {

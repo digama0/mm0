@@ -1022,20 +1022,23 @@ impl<'a> LowerCtx<'a> {
           let src = self.code.fresh_vreg();
           self.code.emit(Inst::MovPR { dst: src, src: r });
           let size32 = size.try_into().expect("overflow");
-          self.build_memcpy(size, sz, dst, AMode::reg(src));
+          let cl = self.build_memcpy(size, sz, dst, AMode::reg(src));
+          self.code.trace.lists.push(cl::Elem::ArgCopy(cl));
           ArgAbi::Boxed { reg: r, sz: size32 }
         },
         (_, None) if size <= 8 => {
           let size32 = size.try_into().expect("overflow");
           let off = alloc(size32);
-          self.build_memcpy(size, sz, dst, &incoming + off);
+          let cl = self.build_memcpy(size, sz, dst, &incoming + off);
+          self.code.trace.lists.push(cl::Elem::ArgCopy(cl));
           ArgAbi::Mem { off, sz: size32 }
         },
         (_, None) => {
           let off = alloc(8);
           let ptr = self.code.fresh_vreg();
           let _ = self.code.emit_copy(Size::S64, ptr.into(), &incoming + off);
-          self.build_memcpy(size, sz, dst, AMode::reg(ptr));
+          let cl = self.build_memcpy(size, sz, dst, AMode::reg(ptr));
+          self.code.trace.lists.push(cl::Elem::ArgCopy(cl));
           ArgAbi::BoxedMem { off, sz: size.try_into().expect("overflow") }
         },
       }

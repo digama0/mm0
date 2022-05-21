@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
-use mmcc::{types::{mir, classify as cl, vcode::{ArgAbi, ProcAbi}, IdxVec}, arch::SysCall};
+use mmcc::{types::{mir, classify as cl, vcode::{ArgAbi, ProcAbi}, IdxVec}, arch::{SysCall, PReg}};
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc, ProcId};
@@ -192,7 +192,7 @@ impl BuildAssemblyProc<'_> {
     let (ec1, ec0, ea1, ea0) = (self.hex[c1], self.hex[c0], self.hex[a1], self.hex[a0]);
     let mut is_zero;
     let s = app!(self.thm, (s1 (ch ec1 ec0)));
-    let th0 = thm!(self.thm, decaddn[a0][c0](): (ea0 + ec0) = xf);
+    let th0 = thm!(self.thm, decaddn[a0][c0](): ((h2n ea0) + (h2n ec0)) = xf);
     let mut out = if a1 == 0 {
       is_zero = a0 == 0;
       let n = app!(self.thm, (h2n ea0));
@@ -201,7 +201,7 @@ impl BuildAssemblyProc<'_> {
       is_zero = false;
       assert!(a1 < 8);
       let n = app!(self.thm, (hex (h2n ea1) ea0));
-      let th1 = thm!(self.thm, decaddn[a1][c1](): (ea1 + ec1) = xf);
+      let th1 = thm!(self.thm, decaddn[a1][c1](): ((h2n ea1) + (h2n ec1)) = xf);
       let th = thm!(self.thm, decltn[a1][8_usize](): (h2n ea1) < (h2n {self.hex[8]}));
       [k, n, s, thm!(self.thm, parseIBytesNeg02(ea0, ea1, ec0, ec1, th0, th1, th):
         (parseIBytesNeg k n s))]
@@ -212,8 +212,8 @@ impl BuildAssemblyProc<'_> {
       let (ec1, ec0, ea1, ea0) = (self.hex[c1], self.hex[c0], self.hex[a1], self.hex[a0]);
       let k2 = app!(self.thm, (suc k));
       let s2 = app!(self.thm, (scons (ch ec1 ec0) s));
-      let th0 = thm!(self.thm, decaddn[a0][c0](): (ea0 + ec0) = xf);
-      let th1 = thm!(self.thm, decaddn[a1][c1](): (ea1 + ec1) = xf);
+      let th0 = thm!(self.thm, decaddn[a0][c0](): ((h2n ea0) + (h2n ec0)) = xf);
+      let th1 = thm!(self.thm, decaddn[a1][c1](): ((h2n ea1) + (h2n ec1)) = xf);
       out = if is_zero {
         if a1 == 0 {
           let n2 = app!(self.thm, (h2n ea0));
@@ -488,13 +488,13 @@ impl BuildAssemblyProc<'_> {
         let inst = app!(self.thm, (instBinop op sz dst src));
         [inst, thm!(self, parseBinopBinop(op, sz, dst, src): (parseBinop op sz dst src inst))]
       }
-      PInst::Imm { sz: Size::S32, src: 0, .. } => {
-        let inst = app!(self.thm, (instImm (wSz32) dst (posZ (h2n {self.hex[0]}))));
-        [inst, thm!(self, parseBinopClear32(dst): (parseBinop op sz dst src inst))]
-      }
       PInst::Imm { sz: Size::S64, src: 0, .. } => {
         let inst = app!(self.thm, (instImm (wSz64) dst (posZ (h2n {self.hex[0]}))));
         [inst, thm!(self, parseBinopClear64(dst): (parseBinop op sz dst src inst))]
+      }
+      PInst::Imm { sz: _, src: 0, .. } => {
+        let inst = app!(self.thm, (instImm (wSz32) dst (posZ (h2n {self.hex[0]}))));
+        [inst, thm!(self, parseBinopClear32(dst): (parseBinop op sz dst src inst))]
       }
       _ => unreachable!()
     }
@@ -584,6 +584,7 @@ impl BuildAssemblyProc<'_> {
           let [src, l2, h4] = this.parse_imm_8(p);
           (l2, (src, h4))
         });
+        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
         let inst = app!(self, (instShift opc sz dst (IRM_imm32 (posZ src))));
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
           parseBinopHi(dst, *ip, l1, l2, opc, *self.start,
@@ -605,6 +606,7 @@ impl BuildAssemblyProc<'_> {
         let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
         let [sz, h2] = self.op_size_w(rex, v);
         let [opc, dst, l, h3] = self.parse_modrm(p, rex);
+        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
         let inst = app!(self, (instShift opc sz dst (IRM_reg {self.hex[1]})));
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
           parseBinopHiReg(dst, *ip, l, opc, *self.start,
@@ -746,11 +748,11 @@ impl BuildAssemblyProc<'_> {
         };
         let (tgt, h1) = self.znsub_left(ip, n);
         let inst = app!(self, (instJump {*tgt}));
-        let tgt = app!(self, parseOpc[*self.start, *ip, l, rex.1, opch, inst]);
+        let stmt = app!(self, parseOpc[*self.start, *ip, l, rex.1, opch, inst]);
         let th = if sz32 {
-          thm!(self, parseJump32(imm, *ip, l, *self.start, rex.1, tgt, h1, h2): tgt)
+          thm!(self, parseJump32(imm, *ip, l, *self.start, rex.1, *tgt, h1, h2): stmt)
         } else {
-          thm!(self, parseJump8(imm, *ip, l, *self.start, rex.1, tgt, h1, h2): tgt)
+          thm!(self, parseJump8(imm, *ip, l, *self.start, rex.1, *tgt, h1, h2): stmt)
         };
         [l, opch, inst, th]
       }
@@ -1038,6 +1040,21 @@ enum Stack {
 }
 
 impl Stack {
+  fn start(&self) -> Num {
+    match *self {
+      Stack::Asm(_, x, _, _, _) |
+      Stack::Asm0(x, _, _) |
+      Stack::Empty(x) => x,
+    }
+  }
+  fn end(&self) -> Num {
+    match *self {
+      Stack::Asm(_, _, x, _, _) |
+      Stack::Asm0(x, _, _) |
+      Stack::Empty(x) => x,
+    }
+  }
+
   fn dummy(pos: Num, de: &mut BuildAssemblyProc<'_>) -> Self {
     let a = app!(de, (ASM0));
     let th = thm!(de, localAssemble0_0(*de.start, *pos):
@@ -1175,6 +1192,10 @@ impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
   // to ensure a consistent number of children of the node, rather than opportunistically
   // collapsing these nodes.
 
+  fn after_prologue(&mut self,
+    _: &[PReg], _: u32, _: &[ArgAbi], _: Option<&[ArgAbi]>
+  ) { self.end_rassoc(false) }
+
   fn after_shift(&mut self, _: &mir::Operand, _: &cl::Shift) { self.end_rassoc(true) }
 
   fn after_rvalue(&mut self,
@@ -1214,7 +1235,13 @@ impl<'a> BuildAssemblyProc<'a> {
       let n = visitor.stack.len();
       block.visit(&mut visitor);
       let n = visitor.stack.len().checked_sub(n).expect("group mismatch");
-      let mut stk = visitor.pop_binary(false, n);
+      let mut stk = if block.mir_id == mir::BlockId::ENTRY {
+        let t = visitor.pop_binary(false, n - 1);
+        let s = visitor.stack.pop().expect("stack underflow");
+        s.join(t, true, visitor.proc)
+      } else {
+        visitor.pop_binary(false, n)
+      };
       let this = &mut *visitor.proc;
       if let Stack::Empty(pos) = stk { stk = Stack::dummy(pos, this) }
       stk = match (stk, std::mem::take(&mut entry)) {
@@ -1267,8 +1294,8 @@ impl<'a> BuildAssembly<'a> {
   /// in a balanced binary tree of `assembleA` nodes.
   /// The function `f` handles the base case of an individual item in the iterator.
   fn bisect<T>(&mut self,
-    n: usize, iter: &mut impl Iterator<Item=T>, x: ProofId,
-    f: &mut impl FnMut(&mut Self, T, ProofId) -> Result<(ProofId, Num, ProofId, ProofId)>,
+    n: usize, iter: &mut impl Iterator<Item=T>, x: Num,
+    f: &mut impl FnMut(&mut Self, T, Num) -> Result<(ProofId, Num, ProofId, ProofId)>,
   ) -> Result<(ProofId, Num, ProofId, ProofId)> {
     if n <= 1 {
       assert!(n != 0);
@@ -1277,21 +1304,22 @@ impl<'a> BuildAssembly<'a> {
     } else {
       let m = n >> 1;
       let (s, y, a, th1) = self.bisect(m, iter, x, f)?;
-      let (t, z, b, th2) = self.bisect(n - m, iter, *y, f)?;
+      let (t, z, b, th2) = self.bisect(n - m, iter, y, f)?;
       let st = app!(self.thm, (sadd s t));
       let ab = app!(self.thm, (assembleA a b));
-      let th = thm!(self.thm, assembleA_I(s, t, x, *y, *z, a, b, th1, th2):
-        assemble[st, x, *z, ab]);
+      let th = thm!(self.thm, assembleA_I(s, t, *x, *y, *z, a, b, th1, th2):
+        assemble[st, *x, *z, ab]);
       Ok((st, z, ab, th))
     }
   }
 
   fn assemble_proc(&mut self,
-    proc: &Proc<'_>, global_start: ProofId
+    proc: &Proc<'_>, global_start: Num
   ) -> Result<(ProofId, Num, ProofId, ProofId)> {
     let mut thm = ProofDedup::new(self.pd, &[]);
     let hex = HexCache::new(&mut thm);
     let start = hex.from_u64(&mut thm, proc.start.into());
+    debug_assert!(global_start == start);
     let mut build = BuildAssemblyProc { thm, hex, start };
     let (s, y, a, th) = build.blocks(proc);
     let (y2, th2) = build.hex.add(&mut build.thm, start, y);
@@ -1338,14 +1366,14 @@ impl<'a> BuildAssembly<'a> {
     // Import into the context of the global (Name::Content) proof
     let s = app!(self.thm, ({code}));
     let end = Num::new(end_val, build.to_expr(&mut self.thm, end));
-    let a = app!(self.thm, (asmProc global_start ({asm})));
-    Ok((s, end, a, thm!(self.thm, {asm_thm}(): (assemble s global_start {*end} a))))
+    let a = app!(self.thm, (asmProc {*global_start} ({asm})));
+    Ok((s, end, a, thm!(self.thm, {asm_thm}(): (assemble s {*global_start} {*end} a))))
   }
 
   fn assemble(&mut self, proof: &'a ElfProof<'a>) -> Result<TermId> {
     let mut iter = proof.assembly();
     let x = self.hex.from_u32(&mut self.thm, TEXT_START);
-    let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, *x, &mut |this, item, x| {
+    let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, x, &mut |this, item, x| {
       match item {
         AssemblyItem::Proc(proc) => this.assemble_proc(&proc, x),
         AssemblyItem::Const(_) => todo!(),

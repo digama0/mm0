@@ -1,5 +1,5 @@
 //! A high level classification of `VCode` emit patterns, used for relating MIR to `VCode`.
-use crate::arch::{PInst, SysCall};
+use crate::arch::{PInst, SysCall, PReg};
 
 use super::{vcode::{BlockId, ChunkVec, ProcAbi, ArgAbi, ProcId}, IdxVec, mir, IntTy, entity::IntrinsicProc};
 
@@ -190,6 +190,8 @@ pub enum Elem {
   RetReg,
   /// A return value was placed in memory
   RetMem(Copy),
+  /// An argument was copied into memory in the prologue
+  ArgCopy(Copy),
 }
 
 /// A statement.
@@ -261,6 +263,7 @@ macro_rules! mk_fold {
       fn do_inst(&mut self, it: &mut TraceIter<'a>) -> crate::proof::Inst<'a> {
         loop {
           let inst = it.insts.next().expect("missing instruction");
+          // eprintln!("inst {:?}", inst.inst);
           let spill = inst.inst.is_spill();
           self.on_inst(spill, &inst);
           if spill { continue }
@@ -286,9 +289,11 @@ macro_rules! mk_fold {
         fn $after(&mut self, $($e: $ty),*) { self.after() }
         /// Consumes the instructions for a classifier. Not intended for overriding.
         fn $do(&mut $self, $($e: $ty,)* $it: &mut TraceIter<'a>) {
+          // eprintln!(stringify!($before));
           $self.$before($($e),*);
           { $body }
           $self.$after($($e),*);
+          // eprintln!(stringify!($after));
         }
       )*
     }
@@ -296,6 +301,34 @@ macro_rules! mk_fold {
 }
 
 mk_fold! {
+  fn before_prologue, after_prologue, do_prologue(self, it,
+    saved_regs: &[PReg], stack_size: u32, args: &[ArgAbi], rets: Option<&[ArgAbi]>) {
+    self.do_insts(saved_regs.len(), it);
+    if stack_size != 0 { self.do_inst(it); }
+    if let Some(rets) = rets {
+      for ret in rets {
+        if matches!(ret, ArgAbi::Boxed {..}) { self.do_inst(it); }
+      }
+    }
+    for arg in args {
+      match arg {
+        ArgAbi::Ghost => {}
+        ArgAbi::Reg(..) => self.do_insts(2, it),
+        ArgAbi::Mem {..} => self.do_arg_copy(it),
+        ArgAbi::Boxed {..} |
+        ArgAbi::BoxedMem {..} => { self.do_inst(it); self.do_arg_copy(it); }
+      }
+    }
+  }
+
+  fn before_arg_copy, after_arg_copy, do_arg_copy(self, it) {
+    let cl = it.lists.next().expect("iter mismatch");
+    match *cl {
+      Elem::ArgCopy(cl) => self.do_copy(cl, it),
+      _ => unreachable!()
+    }
+  }
+
   fn before_into_reg, after_into_reg, do_into_reg(self, it, cl: IntoReg) {
     if cl.0 { self.do_inst(it); }
   }
