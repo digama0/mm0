@@ -79,14 +79,14 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
   fn emit_type_errors<'b>(&mut self, _: &mut Config,
     errs: Vec<hir::Spanned<'b, TypeError<'b>>>,
     pr: &impl mmcc::DisplayCtx<'b>,
-  ) -> Result<bool> {
+  ) -> Result<()> {
     self.errors.extend(errs.into_iter().map(|err| match err.k {
       TypeError::ExpectedPure(sp) =>
         ElabError::with_info(err.span, format!("{}", CtxPrint(pr, &err.k)).into(),
           vec![(sp.clone(), "Needed for this operation".into())]),
       _ => ElabError::new_e(err.span, format!("{}", CtxPrint(pr, &err.k))),
     }));
-    Ok(false)
+    Ok(())
   }
 }
 
@@ -164,8 +164,9 @@ impl Compiler {
   /// times to add multiple functions, but each lisp literal is already a list of
   /// top level items that are typechecked as a unit.
   pub fn add(&mut self,
-    elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>
+    elab: &mut Elaborator, sp: Span, it: impl ExactSizeIterator<Item=LispVal>
   ) -> Result<()> {
+    if it.len() == 0 { return Ok(()) }
     let compiler = Rc::make_mut(&mut self.inner);
     compiler.code = None;
     let fsp = FileSpan {file: elab.path.clone(), span: sp};

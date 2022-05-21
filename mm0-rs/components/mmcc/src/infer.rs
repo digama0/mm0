@@ -1264,6 +1264,8 @@ pub struct InferCtx<'a, 'n> {
   labels: HashMap<VarId, LabelData<'a>>,
   /// The return type of the current function.
   returns: Option<&'a [Arg<'a>]>,
+  /// True if an upstream error was detected.
+  pub has_ast_errors: bool,
   /// The list of type errors collected so far.
   /// We delay outputting these so that we can report many errors at once,
   /// as well as waiting for all variables to be as unified as possible so that
@@ -1603,6 +1605,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       generation_count: GenId::ROOT,
       labels: HashMap::new(),
       returns: None,
+      has_ast_errors: false,
       errors: vec![],
     }
   }
@@ -2824,7 +2827,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::TypeKind::Output => intern!(self, TyKind::Output),
       ast::TypeKind::Moved(ty) => intern!(self, TyKind::Moved(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Infer => expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(&ty.span)),
-      ast::TypeKind::Error => self.common.t_error,
+      ast::TypeKind::Error => { self.has_ast_errors = true; self.common.t_error }
     }
   }
 
@@ -3932,7 +3935,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
       ast::ExprKind::Rc(e) => self.lower_expr(e, expect),
 
-      ast::ExprKind::Error => error!(),
+      ast::ExprKind::Error => { self.has_ast_errors = true; error!() }
     }
   }
 

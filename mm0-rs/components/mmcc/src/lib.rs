@@ -155,12 +155,10 @@ pub trait ItemContext<C: Config + ?Sized> {
   fn print(&mut self) -> Self::Printer;
 
   /// This function is called if errors are produced during typechecking.
-  /// If the function returns false (the default),
-  /// then the remainder of compilation will be skipped.
   fn emit_type_errors<'a>(&mut self, _ctx: &mut C,
     _errs: Vec<hir::Spanned<'a, TypeError<'a>>>,
     _print: &impl DisplayCtx<'a>,
-  ) -> Result<bool, C::Error> { Ok(false) }
+  ) -> Result<(), C::Error> { Ok(()) }
 }
 
 impl<C: Config> ItemContext<C> for () {
@@ -170,7 +168,7 @@ impl<C: Config> ItemContext<C> for () {
   fn emit_type_errors<'a>(&mut self, _ctx: &mut C,
     errs: Vec<hir::Spanned<'a, TypeError<'a>>>,
     pr: &impl DisplayCtx<'a>,
-  ) -> Result<bool, C::Error> {
+  ) -> Result<(), C::Error> {
     use std::fmt::Write;
     let mut out = String::new();
     for err in errs {
@@ -252,15 +250,14 @@ impl<C: Config> Compiler<C> {
       }
     }
     let item = ctx.lower_item(item);
+    let item_errors = ctx.has_ast_errors || !ctx.errors.is_empty();
+    *has_type_errors |= item_errors;
     if !ctx.errors.is_empty() {
       let errs = std::mem::take(&mut ctx.errors);
       let pr = ctx.print(&mut ic);
-      if !ic.emit_type_errors(&mut self.config, errs, &pr)? {
-        *has_type_errors = true;
-        return Ok(())
-      }
+      ic.emit_type_errors(&mut self.config, errs, &pr)?;
     }
-    if let Some(item) = item {
+    if let Some(item) = item.filter(|_| !item_errors) {
       if let Some(n) = build_mir::BuildMir::new(Some(&mut ctx.mvars)).build_item(mir, init, item) {
         mir.get_mut(&n).expect("missing").optimize(names);
       }
