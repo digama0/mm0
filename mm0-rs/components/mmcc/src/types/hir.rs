@@ -27,7 +27,7 @@ impl GenId {
 }
 
 /// A spanned expression.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<'a, T> {
   /// The span of the expression
@@ -35,6 +35,10 @@ pub struct Spanned<'a, T> {
   /// The data (the `k` stands for `kind` because it's often a `*Kind` enum
   /// but it can be anything).
   pub k: T,
+}
+
+impl<'a, T: std::fmt::Debug> std::fmt::Debug for Spanned<'a, T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.k.fmt(f) }
 }
 
 impl<'a, T> Spanned<'a, T> {
@@ -170,12 +174,12 @@ impl Block<'_> {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if !self.muts.is_empty() {
       indent(i, f)?; write!(f, "#![mut")?;
-      for &v in &self.muts { write!(f, " {}", v)? }
+      for &v in &self.muts { write!(f, " {:?}", v)? }
       writeln!(f, "]")?
     }
     for stmt in &self.stmts { indent(i, f)?; stmt.k.debug_indent(i, f)? }
     if let Some(expr) = &self.expr {
-      indent(i, f)?; expr.k.0.debug_indent(i, f)?
+      indent(i, f)?; expr.k.0.debug_indent(i, f)?; writeln!(f)?
     }
     Ok(())
   }
@@ -221,12 +225,14 @@ impl StmtKind<'_> {
         writeln!(f, ";")
       }
       StmtKind::Label(a, r, labs) => {
-        for (i, lab) in labs.iter().enumerate() {
-          writeln!(f, "{}label {:?}.{}(", if *r {""} else {"ghost "}, a, i)?;
+        let mut first = true;
+        for (j, lab) in labs.iter().enumerate() {
+          if !std::mem::take(&mut first) { indent(i, f)?; }
+          writeln!(f, "{}label {:?}.{}(", if *r {""} else {"ghost "}, a, j)?;
           for &(attr, ref arg) in &*lab.args {
             indent(i+1, f)?; arg.debug_with_attr(attr, f)?; writeln!(f, ",")?;
-            if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
           }
+          if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
           indent(i, f)?; writeln!(f, ") = {{")?;
           lab.body.k.debug_indent(i+1, f)?;
           indent(i, f)?; writeln!(f, "}};")?;
@@ -647,6 +653,14 @@ impl Debug for ExprKind<'_> {
 }
 
 impl ExprKind<'_> {
+  fn debug_maybe_block(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ExprKind::Unit => Ok(()),
+      ExprKind::Block(bl) => bl.debug_indent(i, f),
+      _ => { indent(i, f)?; self.debug_indent(i, f)?; writeln!(f) }
+    }
+  }
+
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ExprKind::Unit => write!(f, "()"),
@@ -761,7 +775,7 @@ impl ExprKind<'_> {
         write!(f, " <- ")?;
         rhs.k.0.debug_indent(i, f)?;
         write!(f, " with [")?;
-        for (new, old, _) in &**map { write!(f, "{} <- {}, ", new.k, old.k)? }
+        for (new, old, _) in &**map { write!(f, "{:?} <- {:?}, ", new.k, old.k)? }
         write!(f, "]")
       }
       ExprKind::Call(c) => {
@@ -784,28 +798,30 @@ impl ExprKind<'_> {
       ExprKind::If { hyp, cond, cases, muts, .. } => {
         if !muts.is_empty() {
           write!(f, "#[muts")?;
-          for &v in muts { write!(f, " {}", v)? }
+          for &v in muts { write!(f, " {:?}", v)? }
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "if ")?;
-        if let Some([h, _]) = hyp { write!(f, "{}: ", h.k)? }
+        if let Some([h, _]) = hyp { write!(f, "{:?}: ", h.k)? }
         cond.k.0.debug_indent(i+1, f)?;
         writeln!(f, " {{")?;
-        cases[0].k.0.debug_indent(i+1, f)?;
-        indent(i, f)?; writeln!(f, "}} else ")?;
-        if let Some([_, h]) = hyp { write!(f, "{}: ", h.k)? }
-        writeln!(f, "{{")?;
-        cases[1].k.0.debug_indent(i+1, f)?;
+        cases[0].k.0.debug_maybe_block(i+1, f)?;
+        if !matches!(cases[1].k.0, ExprKind::Unit) {
+          indent(i, f)?; write!(f, "}} else ")?;
+          if let Some([_, h]) = hyp { write!(f, "{:?}: ", h.k)? }
+          writeln!(f, "{{")?;
+          cases[1].k.0.debug_maybe_block(i+1, f)?;
+        }
         indent(i, f)?; write!(f, "}}")
       }
       ExprKind::While(w) => {
         if !w.muts.is_empty() {
           write!(f, "#[muts")?;
-          for &v in &*w.muts { write!(f, " {}", v)? }
+          for &v in &*w.muts { write!(f, " {:?}", v)? }
           writeln!(f, "]")?; indent(i, f)?;
         }
-        write!(f, "{:?}: while ", w.label)?;
-        if let Some(h) = w.hyp { write!(f, "{}: ", h.k)? }
+        write!(f, "{:?}{}: while ", w.label, if w.has_break {""} else {"[nobreak]"})?;
+        if let Some(h) = w.hyp { write!(f, "{:?}: ", h.k)? }
         w.cond.k.0.debug_indent(i+1, f)?;
         if let Some(var) = &w.variant {
           writeln!(f)?;
@@ -814,7 +830,7 @@ impl ExprKind<'_> {
         } else {
           writeln!(f, " {{")?;
         }
-        w.body.debug_indent(i+1, f)?; writeln!(f)?;
+        w.body.debug_indent(i+1, f)?;
         indent(i, f)?; write!(f, "}}")
       }
       ExprKind::Unreachable(e) => {
@@ -830,7 +846,7 @@ impl ExprKind<'_> {
         indent(i, f)?; write!(f, ")")
       }
       ExprKind::Break(lab, e) => {
-        write!(f, "break {} ", lab)?;
+        write!(f, "break {:?} ", lab)?;
         e.k.0.debug_indent(i, f)
       }
       ExprKind::Return(es) => {
@@ -951,7 +967,7 @@ impl Debug for ItemKind<'_> {
         }
         writeln!(f, ") = {{")?;
         body.debug_indent(1, f)?;
-        writeln!(f, "\n}}")
+        writeln!(f, "}}")
       }
       Self::Global { lhs, rhs } => {
         write!(f, "global {:?} = ", lhs)?;

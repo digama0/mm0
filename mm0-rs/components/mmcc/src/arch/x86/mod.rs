@@ -1525,8 +1525,10 @@ impl Debug for PInst {
       Self::CallKnown { f: func } => write!(f, "call {:?}", func),
       Self::SysCall => write!(f, "syscall"),
       Self::Ret => write!(f, "ret"),
-      Self::JmpKnown { dst, .. } => write!(f, "jump -> vb{}", dst.0),
-      Self::JmpCond { cc, dst, .. } => write!(f, "j{} -> vb{}", cc, dst.0),
+      Self::JmpKnown { dst, short: true } => write!(f, "jump -> vb{}", dst.0),
+      Self::JmpKnown { dst, short: false } => write!(f, "jump -> far vb{}", dst.0),
+      Self::JmpCond { cc, dst, short: true } => write!(f, "j{} -> vb{}", cc, dst.0),
+      Self::JmpCond { cc, dst, short: false } => write!(f, "j{} -> far vb{}", cc, dst.0),
       Self::Assert { cc, dst } => write!(f, "assert{} -> vb{}", cc, dst.0),
       Self::Ud2 => write!(f, "ud2"),
     }
