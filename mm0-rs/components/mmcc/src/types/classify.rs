@@ -600,7 +600,7 @@ mk_fold! {
 
   // do_call_retargs is unused, before and after are called directly
   fn before_call_retargs, after_call_retargs, do_call_retargs(self, it,
-    f: ProcId, fabi: &ProcAbi, retabi: &[ArgAbi], rets: &[(bool, mir::VarId)],
+    f: ProcId, fabi: &ProcAbi, rets: &[(bool, mir::VarId)],
   ) {}
 
   fn before_call, after_call, do_call(self, it,
@@ -608,10 +608,10 @@ mk_fold! {
     reach: bool, rets: &[(bool, mir::VarId)],
   ) {
     self.do_call_args(f, fabi, args, it);
-    if let Some(retabi) = &fabi.rets {
+    if reach {
       let mut boxes = 0;
-      self.before_call_retargs(f, fabi, retabi, rets);
-      for (arg, &(vr, _)) in retabi.iter().zip(rets) {
+      self.before_call_retargs(f, fabi, rets);
+      for (arg, &(vr, _)) in fabi.rets.iter().zip(rets) {
         if vr && matches!(arg, ArgAbi::Boxed {..} | ArgAbi::BoxedMem {..}) {
           let cl = match it.lists.next() {
             Some(&Elem::RetArg(cl)) => cl,
@@ -621,9 +621,9 @@ mk_fold! {
           self.do_call_retarg(cl, arg, it)
         }
       }
-      self.after_call_retargs(f, fabi, retabi, rets);
+      self.after_call_retargs(f, fabi, rets);
       self.do_inst(it);
-      self.do_call_rets(boxes, retabi, rets, it);
+      self.do_call_rets(boxes, &fabi.rets, rets, it);
     } else {
       self.do_inst(it);
     }

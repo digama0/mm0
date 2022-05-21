@@ -535,19 +535,19 @@ impl Proc {
 impl Cfg {
   /// Perform MIR analysis and optimize the given CFG.
   pub(crate) fn optimize(&mut self, rets: &[Arg]) {
-    // println!("opt 0:\n{:#?}", self);
+    // eprintln!("opt 0:\n{:#?}", self);
     self.compute_predecessors();
-    // println!("compute_predecessors:\n{:#?}", self);
+    // eprintln!("compute_predecessors:\n{:#?}", self);
     let reachable = self.reachability_analysis();
-    // println!("reachable: {:#?}", reachable);
+    // eprintln!("reachable: {:#?}", reachable);
     self.apply_reachability_analysis(&reachable);
-    // println!("reachability_analysis:\n{:#?}", self);
+    // eprintln!("reachability_analysis:\n{:#?}", self);
     self.do_ghost_analysis(&reachable, rets);
-    // println!("ghost_analysis:\n{:#?}", self);
+    // eprintln!("ghost_analysis:\n{:#?}", self);
     self.legalize();
-    // println!("legalize:\n{:#?}", self);
+    // eprintln!("legalize:\n{:#?}", self);
     // Do ghost analysis again because legalize produces dead values
     self.do_ghost_analysis(&reachable, rets);
-    // println!("ghost_analysis 2:\n{:#?}", self);
+    // eprintln!("ghost_analysis 2:\n{:#?}", self);
   }
 }

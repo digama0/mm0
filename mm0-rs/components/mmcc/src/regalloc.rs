@@ -294,10 +294,8 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
       result.remove(reg)
     }
   }
-  if let Some(rets) = &vcode.abi.rets {
-    for abi in &**rets {
-      if let vcode::ArgAbi::Reg(r, _) = *abi { result.remove(r) }
-    }
+  for abi in &*vcode.abi.rets {
+    if let vcode::ArgAbi::Reg(r, _) = *abi { result.remove(r) }
   }
   result
 }
@@ -305,7 +303,8 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
 impl VCode {
   #[allow(clippy::similar_names)]
   pub(crate) fn regalloc(mut self) -> (ProcAbi, Box<PCode>) {
-    // eprintln!("{:#?}", vcode);
+    // drop(simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default()));
+    // eprintln!("{:#?}", self);
     let out = self.do_regalloc();
     // eprintln!("{:#?}", out);
     let clobbers = get_clobbers(&self, &out);
@@ -429,12 +428,12 @@ impl VCode {
           for _ in &**params { ar.next(); }
           code.push_epilogue(stack_size_no_ret, saved_regs.iter().copied())
         }
-        Inst::JmpKnown { dst, ref params } => {
-          for _ in &**params { ar.next(); }
-          if self.blocks[dst].1 != i.next() {
+        Inst::JmpKnown { dst, .. } =>
+          if self.blocks[dst].1 == i.next() {
+            code.push(PInst::Fallthrough { dst });
+          } else {
             code.push(PInst::JmpKnown { dst, short: false });
-          }
-        }
+          },
         Inst::JmpCond { cc, taken, not_taken } =>
           if self.blocks[not_taken].1 == i.next() {
             code.push(PInst::JmpCond { cc, dst: taken, short: false });

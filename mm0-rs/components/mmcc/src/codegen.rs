@@ -118,8 +118,9 @@ impl InstSink<'_> {
   fn write_to(&mut self, w: &mut impl Write) -> io::Result<()> {
     self.local_rip = 0;
     self.proc.insts.0.iter().try_for_each(|inst| {
+      // eprintln!("{:?} (layout {:?})", inst, inst.layout_inst());
       inst.write(self);
-      // println!("{:?} (layout {:?})\n  = {:x?}", inst, inst.layout_inst(), self.buf);
+      // eprintln!("  = {:x?}", self.buf);
       w.write_all(&self.buf)?;
       self.buf.clear();
       Ok(())

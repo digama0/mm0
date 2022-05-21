@@ -647,7 +647,7 @@ impl<'a> LowerCtx<'a> {
     assert!(params_it.peek().is_none());
     self.unpatched.push((vbl, self.code.emit(Inst::JmpKnown {
       dst: VBlockId(tgt.0),
-      params: params.iter().map(|&v| ROperand::reg_use(v.0)).collect()
+      params: params.iter().map(|v| v.0).collect()
     })));
     Ok(cl::Terminator::Jump(args.len().try_into().expect("overflow")))
   }
@@ -741,12 +741,11 @@ impl<'a> LowerCtx<'a> {
       };
       self.code.trace.lists.push(cl)
     }
-    if let Some(ref retabi) = fabi.rets {
-      assert!(reach);
-      assert!(retabi.len() == rets.len());
+    if reach {
+      assert!(fabi.rets.len() == rets.len());
       let mut boxes = vec![];
       let mut ret_regs = vec![];
-      for (arg, &(vr, v)) in retabi.iter().zip(rets) {
+      for (arg, &(vr, v)) in fabi.rets.iter().zip(rets) {
         if !vr { continue }
         if let ArgAbi::Reg(reg, _) = *arg {
           let src = self.code.fresh_vreg();
@@ -784,7 +783,7 @@ impl<'a> LowerCtx<'a> {
         clobbers: Some(fabi.clobbers.clone()),
       });
       let mut ret_regs = ret_regs.into_iter();
-      for (arg, &(vr, v)) in retabi.iter().zip(rets) {
+      for (arg, &(vr, v)) in fabi.rets.iter().zip(rets) {
         if !vr { continue }
         let a = self.allocs.get(v);
         assert_ne!(a, AllocId::ZERO);
@@ -807,6 +806,7 @@ impl<'a> LowerCtx<'a> {
         dst: VBlockId(tgt.0),
       })));
     } else {
+      assert!(!fabi.reach);
       self.emit(Inst::CallKnown { f, operands: operands.into(), clobbers: None });
     }
     Ok(cl::Terminator::Call(f))
@@ -1142,8 +1142,8 @@ impl<'a> LowerCtx<'a> {
       }
     }
     code.abi.args = abi_args.into();
-    code.abi.rets = can_return.then(||
-      abi_rets.iter().map(ArgAbi::from).collect());
+    code.abi.rets = abi_rets.iter().map(ArgAbi::from).collect();
+    code.abi.reach = can_return;
     code.abi.args_space = code.spills[SpillId::INCOMING];
     code
   }

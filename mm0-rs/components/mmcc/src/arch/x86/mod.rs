@@ -963,7 +963,7 @@ pub(crate) enum Inst {
   Epilogue { params: Box<[Operand]> },
   /// Jump to a known target: `jmp simm32`.
   /// The params are block parameters; they are turned into movs after register allocation.
-  JmpKnown { dst: BlockId, params: Box<[Operand]> },
+  JmpKnown { dst: BlockId, params: Box<[regalloc2::VReg]> },
   /// Two-way conditional branch: `if cc { jmp taken } else { jmp not_taken }`.
   JmpCond {
     cc: CC,
@@ -1035,7 +1035,7 @@ impl Debug for Inst {
       Self::Epilogue { params } =>
         write!(f, "epilogue({})", params.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::JmpKnown { dst, params } =>
-        write!(f, "jump -> bb{}({})", dst.0, params.iter().map(|&x| PrintOperand(x)).format(", ")),
+        write!(f, "jump -> bb{}({})", dst.0, params.iter().format(", ")),
       Self::JmpCond { cc, taken, not_taken } =>
         write!(f, "j{} -> bb{} else bb{}", cc, taken.0, not_taken.0),
       Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
@@ -1057,7 +1057,12 @@ impl VInst for Inst {
     matches!(self, Inst::JmpCond {..} | Inst::JmpKnown {..})
   }
 
-  fn branch_blockparams(&self, _: usize) -> &[regalloc2::VReg] { &[] }
+  fn branch_blockparams(&self, _: usize) -> &[regalloc2::VReg] {
+    match self {
+      Inst::JmpKnown { params, .. } => params,
+      _ => &[]
+    }
+  }
 
   fn is_move(&self) -> Option<(Operand, Operand)> {
     if let Inst::MovRR { dst, src } = *self {
@@ -1070,7 +1075,8 @@ impl VInst for Inst {
       // Inst::LetEnd { dst } => dst.collect_operands(args),
       Inst::BlockParam { val, .. } =>
         val.on_regs(|r| args.push(Operand::new(r.0,
-          regalloc2::OperandConstraint::Any,
+          // regalloc2::OperandConstraint::Any,
+          regalloc2::OperandConstraint::Reg, // FIXME
           regalloc2::OperandKind::Use,
           regalloc2::OperandPos::Early,
         ))),
@@ -1133,11 +1139,12 @@ impl VInst for Inst {
       }
       Inst::CallKnown { operands: ref params, .. } |
       Inst::SysCall { operands: ref params, .. } |
-      Inst::JmpKnown { ref params, .. } |
       Inst::Epilogue { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
       // moves are handled specially by regalloc, we don't need operands
       Inst::MovRR { .. } |
+      // Jumps have blockparams but no operands
+      Inst::JmpKnown { .. } |
       // Other instructions that have no operands
       Inst::Fallthrough { .. } |
       // Inst::LetStart { .. } |

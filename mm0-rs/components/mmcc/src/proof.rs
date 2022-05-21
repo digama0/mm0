@@ -416,7 +416,7 @@ impl<'a> VBlock<'a> {
   pub fn visit(&self, v: &mut impl classify::Visitor<'a>) {
     let funcs = &self.ctx.code.func_abi;
     let (abi_args, abi_rets) = match self.ctx.id.map(|id| &funcs[id]) {
-      Some(func) => (&*func.args, func.rets.as_deref()),
+      Some(func) => (&*func.args, func.reach.then(|| &*func.rets)),
       None => (&[][..], None)
     };
     let (mut iter, term) = self.ctx.proc.trace.iter(self.id, self.insts());

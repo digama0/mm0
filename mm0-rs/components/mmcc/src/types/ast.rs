@@ -540,7 +540,7 @@ pub enum ExprKind {
   /// A cloned expr, for copied subterms.
   Rc(std::rc::Rc<Expr>),
   /// An upstream error.
-  Error
+  Error,
 }
 
 impl std::fmt::Debug for ExprKind {

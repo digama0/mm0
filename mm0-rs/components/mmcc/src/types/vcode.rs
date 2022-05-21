@@ -237,8 +237,9 @@ pub struct ProcAbi {
   /// The arguments of the procedure.
   pub args: Box<[ArgAbi]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  /// If None, then the function does not return.
-  pub rets: Option<Box<[ArgAbi]>>,
+  pub rets: Box<[ArgAbi]>,
+  /// If true, then the function returns.
+  pub reach: bool,
   /// The total size of the stack-allocated incoming arguments in bytes
   pub args_space: u32,
   /// The registers that are clobbered by the call.
