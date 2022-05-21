@@ -25,9 +25,9 @@ pub enum ExprVerifyError<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum ProofVerifyError<'a> {
   /// At `parent`: Expected sort `s1`, got `e : s2`
-  SortError(&'a ProofNode, SortId, SortId),
+  SortError(Option<ThmId>, &'a ProofNode, usize, SortId, SortId),
   /// Expected bound variable, got expression
-  BoundError(&'a ProofNode),
+  BoundError(Option<ThmId>, &'a ProofNode, usize),
   /// Disjoint variable violation when applying theorem
   DisjointVariableViolation,
   /// Subproof `th` proved `|- e`, and was expected to prove something else
@@ -147,9 +147,21 @@ impl ProofVerifyError<'_> {
       lisp_heap
     };
     match *self {
-      Self::SortError(_, s1, s2) => write!(w, "Expected sort {}, got {}",
-        env.data[env.sorts[s1].atom].name, env.data[env.sorts[s2].atom].name),
-      Self::BoundError(_) => write!(w, "Expected bound variable, got expression"),
+      Self::SortError(p, _, i, s1, s2) => {
+        write!(w, "arg {}: ", i+1)?;
+        if let Some(thm) = p {
+          write!(w, "(in subproof for {}) ", env.data[env.thms[thm].atom].name)?
+        }
+        write!(w, "Expected sort {}, got {}",
+          env.data[env.sorts[s1].atom].name, env.data[env.sorts[s2].atom].name)
+      }
+      Self::BoundError(p, _, i) => {
+        write!(w, "arg {}: ", i+1)?;
+        if let Some(thm) = p {
+          write!(w, "(in subproof for {}) ", env.data[env.thms[thm].atom].name)?
+        }
+        write!(w, "Expected bound variable, got expression")
+      }
       Self::DisjointVariableViolation => write!(w,
         "Disjoint variable violation when applying theorem"),
       Self::UnifyFailure(i, proved) => with_format_env(env, |fe| if let Some(fe) = fe {
@@ -165,7 +177,7 @@ impl ProofVerifyError<'_> {
           pp.verify_subst_err(i, &lisp_args, &proved, td, |e| subst.subst(e)).render_fmt(80, w)
         })
       } else {
-        write!(w, "Subproof {:?} failed to prove what it should", i)
+        write!(w, "Subproof {i:?} failed to prove what it should")
       }),
       Self::ExpectedExpr(_) => write!(w, "Expected expression, got proof or conv"),
       Self::ExpectedProof(_) => write!(w, "Expected proof, got expr or conv"),
@@ -481,6 +493,7 @@ struct VerifyProof<'a, 'b> {
   heap: Vec<HeapEl<'a>>,
   found_hyps: Box<[Option<&'a ProofNode>]>,
   dummies: HashMap<AtomId, SortId>,
+  thm_parent: Option<ThmId>,
   bvars: u64,
 }
 
@@ -506,22 +519,22 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         let args = td.unpack_term(&self.store[p..]);
         let mut deps = vec![];
         let mut accum = 0;
-        for (e, (_, ty)) in args.iter().zip(&*td.args) {
+        for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
           let (_, s, bv, d) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
-                ProofVerifyError::SortError(e, s2, s)));
+                ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
               vassert!(bv, VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
-                ProofVerifyError::BoundError(e)));
+                ProofVerifyError::BoundError(self.thm_parent, e, i)));
               deps.push(d);
             }
             Type::Reg(s2, _) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
-                ProofVerifyError::SortError(e, s2, s)));
+                ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
               accum |= d;
             }
           }
@@ -539,20 +552,21 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         let td = &self.env.thms[thm];
         vassert!(p + td.args.len() + td.hyps.len() < self.store.len(), VerifyError::MalformedStore);
         let (res, args, subproofs) = td.unpack_thm(&self.store[p..]);
+        self.thm_parent = Some(thm);
         let mut deps = vec![];
         let mut uheap = vec![];
         let mut unify = Unifier::new(self.env, &td.heap, &td.store);
-        for (e, (_, ty)) in args.iter().zip(&*td.args) {
+        for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
           let (e2, s, bv, d) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
-                ProofVerifyError::SortError(e, s2, s)));
+                ProofVerifyError::SortError(None, e, i, s2, s)));
               vassert!(bv, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
-                ProofVerifyError::BoundError(e)));
+                ProofVerifyError::BoundError(None, e, i)));
               for &(_, d2) in &uheap {
                 vassert!(d & d2 == 0, VerifyError::ProofVerifyError(
                   self.orig_heap, self.store, Some(node),
@@ -563,7 +577,7 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
             Type::Reg(s2, d2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
-                ProofVerifyError::SortError(e, s2, s)));
+                ProofVerifyError::SortError(None, e, i, s2, s)));
               for (i, &dep) in deps.iter().enumerate() {
                 vassert!(d2 & (1 << i) != 0 || dep & d == 0,
                   VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
@@ -586,6 +600,7 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
               ProofVerifyError::UnifyFailure(Some(i), h))
           })?;
         }
+        self.thm_parent = None;
         HeapEl::Proof(node, res)
       }
       ProofNode::Conv(p) => {
@@ -745,6 +760,7 @@ impl Environment {
           store: &pf.store,
           found_hyps: vec![None; td.hyps.len()].into(),
           dummies: Default::default(),
+          thm_parent: None,
           bvars,
         };
         let mut hyp_unify = Unifier::new(self, &td.heap, &td.store);
