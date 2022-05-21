@@ -27,6 +27,7 @@ bit-vec = "0.6"
 bit-set = "0.5"
 hashbrown = "0.12"
 typed-arena = "2.0"
+# simplelog = "0.11"
 bumpalo = { version = "3.9", features = ["boxed", "collections"] }
 regalloc2 = { git = "https://github.com/bytecodealliance/regalloc2.git" }
 mm0_util = { path = "../mm0_util", default-features = false }

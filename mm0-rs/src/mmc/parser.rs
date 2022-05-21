@@ -1446,6 +1446,7 @@ impl<'a, C> Parser<'a, C> {
             None => (self.ba.get_loop_label().ok_or_else(||
               ElabError::new_e(&span, "can't break, not in a loop"))?, &*args)
           };
+          self.ba.mark_label_break(lab.0);
           ExprKind::Break(lab.0, Box::new(Expr::list(&span, exprs!(args))))
         }
         (PrimOp::Continue, args1) => {

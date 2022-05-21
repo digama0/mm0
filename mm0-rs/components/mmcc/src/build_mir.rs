@@ -866,7 +866,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         }).collect())
       }
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
-      hir::ExprKind::While(while_) => self.rvalue_while(*while_, e.k.1)?,
+      hir::ExprKind::While(while_) => self.rvalue_while(*while_)?,
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
       hir::ExprKind::Break(_, _) |
@@ -1398,8 +1398,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   #[allow(clippy::manual_assert)]
   fn rvalue_while(&mut self,
-    hir::While { label, hyp, cond, variant: _, body, gen, muts, trivial }: hir::While<'a>,
-    ret: ty::ExprTy<'a>,
+    hir::While {
+      label, has_break, hyp, cond,
+      variant: _, body, gen, muts, trivial
+    }: hir::While<'a>,
   ) -> Block<RValue> {
     // If `has_break` is true, then this looks like
     //   dest: () := (while cond body)
@@ -1407,7 +1409,6 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     //   dest: !cond := (while cond body).
     // We don't actually have `dest` here, we're making an rvalue that could potentially be placed
     // in a destination.
-    let has_break = matches!(ret.1.k, ty::TyKind::Unit);
 
     // If `cond` evaluates to `false`, then we generate the code
     // _ := cond; dest: !cond := itrue

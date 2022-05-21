@@ -1194,7 +1194,7 @@ struct LabelData<'a> {
   /// True if there has been at least one jump to this label group.
   has_jump: bool,
   /// The return type of the block containing the label group.
-  ret: Ty<'a>,
+  ret: Option<Ty<'a>>,
   /// The dynamic contexts at `break` points that need to be merged into the block exit context.
   dcs: Vec<DynContext<'a>>,
 }
@@ -3814,7 +3814,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           labels: Box::new([(&[], variant)]),
           value: AgreeExpr::Set(Err(span)),
           has_jump: false,
-          ret: self.common.t_unit,
+          ret: has_break.then(|| self.common.t_unit),
           dcs: vec![],
         });
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);
@@ -3868,7 +3868,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let (_, variant) = labels.into_vec().into_iter().next().expect("while label");
         ret![
           While(Box::new(hir::While {
-            label, hyp, cond: Box::new(cond), variant, body,
+            label, has_break, hyp, cond: Box::new(cond), variant, body,
             gen: self.dc.generation, muts: muts.clone(), trivial
           })),
           Ok(unit!()), ret]
@@ -3895,7 +3895,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
 
       ast::ExprKind::Break(lab, e) => {
-        let ty = self.labels[lab].ret;
+        let ty = self.labels[lab].ret.expect("label does not expect break");
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         let (e, pe) = self.check_expr(e, ty);
         if !self.dc.diverged {
@@ -4263,7 +4263,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let data = LabelData {
           labels: labs2,
           has_jump: false, value: AgreeExpr::Unset,
-          ret: tgt, dcs: vec![]
+          ret: Some(tgt), dcs: vec![]
         };
         assert!(self.labels.insert(v, data).is_none());
         UnelabStmt::Label(v, todo.into())

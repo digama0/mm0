@@ -88,7 +88,7 @@ impl BuildAst {
     self.name_map.entry(name).or_default().push(v);
   }
 
-  /// Push a named label. Uses of `break name` or `goto name` will target this label until the
+  /// Push a named label. Uses of `break name` or `jump name` will target this label until the
   /// scope is closed.
   pub fn push_label(&mut self, name: Symbol, label: LabelId) {
     self.ctx.push(Ctx::Label(name, label));
@@ -135,6 +135,10 @@ impl BuildAst {
     Some(LabelId(self.loops.last()?.0, 0))
   }
 
+  /// Mark a loop label as having a break that targets it.
+  pub fn mark_label_break(&mut self, lab: VarId) {
+    if let Some(p) = self.loops.iter_mut().rfind(|p| p.0 == lab) { p.1 = true }
+  }
 }
 
 /// A scope guard, which is constructed by the [`BuildAst::scope`] function to start a scope,

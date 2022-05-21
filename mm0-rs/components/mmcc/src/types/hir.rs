@@ -259,6 +259,8 @@ pub enum ListKind {
 pub struct While<'a> {
   /// The name of this loop, which can be used as a target for jumps.
   pub label: VarId,
+  /// Does this loop have an internal `break` statement?
+  pub has_break: bool,
   /// A hypothesis that the condition is true in the loop.
   pub hyp: Option<Spanned<'a, VarId>>,
   /// The loop condition.
