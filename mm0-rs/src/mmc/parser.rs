@@ -275,10 +275,17 @@ enum DeclAssign {
   Assign(LispVal, LispVal),
 }
 
+#[derive(Debug)]
 enum ExprOrStmt {
   Expr(Expr),
   Label(Spanned<PLabel>),
   Let(FileSpan, LispVal, LispVal, Renames),
+  Call {
+    span: FileSpan,
+    fsp: FileSpan, f: Symbol,
+    args: Vec<LispVal>,
+    variant: Option<LispVal>,
+  },
 }
 
 impl From<RenameError> for ElabError {
@@ -623,6 +630,8 @@ impl<'a, C> Parser<'a, C> {
           Err(ElabError::new_e(&lab.span, "a labeled block is a statement, not an expression")),
         ExprOrStmt::Let(span, ..) =>
           Err(ElabError::new_e(&span, "a let statement is not an expression")),
+        ExprOrStmt::Call { span, fsp, f, args, variant } =>
+          this.parse_call(span, fsp, f, args, variant)
       }
     })
   }
@@ -816,7 +825,7 @@ impl<'a, C> Parser<'a, C> {
                   args.push(e)
                 }
               }
-              self.parse_call(span.clone(), fsp, f, args, variant)?.k
+              return Ok(ExprOrStmt::Call {span, fsp, f, args, variant})
             }
           }
         }
@@ -874,6 +883,10 @@ impl<'a, C> Parser<'a, C> {
           ExprOrStmt::Expr(e) => {
             clear_jumps!();
             stmts.push(e.map_into(StmtKind::Expr))
+          }
+          ExprOrStmt::Call { span, fsp, f, args, variant } => {
+            clear_jumps!();
+            stmts.push(this.parse_call(span, fsp, f, args, variant)?.map_into(StmtKind::Expr))
           }
         }
       }
