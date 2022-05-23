@@ -1235,8 +1235,11 @@ impl<'a> ProcProver<'a> {
         StatementIterKind::Defer(0, l0, DeferredKind::Exit(op)) => {
           let code = code.expect("defer requires code");
           let u_gctx = self.thm.get_def0(self.elab, self.t_gctx);
-          let (c, ty) = app_match!(self.thm, u_gctx => { (mkGCtx c t) => (c, t), ! });
-          let th = thm!(self.thm, okResultGI(ty, c): okResult[u_gctx, ty]);
+          let (c, fs, ms, ty) = app_match!(self.thm, u_gctx => {
+            (mkGCtx c fs ms t) => (c, fs, ms, t),
+            !
+          });
+          let th = thm!(self.thm, okResultGI(ty, c, fs, ms): okResult[u_gctx, ty]);
           let h1 = thm!(self.thm, (okResult[self.gctx, ty]) =>
             CONV({th} => (okResult (UNFOLD({self.t_gctx}); u_gctx) ty)));
           let (ty2, h2) = self.read_hyp_operand((tctx, l0), op);

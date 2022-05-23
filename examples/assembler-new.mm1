@@ -67,7 +67,7 @@ do {
 };
 
 local def assembleN (s x y: nat) (P: set): wff =
-$ y = x + len s /\ (y e. u64 -> s, x e. P) $;
+$ y = x + len s /\ (text_start + y e. u64 -> s, x e. P) $;
 
 @mmc-th local def assemble (s: string) (x y: nat) (P: set): wff =
 $ s != 0 /\ assembleN s x y P $;
@@ -81,7 +81,7 @@ infixr assembleA: $++asm$ prec 120;
   $ assemble (s '+ t) x z (A ++asm B) $ = 'sorry;
 
 @mmc-th local def localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff =
-$ assembleN s x y (P @' p) $;
+$ assembleN s (p + x) (p + y) (P @' p) $;
 
 @mmc-th local def localAssembleA (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
 infixr localAssembleA: $+asm$ prec 122;
@@ -93,7 +93,7 @@ infixr localAssembleA: $+asm$ prec 122;
   $ localAssemble p (s '+ t) x z (A +asm B) $ = 'sorry;
 
 @mmc-th local def localAssemble0 (p: nat) (x: nat) (P: set): wff =
-$ x e. u64 -> p, 0, x e. P $;
+$ text_start + p + x e. u64 -> p, 0, x e. P $;
 
 @mmc-th theorem localAssemble0_0: $ localAssemble0 p x ASM0 $ = 'sorry;
 
@@ -129,7 +129,7 @@ $ S\ p, S\ s, {x | p = n /\ x = 0 /\ p, s, x e. A} $;
 
 --| See `parseInst`. (The `*N` functions are proof-internal, used for proving compiler lemmas.)
 @_ local def parseInstN (p ip s: nat) (I: set): wff =
-$ ip e. u64 -> A. x (ip = x + len s -> p, s, x e. I) $;
+$ text_start + p + ip e. u64 -> A. x (ip = x + len s -> p, s, x e. I) $;
 
 --| `parseInst p ip s I` means that decoding `s` with proc pos `p`
 --| and local instruction end at `ip` results in instruction `I`.
@@ -792,14 +792,6 @@ $ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p, t1, 0 e. A
   (h3: $ strlen t n $):
   $ assemble (s '+ t) x z (asmProc x A) $ = 'sorry;
 
---| `assembled c P` (assembly output) asserts that if the full file content is `c`,
---| then `P` holds of some nonempty substring in `c`.
---| `P` will contain embedded assertions about the position or the
---| string where relevant (using `asmAt`), so that the existential is uniquely determined.
-@_ local def assembledN (c: nat) (P: set): wff =
-$ E. x E. s (s != 0 /\ sublistAt x c s /\
-  text_start + x + len s e. u64 /\ s, text_start + x e. P) $;
-
 @mmc-th local def isU64 (n: nat): wff = $ n e. u64 $;
 
 -- Proves, for digits i = 0, .., 15:
@@ -817,27 +809,45 @@ do (ignore @ on-hexstrings @ fn (n)
 
 --| Global context. In lean:
 --| ```lean
---| structure gctx := (content : string) (result : prop)
+--| structure gctx := (content: string) (filesz memsz: nat) (result: prop)
 --| ```
-@mmc-th local def mkGCtx (content: string) (result: set): set =
-$ Sum (Sum content result) 0 $;
+@mmc-th local def mkGCtx (content: string) (filesz memsz: nat) (result: set): set =
+$ Sum (Sum (content, filesz, memsz) result) 0 $;
 
-local def okContentN (G: set): nat = $ lower (Fst (Fst G)) $;
+local def okContentN (G: set): nat = $ fst (lower (Fst G)) $;
 @mmc-th local def okContent (G: set) (c: string): wff = $ okContentN G = c $;
-@mmc-th theorem okContentGI: $ okContent (mkGCtx c T) c $ = 'sorry;
+@mmc-th theorem okContentGI: $ okContent (mkGCtx c fs ms T) c $ = 'sorry;
+
+local def okFileSzN (G: set): nat = $ pi21 (lower (Fst G)) $;
+local def okMemSzN (G: set): nat = $ pi22 (lower (Fst G)) $;
 
 local def okResultN (G: set): set = $ Snd (Fst G) $;
 @mmc-th local def okResult (G: set) (T: set): wff = $ okResultN G == T $;
-@mmc-th theorem okResultGI: $ okResult (mkGCtx c T) T $ = 'sorry;
+@mmc-th theorem okResultGI: $ okResult (mkGCtx c fs ms T) T $ = 'sorry;
 
---| `assembled (mkGCtx c _) P` (assembly output) asserts that if the full file content is `c`,
---| then `P` holds of some nonempty substring in `c`.
+--| `assembled c fs ms P` (assembly output) asserts that
+--| if the full file content is `c`, then `len c` is in range, and
+--| `P` holds of some nonempty substring in `c`.
 --| `P` will contain embedded assertions about the position or the
 --| string where relevant (using `asmAt`), so that the existential is uniquely determined.
-@mmc-th local def assembled (G P: set): wff = $ assembledN (okContentN G) P $;
+@_ local def assembledN (c fs ms: nat) (P: set): wff =
+$ len c = fs /\ fs <= ms /\ text_start + ms e. u64 /\
+  E. x E. s (s != 0 /\ sublistAt x c s /\ s, text_start + x e. P) $;
+
+--| `assembled (mkGCtx c fs ms _) P` (assembly output) asserts that
+--| if the full file content is `c`, then `len c` is in range, and
+--| `P` holds of some nonempty substring in `c`.
+--| `P` will contain embedded assertions about the position or the
+--| string where relevant (using `asmAt`), so that the existential is uniquely determined.
+@mmc-th local def assembled (G P: set): wff =
+$ assembledN (okContentN G) (okFileSzN G) (okMemSzN G) P $;
 
 @mmc-th theorem assembledI
-  (h1: $ assemble c ,0x400078 y A $) (h2: $ isU64 y $): $ assembled (mkGCtx c T) A $ = 'sorry;
+  (h1: $ assemble c x0 filesz A $)
+  (h2: $ filesz <= memsz $)
+  (h3: $ ,0x400078 + memsz = end $)
+  (h4: $ isU64 end $):
+  $ assembled (mkGCtx c filesz memsz T) A $ = 'sorry;
 
 @mmc-th theorem assembled_l (h1: $ assembled G (A ++asm B) $): $ assembled G A $ = 'sorry;
 

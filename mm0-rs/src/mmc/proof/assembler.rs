@@ -1372,16 +1372,22 @@ impl<'a> BuildAssembly<'a> {
 
   fn assemble(&mut self, proof: &'a ElfProof<'a>) -> Result<TermId> {
     let mut iter = proof.assembly();
-    let x = self.hex.from_u32(&mut self.thm, TEXT_START);
-    let (c, y, a, h1) = self.bisect(iter.len(), &mut iter, x, &mut |this, item, x| {
+    let zero = self.hex.h2n(&mut self.thm, 0);
+    let (c, filesz, a, h1) = self.bisect(iter.len(), &mut iter, zero, &mut |this, item, x| {
       match item {
         AssemblyItem::Proc(proc) => this.assemble_proc(&proc, x),
         AssemblyItem::Const(_) => todo!(),
       }
     })?;
-    let h2 = HexCache::is_u64(&mut self.thm, *y);
+    let memsz = self.hex.from_u64(&mut self.thm, proof.p_memsz());
+    let h2 = self.hex.le(&mut self.thm, filesz, memsz);
+    let text_start = self.hex.from_u32(&mut self.thm, TEXT_START);
+    let (end, h3) = self.hex.add(&mut self.thm, text_start, memsz);
+    let (filesz, memsz) = (*filesz, *memsz);
+    let h4 = HexCache::is_u64(&mut self.thm, *end);
     let res = super::compiler::mk_result(&mut self.thm, proof);
-    let th = thm!(self.thm, assembledI(a, res, c, *y, h1, h2): (assembled (mkGCtx c res) a));
+    let th = thm!(self.thm, ((assembled (mkGCtx c filesz memsz res) a)) =>
+      assembledI(a, res, c, *end, filesz, memsz, h1, h2, h3, h4));
 
     let (content, doc) = self.mangler.get_data(self.elab, Name::Content);
     let content = self.elab.env.add_term({
@@ -1394,14 +1400,17 @@ impl<'a> BuildAssembly<'a> {
     let (gctx, doc) = self.mangler.get_data(self.elab, Name::GCtx);
     let gctx = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
+      let filesz = self.thm.to_expr(&mut de, filesz);
+      let memsz = self.thm.to_expr(&mut de, memsz);
       let res = self.thm.to_expr(&mut de, res);
-      let e = app!(de, (mkGCtx ({content}) res));
+      let e = app!(de, (mkGCtx ({content}) filesz memsz res));
       de.build_def0(gctx, Modifiers::LOCAL,
         self.span.clone(), self.full, Some(doc), e, self.pd.set)
     }).map_err(|e| e.into_elab_error(self.full))?;
 
     let th = thm!(self.thm, ((assembled ({gctx}) a)) =>
-      CONV({th} => (assembled (UNFOLD({gctx}); (mkGCtx (UNFOLD({content}); c) res)) a)));
+      CONV({th} => (assembled (UNFOLD({gctx});
+        (mkGCtx (UNFOLD({content}); c) filesz memsz res)) a)));
     let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::AsmdThm);
     let asmd_thm = self.elab.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(),

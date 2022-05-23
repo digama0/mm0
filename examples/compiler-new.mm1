@@ -39,8 +39,6 @@ local def okStartN (pctx: set): nat = $ fst (lower (Snd (Fst (Snd pctx)))) $;
 --| so `pctx` extraction functions also work on `bctx`.
 @mmc-th local def mkBCtx (pctx labs: set): set = $ Sum (Fst pctx) (Sum (Fst (Snd pctx)) labs) $;
 
-@mmc-th theorem okContentBI: $ okContent (mkBCtx (mkPCtx (mkGCtx c T) P) L) c $ = 'sorry;
-
 local def okLabelGroupsN (pctx: set): set = $ Snd (Snd pctx) $;
 @mmc-th local def okLabelGroups (pctx labs: set): wff = $ okLabelGroupsN pctx == labs $;
 @mmc-th theorem okLabelGroupsI: $ okLabelGroups (mkBCtx pctx labs) labs $ = 'sorry;
@@ -245,7 +243,7 @@ $ A. x A. y A. fr (okAsmd bctx code x y -> okScopeN bctx fr ->
 $ Sum (suc (epi, sp)) (Sum mctx prl) $;
 
 @mmc-th local def okAssembled (pctx: set) (code: set): wff =
-$ E. p assembledN (okContentN pctx) (code @' p) $;
+$ E. p assembled pctx (code @' p) $;
 
 @mmc-th theorem okAssembledI
   (h: $ assembled gctx (asmProc start code) $):
