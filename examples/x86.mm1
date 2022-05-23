@@ -4340,16 +4340,13 @@ pub theorem execOpenT (k ret: nat):
   $ execOpen k ret -> k e. Config /\ ret e. u64 $ =
 (named '(anim anl @ eex @ eex anr));
 
---| If `l` is the initial input, reading `l1` from `fd` results in the remaining input `l2`.
---| We only track progress through stdin.
-@_ def readFromFD (fd l l1 l2: nat): wff =
-$ l1 e. List u8 /\ l2 e. List u8 /\
-  ifp (fd = stdin) (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0)) (l = l2) $;
-pub theorem readFromFD_T (fd l l1 l2: nat):
-  $ readFromFD fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $ =
-'(sylibr anass @ syl ancom @ anim2a @ eorda
-  (mpbird (eleq1d @ anwr anrl) @ sylibr appendT anl)
-  (mpbird (eleq1d @ anrr) anlr));
+--| If `fd` is the tracked file descriptor, reading/writing `l1` from `fd`
+--| results in the accumulated input.output `l2`.
+@_ def extendIfFD (tgt fd l l1 l2: nat): wff =
+$ l e. List u8 /\ l1 e. List u8 /\ l2 = if (fd = tgt) (l ++ l1) l $;
+pub theorem extendIfFD_T (tgt fd l l1 l2: nat):
+  $ extendIfFD tgt fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $ =
+'(anim2a @ syl5ibrcom eleq1 @ sylan ifT (bi2i appendT) anl);
 
 @(add-eval) def sys_read: nat = $ 0 $;
 @_ def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
@@ -4359,7 +4356,7 @@ $ l e. List u8 /\ readReg k RAX = sys_read /\
     count = readReg k RDX /\
     ifp (isIOError ret)
       (l2 = l /\ k2 = k)
-      (ret <= count /\ E. l1 (readFromFD fd l l1 l2 /\
+      (ret <= count /\ E. l1 (extendIfFD stdin fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
 theorem execReadT2 (l k l2 k2 ret: nat):
   $ execRead l k l2 k2 ret ->
@@ -4375,7 +4372,7 @@ theorem execReadT2 (l k l2 k2 ret: nat):
     iand (mpbird (eleq1d @ anrd anrr) @ anwl h1) @
     iand (rsyl anrl isIOErrorT) @
     syl eqssr @ PageMappingeqd @ getMemoryeqd @ anrd anrr))
-  (focus '(syl5 anr @ impd @ exp @ eexda @ iand (rsyl anrl @ anrd readFromFD_T) @
+  (focus '(syl5 anr @ impd @ exp @ eexda @ iand (rsyl anrl @ anrd extendIfFD_T) @
     iand (rsyl anrr @ anrd writeMemT) @
     iand (sylc Bitsle1 anlr @ mpbird (eleq1d @ anrd anllr) @
       sylan readRegT (anwll h1) @ a1i RDX_T) @
@@ -4390,15 +4387,6 @@ pub theorem execReadPM (l k l2 k2 ret: nat):
     PageMapping (getMemory k) C_ PageMapping (getMemory k2) $ =
 '(anrd execReadT2);
 
---| If `l` is the initial output, writing `l1` to `fd` results in the new accumulated output `l2`.
---| We only track printing to stdout.
-@_ def writeToFD (fd l l1 l2: nat): wff =
-$ l e. List u8 /\ l1 e. List u8 /\
-  l2 = if (fd = stdout) (l ++ l1) l $;
-pub theorem writeToFD_T (fd l l1 l2: nat):
-  $ writeToFD fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $ =
-'(anim2a @ syl5ibrcom eleq1 @ sylan ifT (bi2i appendT) anl);
-
 @(add-eval) def sys_write: nat = $ 1 $;
 @_ def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
 $ l e. List u8 /\ readReg k RAX = sys_write /\
@@ -4406,7 +4394,7 @@ $ l e. List u8 /\ readReg k RAX = sys_write /\
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (isIOError ret) (l2 = l)
-      (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
+      (ret <= count /\ E. l1 (extendIfFD stdout fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
 pub theorem execWriteT (l k l2 ret: nat):
   $ execWrite l k l2 ret -> l e. List u8 /\ k e. Config /\ l2 e. List u8 /\ ret e. u64 $ =
@@ -4416,7 +4404,7 @@ pub theorem execWriteT (l k l2 ret: nat):
   (have 'h '(anwr @ rsyl anlr @ rsyl readMemT anll))
   '(iand (anwl h) @ imp @ eorda
     (iand (mpbird (eleq1d anrr) anll) @ rsyl anrl isIOErrorT)
-    (iand (anwr @ anwr @ anwr @ eex @ anwl @ anrd writeToFD_T) @
+    (iand (anwr @ anwr @ anwr @ eex @ anwl @ anrd extendIfFD_T) @
       sylc Bitsle1 (anwr anrl) @ mpbird (eleq1d @ rsyl anlr anllr) @
       sylan readRegT (anwl h) @ a1i RDX_T)));
 
@@ -5019,29 +5007,27 @@ pub theorem allocStackT (k m k3 km3: nat):
 
 --| This defines the initial state set up from a basic ELF file (only one
 --| program segment, no sections).
-def initialConfig (elf: string) (i ks: nat)
+def initialConfig (elf: string) (ks: nat)
   (.entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
-$ i e. List u8 /\
-  E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
+$ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
     parseBasicElf elf entry prot off seg /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
-    ks = mkKS i 0 k2 km2) $;
+    ks = mkKS 0 0 k2 km2) $;
 
-@_ local def initialConfig2 (elf i ks: nat): wff =
-$ i e. List u8 /\
-  E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
+@_ local def initialConfigN (elf ks: nat): wff =
+$ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
     parseBasicElf elf entry prot off seg /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
-    ks = mkKS i 0 k2 km2) $;
-theorem initialConfig2T:
-  $ initialConfig2 elf i ks -> i e. List u8 /\ ks e. KernelState $ =
-(named '(anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @
-  impd @ exp @ syl5ibrcom ,eqtac @ sylibr mkKS_T @ sylibr anass @
-  anim (mpi elList0 ian) @ anwr @ rsyl mapMemT @ anim1 anr));
-theorem initialConfig2_iff:
-  $ initialConfig elf i ks <-> initialConfig2 elf i ks $ = (named 'biid);
+    ks = mkKS 0 0 k2 km2) $;
+theorem initialConfigNT:
+  $ initialConfigN elf ks -> ks e. KernelState $ =
+(named '(eex @ eex @ eex @ eex @ eex @ eex @ eex @ eex @ eex @
+  imp @ syl5ibrcom ,eqtac @ sylibr mkKS_T @ sylibr anass @
+  anim (a1i @ ian elList0 elList0) @ rsyl mapMemT @ anim1 anr));
+theorem initialConfigN_iff:
+  $ initialConfig elf ks <-> initialConfigN elf ks $ = (named 'biid);
 pub theorem initialConfigT (elf: string) (i ks: nat):
-  $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $ =
-'(sylbi initialConfig2_iff initialConfig2T);
+  $ initialConfig elf ks -> ks e. KernelState $ =
+'(sylbi initialConfigN_iff initialConfigNT);

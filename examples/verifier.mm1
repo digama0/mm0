@@ -15,20 +15,20 @@ theorem Verifier_basicElf: $ isBasicElf Verifier $;
 --| ensuring that the final input is empty (the entire input was consumed),
 --| the output is empty (it outputs nothing), and the theorems in the
 --| mm0 file are derivable.
-theorem Verifier_terminates {input output: nat} (k mm0_file: nat):
-  $ initialConfig Verifier mm0_file k ->
-    terminates_ensuring k (S\ input, {output |
-      input = 0 /\ output = 0 /\ Valid mm0_file}) $;
+theorem Verifier_terminates {mm0_file output: nat} (k: nat):
+  $ initialConfig Verifier k ->
+    terminates_ensuring k (S\ mm0_file, {output |
+      output = 0 /\ Valid mm0_file}) $;
 
 --| Unpacking the above claim: if we set up an initial configuration
 --| such that `mm0_file` is on standard in, and it runs to completion
 --| having consumed the input and produced no output with exit code 0,
 --| then the theorems in the input are derivable.
 theorem Verifier_Valid (k mm0_file: nat):
-  $ initialConfig Verifier mm0_file k /\ succeeds k 0 0 ->
+  $ initialConfig Verifier k /\ succeeds k mm0_file 0 ->
     Valid mm0_file $ =
-(named '(mpd (sylan terminates_ensuring_succeeds (anwl Verifier_terminates) anr) @
-  eexsabd @ eelabd @ a1i anr));
+(named '(anrd @ sylib (elsabe @ elabed @ aneqd (eqeq1d anr) @ Valideqd anl) @
+  sylan terminates_ensuring_succeeds (anwl Verifier_terminates) anr));
 
 def Represents (env a_sorts a_terms a_thms: nat) = $ T. $;
 
