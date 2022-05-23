@@ -242,9 +242,6 @@ theorem s_sat_frame_sn {q}
     syl5 orl @ syl5bir elun @ sylbid (eleq2d @ syl heap_join_un @ anwl H1) @
     sylibrd (syl (exp heap_sat_E) anllr) @ eqeq1d @ syl h1 (anim1 an3l)));
 
-@_ local def prog_ok (elf i: nat) (P: set): wff =
-$ A. k (initialConfig2 elf i k -> terminates_ensuring k P) $;
-
 @_ local def s_ok (P T: set): wff =
 $ A. k (k |=s P -> terminates_ensuring k T) $;
 

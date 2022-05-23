@@ -1020,11 +1020,13 @@ impl<'a> ProcProver<'a> {
     }
   }
 
-  /// Returns `(tctx, |- buildStart pctx tctx)`
-  fn build_start(&mut self, root: VCtx) -> (PTCtx<'a>, ProofId) {
+  /// Returns `(fs, ms, tctx, |- buildStart pctx fs ms tctx)`
+  fn build_start(&mut self, root: VCtx) -> (Num, Num, PTCtx<'a>, ProofId) {
+    let fs = self.hex.from_u64(&mut self.thm, self.elf_proof.p_filesz());
+    let ms = self.hex.from_u64(&mut self.thm, self.elf_proof.p_memsz());
     let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
-    let bproc = app!(self.thm, buildStart[self.pctx, tctx.1]);
-    (tctx, thm!(self.thm, sorry(bproc): bproc)) // TODO
+    let bproc = app!(self.thm, buildStart[self.pctx, *fs, *ms, tctx.1]);
+    (fs, ms, tctx, thm!(self.thm, sorry(bproc): bproc)) // TODO
   }
 
   /// Returns `(v, |- okRead tctx loc v)`
@@ -1374,7 +1376,7 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Proves `|- okProc gctx start args ret clob se`,
-  /// or `|- okStart gctx start` for the start procedure
+  /// or `|- okStart gctx fs ms` for the start procedure
   fn prove_proc(&mut self, root: VCtx) -> ProofId {
     let name = self.proc.name();
     let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
@@ -1418,11 +1420,11 @@ impl<'a> ProcProver<'a> {
         okProcI(args, clob, code, self.epi, self.gctx, mctx1, mctx2, self.ret, self.se,
           start, sz1, vctx1, h1, h2, h3, h4))
     } else {
-      let ((tctx, l1), h2) = self.build_start(root);
+      let (fs, ms, (tctx, l1), h2) = self.build_start(root);
       let mut sp = self.hex.h2n(&mut self.thm, 0);
       let h3 = self.ok_code0((LCtx::Reg(tctx), l1), Some(code));
-      thm!(self.thm, (okStart[self.gctx, start]) =>
-        okStartI(code, self.gctx, self.pctx1, start, l1, h1, h2, h3))
+      thm!(self.thm, (okStart[self.gctx, *fs, *ms]) =>
+        okStartI(code, *fs, self.gctx, *ms, self.pctx1, l1, h1, h2, h3))
     }
   }
 }

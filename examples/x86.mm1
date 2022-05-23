@@ -4976,6 +4976,11 @@ pub theorem parseBasicElfT (file entry prot vaddr seg: nat):
 def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
 $ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
 
+local def isBasicElfN (elf: nat): wff =
+$ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
+theorem isBasicElfN_iff:
+  $ isBasicElf elf <-> isBasicElfN elf $ = (named 'biid);
+
 @_ def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
     k = mkCfg 0 entry (\. r e. Regs, 0) f m) $;

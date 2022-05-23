@@ -307,20 +307,15 @@ infixr clobS: $:C$ prec 91;
     (okPrologue epiRet x0 mctx2 (mkPrologue vctx1 sz1 epi)) code ok0 $):
   $ okProc gctx start (mkArgs args mctx1) ret clob se $ = 'sorry;
 
-@mmc-th local def buildStart (pctx lctx: set): wff = $ F. $; -- TODO
+@mmc-th local def buildStart (pctx: set) (fs ms: nat) (lctx: set): wff = $ F. $; -- TODO
 
-@mmc-th theorem buildStartI
-  (h1: $ okAssembled pctx (asmAt ip code) $)
-  (h2: $ okCode (mkBCtx pctx L) lctx code ok0 $):
-  $ buildStart pctx lctx $ = 'sorry;
-
-@mmc-th local def okStart (gctx: set) (start: nat): wff = $ F. $; -- TODO
+@mmc-th local def okStart (gctx: set) (fs ms: nat): wff = $ F. $; -- TODO
 
 @mmc-th theorem okStartI
-  (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry start code) $)
-  (h2: $ buildStart (mkPCtx gctx pctx1) tctx $)
+  (h1: $ okAssembled (mkPCtx gctx pctx1) (asmEntry x0 code) $)
+  (h2: $ buildStart (mkPCtx gctx pctx1) fs ms tctx $)
   (h3: $ okCode (mkBCtx (mkPCtx gctx pctx1) LG0) tctx code ok0 $):
-  $ okStart gctx start $ = 'sorry;
+  $ okStart gctx fs ms $ = 'sorry;
 
 @mmc-th local def okBlock (bctx: set) (ip: nat) (lctx: set): wff = $ F. $; -- TODO
 
@@ -486,3 +481,14 @@ infixr clobS: $:C$ prec 91;
       (instImm wSz64 x7 (posZ x0)))
     instSysCall ok0 $ =
 'sorry;
+
+local def okProgN (elf: nat) (T: set): wff =
+$ isBasicElfN elf /\ A. k (initialConfigN elf k -> terminates_ensuring k T) $;
+
+@mmc-th local def okProg (elf: string) (T: set): wff = $ okProgN elf T $;
+
+@mmc-th theorem okProgI
+  (h1: $ okStart (mkGCtx c fs ms T) fs ms $)
+  (hfs: $ parseU64 fs fss $)
+  (hms: $ parseU64 ms mss $):
+  $ okProg (ELF_lit fss mss c) T $ = 'sorry;

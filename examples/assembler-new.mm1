@@ -40,7 +40,8 @@ do {
       opSizeW opSizeW_0 opSizeW_S
       REX_W REX_R REX_X REX_B
       base_RIP base_reg
-      unopInc unopDec unopNot unopNeg))
+      unopInc unopDec unopNot unopNeg
+      isBasicElf ELF_lit))
 };
 
 @mmc-th local def strlen (s: string) (n: nat): wff = $ len s = n $;
@@ -173,6 +174,24 @@ $ obind (asI64 off) (\ q, suc (immRM_rm (RM_mem si base q))) $;
 
 @mmc-th local def parseUBytes (k n: nat) (s: string): wff =
 $ n e. Bits (8 * suc k) /\ s = toBytes (suc k) n $;
+
+@mmc-th theorem parseUBytesS (h: $ parseUBytes k n s $):
+  $ parseUBytes (suc k) (n :x a1 :x a0) (ch a1 a0 ': s) $ =
+'(iani (xelBits8S (anli h)) @ xtoBytesS (anri h));
+@mmc-th theorem parseUBytesS2 (h: $ parseUBytes k x0 s $):
+  $ parseUBytes (suc k) (a1 :x a0) (ch a1 a0 ': s) $ =
+'(iani xelBits82 @ xtoBytesS2 (anri h));
+@mmc-th theorem parseUBytesS1 (h: $ parseUBytes k x0 s $):
+  $ parseUBytes (suc k) a0 (ch x0 a0 ': s) $ =
+'(iani xelBits81 @ xtoBytesS1 (anri h));
+@mmc-th theorem parseUBytes02: $ parseUBytes 0 (a1 :x a0) (s1 (ch a1 a0)) $ =
+'(iani xelBits82 xtoBytes12);
+@mmc-th theorem parseUBytes01: $ parseUBytes 0 a0 (s1 (ch x0 a0)) $ =
+'(iani xelBits81 xtoBytes11);
+
+@mmc-th local def parseU64 (n: nat) (s: string): wff = $ parseUBytes ,(sucs 7) n s $;
+
+@mmc-th theorem parseU64_I (h: $ parseUBytes ,(sucs 7) n s $): $ parseU64 n s $ = 'h;
 
 @mmc-th local def parseIBytesPos (k n: nat) (s: string): wff =
 $ n e. Bits (8 * k + 7) /\ s = toBytes (suc k) n $;
@@ -852,3 +871,11 @@ $ assembledN (okContentN G) (okFileSzN G) (okMemSzN G) P $;
 @mmc-th theorem assembled_l (h1: $ assembled G (A ++asm B) $): $ assembled G A $ = 'sorry;
 
 @mmc-th theorem assembled_r (h1: $ assembled G (A ++asm B) $): $ assembled G B $ = 'sorry;
+
+-- Not used if compiler is enabled, see okProgI
+@mmc-th theorem assembleProg
+  (h1: $ assembled (mkGCtx c fs ms T) P $)
+  (h2: $ fs + bss = ms $)
+  (hfs: $ parseU64 fs fss $)
+  (hms: $ parseU64 ms mss $):
+  $ isBasicElf (ELF_lit fss mss c) $ = 'sorry;
