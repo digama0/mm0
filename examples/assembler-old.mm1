@@ -86,26 +86,25 @@ theorem load_start_eq: $ load_start_s (ch x y) = u64Bytes (load_start x y) $ =
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
   '(xtoBytesS @ eqtr4 (eqtr _x00x5_eq @ repeateq2 h2n5) toBytes02));
 
-local def ELF_header_s (e: string): string =
+local def ELF_header_s: string =
 $ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 ,0x3e '+ _ch32 _x01 '+
-  e '+ _ch64 ,64 '+ _x00x8 '+
+  load_start_s ,0x78 '+ _ch64 ,64 '+ _x00x8 '+
   _x00x4 '+ _ch16 ,64 '+ _ch16 ,0x38 '+ _ch16 _x01 '+
   _ch16 ,64 '+ _x00x4 $;
 
-theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
-  $ elfHeader (ELF_header_s e) entry 64 0 1 0 $ =
+theorem ELF_header_ok: $ elfHeader ELF_header_s text_start 64 0 1 0 $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
   (def h0 '(mpbir (eleq1 ,to_hex) xelu8_1))
   (def h1 '(mpbir (eleq1 ,to_hex) xelu8_2))
   (def h2 '(mpbir (lteq2 @ eqtr bitsNeg1 upto16) ,norm_num))
   (def (f x) '(eqtr4 (eqtr ,(_x00xn_eq x) @ repeateq2 ,(h2nn x)) toBytes02))
-  (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
+  (refine 'load_start_T '(ssel u8ss64 ,h1) 'elBits01
     '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
   '(ax_mp (iexe ,eqtac) @ ian elBits01 _)
   '(s2n_A ELF_IDENT_eq @ s2n_A (_ch16_eq _x02_eq) @
     s2n_A (_ch16_eq eqid) @ s2n_A (_ch32_eq _x01_eq) @
-    s2n_A he @ s2n_A (_ch64_eq ,norm_num) @ s2n_A ,(f 8) @  s2n_A ,(f 4) @
+    s2n_A load_start_eq @ s2n_A (_ch64_eq ,norm_num) @ s2n_A ,(f 8) @  s2n_A ,(f 4) @
     s2n_A (! _ch16_eq $64$ _ ,norm_num) @ s2n_A (_ch16_eq eqid) @
     s2n_A (_ch16_eq _x01_eq) @ s2n_A (! _ch16_eq $64$ _ ,norm_num) @
     s2n_A ,(f 2) ,(f 2)));
@@ -167,37 +166,32 @@ theorem basic_pHeader_ok
   norm_num
   norm_num);
 
-local def ELF_lit (e fs ms c: string): string =
-$ ELF_header_s e '+ basic_pHeader_s fs ms '+ c $;
+local def ELF_lit (fs ms c: string): string =
+$ ELF_header_s '+ basic_pHeader_s fs ms '+ c $;
 
-local def ELF_parse (entry bss: nat) (c: string): nat =
-$ entry, PROT_RWX, text_start, c ++ repeat 0 bss $;
+local def ELF_parse (bss: nat) (c: string): nat =
+$ text_start, PROT_RWX, text_start, c ++ repeat 0 bss $;
 
-local def ELF_lit_ok (elf: string) (entry bss: nat) (c: string) =
-$ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
+local def ELF_lit_ok (elf: string) (bss: nat) (c: string) =
+$ parseBasicElf elf text_start PROT_RWX text_start (c ++ repeat 0 bss) $;
 
-theorem ELF_lit_ok_isBasicElf (s entry bss c)
-  (h: $ ELF_lit_ok s entry bss c $): $ isBasicElf s $ =
+theorem ELF_lit_ok_isBasicElf (s bss c)
+  (h: $ ELF_lit_ok s bss c $): $ isBasicElf s $ =
 '(iexie @ iexde @ iexde @ iexde @ mpbiri h ,eqtac);
 
 theorem basicElf_ok
-  (he: $ e = u64Bytes entry $)
   (hfs: $ fs = u64Bytes filesz $)
   (hms: $ ms = u64Bytes memsz $)
   (hbss: $ filesz + bss = memsz $)
   (hlen: $ len c = filesz $)
   (hend: $ ,0x400078 + memsz = end $)
-  (hea: $ text_start <= entry /\ entry < text_start + len c $)
+  (hea: $ c != 0 $)
   (hbd: $ end e. u64 $):
-  $ ELF_lit_ok (ELF_lit e fs ms c) entry bss c $ =
+  $ ELF_lit_ok (ELF_lit fs ms c) bss c $ =
 (focus
   '(ian s2nT @ iexie ,(iterate 5 (fn (x) '(iexde ,x)) '(mpbiri _ ,eqtac)))
   (have 'h1 '(eqtr s2nsadd @ appendeq2 s2nsadd))
-  (have 'he2 $ entry < end $
-    '(ltletr (anr hea) @ mpbi (leeq2 hend) @ mpbi leadd2 @
-      mpbir (leeq1 hlen) @ mpbi (leeq2 hbss) leaddid1))
-  (have 'ehok '(ELF_header_ok he @ Bitsle1 (ltle he2) hbd))
-  (have 'hl1 '(elArraylen @ an5l @ elfHeaderT ehok))
+  (have 'hl1 '(elArraylen @ an5l @ elfHeaderT ELF_header_ok))
   (have 'phok '(basic_pHeader_ok
     (eqtr4 hfs @ u64Byteseq hlen)
     (eqtr4 hms @ u64Byteseq hbss)
@@ -207,18 +201,20 @@ theorem basicElf_ok
   (for 0 8 @ fn (_) (refine '(ian _ _)))
   (focus
     '(mpbir (sublistAteq2 h1) @ sublistAt_left sublistAt_id))
-  (focus 'ehok)
+  (focus 'ELF_header_ok)
   (focus
-    '(mpbir (sublistAteq (eqtr2 add02 hl1) h1 eqid) @
-      sublistAt_right @ sublistAt_left sublistAt_id))
+    '(mpbir (sublistAteq (eqtr2 add02 hl1) h1 eqid) _)
+    '(sublistAt_right @ sublistAt_left sublistAt_id))
   (focus 'phok)
   (focus
     '(mpbir (sublistAteq (eqtr2 (addeq hl1 @ eqtr add02 hl2)
-        {,norm_num : $ 64 + ch x3 x8 = ch x7 x8 $}) h1 eqid) @
-      sublistAt_right @ sublistAt_right sublistAt_id))
+        {,norm_num : $ 64 + ch x3 x8 = ch x7 x8 $}) h1 eqid) _)
+    '(sublistAt_right @ sublistAt_right sublistAt_id))
   (focus '(mpbir (eleq1 @ eqtr (addeq2 hbss) hend) hbd))
-  (focus '(anl hea))
-  (focus '(mpbir (lteq2 @ eqtr (addeq2 hbss) hend) he2))
+  (focus 'leid)
+  (focus
+    '(mpbi (lteq1 add02) @ mpbi ltadd2 @ ltletr _ leaddid1)
+    '(mpbi (lteq2 hlen) @ mpbir lt01 @ mtbir leneq0 hea))
   (focus '(appendeq2 @ repeateq2 @ eqtr2 (subeq2 hlen) pncan2)));
 
 ------------
