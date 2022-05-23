@@ -134,7 +134,7 @@ impl Debug for ShiftKind {
 }
 
 /// A binop which is used only for its effect on the flags.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Cmp {
   /// CMP instruction: compute `a - b` and set flags from result.
   Cmp,
@@ -157,7 +157,7 @@ impl Debug for Cmp {
 
 /// These indicate ways of extending (widening) a value, using the Intel
 /// naming: B(yte) = u8, W(ord) = u16, L(ong)word = u32, Q(uad)word = u64
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExtMode {
   /// Byte (u8) -> Longword (u32).
   BL,
@@ -291,7 +291,7 @@ impl CC {
 }
 
 /// Some basic ALU operations.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Binop {
   /// Addition
@@ -329,7 +329,7 @@ impl Debug for Binop {
 }
 
 /// Some basic ALU operations.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Unop {
   /// Increment (add 1)

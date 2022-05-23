@@ -42,6 +42,7 @@ impl std::fmt::Debug for OptBlockId {
 }
 
 /// A bit set with a custom index type.
+#[allow(clippy::derive_partial_eq_without_eq)] // rust-clippy#8867
 #[derive(Default, Debug, PartialEq, Eq)]
 pub(crate) struct BitSet<T = usize>(bit_set::BitSet, PhantomData<T>);
 

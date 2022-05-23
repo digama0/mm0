@@ -477,7 +477,9 @@ impl Deref for LispVal {
   type Target = LispKind;
   fn deref(&self) -> &LispKind { &self.0 }
 }
+// Safety: inherited from Rc
 unsafe impl StableAddress for LispVal {}
+// Safety: inherited from Rc
 unsafe impl CloneStableAddress for LispVal {}
 
 impl PartialEq<LispVal> for LispVal {

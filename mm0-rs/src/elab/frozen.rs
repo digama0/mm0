@@ -49,7 +49,9 @@ use super::{ObjectKind, Remap, Remapper, Spans};
 #[repr(transparent)]
 pub struct FrozenEnv(Arc<Environment>);
 #[allow(unknown_lints)] #[allow(clippy::non_send_fields_in_send_ty)]
+// Safety: We protect all access through the API in this module
 unsafe impl Send for FrozenEnv {}
+// Safety: We protect all access through the API in this module
 unsafe impl Sync for FrozenEnv {}
 
 impl FrozenEnv {
