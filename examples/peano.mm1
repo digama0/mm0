@@ -1748,6 +1748,17 @@ theorem nfslem {y} (A: set y) (a: nat x) (B: set x)
   (e: $ y = a -> A == B $) (h: $ FN/ x a $): $ FS/ x B $ =
 '(nfsx (eqscom @ sbse e) @ nfsbsh h nfsv);
 
+@_ local def If (p: wff) (A B: set): set = $ {n | ifp p (n e. A) (n e. B)} $;
+
+theorem Ifpos: $ p -> If p A B == A $ = '(!! eqab1d n ifppos);
+theorem Ifneg: $ ~p -> If p A B == B $ = '(!! eqab1d n ifpneg);
+
+theorem Ifid: $ If p A A == A $ = '(cases Ifpos Ifneg);
+theorem Ifeq2a: $ (p -> A == B) -> If p A C == If p B C $ =
+'(casesd (imim2i Ifeq2) (a1i @ eqstr4d Ifneg Ifneg));
+theorem Ifeq3a: $ (~p -> B == C) -> If p A B == If p A C $ =
+'(casesd (a1i @ eqstr4d Ifpos Ifpos) (imim2i Ifeq3));
+
 @_ local def eu {x: nat} (p: wff x): wff = $ E. y A. x (p <-> x = y) $;
 
 --| `0` is a natural number.
@@ -2729,13 +2740,18 @@ theorem ledivmul1: $ c != 0 -> (a <= b // c <-> c * a <= b) $ =
     sylibr (lteq2 mulS) @ sylib (lteq1 divmod) @ sylib ltadd2 @ modlt));
 theorem ledivmul2: $ c != 0 -> (a <= b // c <-> a * c <= b) $ =
 '(syl6bb (leeq1 mulcom) ledivmul1);
-theorem ltdivmul1: $ b != 0 -> (a // b < c <-> a < b * c) $ =
+theorem divltmul1: $ b != 0 -> (a // b < c <-> a < b * c) $ =
 '(syl5bb ltnle @ syl6bbr ltnle @ noteqd @ ledivmul1);
-theorem ltdivmul2: $ b != 0 -> (a // b < c <-> a < c * b) $ =
-'(syl6bb (lteq2 mulcom) ltdivmul1);
+theorem divltmul2: $ b != 0 -> (a // b < c <-> a < c * b) $ =
+'(syl6bb (lteq2 mulcom) divltmul1);
+
+theorem divlemul1r: $ b != 0 -> a <= b * c -> a // b <= c $ =
+'(exp @ mpbid (leeq2d @ anwl muldiv2) @ anwr lediv1);
+theorem divlemul2r: $ b != 0 -> a <= c * b -> a // b <= c $ =
+'(syl5bi (leeq2 mulcom) divlemul1r);
 
 theorem diveq0: $ b != 0 -> (a // b = 0 <-> a < b) $ =
-'(syl5bbr lt12 @ syl6bb (lteq2 mul12) ltdivmul1);
+'(syl5bbr lt12 @ syl6bb (lteq2 mul12) divltmul1);
 
 theorem divdiv: $ a // b // c = a // (b * c) $ =
 '(cases (eqtr4d (syl6eq div01 @ diveq1d @ syl6eq div0 diveq2)
@@ -2752,7 +2768,7 @@ theorem divmod1: $ a // b % c = a % (b * c) // b $ =
 '(cases (eqtr4d (syl6eq mod01 @ modeq1d @ syl6eq div0 diveq2) @ syl6eq div0 diveq2) @
   casesda (anwr @ eqtr4d (syl6eq mod0 modeq2) @
     diveq1d @ syl6eq mod0 @ modeq2d @ syl6eq mul02 muleq2) @
-  anrd @ eqdivmod (mpbird (anwl ltdivmul1) @ sylbir mulne0 modlt) @
+  anrd @ eqdivmod (mpbird (anwl divltmul1) @ sylbir mulne0 modlt) @
   eqcomd @ anld @ eqdivmod (anwl modlt) @ a1i @
   eqtr (addeq1 muladd) @ eqtr addass @ eqtr (addeq2 divmod) @
   eqtr3 (addeq1 mulass) divmod);
@@ -2866,7 +2882,7 @@ theorem modmodid: $ a % n % n = a % n $ =
 theorem dvdsubmod: $ n || a - a % n $ = '(idvd2 @ eqcom @ eqsub1 @ divmod);
 
 theorem div2lt: $ 0 < n -> n // 2 < n $ =
-'(sylibr (ltdivmul1 d2ne0) @ sylib (lteq1 mul11) @ mpbii d1lt2 ltmul1);
+'(sylibr (divltmul1 d2ne0) @ sylib (lteq1 mul11) @ mpbii d1lt2 ltmul1);
 
 theorem boolmod2: $ bool (n % 2) $ = '(modlt d2ne0);
 

@@ -550,7 +550,7 @@ do (begin
 
   (mk-thm 'decode_determ2 '(ast1 ast2 l l2)
     $ decode ast1 l /\ decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
-  @ fn () @ focus (E 4 _)
+  @ fn () @ focus (l @ E 4 _)
     @ match (target) @ $ ,G -> _ $ @ focus
     (have 'H1 $ ,G -> a1 ++ a2 : (a3 ++ l2) = b1 ++ b2 : b3 $
       '(syl5eqr (appendeq2 appendS) @ syl5eqr appendass @ eqtr3d (appendeq1d an3l) (anwr anll)))

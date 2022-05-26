@@ -715,7 +715,8 @@ theorem decodeAuxT (rex ast b l: nat):
 
 def decode (ast l .rex .l1 .opc .l2: nat): wff =
 $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
-    readPrefixes rex l1 /\ decodeAux rex ast opc l2) $;
+    readPrefixes rex l1 /\ decodeAux rex ast opc l2) /\
+  len l <= 15 $;
 theorem decodeT (ast l: nat):
   $ decode ast l -> ast e. XAST $;
 
