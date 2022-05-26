@@ -106,7 +106,7 @@ do {
       [(es) (refine es)
         (def n (ref! 1))
         (scan (get-mvars) @ fn (v)
-          (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))
+          (assign-mvar v (atom-app "a" n)) (set! n {n + 1}))
         (if {n = 1} (display "unnecessary (named)"))])
 
   --| `(name-all x1 ... xn)` instantiates all metavariables in the current
