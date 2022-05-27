@@ -88,28 +88,40 @@ def d16: nat = $suc 15$; prefix d16: $16$ prec max;
 --| axiomatize the value of this coercion on each digit.
 --| This implies that all the elements of `hex` are distinct.
 term h2n: hex > nat; coercion h2n: hex > nat;
-axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
-axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
-axiom h2n4: $ x4 = 4 $;   axiom h2n5: $ x5 = 5 $;
-axiom h2n6: $ x6 = 6 $;   axiom h2n7: $ x7 = 7 $;
-axiom h2n8: $ x8 = 8 $;   axiom h2n9: $ x9 = 9 $;
-axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
-axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
-axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 
 --| This allows us to prove facts about hex digits by case analysis.
 --| It is not provable from the above axioms because the fact that the "hex"
 --| sort has only the given 16 constructors is only observable from outside the theory.
 axiom h2nlt (h: hex): $ h < 16 $;
 
+-- The theorems are to justify the admissibility of h2nlt
+theorem d0lt16: $ 0 < 16 $; axiom h2n0: $ x0 = 0 $;
+theorem d1lt16: $ 1 < 16 $; axiom h2n1: $ x1 = 1 $;
+theorem d2lt16: $ 2 < 16 $; axiom h2n2: $ x2 = 2 $;
+theorem d3lt16: $ 3 < 16 $; axiom h2n3: $ x3 = 3 $;
+theorem d4lt16: $ 4 < 16 $; axiom h2n4: $ x4 = 4 $;
+theorem d5lt16: $ 5 < 16 $; axiom h2n5: $ x5 = 5 $;
+theorem d6lt16: $ 6 < 16 $; axiom h2n6: $ x6 = 6 $;
+theorem d7lt16: $ 7 < 16 $; axiom h2n7: $ x7 = 7 $;
+theorem d8lt16: $ 8 < 16 $; axiom h2n8: $ x8 = 8 $;
+theorem d9lt16: $ 9 < 16 $; axiom h2n9: $ x9 = 9 $;
+theorem d10lt16: $ 10 < 16 $; axiom h2na: $ xa = 10 $;
+theorem d11lt16: $ 11 < 16 $; axiom h2nb: $ xb = 11 $;
+theorem d12lt16: $ 12 < 16 $; axiom h2nc: $ xc = 12 $;
+theorem d13lt16: $ 13 < 16 $; axiom h2nd: $ xd = 13 $;
+theorem d14lt16: $ 14 < 16 $; axiom h2ne: $ xe = 14 $;
+theorem d15lt16: $ 15 < 16 $; axiom h2nf: $ xf = 15 $;
+
 --| `h2n a`, the coercion `char > nat`, embeds a character
 --| as a natural number less than 256.
 term c2n: char > nat; coercion c2n: char > nat;
---| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
-axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 --| The `c2n` function is less than 256 for all elements of the type `char`.
 --| This ensures that there are no other elements in the syntactic sort `char`.
 axiom c2nlt (c: char): $ c < 16 * 16 $;
+--| Justifies the use of c2nch and c2nlt
+theorem chlt256 (hi lo: hex): $ hi * 16 + lo < 16 * 16 $;
+--| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
+axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 
 --| `s2n s`, the coercion `string > nat`,
 --| interprets a string as a `List u8` in the obvious way:
@@ -122,9 +134,13 @@ axiom c2nlt (c: char): $ c < 16 * 16 $;
 --| but using this function we can obtain a `nat` which we can prove
 --| theorems about.
 term s2n: string > nat; coercion s2n: string > nat;
-axiom s2ns0: $ s0 = 0 $;
-axiom s2ns1 (c: char): $ s1 c = c : 0 $;
-axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
-axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
+axiom s2nstr (s: string): $ isStr s $;
+theorem s0str {c: nat}: $ isStr 0 $;
+axiom s2ns0: $ s0 = 0 $;
+theorem s1str (c: char): $ isStr (c : 0) $;
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+theorem saddstr (s t: string): $ isStr (s ++ t) $;
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;

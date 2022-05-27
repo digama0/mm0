@@ -118,16 +118,34 @@ do {
 --| This implies that all the elements of `hex` are distinct.
 @(add-eval eval)
 term h2n: hex > nat; coercion h2n: hex > nat;
+
+--| This allows us to prove facts about hex digits by case analysis.
+--| It is not provable from the above axioms because the fact that the "hex"
+--| sort has only the given 16 constructors is only observable from outside the theory.
+axiom h2nlt (h: hex): $ h < 16 $;
+
+do (def (prove-lt-16 r t)
+  @ match t @ $ ,a < _ $
+  @ r t (iterate (eval a) (fn (x) '(mpbi ltsuc ,x)) 'lt01S));
+
 -- The `eval-check` is an annotation that runs the evaluator on these expressions
 -- to make sure that they come out true.
-@eval-check axiom h2n0: $ x0 = 0 $;   @eval-check axiom h2n1: $ x1 = 1 $;
-@eval-check axiom h2n2: $ x2 = 2 $;   @eval-check axiom h2n3: $ x3 = 3 $;
-@eval-check axiom h2n4: $ x4 = 4 $;   @eval-check axiom h2n5: $ x5 = 5 $;
-@eval-check axiom h2n6: $ x6 = 6 $;   @eval-check axiom h2n7: $ x7 = 7 $;
-@eval-check axiom h2n8: $ x8 = 8 $;   @eval-check axiom h2n9: $ x9 = 9 $;
-@eval-check axiom h2na: $ xa = 10 $;  @eval-check axiom h2nb: $ xb = 11 $;
-@eval-check axiom h2nc: $ xc = 12 $;  @eval-check axiom h2nd: $ xd = 13 $;
-@eval-check axiom h2ne: $ xe = 14 $;  @eval-check axiom h2nf: $ xf = 15 $;
+pub theorem d0lt16: $ 0 < 16 $ = prove-lt-16;   @eval-check axiom h2n0: $ x0 = 0 $;
+pub theorem d1lt16: $ 1 < 16 $ = prove-lt-16;   @eval-check axiom h2n1: $ x1 = 1 $;
+pub theorem d2lt16: $ 2 < 16 $ = prove-lt-16;   @eval-check axiom h2n2: $ x2 = 2 $;
+pub theorem d3lt16: $ 3 < 16 $ = prove-lt-16;   @eval-check axiom h2n3: $ x3 = 3 $;
+pub theorem d4lt16: $ 4 < 16 $ = prove-lt-16;   @eval-check axiom h2n4: $ x4 = 4 $;
+pub theorem d5lt16: $ 5 < 16 $ = prove-lt-16;   @eval-check axiom h2n5: $ x5 = 5 $;
+pub theorem d6lt16: $ 6 < 16 $ = prove-lt-16;   @eval-check axiom h2n6: $ x6 = 6 $;
+pub theorem d7lt16: $ 7 < 16 $ = prove-lt-16;   @eval-check axiom h2n7: $ x7 = 7 $;
+pub theorem d8lt16: $ 8 < 16 $ = prove-lt-16;   @eval-check axiom h2n8: $ x8 = 8 $;
+pub theorem d9lt16: $ 9 < 16 $ = prove-lt-16;   @eval-check axiom h2n9: $ x9 = 9 $;
+pub theorem d10lt16: $ 10 < 16 $ = prove-lt-16; @eval-check axiom h2na: $ xa = 10 $;
+pub theorem d11lt16: $ 11 < 16 $ = prove-lt-16; @eval-check axiom h2nb: $ xb = 11 $;
+pub theorem d12lt16: $ 12 < 16 $ = prove-lt-16; @eval-check axiom h2nc: $ xc = 12 $;
+pub theorem d13lt16: $ 13 < 16 $ = prove-lt-16; @eval-check axiom h2nd: $ xd = 13 $;
+pub theorem d14lt16: $ 14 < 16 $ = prove-lt-16; @eval-check axiom h2ne: $ xe = 14 $;
+pub theorem d15lt16: $ 15 < 16 $ = prove-lt-16; @eval-check axiom h2nf: $ xf = 15 $;
 
 do {
   (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
@@ -142,21 +160,18 @@ do {
   (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
 };
 
---| This allows us to prove facts about hex digits by case analysis.
---| It is not provable from the above axioms because the fact that the "hex"
---| sort has only the given 16 constructors is only observable from outside the theory.
--- We can't use `eval-check` here because the axiom has a free variable.
-axiom h2nlt (h: hex): $ h < 16 $;
-
 --| `c2n a`, the coercion `char > nat`, embeds a character
 --| as a natural number less than 256.
 @(add-eval eval)
 term c2n: char > nat; coercion c2n: char > nat;
---| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
-axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 --| The `c2n` function is less than 256 for all elements of the type `char`.
 --| This ensures that there are no other elements in the syntactic sort `char`.
 axiom c2nlt (c: char): $ c < 16 * 16 $;
+--| Justifies the use of c2nch and c2nlt
+pub theorem chlt256 (hi lo: hex): $ hi * 16 + lo < 16 * 16 $ =
+'(mpbir (lteq2 mulS1) @ trud @ leltaddd (a1i @ lemul1a @ mpbir leltsuc h2nlt) @ a1i h2nlt);
+--| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
+axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 
 --| `s2n s`, the coercion `string > nat`,
 --| interprets a string as a `List u8` in the obvious way:
@@ -170,12 +185,17 @@ axiom c2nlt (c: char): $ c < 16 * 16 $;
 --| theorems about.
 @(add-eval eval)
 term s2n: string > nat; coercion s2n: string > nat;
-axiom s2ns0: $ s0 = 0 $;
-axiom s2ns1 (c: char): $ s1 c = c : 0 $;
-axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
-axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
+axiom s2nstr (s: string): $ isStr s $;
+pub theorem s0str {c: nat}: $ isStr 0 $ = (named 'all0);
+axiom s2ns0: $ s0 = 0 $;
+pub theorem s1str (c: char): $ isStr (c : 0) $ = '(mpbir all1 @ mpbir (elabe ,eqtac) c2nlt);
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+pub theorem saddstr (s t: string): $ isStr (s ++ t) $ =
+(named '(mpbir allappend @ iani s2nstr s2nstr));
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
 
 do (add-axiom-set! 'axs_string "String axioms" '(
   h2n0 h2n1 h2n2 h2n3 h2n4 h2n5 h2n6 h2n7 h2n8 h2n9 h2na h2nb h2nc h2nd h2ne h2nf
@@ -723,7 +743,6 @@ theorem d4lt7: $ 4 < 7 $ = norm_num;
 theorem d4lt8: $ 4 < 8 $ = norm_num;
 theorem d6lt7: $ 6 < 7 $ = norm_num;
 theorem d8ne0: $ 8 != 0 $ = norm_num;
-theorem d8lt16: $ 8 < 16 $ = norm_num;
 theorem d8add8: $ 8 + 8 = 16 $ = norm_num;
 theorem d16ne0: $ 16 != 0 $ = norm_num;
 theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;
