@@ -38,7 +38,8 @@
   clippy::manual_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
   clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::redundant_pub_crate,
-  clippy::semicolon_if_nothing_returned, clippy::shadow_unrelated, clippy::too_many_lines,
+  clippy::semicolon_if_nothing_returned, clippy::single_match_else, clippy::shadow_unrelated,
+  clippy::too_many_lines,
   clippy::trait_duplication_in_bounds, // rust-clippy#8757, rust-clippy#8771
   clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self)]

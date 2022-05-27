@@ -536,7 +536,7 @@ theorem hex_divmod256:
 theorem xchopshr8: $ shr (a :x b :x c) 8 = a /\ chop 8 (a :x b :x c) = b :x c $ = 'hex_divmod256;
 
 theorem s2nT (s: string): $ s e. List u8 $ =
-'(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nlt);
+'(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nstr);
 
 @(add-eval @ fn (k n) @ match (eval k) [0 #f] [k {{{(eval n) shr {k - 1}} band 1} = 1}])
 @_ def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
