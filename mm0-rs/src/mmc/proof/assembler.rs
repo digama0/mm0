@@ -1318,7 +1318,7 @@ impl<'a> BuildAssembly<'a> {
   ) -> Result<(ProofId, Num, ProofId, ProofId)> {
     let mut thm = ProofDedup::new(self.pd, &[]);
     let hex = HexCache::new(&mut thm);
-    let start = hex.from_u64(&mut thm, proc.start.into());
+    let start = hex.from_u64(&mut thm, (proc.start - TEXT_START).into());
     debug_assert!(global_start == start);
     let mut build = BuildAssemblyProc { thm, hex, start };
     let (s, y, a, th) = build.blocks(proc);
