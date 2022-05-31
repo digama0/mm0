@@ -337,7 +337,7 @@ impl Elaborator {
     let mut es = Vec::with_capacity(hs.len());
     for f in hs {
       let e = self.eval_lisp(false, f)?;
-      let val = self.elaborate_term(f.span, &e,
+      let val = self.elaborate_term(f.span, true, &e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
       let s = self.infer_sort(sp, &val)?;
       if s != sorts.str {
@@ -366,7 +366,7 @@ impl Elaborator {
     let mut es = Vec::with_capacity(hs.len());
     for e in hs {
       let sp = try_get_span(fsp, e);
-      let val = self.elaborate_term(sp, e,
+      let val = self.elaborate_term(sp, true, e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
       let s = self.infer_sort(sp, &val)?;
       if s != sorts.str {

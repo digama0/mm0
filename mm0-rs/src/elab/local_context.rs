@@ -198,17 +198,16 @@ impl LocalContext {
   }
 }
 
-#[repr(C)]
 struct ElabTerm<'a> {
   lc: &'a LocalContext,
   fe: FormatEnv<'a>,
   fsp: FileSpan,
 }
 
-#[repr(C)]
 struct ElabTermMut<'a> {
   elab: &'a mut Elaborator,
   fsp: FileSpan,
+  check_vis: bool,
 }
 
 impl<'a> Deref for ElabTermMut<'a> {
@@ -316,8 +315,8 @@ impl<'a> ElabTerm<'a> {
 }
 
 impl<'a> ElabTermMut<'a> {
-  fn new(elab: &'a mut Elaborator, sp: Span) -> Self {
-    ElabTermMut { fsp: elab.fspan(sp), elab }
+  fn new(elab: &'a mut Elaborator, sp: Span, check_vis: bool) -> Self {
+    ElabTermMut { fsp: elab.fspan(sp), elab, check_vis }
   }
 
   fn as_ref(&self) -> ElabTerm<'_> {
@@ -373,7 +372,8 @@ impl<'a> ElabTermMut<'a> {
   }
 
   fn list(&mut self, e: &LispVal,
-    mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
+    mut it: impl Iterator<Item=LispVal>, tgt: InferTarget
+  ) -> Result<LispVal> {
     let t = it.next().expect("empty iterator");
     let a = t.as_atom().ok_or_else(|| self.as_ref().err(&t, "expected an atom"))?;
     if self.lc.vars.contains_key(&a) {
@@ -384,7 +384,12 @@ impl<'a> ElabTermMut<'a> {
       self.as_ref().err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
     let sp1 = self.as_ref().try_get_span(e);
     self.spans_insert(&t, || ObjectKind::Term(false, tid, sp1));
-    let tdata = &self.env.terms[tid];
+    let mut tdata = &self.env.terms[tid];
+    if self.check_vis && tdata.vis.contains(Modifiers::LOCAL) {
+      let msg = format!("using private definition '{}' in a public context", self.env.data[a].name);
+      self.report(ElabError::warn(sp1, msg));
+      tdata = &self.env.terms[tid];
+    }
     let nargs = tdata.args.len();
     let ret = tdata.ret.0;
     let mut arg_it = 0..nargs;
@@ -556,7 +561,9 @@ impl Elaborator {
     })
   }
 
-  fn elab_binder(&mut self, error: &mut bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>) -> Result<InferBinder> {
+  fn elab_binder(&mut self,
+    error: &mut bool, check_vis: bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>
+  ) -> Result<InferBinder> {
     let x = if lk == LocalKind::Anon {None} else {
       sp.map(|sp| {
         let a = self.env.get_atom(self.ast.span(sp));
@@ -586,15 +593,17 @@ impl Elaborator {
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
         let e = self.eval_qexpr(e)?;
-        let e = self.elaborate_term(f.0, &e, InferTarget::Provable)?;
+        let e = self.elaborate_term(f.0, check_vis, &e, InferTarget::Provable)?;
         InferBinder::Hyp(x, e)
       },
     })
   }
 
   /// Elaborate a term used in a theorem statement.
-  pub fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    ElabTermMut::new(self, sp).expr(e, tgt)
+  pub fn elaborate_term(&mut self,
+    sp: Span, check_vis: bool, e: &LispVal, tgt: InferTarget
+  ) -> Result<LispVal> {
+    ElabTermMut::new(self, sp, check_vis).expr(e, tgt)
   }
 
   /// Get the sort of an expression, assuming it is well typed.
@@ -677,9 +686,14 @@ impl Elaborator {
     }
 
     // log!("elab {}", self.ast.span(d.id));
+    let check_vis = !self.mm0_mode && match d.k {
+      DeclKind::Term | DeclKind::Axiom => true,
+      DeclKind::Def => !d.mods.intersects(Modifiers::LOCAL | Modifiers::ABSTRACT),
+      DeclKind::Thm => d.mods.contains(Modifiers::PUB),
+    };
     self.lc.clear();
     for bi in &d.bis {
-      match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
+      match self.elab_binder(&mut error, check_vis, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
           if !e_hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
@@ -741,7 +755,7 @@ impl Elaborator {
               }
             }
             let e = self.eval_lisp(false, f)?;
-            Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
+            Ok(Some((f.span, self.elaborate_term(f.span, check_vis, &e, match ret {
               None => InferTarget::Unknown,
               Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
             })?)))
@@ -840,7 +854,7 @@ impl Elaborator {
           &Some(Type::Formula(f)) => {
             let e = self.parse_formula(f)?;
             let e = self.eval_qexpr(e)?;
-            self.elaborate_term(f.0, &e, InferTarget::Provable)?
+            self.elaborate_term(f.0, check_vis, &e, InferTarget::Provable)?
           }
         };
         if d.k == DeclKind::Axiom {
@@ -1067,9 +1081,15 @@ impl Elaborator {
   /// Parse and add a term/def declaration (this is called by the `(add-term!)` lisp function).
   pub fn add_term(&mut self, fsp: &FileSpan, es: &[LispVal]) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or_else(|| fsp.clone()).span}}
-    let (x, args, ret, val) = match es {
-      [x, args, ret] => (x, args, ret, None),
-      [x, args, ret, vis, ds, val] => (x, args, ret, Some((vis, ds, val))),
+    let (x, args, ret, vis, val) = match es {
+      [x, args, ret] => (x, args, ret, Modifiers::NONE, None),
+      [x, args, ret, vis, ds, val] => {
+        let mods = self.visibility(fsp, vis)?;
+        if !DeclKind::Def.allowed_visibility(mods) {
+          return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
+        }
+        (x, args, ret, mods, Some((ds, val)))
+      }
       _ => return Err(ElabError::new_e(fsp.span, "expected 3 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
@@ -1095,12 +1115,8 @@ impl Elaborator {
         return Err(ElabError::new_e(sp!(ret), format!("syntax error: {}", self.print(ret))))
       }
     };
-    let (vis, kind) = if let Some((evis, ds, val)) = val {
-      let vis = self.visibility(fsp, evis)?;
-      if !DeclKind::Def.allowed_visibility(vis) {
-        return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
-      }
-      (vis, TermKind::Def((|| -> Result<Option<Expr>> {
+    let kind = if let Some((ds, val)) = val {
+      TermKind::Def((|| -> Result<Option<Expr>> {
         dummies(self.format_env(), fsp, &mut lc, ds)?;
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
@@ -1112,15 +1128,15 @@ impl Elaborator {
         self.report(ElabError::new_e(e.pos,
           format!("while adding {}: {}", self.print(&x), e.kind.msg())));
         None
-      })))
-    } else {(Modifiers::NONE, TermKind::Term)};
+      }))
+    } else {TermKind::Term};
     let full = fsp.span;
     self.env.add_term(Term {atom: x, span, full, vis, doc: None, args, ret, kind})
       .map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
 
-  /// Parse and add a term/def declaration (this is called by the `(add-thm!)` lisp function).
+  /// Parse and add an axiom/theorem declaration (this is called by the `(add-thm!)` lisp function).
   ///
   /// This function may either complete successfully, in which case it returns `Ok(Ok(()))`,
   /// or it may yield if the user provided proof term is a closure that requires evaluation,
@@ -1131,9 +1147,15 @@ impl Elaborator {
     fsp: FileSpan, es: &[LispVal]
   ) -> Result<Result<(), (Box<AwaitingProof>, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    let (x, args, hyps, ret, proof) = match es {
-      [x, args, hyps, ret] => (x, args, hyps, ret, None),
-      [x, args, hyps, ret, vis, vtask] => (x, args, hyps, ret, Some((vis, vtask.clone()))),
+    let (x, args, hyps, ret, vis, proof) = match es {
+      [x, args, hyps, ret] => (x, args, hyps, ret, Modifiers::NONE, None),
+      [x, args, hyps, ret, vis, vtask] => {
+        let mods = self.visibility(&fsp, vis)?;
+        if !DeclKind::Thm.allowed_visibility(mods) {
+          return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
+        }
+        (x, args, hyps, ret, mods, Some(vtask.clone()))
+      }
       _ => return Err(ElabError::new_e(fsp.span, "expected 4 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
@@ -1146,19 +1168,20 @@ impl Elaborator {
     let (mut lc, args) = self.binders(&fsp, Uncons::from(args.clone()), &mut vars)?;
     let mut is = Vec::new();
     mem::swap(&mut self.lc, &mut lc);
+    let check_vis = proof.is_none() || vis.contains(Modifiers::PUB);
     let e_ret = (|| -> Result<_> {
       for e in Uncons::from(hyps.clone()) {
         let mut u = Uncons::from(e.clone());
         if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
           let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
           let a = if x == AtomId::UNDER {None} else {Some(x)};
-          let ty = self.elaborate_term(sp!(ty), &ty, InferTarget::Provable)?;
+          let ty = self.elaborate_term(sp!(ty), check_vis, &ty, InferTarget::Provable)?;
           is.push((a, ty));
         } else {
           return Err(ElabError::new_e(sp!(hyps), format!("syntax error: {}", self.print(hyps))))
         }
       }
-      self.elaborate_term(sp!(ret), ret, InferTarget::Provable)
+      self.elaborate_term(sp!(ret), check_vis, ret, InferTarget::Provable)
     })();
     mem::swap(&mut self.lc, &mut lc);
     let e_ret = e_ret?;
@@ -1176,16 +1199,12 @@ impl Elaborator {
       (a, ids[i].take())
     }).collect();
     let ret = ids[ir].take();
-    let mut thm = Thm {
-      atom: x, span, full: fsp.span, doc: None,
-      vis: Modifiers::NONE, kind: ThmKind::Axiom,
+    let thm = Thm {
+      atom: x, span, vis, full: fsp.span, doc: None,
+      kind: ThmKind::Axiom,
       args, heap, store: store.into(), hyps, ret
     };
-    let out = if let Some((vis, proof)) = proof {
-      thm.vis = self.visibility(&fsp, vis)?;
-      if !DeclKind::Thm.allowed_visibility(thm.vis) {
-        return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
-      }
+    let out = if let Some(proof) = proof {
       Some(if self.options.check_proofs {
         let mut de = de.map_proof();
         let var_map = nh.var_map;
