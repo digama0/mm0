@@ -197,7 +197,7 @@ theorem Ctx_auxS (env: nat): $ Ctx_aux env (ctx |> bi) = Ctx_aux env ctx *
 --| Note `Ctx = list Binder`.
 --|
 --| `Ctx : Env -> Ctx -> Bool`
-@_ def Ctx (env ctx: nat): wff = $ true (Ctx_aux env ctx) $;
+@_ abstract def Ctx (env ctx: nat): wff = $ true (Ctx_aux env ctx) $;
 pub theorem Ctx0 (env: nat): $ Ctx env 0 $ = '(mpbir (trueeq Ctx_aux0) true1);
 pub theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
   Ctx env ctx /\ E. sd (getSD env s sd /\ ~ sStrict sd) $ =
@@ -242,9 +242,9 @@ theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
 --| BV binder, the expression must itself be a bound variable.
 --|
 --| `Expr : Env -> Ctx -> SExpr -> SortID -> Bool`
-@_ def Expr (env ctx e s: nat): wff = $ s e. Expr_aux env ctx @ e $;
+@_ abstract def Expr (env ctx e s: nat): wff = $ s e. Expr_aux env ctx @ e $;
 --| `ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool`
-@_ def ExprBi (env ctx e bi: nat): wff =
+@_ abstract def ExprBi (env ctx e bi: nat): wff =
 $ bi e. ExprBi_aux env ctx e (Expr_aux env ctx @ e) $;
 
 theorem ExprBi_aux_map:
@@ -311,7 +311,7 @@ $ SExprRec
 --| verifying theorem applications.
 --|
 --| `HasVar : Ctx -> SExpr -> VarID -> Bool`
-@_ def HasVar (ctx e v: nat): wff = $ v e. HasVar_aux ctx @ e $;
+@_ abstract def HasVar (ctx e v: nat): wff = $ v e. HasVar_aux ctx @ e $;
 
 theorem HasVar_Var: $ HasVar ctx (SVar u) v <->
   E. s nth u ctx = suc (PBound s) /\ u = v \/
@@ -378,7 +378,7 @@ $ SExprRec
 --| for arbitrary binding structures.
 --|
 --| `Free : Env -> Ctx -> SExpr -> VarID -> Bool`
-@_ def Free (env ctx e v: nat): wff = $ true (Free_aux env ctx v @ e) $;
+@_ abstract def Free (env ctx e v: nat): wff = $ true (Free_aux env ctx v @ e) $;
 pub theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $ =
 (named '(bitr
@@ -442,7 +442,7 @@ theorem DeclThm_aux_val (env args hs ret: nat) {x: nat}:
 --| Is this a valid declaration in the environment?
 --|
 --| `Decl : Env -> Decl -> Bool`
-@_ def Decl (env d: nat): wff =
+@_ abstract def Decl (env d: nat): wff =
 $ d e. Sum
   (Sum
     (Sum
@@ -482,7 +482,7 @@ $ rlrec 1 (\\ e1, \\ s, \ ih, ih * nat (Decl e1 s)) e $;
 --| we can assign a provability predicate.
 --|
 --| `Env : Env -> Bool`
-@_ def Env (e: nat): wff = $ true (Env_aux e) $;
+@_ abstract def Env (e: nat): wff = $ true (Env_aux e) $;
 pub theorem Env0: $ Env 0 $ = (named '(mpbir (trueeq rlrec0) true1));
 pub theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Decl e s $ =
 (named '(bitr
@@ -514,7 +514,7 @@ $ rlrec (sn 0)
 --| may be provided definitions, and new defs and theorems can be added.
 --|
 --| `EnvExtend : Env -> Env -> Bool`
-@_ def EnvExtend (e1 e2: nat): wff = $ e1 e. EnvExtend_aux e2 $;
+@_ abstract def EnvExtend (e1 e2: nat): wff = $ e1 e. EnvExtend_aux e2 $;
 pub theorem EnvExtend0 (e: nat): $ EnvExtend e 0 <-> e = 0 $ =
 (named '(bitr (elneq2 rlrec0) elsn));
 
@@ -634,7 +634,7 @@ $ SExprRec (\ v, nth v subst - 1) (\\ f, \\ xs, \ ih, SApp f ih) $;
 --| expressions in `subst`.
 --|
 --| `substExpr : list SExpr -> SExpr => SExpr`
-@_ def substExpr (subst e: nat): nat = $ substExpr_aux subst @ e $;
+@_ abstract def substExpr (subst e: nat): nat = $ substExpr_aux subst @ e $;
 
 theorem substExpr_aux_lam: $ substExpr_aux subst == \ e, substExpr subst e $ =
 (named '(eqscom (lameqi applam)));
@@ -1170,7 +1170,7 @@ theorem Proof_aux_Thm:
 --| * `p` is a proof object whose existence entails provability of the environment.
 --|
 --| `Proof : Env -> Proof -> Bool`
-@_ def Proof (env p: nat): wff = $ p e. Proof_aux (suc p) env $;
+@_ abstract def Proof (env p: nat): wff = $ p e. Proof_aux (suc p) env $;
 
 theorem el_Proof_aux: $ p < bd -> (p e. Proof_aux bd env <-> Proof env p) $ =
 (named @ focus
@@ -1773,7 +1773,7 @@ theorem Tokenize_aux_n0 (a: nat x) {y} (h: $ y e. A -> y != 0 $):
 --| The MM0 lexer. This parses a full MM0 file into a list of tokens.
 --|
 --| `Tokenize: String -> Option (List Token)`
-@_ def Tokenize {.s1} (s: nat): nat =
+@_ abstract def Tokenize {.s1} (s: nat): nat =
 $ srec (\ f, N[size (Dom f) / s1]
     if (s1 = 0) 1 (
     Tokenize_aux f s1 whitespace (\\ x, \ t, t) (
@@ -2108,7 +2108,7 @@ $ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
      (parseFmla <+> parseFmla)) <+ parseCh _semi) $;
 
 --| Convert a string representing a number to a natural number. `stoi: String -> nat`
-@_ def stoi (x: nat): nat = $ rlrec 0 (\\ s, \\ i, \ ih, ih * 10 + (i - _0)) x $;
+@_ abstract def stoi (x: nat): nat = $ rlrec 0 (\\ s, \\ i, \ ih, ih * 10 + (i - _0)) x $;
 pub theorem stoi0: $ stoi 0 = 0 $ = (named 'rlrec0);
 pub theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $ =
 (named '(eqtr {rlrecS : $ _ = _ @ (_, _, stoi _) $} @
@@ -2208,7 +2208,7 @@ $ E. tks (Tokenize s = suc tks /\ tks, ast e. parseAST) $;
 
 --| Look up a variable in the context to get its index.
 --| `lookupVar: List ASTBinder -> Ident -> Option Nat`
-@_ def lookupVar (ctx x: nat): nat =
+@_ abstract def lookupVar (ctx x: nat): nat =
 $ rlrec 0 (\\ bis, \\ p, \ ih, N[fst (snd p) / y] if (x = y) (suc (len bis)) ih) ctx $;
 
 pub theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $ = (named 'rlrec0);
@@ -2240,7 +2240,7 @@ theorem el_nonemptyNonwhite: $ s e. nonemptyNonwhite <-> s != 0 /\ all {c | ~c e
 
 --| `simpleTokenize s` splits `s` into chunks of non-whitespace characters separated by whitespace.
 --| `simpleTokenize: String -> List String`
-@_ def simpleTokenize {.s1} (s: nat): nat =
+@_ abstract def simpleTokenize {.s1} (s: nat): nat =
 $ srec (\ f,
     lrec 0 (\\ c, \\ s1, \ _ih,
       if (c e. white) (f @ s1) (
@@ -2335,7 +2335,7 @@ theorem simpleTokenize_le: $ c IN simpleTokenize s -> c <= s $ =
 
 --| Compute the list of valid delimiters from the given AST.
 --| `getDelimiters: List AST -> (Set char, Set char)`
-@_ def getDelimiters (ast: nat): nat =
+@_ abstract def getDelimiters (ast: nat): nat =
 $ rlrec 0 (\\ a, \\ t, \ ih,
   if (E. l E. r t = ASTNota (NotaDelim (b1 l, b1 r))) (
     N[t // 2 // 2 // 2 // 2 / p] (
@@ -2406,7 +2406,7 @@ $ {s | ~(E. l E. x E. r (x e. getDelimiters ast /\ s = l ++ x ++ r))} $;
 
 --| Tokenize a formula using the delimiters from the given AST context.
 --| `tokenizeFmla: List AST -> String -> List String`
-@_ def tokenizeFmla (ast f: nat): nat =
+@_ abstract def tokenizeFmla (ast f: nat): nat =
 $ lrec 0 (\\ x, \\ xs, \ ih,
     if (x e. white) ih (
       if (x : 0 e. fst (getDelimiters ast) \/
@@ -3252,7 +3252,7 @@ $ rlrec (suc 0) (\\ bis, \\ bi, \ ih,
 --| elabTermBinders (bis: Ctx') (ctx: Ctx): Bool
 --| ```
 --| elaborates a binder list `bis` into an abstract context `ctx`.
-@_ def elabTermBinders (ctx ctx2: nat): wff =
+@_ abstract def elabTermBinders (ctx ctx2: nat): wff =
 $ elabTermBinders_aux ctx = suc ctx2 $;
 pub theorem elabTermBinders0 (ctx: nat):
   $ elabTermBinders 0 ctx <-> ctx = 0 $ =
@@ -3308,7 +3308,7 @@ $ hyps, hyps2 e. all2 (S\ hyp, {hyp2 | E. x E. f (hyp = 0, x, f /\
 --|   (o2: Option (List SortID, SExpr)): Bool
 --| ```
 --| Elaborate a definition's optional value to an optional list of dummies and an expression.
-@_ def elabDefO (env ast ctx s ds ds2 o o2: nat): wff =
+@_ abstract def elabDefO (env ast ctx s ds ds2 o o2: nat): wff =
 $ o e. ocasep (ds = 0 /\ o2 = 0) {f | E. args2 E. e (
       elabTermBinders (ctx ++ ds) args2 /\
       elabFmla env ast (ctx ++ ds) args2 f e s /\
@@ -3388,7 +3388,7 @@ theorem Elaborate_auxS {ih}
 --| ```
 --| Elaborate an AST to an environment.
 --| Even though this returns a set, the environment is uniquely determined by the AST.
-@_ def Elaborate (ast: nat): set = $ {e | Elaborate_aux (e, ast)} $;
+@_ abstract def Elaborate (ast: nat): set = $ {e | Elaborate_aux (e, ast)} $;
 
 theorem elElaborate: $ e e. Elaborate ast <-> Elaborate_aux (e, ast) $ =
 '(elabe ,eqtac);
