@@ -85,14 +85,15 @@ pub type DocComment = Arc<str>;
 /// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
 /// [`to_diag_severity`](ErrorLevel::to_diag_severity).
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum ErrorLevel {
   /// Error level for informational messages, such as the result of `(display)`.
-  Info,
+  Info = 1,
   /// Error level for warnings, such as an unfinished proof.
-  Warning,
+  Warning = 2,
   /// Error level for errors (which may or may not be fatal).
-  Error,
+  Error = 3,
 }
 impl ErrorLevel {
   /// Convert an [`ErrorLevel`] to the LSP [`DiagnosticSeverity`] type.

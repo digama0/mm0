@@ -185,7 +185,7 @@ axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 --| theorems about.
 @(add-eval eval)
 term s2n: string > nat; coercion s2n: string > nat;
-def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
+@_ def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
 axiom s2nstr (s: string): $ isStr s $;

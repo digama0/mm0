@@ -8,7 +8,7 @@
 //!
 //! [`mm0_rs::server`]: crate::server
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering, AtomicU8}};
 use std::collections::{HashMap, hash_map::Entry};
 use std::{io, fs};
 use futures::{FutureExt, future::BoxFuture};
@@ -36,6 +36,7 @@ lazy_static! {
 }
 
 static QUIET: AtomicBool = AtomicBool::new(false);
+static MAX_EMITTED_ERROR: AtomicU8 = AtomicU8::new(0);
 
 /// The cached [`Environment`](crate::elab::Environment) representing a
 /// completed parse, or an incomplete parse.
@@ -379,10 +380,13 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   } else {
     let (_, ast) = parse(text.ascii().clone(), None);
     if !ast.errors.is_empty() {
+      let mut level = 0;
       for e in &ast.errors {
+        level = level.max(e.level as u8);
         to_snippet(e, &path, &ast.source,
           |s| println!("{}", DisplayList::from(s)))
       }
+      MAX_EMITTED_ERROR.fetch_max(level, Ordering::Relaxed);
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
@@ -417,11 +421,19 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s)) }
     let mut to_range = mk_to_range();
+    let mut level = 0;
     if let FileContents::Ascii(text) = &file.text {
-      for e in &errors { e.to_snippet(&path, text, &mut to_range, print) }
+      for e in &errors {
+        level = level.max(e.level as u8);
+        e.to_snippet(&path, text, &mut to_range, print)
+      }
     } else {
-      for e in &errors { e.to_snippet_no_source(&path, e.pos, print) }
+      for e in &errors {
+        level = level.max(e.level as u8);
+        e.to_snippet_no_source(&path, e.pos, print)
+      }
     }
+    MAX_EMITTED_ERROR.fetch_max(level, Ordering::Relaxed);
     Some(errors.into())
   };
   let res = match cyc {
@@ -510,12 +522,17 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
           footer: vec![],
           slices: vec![],
           opt: FormatOptions { color: true, ..Default::default() },
-        }))
+        }));
+        MAX_EMITTED_ERROR.fetch_max(lvl as u8, Ordering::Relaxed);
       };
       let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
       ex.run(!args.is_present("strip"))?;
       ex.finish()?;
     }
+  }
+  let max_error = if args.is_present("Werror") { ErrorLevel::Warning } else { ErrorLevel::Error };
+  if max_error as u8 <= MAX_EMITTED_ERROR.load(Ordering::Relaxed) {
+    std::process::exit(1);
   }
   Ok(())
 }

@@ -16,6 +16,7 @@ fn main() -> std::io::Result<()> {
       (@arg check_parens: --("warn-unnecessary-parens") "Warn on unnecessary parentheses")
       (@arg quiet: -q --quiet "Hide diagnostic messages")
       (@arg strip: -s --("strip") "Don't add debugging data to .mmb files")
+      (@arg Werror: -W --("warn-as-error") "Report error code 1 for warnings")
       (@arg output: -o --output [FILE]
         "Print 'output' commands to a file (use '-' to print to stdout)")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")

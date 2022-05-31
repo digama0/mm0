@@ -6310,7 +6310,7 @@ theorem appendcan2: $ a ++ c = b ++ c <-> a = b $ =
 --| * `map F (a : l) = F a : map F l`
 --|
 --| `map : (A -> B) -> list A -> list B`
-@_ def map (F: set) (l: nat): nat =
+@_ abstract def map (F: set) (l: nat): nat =
 $ lrec 0 (\\ a, \\ z, \ ih, F @ a : ih) l $;
 pub theorem map0 (F: set): $ map F 0 = 0 $ = (named 'lrec0);
 pub theorem mapS (F: set) (a l: nat):
@@ -6354,7 +6354,7 @@ theorem lmemmap: $ b IN map F l <-> E. a (a IN l /\ b = F @ a) $ =
 --| * `ljoin (l : L) = l ++ ljoin L`
 --|
 --| `ljoin : list (list A) -> list A`
-@_ def ljoin (L: nat): nat = $ lrec 0 (\\ a, \\ z, \ ih, a ++ ih) L $;
+@_ abstract def ljoin (L: nat): nat = $ lrec 0 (\\ a, \\ z, \ ih, a ++ ih) L $;
 pub theorem ljoin0: $ ljoin 0 = 0 $ = (named 'lrec0);
 pub theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $ =
 (named '(! eqtr _ $ _ @ (_, _, ljoin L) $ _ lrecS @
