@@ -109,7 +109,7 @@ trait Dedup<'a>: std::ops::Deref<Target = &'a Predefs> {
 
 macro_rules! make_dedup {
   ($($dedup:ident, $hash:ident, $node:ty, $id:ident, $app:ident;)*) => {$(
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct $id(u32);
     impl Idx for $id {
       fn into_usize(self) -> usize { self.0 as usize }
@@ -438,7 +438,8 @@ pub(crate) fn render_proof(
   scope_ast_source(&elab.ast.source.clone(), || {
     let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+      // compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+      Ok(())
     })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))
   })?;
   // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
