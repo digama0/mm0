@@ -18,6 +18,7 @@ use futures::lock::Mutex as FMutex;
 use annotate_snippets::{
   snippet::{Snippet, Annotation, AnnotationType, SourceAnnotation, Slice},
   display_list::{DisplayList, FormatOptions}};
+use once_cell::sync::Lazy;
 use typed_arena::Arena;
 use clap::ArgMatches;
 use mm1_parser::{parse, ErrorLevel, ParseError};
@@ -27,13 +28,11 @@ use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MmbExporter;
 
-lazy_static! {
-  /// The thread pool (used for running MM1 files in parallel, when possible)
-  static ref POOL: ThreadPool = ThreadPool::new().expect("could not start thread pool");
-  /// The virtual file system of files that have been included via
-  /// transitive imports, protected for concurrent access by a mutex.
-  static ref VFS: Vfs = Vfs(Mutex::new(HashMap::new()));
-}
+/// The thread pool (used for running MM1 files in parallel, when possible)
+static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new().expect("could not start thread pool"));
+/// The virtual file system of files that have been included via
+/// transitive imports, protected for concurrent access by a mutex.
+static VFS: Lazy<Vfs> = Lazy::new(|| Vfs(Mutex::new(HashMap::new())));
 
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MAX_EMITTED_ERROR: AtomicU8 = AtomicU8::new(0);

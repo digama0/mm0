@@ -44,7 +44,6 @@
   clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self)]
 
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
 #[macro_use] extern crate debug_derive;
 #[macro_use] extern crate mm0_util;

@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, fmt::Display, sync::Mutex};
 use mm0_util::MutexExt;
+use once_cell::sync::Lazy;
 use crate::types::IdxVec;
 
 mk_id! {
@@ -25,16 +26,14 @@ pub struct Interner {
   strings: IdxVec<Symbol, &'static str>,
 }
 
-lazy_static! {
-  static ref INTERNER: Mutex<Interner> = {
-    let mut i = Interner {
-      names: HashMap::new(),
-      strings: IdxVec::new(),
-    };
-    assert_eq!(Symbol::UNDER, i.intern("_"));
-    Mutex::new(i)
+static INTERNER: Lazy<Mutex<Interner>> = Lazy::new(|| {
+  let mut i = Interner {
+    names: HashMap::new(),
+    strings: IdxVec::new(),
   };
-}
+  assert_eq!(Symbol::UNDER, i.intern("_"));
+  Mutex::new(i)
+});
 
 impl Interner {
   /// Acquire the interner to intern a bunch of strings.

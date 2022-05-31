@@ -3,6 +3,7 @@
 use std::fmt::{Debug, Display};
 
 use num::Zero;
+use once_cell::sync::Lazy;
 use regalloc2::{MachineEnv, Operand};
 
 use crate::codegen::InstSink;
@@ -87,16 +88,12 @@ pub(crate) fn non_callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone 
   caller_saved().chain([SCRATCH])
 }
 
-lazy_static! {
-  pub(crate) static ref MACHINE_ENV: MachineEnv = {
-    MachineEnv {
-      preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
-      non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
-      scratch_by_class: [SCRATCH.0, PReg::invalid().0],
-      fixed_stack_slots: vec![],
-    }
-  };
-}
+pub(crate) static MACHINE_ENV: Lazy<MachineEnv> = Lazy::new(|| MachineEnv {
+  preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
+  non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
+  scratch_by_class: [SCRATCH.0, PReg::invalid().0],
+  fixed_stack_slots: vec![],
+});
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct PRegSet(u16);

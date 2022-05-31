@@ -54,9 +54,6 @@
   clippy::use_self
 )]
 
-#[cfg(feature = "lazy_static")]
-#[macro_use]
-extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
 
@@ -495,11 +492,11 @@ pub struct Range {
 }
 
 #[cfg(feature = "lined_string")]
-lazy_static! {
-  /// A [`PathBuf`] created by `lazy_static!` pointing to a canonicalized "."
-  pub static ref CURRENT_DIR: PathBuf =
-    std::fs::canonicalize(".").expect("failed to find current directory");
-}
+/// A [`PathBuf`] lazily initialized to a canonicalized "."
+static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> =
+  once_cell::sync::Lazy::new(|| {
+    std::fs::canonicalize(".").expect("failed to find current directory")
+  });
 
 /// Given a [`PathBuf`] 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.

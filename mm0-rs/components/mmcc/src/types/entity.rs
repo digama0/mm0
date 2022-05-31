@@ -33,18 +33,18 @@ macro_rules! make_prims {
 
         /// Get the MMC keyword for a symbol.
         #[must_use] pub fn from_symbol(s: Symbol) -> Option<Self> {
-          lazy_static! {
-            static ref SYMBOL_MAP: Box<[Option<$name>]> =
-              init_dense_symbol_map(&[$((intern($e), $name::$x)),*]);
-          }
+          use once_cell::sync::Lazy;
+          static SYMBOL_MAP: Lazy<Box<[Option<$name>]>> = Lazy::new(|| {
+            init_dense_symbol_map(&[$((intern($e), $name::$x)),*])
+          });
           SYMBOL_MAP.get(s.into_usize()).map_or(None, |x| *x)
         }
 
         /// Get the symbol for this primitive.
         #[must_use] pub fn as_symbol(self) -> Symbol {
-          lazy_static! {
-            static ref INTERNED: [Symbol; <[()]>::len(&[$(() $($mark)?),*])] = [$(intern($e)),*];
-          }
+          use once_cell::sync::Lazy;
+          static INTERNED: Lazy<[Symbol; <[()]>::len(&[$(() $($mark)?),*])]> =
+            Lazy::new(|| [$(intern($e)),*]);
           INTERNED[self as usize]
         }
 

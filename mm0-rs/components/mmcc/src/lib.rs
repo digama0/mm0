@@ -104,7 +104,6 @@
 #[macro_use] extern crate mm0_util;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate if_chain;
-#[macro_use] extern crate lazy_static;
 
 pub mod types;
 pub mod build_ast;

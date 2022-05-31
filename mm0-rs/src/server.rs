@@ -12,6 +12,7 @@ use futures::executor::ThreadPool;
 use futures::lock::Mutex as FMutex;
 use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
   Request, RequestId, Response, ResponseError};
+use once_cell::sync::Lazy;
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
@@ -100,10 +101,8 @@ impl std::fmt::Display for MemoryData {
 
 type LogMessage = (Instant, ThreadId, MemoryData, String);
 
-lazy_static! {
-  static ref LOGGER: (Mutex<Vec<LogMessage>>, Condvar) = Default::default();
-  static ref SERVER: Server = Server::new().expect("Initialization failed");
-}
+static LOGGER: Lazy<(Mutex<Vec<LogMessage>>, Condvar)> = Lazy::new(Default::default);
+static SERVER: Lazy<Server> = Lazy::new(|| Server::new().expect("Initialization failed"));
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {

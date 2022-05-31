@@ -2,6 +2,7 @@
 use std::mem;
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
+use once_cell::sync::Lazy;
 use crate::{Elaborator, EnvDisplay};
 use crate::{FileSpan, AtomId, Type as EType, elab::Result, Environment, ElabError,
   LispKind, LispVal, Uncons, FormatEnv, try_get_span};
@@ -26,17 +27,16 @@ macro_rules! make_keywords {
     pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
     crate::deep_size_0!(Keyword);
 
-    lazy_static! {
-      static ref SYNTAX_MAP: Box<[Option<Keyword>]> = {
-        let mut vec = vec![];
-        Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
-        vec.into()
-      };
+    static SYNTAX_MAP: Lazy<Box<[Option<Keyword>]>> = Lazy::new(|| {
+      let mut vec = vec![];
+      Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
+      vec.into()
+    });
 
-      static ref INTERNED: [Symbol; [$(Keyword::$x),*].len()] = [$(intern($e)),*];
-      static ref SYMBOL_MAP: Box<[Option<Keyword>]> =
-        init_dense_symbol_map(&[$((intern($e), Keyword::$x)),*]);
-    }
+    static INTERNED: Lazy<[Symbol; [$(Keyword::$x),*].len()]> = Lazy::new(|| [$(intern($e)),*]);
+    static SYMBOL_MAP: Lazy<Box<[Option<Keyword>]>> = Lazy::new(|| {
+      init_dense_symbol_map(&[$((intern($e), Keyword::$x)),*])
+    });
 
     impl Keyword {
       #[must_use] pub fn from_str(s: &str) -> Option<Self> {
