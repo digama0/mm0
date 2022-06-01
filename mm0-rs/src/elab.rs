@@ -594,6 +594,9 @@ impl Elaborator {
         for e in es { self.parse_and_print(e, mem::take(&mut doc))? }
       }
       StmtKind::Annot(e, s) => {
+        if self.mm0_mode {
+          self.report(ElabError::warn(e.span, "(MM0 mode) annotations not allowed"))
+        }
         let v = self.eval_lisp(false, e)?;
         self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomId::ANNOTATE].lisp {
