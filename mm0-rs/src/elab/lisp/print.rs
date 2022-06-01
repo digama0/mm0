@@ -162,26 +162,25 @@ impl EnvDisplay for LispKind {
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
-        write!(f, "#[fn at {} {}:{}]", fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn at {} {}:{}>", fname, r.line + 1, r.character + 1)
       }
       &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, _, a), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
         let x = &fe.data[a].name;
-        write!(f, "#[fn {} at {} {}:{}]", x, fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn {} at {} {}:{}>", x, fname, r.line + 1, r.character + 1)
       }
-      LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#[match cont]"),
-      LispKind::Proc(Proc::RefineCallback) => write!(f, "#[refine]"),
-      LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
-      LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#[merge-map]"),
-      #[cfg(feature = "mmc")]
-      LispKind::Proc(Proc::MmcCompiler(_)) => write!(f, "#[mmc-compiler]"),
+      LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#<match cont>"),
+      LispKind::Proc(Proc::RefineCallback) => write!(f, "#<refine>"),
+      LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#<proof of {}>", fe.to(x)),
+      LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#<merge-map>"),
+      LispKind::Proc(Proc::Dyn(c)) => EnvDisplay::fmt(&**c.borrow(), fe, f),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;
         for (a, v) in m {write!(f, " [{} {}]", fe.data[*a].name, fe.to(v))?}
         write!(f, ")")
       }
-      LispKind::Ref(m) if m.too_many_readers() => write!(f, "#[ref]"),
+      LispKind::Ref(m) if m.too_many_readers() => write!(f, "#<ref>"),
       LispKind::Ref(m) => m.get(|e| e.fmt(fe, f)),
       &LispKind::MVar(n, _) => write!(f, "?{}", alphanumber(n)),
       LispKind::Goal(e) => write!(f, "(goal {})", fe.to(e)),

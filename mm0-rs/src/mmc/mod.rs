@@ -14,7 +14,7 @@ use std::{collections::HashMap, rc::Rc};
 use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkedCode, LinkerErr};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
-  elab::Result, LispVal, EnvDebug, FormatEnv};
+  elab::Result, LispVal, EnvDebug, FormatEnv, lisp::ProcSpec, LispProc, EnvDisplay};
 
 use self::parser::Mm0ExprNode;
 
@@ -30,7 +30,6 @@ impl PrintLambda<'_> {
     subst: &[mmcc::types::ty::Expr<'a>],
     f: &mut std::fmt::Formatter<'_>
   ) -> std::fmt::Result {
-    use crate::elab::lisp::print::EnvDisplay;
     use mmcc::CtxDisplay;
     match node {
       Mm0ExprNode::Const(e) => e.fmt(self.fe, f),
@@ -139,6 +138,11 @@ impl EnvDebug for Compiler {
     std::fmt::Debug::fmt(self, f)
   }
 }
+impl EnvDisplay for Compiler {
+  fn fmt(&self, _: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    std::fmt::Debug::fmt(self, f)
+  }
+}
 
 impl Remap for Compiler {
   type Target = Self;
@@ -208,10 +212,14 @@ impl Compiler {
     let code = compiler.linked_code(sp)?;
     proof::render_proof(&self.predef, elab, sp, name, &code.proof())
   }
+}
+
+impl LispProc for Compiler {
+  fn spec(&self) -> ProcSpec { ProcSpec::AtLeast(1) }
 
   /// Main entry point to the compiler. Does basic parsing and forwards to
   /// [`add`](Self::add) and [`finish`](Self::finish).
-  pub fn call(&mut self, elab: &mut Elaborator, sp: Span, args: Vec<LispVal>) -> Result<LispVal> {
+  fn call(&mut self, elab: &mut Elaborator, sp: Span, args: Vec<LispVal>) -> Result<LispVal> {
     let mut it = args.into_iter();
     let e = it.next().expect("expected 1 argument");
     match e.as_atom().and_then(|a| Keyword::from_str(elab.data[a].name.as_str())) {
@@ -234,4 +242,6 @@ impl Compiler {
         format!("mmc-compiler: unknown subcommand '{}'", elab.print(&e))))
     }
   }
+
+  fn box_remap(&self, r: &mut Remapper) -> Box<dyn LispProc> { Box::new(self.remap(r)) }
 }

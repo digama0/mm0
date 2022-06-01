@@ -466,8 +466,7 @@ impl Remap for FrozenProc {
           Err(v) => Err(v.remap(r)),
         }
       )),
-      #[cfg(feature = "mmc")]
-      Proc::MmcCompiler(c) => Proc::MmcCompiler(c.remap(r)),
+      Proc::Dyn(c) => Proc::Dyn(c.remap(r)),
     }
   }
 }

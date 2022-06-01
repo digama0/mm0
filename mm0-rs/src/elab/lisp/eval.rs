@@ -1354,7 +1354,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     LispVal::string(bytes.into()).into()
   },
   #[cfg(feature = "mmc")]
-  MmcInit: Exact(0) => LispVal::proc(Proc::MmcCompiler(
+  MmcInit: Exact(0) => LispVal::proc(Proc::Dyn(
     RefCell::new(Box::new(crate::mmc::Compiler::new(self)))
   )).into(),
 }
@@ -1520,8 +1520,7 @@ impl<'a> Evaluator<'a> {
             } else { unreachable!() }
           }
         }
-        #[cfg(feature = "mmc")]
-        Proc::MmcCompiler(c) => {
+        Proc::Dyn(c) => {
           let sp = self.respan(sp.0);
           let ret = c.borrow_mut().call(self, sp, args)?;
           self.stack.push(ret.into())

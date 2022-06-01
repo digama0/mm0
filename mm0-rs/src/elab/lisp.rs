@@ -976,8 +976,7 @@ pub enum Proc {
   /// internal state here. See [`Compiler::call`].
   ///
   /// [`Compiler::call`]: crate::mmc::Compiler::call
-  #[cfg(feature = "mmc")]
-  MmcCompiler(RefCell<Box<crate::mmc::Compiler>>) // TODO: use extern instead
+  Dyn(RefCell<Box<dyn LispProc>>) // TODO: use extern instead
 }
 
 /// A procedure specification, which defines the number of arguments expected
@@ -1021,8 +1020,7 @@ impl Proc {
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
       Proc::MergeMap(_) => ProcSpec::Exact(2),
       Proc::RefineCallback => ProcSpec::AtLeast(1),
-      #[cfg(feature = "mmc")]
-      Proc::MmcCompiler(_) => ProcSpec::AtLeast(1),
+      Proc::Dyn(proc) => proc.borrow().spec(),
     }
   }
 }
@@ -1427,6 +1425,38 @@ impl std::fmt::Display for BuiltinProc {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
   }
+}
+
+macro_rules! def_lisp_proc {
+  ($($extra:path)?) => {
+    /// A trait for external objects that can be called like functions.
+    pub trait LispProc:
+      std::fmt::Debug + crate::EnvDebug + crate::EnvDisplay $(+ $extra)?
+    {
+      /// Returns the procedure specification (number of arguments).
+      /// `call` is guaranteed to be called only with `args` matching this specification.
+      fn spec(&self) -> ProcSpec;
+
+      /// Call the function object, given mutable access to its own state,
+      /// as well as the elaborator state. The span and function arguments are also passed.
+      fn call(&mut self,
+        elab: &mut crate::Elaborator, sp: Span, args: Vec<LispVal>
+      ) -> super::Result<LispVal>;
+
+      /// Morally `LispProc: Remap<Target=Self>`, but this would make the trait not object-safe
+      /// so we have to provide the remap function via an indirection here.
+      /// The implementation should just be `Box::new(self.remap(r))`.
+      fn box_remap(&self, r: &mut Remapper) -> Box<dyn LispProc>;
+    }
+  }
+}
+
+#[cfg(feature = "memory")] def_lisp_proc! { mm0_deepsize::DeepSizeOf }
+#[cfg(not(feature = "memory"))] def_lisp_proc! {}
+
+impl Remap for Box<dyn LispProc> {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self::Target { self.box_remap(r) }
 }
 
 /// An iterator over lisp values, for dealing with lists. Semantically this is

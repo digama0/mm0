@@ -88,7 +88,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use elab::{environment::*,
   frozen::{FrozenAtomData, FrozenEnv, FrozenLispKind, FrozenLispVal},
-  lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, Uncons},
+  lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, LispProc, Uncons},
   local_context::{try_get_span, LocalContext},
   ElabError, Elaborator, ElabOptions};
 pub use mm0_util::*;
