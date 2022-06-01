@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
+use crate::elab::verify::{VERIFY_ON_ADD, VerifyError};
 use crate::{AtomId, TermKind, ThmKind, Type as EType, Span, FileSpan, BoxError, MAX_BOUND_VARS};
 use crate::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
@@ -829,15 +830,21 @@ impl Elaborator {
             }
           }
         };
+        let t = Term {
+          atom, args: args.into(), ret, kind,
+          span: self.fspan(d.id),
+          doc,
+          vis: d.mods,
+          full,
+        };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_term(Term {
-            atom, args: args.into(), ret, kind,
-            span: self.fspan(d.id),
-            doc,
-            vis: d.mods,
-            full,
-          }).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Term(true, tid, d.id));
+        } else if VERIFY_ON_ADD {
+          match self.env.verify_termdef(&Default::default(), &t) {
+            Ok(()) | Err(VerifyError::UsesSorry) => {}
+            Err(e) => return Err(ElabError::new_e(d.id, e.render_to_string(self))),
+          }
         }
       }
       DeclKind::Axiom | DeclKind::Thm => {
@@ -934,12 +941,18 @@ impl Elaborator {
             } else {None}
           })
         };
+        let t = Thm {
+          atom, span, vis: d.mods, full, doc,
+          args: args.into(), heap, store: store.into(), hyps, ret, kind
+        };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_thm(Thm {
-            atom, span, vis: d.mods, full, doc,
-            args: args.into(), heap, store: store.into(), hyps, ret, kind
-          }).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Thm(true, tid));
+        } else if VERIFY_ON_ADD {
+          match self.verify_thmdef(&Default::default(), &t) {
+            Ok(()) | Err(VerifyError::UsesSorry) => {}
+            Err(e) => return Err(ElabError::new_e(d.id, e.render_to_string(self))),
+          }
         }
       }
     }
