@@ -389,34 +389,33 @@ theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
       VerifyConv env ctx c e1 ret s /\
       VerifyProof env ctx hs p e1) $;
 
---| The main recursion for the proof judgment on an environment.
---| * `env`: The declarations that have already been processed.
---| * `e`: The declarations we are still stepping through.
---| * `p` is a proof object whose existence entails provability of the environment.
+--| An environment is "full" if it has no missing definitions, and all the theorems
+--| are provable.
 --|
---| `Proof : Env -> Proof -> Bool`
-def Proof (env p: nat): wff;
-theorem Proof0 (p: nat): $ Proof 0 p <-> p = 0 $;
-theorem ProofSort (env id sd p: nat):
-  $ Proof (env |> DSort id sd) p <-> Proof env p $;
-theorem ProofTerm (env id a r p: nat):
-  $ Proof (env |> DTerm id a r) p <-> Proof env p $;
-theorem ProofAxiom (env a h r p: nat):
-  $ Proof (env |> DAxiom a h r) p <-> Proof env p $;
-theorem ProofDef (env id a r o p: nat):
-  $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
-theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
-  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
-    p = p1, ds, pf /\ Proof env p1 /\
-    ctx = appendDummies a ds /\ Ctx env ctx /\
-    VerifyProof env ctx h pf r) $;
+--| `EnvFull : Env -> Bool`
+def EnvFull (env: nat): wff;
+theorem EnvFull0 (p: nat): $ EnvFull 0 $;
+theorem EnvFullSort (env id sd: nat):
+  $ EnvFull (env |> DSort id sd) <-> EnvFull env $;
+theorem EnvFullTerm (env id a r: nat):
+  $ EnvFull (env |> DTerm id a r) <-> EnvFull env $;
+theorem EnvFullAxiom (env a h r p: nat):
+  $ EnvFull (env |> DAxiom a h r) <-> EnvFull env $;
+theorem EnvFullDef (env id a r o: nat):
+  $ EnvFull (env |> DDef id a r o) <-> EnvFull env /\ o != 0 $;
+theorem EnvFullThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
+  $ EnvFull (env |> DThm a h r) <-> EnvFull env /\
+    E. ds E. pf E. ctx (
+      ctx = appendDummies a ds /\ Ctx env ctx /\
+      VerifyProof env ctx h pf r) $;
 
 --| A specification is provable if some extension of the specification has a proof.
 --| The extension provides definitions for the providing all the omitted definitions
 --| and proving all the theorems in the file.
 --|
 --| `ValidEnv : Env -> Bool`
-def ValidEnv (env .e .p: nat): wff = $ E. e (Env e /\ EnvExtend env e /\ E. p Proof e p) $;
+def ValidEnv (env .e .p: nat): wff =
+$ Env env /\ E. e (Env e /\ EnvExtend env e /\ EnvFull e) $;
 
 
 -------------

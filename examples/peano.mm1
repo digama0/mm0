@@ -75,7 +75,7 @@ do {
 
   --| This utility will take a verbatim proof and "unelaborate" it into a refine script
   --| using ! on every step. This is useful to get `refine` to re-typecheck a term when
-  --| testing tactics which produce verbatim proofs (which bypass proof checking, at least ATM).
+  --| testing tactics which produce verbatim proofs.
   (def unelab @ letrec (
     [(args bs xs)
       @ if (null? bs) (map rec xs)

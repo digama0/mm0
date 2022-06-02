@@ -1109,117 +1109,58 @@ pub theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
     elabe @ exeqd @ exeqd @ aneq1d VerifyConveq5)
   '(finss (mpbi ssab1 @ ax_gen @ eex @ eex @ syl preldm @ syl prelrn anl) (dmfin @ rnfin finns)));
 
-@_ local def Proof_aux (bd env: nat): nat =
-$ rlrec (sn 0) (\\ e, \\ d, \ ih, case (\ x, ih)
+@_ local def EnvFull_aux (env: nat): nat =
+$ rlrec 1 (\\ e, \\ d, \ ih, case (\ x, ih)
   (case
-    (\\ id, \\ a, \\ r, \ o, lower {p | p e. ih /\ o != 0})
-    (\\ a, \\ h, \ r, lower {p | p < bd /\
-      E. p1 E. ds E. pf E. ctx (
-        p = p1, ds, pf /\ p1 e. ih /\
+    (\\ id, \\ a, \\ r, \ o, nat (true ih /\ o != 0))
+    (\\ a, \\ h, \ r, nat (true ih /\ E. ds E. pf E. ctx (
         ctx = appendDummies a ds /\ Ctx e ctx /\
-        VerifyProof e ctx h pf r)})) @ d) env $;
+        VerifyProof e ctx h pf r)))) @ d) env $;
 
-theorem Proof_aux_0: $ Proof_aux bd 0 = sn 0 $ = (named 'rlrec0);
-theorem Proof_aux_S: $ Proof_aux bd (env |> d) = case (\ x, Proof_aux bd env)
+theorem EnvFull_aux_0: $ EnvFull_aux 0 = 1 $ = (named 'rlrec0);
+theorem EnvFull_aux_S: $ EnvFull_aux (env |> d) = case (\ x, EnvFull_aux env)
   (case
-    (\\ id, \\ a, \\ r, \ o, lower {p | p e. Proof_aux bd env /\ o != 0})
-    (\\ a, \\ h, \ r, lower {p | p < bd /\
-      E. p1 E. ds E. pf E. ctx (
-        p = p1, ds, pf /\ p1 e. Proof_aux bd env /\
+    (\\ id, \\ a, \\ r, \ o, nat (true (EnvFull_aux env) /\ o != 0))
+    (\\ a, \\ h, \ r, nat (true (EnvFull_aux env) /\ E. ds E. pf E. ctx (
         ctx = appendDummies a ds /\ Ctx env ctx /\
-        VerifyProof env ctx h pf r)})) @ d $ =
-(named @ focus
-  '(eqtr {rlrecS : $ _ = _ @ (_, _, Proof_aux bd env) $} @
-    appslame @ appslamed @ applamed @ appeqd _ anlr)
-  '(caseeqd (lameqd anr) @
-    caseeqd (slameqd @ slameqd @ slameqd @ lameqd @
-      lowereqd @ abeqd @ aneq1d @ elneq2d anr) @
-    slameqd @ slameqd @ lameqd @ lowereqd @ abeqd @ aneq2d @
-    exeqd @ exeqd @ exeqd @ exeqd @ aneqd
-      (aneqd (aneq1d @ aneq2d @ elneq2d anr) (Ctxeq1d anll))
-      (VerifyProofeq1d anll)));
+        VerifyProof env ctx h pf r)))) @ d $ =
+'(eqtr {rlrecS : $ _ = _ @ (_, _, EnvFull_aux env) $} @
+  appslame @ appslamed @ applamed ,eqtac);
 
-theorem Proof_aux_b0: $ Proof_aux bd (env |> b0 x) = Proof_aux bd env $ =
-(named '(eqtr Proof_aux_S @ eqtr casel @ applame eqidd));
+theorem EnvFull_aux_b0: $ EnvFull_aux (env |> b0 x) = EnvFull_aux env $ =
+(named '(eqtr EnvFull_aux_S @ eqtr casel @ applame eqidd));
 
-theorem Proof_aux_Def:
-  $ p e. Proof_aux bd (env |> DDef id a r o) <-> p e. Proof_aux bd env /\ o != 0 $ =
-(named '(bitr (elneq2 @ eqtr Proof_aux_S @ eqtr caser @ eqtr casel @
-    appslame @ appslamed @ appslamed @ applamed @ lowereqd @ abeqd @ aneq2d @ neeq1d anr) @
-  bitr (ellower @ finss (mpbi ssab1 @ ax_gen anl) finns) @
-  elabe @ aneq1d eleq1));
-
-theorem Proof_aux_Thm:
-  $ p e. Proof_aux bd (env |> DThm a h r) <-> p < bd /\
-    E. p1 E. ds E. pf E. ctx (
-      p = p1, ds, pf /\ p1 e. Proof_aux bd env /\
+--| An environment is "full" if it has no missing definitions, and all the theorems
+--| are provable.
+--|
+--| `EnvFull : Env -> Bool`
+@_ abstract def EnvFull (env: nat): wff = $ true (EnvFull_aux env) $;
+pub theorem EnvFull0 (p: nat): $ EnvFull 0 $ = '(mpbir (trueeq EnvFull_aux_0) true1);
+pub theorem EnvFullSort (env id sd: nat):
+  $ EnvFull (env |> DSort id sd) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
+pub theorem EnvFullTerm (env id a r: nat):
+  $ EnvFull (env |> DTerm id a r) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
+pub theorem EnvFullAxiom (env a h r p: nat):
+  $ EnvFull (env |> DAxiom a h r) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
+pub theorem EnvFullDef (env id a r o: nat):
+  $ EnvFull (env |> DDef id a r o) <-> EnvFull env /\ o != 0 $ =
+(named '(bitr (trueeq @ eqtr EnvFull_aux_S @ eqtr caser @ eqtr casel @
+    appslame @ appslamed @ appslamed @ applamed ,eqtac) truenat));
+pub theorem EnvFullThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
+  $ EnvFull (env |> DThm a h r) <-> EnvFull env /\
+    E. ds E. pf E. ctx (
       ctx = appendDummies a ds /\ Ctx env ctx /\
       VerifyProof env ctx h pf r) $ =
-(named '(bitr (elneq2 @ eqtr Proof_aux_S @ eqtr caser @ eqtr caser @
-    appslame @ appslamed @ applamed @ lowereqd @ abeqd @
-    aneq2d @ exeqd @ exeqd @ exeqd @ exeqd @ aneqd
-      (aneq1d @ aneq2d @ eqeq2d @ appendDummieseq1d anll)
-      (VerifyProofeqd eqidd eqidd anlr eqidd anr)) @
-  bitr (ellower @ finss (mpbi ssab1 @ ax_gen @ sylibr elupto anl) finns) @
-  elabe @ aneqd lteq1 @ exeqd @ exeqd @ exeqd @ exeqd @
-  aneq1d @ aneq1d @ aneq1d @ aneq1d eqeq1));
-
---| The main recursion for the proof judgment on an environment.
---| * `env`: The declarations that have already been processed.
---| * `e`: The declarations we are still stepping through.
---| * `p` is a proof object whose existence entails provability of the environment.
---|
---| `Proof : Env -> Proof -> Bool`
-@_ abstract def Proof (env p: nat): wff = $ p e. Proof_aux (suc p) env $;
-
-theorem el_Proof_aux: $ p < bd -> (p e. Proof_aux bd env <-> Proof env p) $ =
-(named @ focus
-  '(mpi ltsucid @ syl (!! eale q @ imeqd lteq1 @ bieqd eleq1 eleq1) _)
-  (def h '(bieqd (elneq2d Proof_auxeq2) (elneq2d Proof_auxeq2)))
-  (def h2 '(aleqd @ imeq2d ,h))
-  '(!! indstr x y ,h2 ,h2 @ cases _ _)
-  (focus '(a1d @ iald @ a1d @ mpbiri (elneq2 @ eqtr4 Proof_aux_0 Proof_aux_0) ,h))
-  (focus
-    '(sylbi exsnoc @ com12 @ sylibr eexb @ imp @ alimd @ com23 @
-      eexd @ expcom @ eimd (mpbiri snoclt @ lteq2d anl) _)
-    (def h0 '(Proof_auxeq2d @ eqtrd anll @ snoceq2d anr))
-    (def h1 '(elneq2d @ syl6eq Proof_aux_b0 ,h0))
-    (def h2 '(syl6bb Proof_aux_Def @ elneq2d ,h0))
-    (def h3 '(rsyl anll @ syl6bb Proof_aux_Thm @ elneq2d ,h0))
-    (split-sop '{
-      (1 => (alimd @ imim2d @ bi2d @ bieqd ,h1 ,h1)) +
-     {($DDef id a r o$ => (alimd @ imim2d @ syl5 (aneq1d id) @ bi2d @ bieqd ,h2 ,h2)) +
-      ($DThm a h r$ => (syl5bi (cbval @ imeqd lteq1 @ bieqd eleq1 eleq1) @
-        exp @ iald @ exp @ mpbird (bieqd ,h3 ,h3) @
-        aneqd (sylc bith (lelttrd (sylibr leltsuc anr) an3lr) anr) @
-        syl exeq @ anrasss @ imp @ alimd @ exp @
-        exeqd @ exeqd @ exeqd @ aneq1d @ aneq1d @ aneq1d @ syl aneq2a @
-        imp @ imim1d @ exp @ lelttrd (mpbiri leprid1 (leeq2d anr)) anlr))}})));
-
-pub theorem Proof0 (p: nat): $ Proof 0 p <-> p = 0 $ = '(bitr (elneq2 Proof_aux_0) elsn);
-pub theorem ProofSort (env id sd p: nat):
-  $ Proof (env |> DSort id sd) p <-> Proof env p $ = '(elneq2 Proof_aux_b0);
-pub theorem ProofTerm (env id a r p: nat):
-  $ Proof (env |> DTerm id a r) p <-> Proof env p $ = '(elneq2 Proof_aux_b0);
-pub theorem ProofAxiom (env a h r p: nat):
-  $ Proof (env |> DAxiom a h r) p <-> Proof env p $ = '(elneq2 Proof_aux_b0);
-pub theorem ProofDef (env id a r o p: nat):
-  $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $ = 'Proof_aux_Def;
-pub theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
-  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
-    p = p1, ds, pf /\ Proof env p1 /\
-    ctx = appendDummies a ds /\ Ctx env ctx /\
-    VerifyProof env ctx h pf r) $ =
-'(bitr Proof_aux_Thm @ bitr (bian1 ltsucid) @
-  exeqi @ exeqi @ exeqi @ exeqi @ aneq1i @ aneq1i @ aneq1i @
-  aneq2a @ syl el_Proof_aux @ sylib leltsuc @ mpbiri leprid1 leeq2);
+(named '(bitr (trueeq @ eqtr EnvFull_aux_S @ eqtr caser @ eqtr caser @
+    appslame @ appslamed @ applamed ,eqtac) truenat));
 
 --| A specification is provable if some extension of the specification has a proof.
 --| The extension provides definitions for the providing all the omitted definitions
 --| and proving all the theorems in the file.
 --|
 --| `ValidEnv : Env -> Bool`
-@_ def ValidEnv (env .e .p: nat): wff = $ E. e (Env e /\ EnvExtend env e /\ E. p Proof e p) $;
+@_ def ValidEnv (env .e .p: nat): wff =
+$ Env env /\ E. e (Env e /\ EnvExtend env e /\ EnvFull e) $;
 
 
 -------------

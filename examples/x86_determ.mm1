@@ -5,11 +5,8 @@ import "x86.mm1";
 ----------------------------------------
 
 do {
-  --| `(mk-decodeAux_bit defn)` is used to construct `(decodeAux_bit)` and `is a function which given `defn = 'decodeRet`
-  --| and `x = 'x5`, returns `($0$ p)` where `p` is a refine script proving
-  --| `$ decodeRet rex ast b l -> bit b x5 = 0 $`, and similarly for other
-  --| sub-cases of `decodeAux` where `x` is a hex digit 0-7. It returns `#undef`
-  --| if the selected bit is not fixed by the decode case.
+  --| `(mk-decodeAux_bit defn)` is used to construct
+  --| `(decodeAux_bit)` and `(decodeTwoAux_bit)`.
   (def (mk-decodeAux_bit defn)
     (def fields (atom-map!))
     @ letrec (

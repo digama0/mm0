@@ -239,7 +239,7 @@ infixl hex: $:x$ prec 120;
   (ha: $ G -> a1 = a2 $) (hx: $ G -> x1 = x2 $): $ G -> hex a1 x1 = hex a2 x2 $ =
 '(addeqd (muleq1d ha) hx);
 theorem hexeq1: $ a1 = a2 -> hex a1 x = hex a2 x $ = '(hexeqd id eqidd);
-theorem hexeq2: $ x1 = x2 -> hex a x1 = hex a x2 $ = '(hexeqd eqidd id);
+theorem hexeq2: $ _x1 = _x2 -> hex a _x1 = hex a _x2 $ = '(hexeqd eqidd id);
 
 theorem suc_xf: $ suc xf = 16 $ = '(suceq h2nf);
 
@@ -248,7 +248,7 @@ theorem hex01: $ x0 :x a = a $ = '(eqtr (hexeq1 h2n0) hex01_);
 theorem hex02: $ n :x x0 = n * 16 $ = '(eqtr (addeq2 h2n0) add0);
 theorem hex10: $ x1 :x x0 = 16 $ = '(eqtr hex02 @ eqtr (muleq1 h2n1) mul11);
 
-theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
+theorem c2nhex: $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
 theorem c2nh2n: $ ch x0 a = h2n a $ = '(eqtr c2nhex hex01);
 
 --| `(to-u8-ch a)` returns a pair `(c p)` where `p: c2n c = a`
