@@ -288,21 +288,25 @@ theorem substExprApp (subst f es: nat) {e: nat}:
 --| `CRefl e : e = e`
 --|
 --| `CRefl : SExpr -> CExpr`
-def CRefl (e: nat): nat = $ b0 (b0 e) $;
+def CRefl (e: nat): nat = $ b0 (b0 (b0 e)) $;
 --| If `p : e = e'`, then `CSymm p : e' = e`
 --|
 --| `CSymm : CExpr -> CExpr`
-def CSymm (p: nat): nat = $ b0 (b1 p) $;
+def CSymm (p: nat): nat = $ b0 (b0 (b1 p)) $;
+--| If `p : e1 = e2` and `q : e2 = e3`, then `CTrans p q : e1 = e3`
+--|
+--| `CTrans : CExpr -> CExpr -> CExpr`
+def CTrans (p q: nat): nat = $ b0 (b1 (p, q)) $;
 --| If `{p : e = e'}` then `CCong f {p} : f {e} = f {e'}`
 --| where the braces denote iteration
 --|
 --| `CCong : TermID -> list CExpr -> CExpr`
 def CCong (f cs: nat): nat = $ b1 (b0 (f, cs)) $;
 --| If `f {x} := {y}. e'`, then
---| `p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong f {z} p : f {e} = e''`
+--| `CCong f {z} p : f {e} = e'[{x}, {y} -> {e}, {z}]`
 --|
---| `CUnfold : TermID -> list VarID -> CExpr -> CExpr`
-def CUnfold (f es zs c: nat): nat = $ b1 (b1 (f, es, zs, c)) $;
+--| `CUnfold : TermID -> list Expr -> list VarID -> CExpr`
+def CUnfold (f es zs: nat): nat = $ b1 (b1 (f, es, zs)) $;
 
 -- A `VExpr` is a proof term.
 
@@ -339,6 +343,9 @@ theorem VerifyConvRefl (env ctx e e1 e2 s: nat):
     Expr env ctx e s /\ e = e1 /\ e = e2 $;
 theorem VerifyConvSymm (env ctx c e1 e2 s: nat):
   $ VerifyConv env ctx (CSymm c) e1 e2 s <-> VerifyConv env ctx c e2 e1 s $;
+theorem VerifyConvTrans (env ctx c1 c2 e1 e2 s: nat) {e: nat}:
+  $ VerifyConv env ctx (CTrans c1 c2) e1 e2 s <->
+    E. e (VerifyConv env ctx c1 e1 e s /\ VerifyConv env ctx c2 e e2 s) $;
 theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
   $ VerifyConv env ctx (CCong f cs) e1 e2 s <->
     E. args E. ret E. o E. es1 E. es2 (
@@ -346,16 +353,16 @@ theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
       getTerm env f args ret o /\
       VerifyConvs env ctx cs es1 es2 args /\
       s = fst ret) $;
-theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
+theorem VerifyConvUnfold (env ctx f zs e1 e2 s: nat)
   {args ret ys val es a y z e i: nat}:
-  $ VerifyConv env ctx (CUnfold f es zs c) e1 e2 s <->
+  $ VerifyConv env ctx (CUnfold f es zs) e1 e2 s <->
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys, val)) /\
       e1 = SApp f es /\ s = fst ret /\
       es, args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       ys, zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
         A. e (e IN es -> ~HasVar ctx e z)}) /\
-      VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $;
+      e2 = substExpr (es ++ map (\ i, SVar i) zs) val) $;
 
 --| The main proof checking function.
 --|

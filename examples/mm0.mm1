@@ -154,6 +154,7 @@ theorem getTerm_ltid: $ getTerm env x a r v -> x < env /\ a < env /\ r < env /\ 
     '(lelttr @ lepr2tr @ lepr2tr leprid2)));
 
 theorem getTerm_retltid: $ getTerm env x a r v -> r < env $ = '(rsyl getTerm_ltid anlr);
+theorem getTerm_valltid: $ getTerm env x a r v -> v < env $ = '(rsyl getTerm_ltid anr);
 
 --| This function gets the data for an axiom or theorem.
 --|
@@ -652,94 +653,109 @@ pub theorem substExprApp (subst f es: nat) {e: nat}:
 --| `CRefl e : e = e`
 --|
 --| `CRefl : SExpr -> CExpr`
-@_ def CRefl (e: nat): nat = $ b0 (b0 e) $;
+@_ def CRefl (e: nat): nat = $ b0 (b0 (b0 e)) $;
 --| If `p : e = e'`, then `CSymm p : e' = e`
 --|
 --| `CSymm : CExpr -> CExpr`
-@_ def CSymm (p: nat): nat = $ b0 (b1 p) $;
+@_ def CSymm (p: nat): nat = $ b0 (b0 (b1 p)) $;
+--| If `p : e1 = e2` and `q : e2 = e3`, then `CTrans p q : e1 = e3`
+--|
+--| `CTrans : CExpr -> CExpr -> CExpr`
+@_ def CTrans (p q: nat): nat = $ b0 (b1 (p, q)) $;
 --| If `{p : e = e'}` then `CCong f {p} : f {e} = f {e'}`
 --| where the braces denote iteration
 --|
 --| `CCong : TermID -> list CExpr -> CExpr`
 @_ def CCong (f cs: nat): nat = $ b1 (b0 (f, cs)) $;
 --| If `f {x} := {y}. e'`, then
---| `p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong f {z} p : f {e} = e''`
+--| `CCong f {z} p : f {e} = e'[{x}, {y} -> {e}, {z}]`
 --|
---| `CUnfold : TermID -> list VarID -> CExpr -> CExpr`
-@_ def CUnfold (f es zs c: nat): nat = $ b1 (b1 (f, es, zs, c)) $;
+--| `CUnfold : TermID -> list Expr -> list VarID -> CExpr`
+@_ def CUnfold (f es zs: nat): nat = $ b1 (b1 (f, es, zs)) $;
 
-theorem CSymm_ltid: $ c < CSymm c $ = '(ltb0tr b1ltid);
+theorem CSymm_ltid: $ c < CSymm c $ = '(ltb0tr @ ltb0tr b1ltid);
+
+theorem CTrans_ltid1: $ c1 < CTrans c1 c2 $ = '(ltb0tr @ ltb1tr leprid1);
+theorem CTrans_ltid2: $ c2 < CTrans c1 c2 $ = '(ltb0tr @ ltb1tr leprid2);
 
 theorem CCong_ltid: $ c IN cs -> c < CCong f cs $ =
 '(rsyl lmemlt @ mpi (ltb1tr @ leb0tr leprid2) lttr);
 
-theorem CUnfold_ltid: $ c < CUnfold f es zs c $ =
-'(ltb1tr @ leb1tr @ lepr2tr @ lepr2tr leprid2);
-
-@_ local def CExprRec (R S C U: set): set =
+@_ local def CExprRec (R S T C U: set): set =
 $ \ e, srec (\ ih, case
-  (case R (\ c, S @ (c, ih @ c)))
+  (case
+    (case R (\ c, S @ (c, ih @ c)))
+    (\\ c1, \ c2, T @ (c1, c2, ih @ c1, ih @ c2)))
   (case
     (\\ f, \ cs, C @ (f, cs, map ih cs))
-    (\\ f, \\ es, \\ zs, \ c, U @ (f, es, zs, c, ih @ c))) @ size (Dom ih)) e $;
+    U) @ size (Dom ih)) e $;
 
-theorem CExprRec_val: $ CExprRec R S C U @ e = case
-  (case R (\ c, S @ (c, (CExprRec R S C U |` upto e) @ c)))
+theorem CExprRec_val: $ CExprRec R S T C U @ e = case
   (case
-    (\\ f, \ cs, C @ (f, cs, map (CExprRec R S C U |` upto e) cs))
-    (\\ f, \\ es, \\ zs, \ c, U @ (f, es, zs, c, (CExprRec R S C U |` upto e) @ c))) @ e $ =
+    (case R (\ c, S @ (c, (CExprRec R S T C U |` upto e) @ c)))
+    (\\ c1, \ c2, T @ (c1, c2,
+      (CExprRec R S T C U |` upto e) @ c1,
+      (CExprRec R S T C U |` upto e) @ c2)))
+  (case
+    (\\ f, \ cs, C @ (f, cs, map (CExprRec R S T C U |` upto e) cs))
+    U) @ e $ =
 (named '(eqtr (applame sreceq2) @
-  ! eqtr _ $ _ @ lower (CExprRec R S C U |` _) $ _ srecval @
-  applame @ appeqd
-    (rsyl (bi2 @ eqlower2 @ finlam finns) @
-      caseeqd (caseeq2d @ lameqd @ appeq2d @ preq2d appeq1) @
-      caseeqd (slameqd @ lameqd @ appeq2d @ preq2d @ preq2d mapeq1) @
-      slameqd @ slameqd @ slameqd @ lameqd @ appeq2d @ preq2d @ preq2d @ preq2d @ preq2d appeq1)
-    sreclem));
+  ! eqtr _ $ _ @ lower (CExprRec R S T C U |` _) $ _ srecval @
+  !! applame ih @ appeqd (rsyl (bi2 @ eqlower2 @ finlam finns) ,eqtac) sreclem));
 
-theorem CExprRec_CRefl: $ CExprRec R S C U @ CRefl e = R @ e $ =
-(named '(eqtr CExprRec_val @ eqtr casel casel));
+theorem CExprRec_CRefl: $ CExprRec R S T C U @ CRefl e = R @ e $ =
+(named '(eqtr CExprRec_val @ eqtr casel @ eqtr casel casel));
 theorem CExprRec_CSymm:
-  $ CExprRec R S C U @ CSymm c = S @ (c, CExprRec R S C U @ c) $ =
-(named '(eqtr CExprRec_val @ eqtr casel @ eqtr caser @
+  $ CExprRec R S T C U @ CSymm c = S @ (c, CExprRec R S T C U @ c) $ =
+(named '(eqtr CExprRec_val @ eqtr casel @ eqtr casel @ eqtr caser @
   applame @ appeq2d @ preqd id @ syl6eq (resapp @ mpbir elupto CSymm_ltid) appeq2));
+theorem CExprRec_CTrans:
+  $ CExprRec R S T C U @ CTrans c1 c2 =
+    T @ (c1, c2, CExprRec R S T C U @ c1, CExprRec R S T C U @ c2) $ =
+(named '(eqtr CExprRec_val @ eqtr casel @ eqtr caser @
+  appslame @ applamed @ appeq2d @ syl6eq (preq2 @ preq2 @
+    preq (resapp @ mpbir elupto CTrans_ltid1) (resapp @ mpbir elupto CTrans_ltid2))
+  ,eqtac));
 theorem CExprRec_CCong:
-  $ CExprRec R S C U @ CCong f cs = C @ (f, cs, map (CExprRec R S C U) cs) $ =
+  $ CExprRec R S T C U @ CCong f cs = C @ (f, cs, map (CExprRec R S T C U) cs) $ =
 (named '(eqtr CExprRec_val @ eqtr caser @ eqtr casel @
   appslame @ applamed @ appeq2d @ preqd anl @ preqd anr @ syl6eq
     (mapeqg @ mpbir allal @ !! ax_gen e @ syl resapp @ sylibr elupto CCong_ltid)
     (mapeq2d anr)));
 theorem CExprRec_CUnfold:
-  $ CExprRec R S C U @ CUnfold f es zs c = U @ (f, es, zs, c, CExprRec R S C U @ c) $ =
-(named '(eqtr CExprRec_val @ eqtr caser @ eqtr caser @
-  appslame @ appslamed @ appslamed @ applamed @ appeq2d @
-  preqd an3l @ preqd anllr @ preqd anlr @ preqd anr @ syl6eq
-    (resapp @ mpbir elupto CUnfold_ltid)
-    (appeq2d anr)));
+  $ CExprRec R S T C U @ CUnfold f es zs = U @ (f, es, zs) $ =
+(named '(eqtr CExprRec_val @ eqtr caser caser));
 
 theorem indd_aux2 (G p: wff x) (e: $ x = c -> (p <-> q) $)
   (h: $ c < b $): $ G /\ A. z (z < a -> [z / x] p) /\ a = b -> q $ =
 '(sylc (eale (imeqd lteq1 (syl6bb (sbe e) sbeq1))) anlr @ mpbiri h @ lteq2d anr);
 
 theorem CExpr_indd {x f e c es zs cs} (n)
-  (px: wff x) (pi: wff c) (pr: wff e) (ps: wff c) (pc: wff f cs) (pu: wff f es zs c)
+  (px: wff x) (pi: wff c) (pi2: wff c2) (pr: wff e) (ps: wff c) (pt: wff c c2)
+  (pc: wff f cs) (pu: wff f es zs)
   (hn: $ x = n -> (px <-> pn) $)
   (hr: $ x = CRefl e -> (px <-> pr) $)
   (hs: $ x = CSymm c -> (px <-> ps) $)
+  (ht: $ x = CTrans c c2 -> (px <-> pt) $)
   (hc: $ x = CCong f cs -> (px <-> pc) $)
-  (hu: $ x = CUnfold f es zs c -> (px <-> pu) $)
+  (hu: $ x = CUnfold f es zs -> (px <-> pu) $)
   (hi: $ x = c -> (px <-> pi) $)
-  (h1: $ G -> pr $)
-  (h2: $ G /\ pi -> ps $)
-  (h3: $ G /\ all {x | px} cs -> pc $)
-  (h4: $ G /\ pi -> pu $): $ G -> pn $ =
+  (hi2: $ x = c2 -> (px <-> pi2) $)
+  (ir: $ G -> pr $)
+  (is: $ G /\ pi -> ps $)
+  (it: $ G /\ pi /\ pi2 -> pt $)
+  (ic: $ G /\ all {x | px} cs -> pc $)
+  (iu: $ G -> pu $): $ G -> pn $ =
 '(sylib (sbe hn) @ !! indstr z w sbeq1 sbeq1 ,(split-sop '{
-  {($CRefl e$ => (indd_aux hr @ anwll h1)) +
-   ($CSymm c$ => (indd_aux hs @ mpd (indd_aux2 hi CSymm_ltid) (anwll @ exp h2)))} +
-  {($CCong f cs$ => (indd_aux hc @ sylan h3 anll @
+ {{($CRefl e$ => (indd_aux hr @ anwll ir)) +
+   ($CSymm c$ => (indd_aux hs @ mpd (indd_aux2 hi CSymm_ltid) (anwll @ exp is)))} +
+   ($CTrans c c2$ => (indd_aux ht @
+    mpd (indd_aux2 hi2 CTrans_ltid2) @ mpd (indd_aux2 hi CTrans_ltid1) @
+    anwll @ exp @ exp it))} +
+  {($CCong f cs$ => (indd_aux hc @ sylan ic anll @
     sylibr (alleq1 cbvabs) @ sylibr allal @
     sylc (alimd @ imim1d @ syl5 CCong_ltid @ bi2d lteq2) anr anlr)) +
-   ($CUnfold f es zs c$ => (indd_aux hu @ mpd (indd_aux2 hi CUnfold_ltid) (anwll @ exp h4)))}
+   ($CUnfold f es zs$ => (indd_aux hu @ anwll iu))}
 }));
 
 -- A `VExpr` is a proof term.
@@ -824,6 +840,8 @@ theorem VExpr_indd {x n a h r es ps c p} (q)
 $ CExprRec
     (\ e, lower (S\ e1, S\ e2, {s | Expr env ctx e s /\ e = e1 /\ e = e2}))
     (\\ c, \ ih, lower (S\ e1, S\ e2, {s | e2, e1, s e. ih}))
+    (\\ c1, \\ c2, \\ ih1, \ ih2, lower (S\ e1, S\ e2, {s |
+      E. e (e1, e, s e. ih1 /\ e, e2, s e. ih2)}))
     (\\ f, \\ cs, \ ih, lower (S\ e1, S\ e2, {s |
       E. args E. ret E. o E. es1 E. es2 (
         e1 = SApp f es1 /\ e2 = SApp f es2 /\
@@ -834,14 +852,14 @@ $ CExprRec
             ExprBi env ctx e1 bi /\ ExprBi env ctx e2 bi /\
             e1, e2, binderSort bi e. c)) /\
         s = fst ret)}))
-    (\\ f, \\ es, \\ zs, \\ c, \ ih, lower (S\ e1, S\ e2, {s |
+    (\\ f, \\ es, \ zs, lower (S\ e1, S\ e2, {s |
       E. args E. ret E. ys E. val (
         getTerm env f args ret (suc (ys, val)) /\
         e1 = SApp f es /\ s = fst ret /\
         es, args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
         ys, zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
           A. e (e IN es -> ~HasVar ctx e z)}) /\
-        substExpr (es ++ map (\ i, SVar i) zs) val, e2, s e. ih)})) $;
+        e2 = substExpr (es ++ map (\ i, SVar i) zs) val)})) $;
 
 --| Checking a conversion proof `c : (e1 : s) = (e2 : s)`.
 --| `VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool`
@@ -909,8 +927,7 @@ theorem VerifyConv_aux_Symm:
   $ VerifyConv_aux env ctx @ CSymm c = lower (S\ e1, S\ e2, {s |
     VerifyConv env ctx c e2 e1 s}) $ =
 (named '(eqtr {CExprRec_CSymm : $_ = _ @ (_, VerifyConv_aux _ _ @ c)$} @
-  appslame @ applamed @ lowereqd @ sabeqd @ sabeqd @ abeqd @
-  elneq2d anr));
+  appslame @ applamed @ lowereqd ,eqtac));
 
 pub theorem VerifyConvSymm (env ctx c e1 e2 s: nat):
   $ VerifyConv env ctx (CSymm c) e1 e2 s <-> VerifyConv env ctx c e2 e1 s $ =
@@ -920,6 +937,23 @@ pub theorem VerifyConvSymm (env ctx c e1 e2 s: nat):
   '(sabfin (eexsabd @ eelabd @ a1i @ syl preldm prelrn) (a1i @ dmfin @ rnfin finns) @
     sabfin (eelabd @ a1i preldm) (a1i @ dmfin finns) @
     a1i @ finss (mpbi ssab1 @ ax_gen @ syl prelrn prelrn) (rnfin @ rnfin finns)));
+
+theorem VerifyConv_aux_Trans:
+  $ VerifyConv_aux env ctx @ CTrans c1 c2 = lower (S\ e1, S\ e2, {s |
+    E. e (VerifyConv env ctx c1 e1 e s /\ VerifyConv env ctx c2 e e2 s)}) $ =
+(named '(eqtr {CExprRec_CTrans : $ _ = _ @
+    (_, _, VerifyConv_aux _ _ @ c1, VerifyConv_aux _ _ @ c2) $} @
+  appslame @ appslamed @ appslamed @ applamed ,eqtac));
+
+pub theorem VerifyConvTrans (env ctx c1 c2 e1 e2 s: nat) {e: nat}:
+  $ VerifyConv env ctx (CTrans c1 c2) e1 e2 s <->
+    E. e (VerifyConv env ctx c1 e1 e s /\ VerifyConv env ctx c2 e e2 s) $ =
+(named @ focus
+  '(bitr (elneq2 VerifyConv_aux_Trans) @ bitr (ellower @ trud _) @
+    elsabe @ elsabed @ elabed ,eqtac)
+  '(sabfin (eexsabd @ eelabd @ a1i @ eex @ anwl preldm) (a1i @ dmfin finns) @
+    sabfin (eelabd @ a1i @ eex @ anwr @ syl preldm prelrn) (a1i @ dmfin @ rnfin finns) @
+    a1i @ finss (mpbi ssab1 @ ax_gen @ eex @ anwr @ syl prelrn prelrn) (rnfin @ rnfin finns)));
 
 theorem VerifyConv_aux_Cong:
   $ VerifyConv_aux env ctx @ CCong f cs = lower (S\ e1, S\ e2, {s |
@@ -972,41 +1006,36 @@ pub theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}
   (focus '(syl (lelttr fstleid) anllr)));
 
 theorem VerifyConv_aux_Unfold:
-  $ VerifyConv_aux env ctx @ CUnfold f es zs c = lower (S\ e1, S\ e2, {s |
+  $ VerifyConv_aux env ctx @ CUnfold f es zs = lower (S\ e1, S\ e2, {s |
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys, val)) /\
       e1 = SApp f es /\ s = fst ret /\
       es, args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       ys, zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
         A. e (e IN es -> ~HasVar ctx e z)}) /\
-      VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s)}) $ =
-(named '(eqtr {CExprRec_CUnfold : $_ = _ @ (_, _, _, _, VerifyConv_aux _ _ @ c)$} @
-  appslame @ appslamed @ appslamed @ appslamed @ applamed @ lowereqd @ sabeqd @ sabeqd @ abeqd @
-  exeqd @ exeqd @ exeqd @ exeqd @ aneqd
-    (aneqd (aneqd (aneq1d @ aneqd (getTermeq2d an4l) (eqeq2d @ SAppeqd an4l an3lr))
-      (eleq1d @ preq1d an3lr))
-      (eleqd (preq2d anllr) (all2eqd @ sabeqd @ abeqd @ aneq2d @ aleqd @ imeq1d @ lmemeq2d an3lr)))
-    (elneqd (preq1d @ substExpreq1d @ appendeqd an3lr @ mapeq2d anllr) anr)));
+      e2 = substExpr (es ++ map (\ i, SVar i) zs) val)}) $ =
+(named '(eqtr CExprRec_CUnfold @ appslame @ appslamed @ applamed ,eqtac));
 
-pub theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
+pub theorem VerifyConvUnfold (env ctx f zs e1 e2 s: nat)
   {args ret ys val es a y z e i: nat}:
-  $ VerifyConv env ctx (CUnfold f es zs c) e1 e2 s <->
+  $ VerifyConv env ctx (CUnfold f es zs) e1 e2 s <->
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys, val)) /\
       e1 = SApp f es /\ s = fst ret /\
       es, args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       ys, zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
         A. e (e IN es -> ~HasVar ctx e z)}) /\
-      VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $ =
+      e2 = substExpr (es ++ map (\ i, SVar i) zs) val) $ =
 (named @ focus
-  '(bitr (elneq2 VerifyConv_aux_Unfold) @ bitr (ellower _) @
-    elsabe @ elsabed @ elabed @ exeqd @ exeqd @ exeqd @ exeqd @
-    aneqd (aneq1d @ aneq1d @ aneqd (aneq2d @ eqeq1d anll) (eqeq1d anr))
-      (VerifyConveqd eqidd eqidd eqidd eqidd anlr anr))
-  '(trud @ sabfin (eexsabd @ eelabd @ syl6ibr elsn @ a1i @
+  '(bitr (elneq2 VerifyConv_aux_Unfold) @ bitr (ellower @ trud _) @
+    elsabe @ elsabed @ elabed @ exeqd @ exeqd @ exeqd @ exeqd ,eqtac)
+  '(sabfin (eexsabd @ eelabd @ syl6ibr elsn @ a1i @
       eex @ eex @ eex @ eex an4lr) (a1i finns) @
-    sabfin (eelabd @ a1i @ eex @ eex @ eex @ eex @ anwr @ syl preldm prelrn)
-      (a1i @ dmfin @ rnfin finns) @
+    sabfin
+      (eelabd @ a1i @ eex @ eex @ eex @ eex @
+        mpbird (eleq1d anr) @ appelima (a1i lamisf) (a1i @ mpbir (eleq2 dmlam) elv) @
+        sylibr elupto @ syl (lttr @ mpbi leltsuc leprid2) @ syl getTerm_valltid an5l)
+      (a1i @ finlamima finns) @
     a1i @ finss (mpbi ssab @ ax_gen @ eex @ eex @ eex @ eex @
       mpbird (lteq1d an3lr) @ syl (lelttr fstleid) @
       syl getTerm_retltid an5l) ltfin));

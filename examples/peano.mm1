@@ -3768,6 +3768,12 @@ theorem eqisf: $ isfun F /\ isfun G ->
 theorem resapp: $ a e. A -> (F |` A) @ a = F @ a $ =
 '(syl eqapp @ !! iald y @ syl5bb prelres bian2);
 
+theorem appelima
+  (h1: $ G -> isfun F $) (h2: $ G -> a e. Dom F $) (h3: $ G -> a e. A $):
+  $ G -> F @ a e. F '' A $ =
+'(sylib (eleq2 rnres) @ mpbid (eleq1d @ syl resapp h3) @
+  sylc appelrn (syl resisf h1) @ sylibr (eleq2 dmres) @ sylibr elin @ iand h2 h3);
+
 theorem applams (a b: nat x): $ (\ x, a) @ b = N[b / x] a $ =
 '(trud @ isfappd (a1i lamisf) @ a1i @ mpbir
   (!! elabe p @ syl5bb
