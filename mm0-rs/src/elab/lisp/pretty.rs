@@ -226,13 +226,21 @@ impl<'a> Pretty<'a> {
     }
   }
 
+  fn append_lit(&'a self, doc: Pp<'a>, lit: &'a Literal, args: &[LispVal]) -> Pp<'a> {
+    let doc2 = self.lit(lit, args);
+    // HACK to make `a, b` look better as a binop
+    let punct = matches!(lit, Literal::Const(tk) if matches!(&**tk, b"," | b";" | b"." | b":"));
+    let sp = if punct && (doc.right || doc2.left) {Self::softline_()} else {Self::softline()};
+    self.append_with(doc, sp, self.lit(lit, args))
+  }
+
   fn infixl(&'a self, t: TermId, info: &'a NotaInfo, args: &[LispVal]) -> Option<Pp<'a>> {
     if let Literal::Var(i, q) = info.lits[0] {
       let doc = match self.get_term_args(&args[i]) {
         Some((_, t2, args2)) if t == t2 => self.infixl(t, info, &args2),
         _ => None,
       }.unwrap_or_else(|| self.group(self.expr_paren(&args[i], q)));
-      let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], args));
+      let mut doc = self.append_lit(doc, &info.lits[1], args);
       if let Some((last, most)) = info.lits[2..].split_last() {
         for lit in most {doc = self.append(doc, self.group(self.lit(lit, args)))}
         doc = self.append_with(doc, Self::line(), self.group(self.lit(last, args)))
@@ -243,7 +251,7 @@ impl<'a> Pretty<'a> {
 
   fn infixr(&'a self, t: TermId, info: &'a NotaInfo, args: &[LispVal]) -> Option<Pp<'a>> {
     let doc = self.lit(&info.lits[0], args);
-    let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], args));
+    let mut doc = self.append_lit(doc, &info.lits[1], args);
     if let (&Literal::Var(i, q), most) = info.lits[2..].split_last()? {
       for lit in most {doc = self.append(doc, self.group(self.lit(lit, args)))}
       let end = match self.get_term_args(&args[i]) {
