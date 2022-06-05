@@ -1077,18 +1077,18 @@ theorem writeBinopCmp {w c o: nat} (k sz ea a b k2: nat):
   $ writeBinop k binopCmp sz ea a b k2 <-> E. w E. c E. o (
       subBorrow sz a b w c o /\
       k2 = writeResultFlags k sz w (true c) (true o)) $;
-theorem writeBinopTst (k sz ea a b k2: nat):
-  $ writeBinop k binopTst sz ea a b k2 <->
-    k2 = writeResultFlags k sz (bitAnd a b) F. F. $;
+theorem writeBinopOr (k sz ea a b k2: nat):
+  $ writeBinop k binopOr sz ea a b k2 <->
+    writeCFOFResult k sz ea (bitOr a b) F. F. k2 $;
 theorem writeBinopAnd (k sz ea a b k2: nat):
   $ writeBinop k binopAnd sz ea a b k2 <->
     writeCFOFResult k sz ea (bitAnd a b) F. F. k2 $;
 theorem writeBinopXor (k sz ea a b k2: nat):
   $ writeBinop k binopXor sz ea a b k2 <->
     writeCFOFResult k sz ea (bitXor a b) F. F. k2 $;
-theorem writeBinopOr (k sz ea a b k2: nat):
-  $ writeBinop k binopOr sz ea a b k2 <->
-    writeCFOFResult k sz ea (bitOr a b) F. F. k2 $;
+theorem writeBinopTst (k sz ea a b k2: nat):
+  $ writeBinop k binopTst sz ea a b k2 <->
+    k2 = writeResultFlags k sz (bitAnd a b) F. F. $;
 theorem writeBinopShl {k3: nat} (k sz ea a b k2: nat):
   $ writeBinop k binopShl sz ea a b k2 <->
     E. k3 (eraseFlags k k3 /\ writeEA k3 sz ea (shl a (maskShift sz b)) k2) $;

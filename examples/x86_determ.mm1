@@ -8,84 +8,60 @@ do {
   --| `(mk-decodeAux_bit defn)` is used to construct
   --| `(decodeAux_bit)` and `(decodeTwoAux_bit)`.
   (def (mk-decodeAux_bit defn)
+    -- The `fields` map is updated by `build`.
+    -- It maps defn to another map, which maps x to (i pr)
+    -- where pr: defn rex ast b l -> bit b x = i, or #undef if x is not a fixed bit.
     (def fields (atom-map!))
     @ letrec (
+      -- Adds all bit theorems in `defn` and its dependencies to `fields`.
       [(build defn)
-        (def val (nth 6 @ get-decl defn))
-        (def name (atom-app defn "_bit"))
-        (def m (atom-map!))
-        (def (finish p pr)
-          (add-tac-thm! name (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
-            '(im (,defn rex ast b l) ,p) () @ fn () @ refine '{,pr : $ ,val -> ,p $})
-          (insert fields defn (get! m))
-          m)
+        (def val (nth 6 @ get-decl defn)) -- the value of the definition
+        -- There are two kinds of decode definition:
+        -- * disjunctions of other definitions like decodeAux, decodeFlow (head is `\/`)
+        -- * individual cases like decodeBinopHi (head is `E.` or `/\`)
+        -- We only use the disjunctions for finding the leaf definitions
         @ match (hd val)
-        ['or (=> break)
+        ['or
           @ letrec (
-            [rec @ match-fn
-              [$ ,a \/ ,b $
-                (def ra (rec a)) (def rb (rec b))
-                @ match ra [#undef] @ (va fa) @ match rb [#undef] @ (vb fb)
-                @ list (rmap va vb @ match-fn*
-                  [((b1 x) (b2 y)) @ if {b1 == b2} (list b1 @ cons x y)]
-                  [_])
-                @ fn (g x) '(eori
-                  ,(fa g @ map (match-fn [#undef] @ (b (cons x _)) (list b x)) x)
-                  ,(fb g @ map (match-fn [#undef] @ (b (cons _ y)) (list b y)) x))]
-              ['(,th rex ast b l)
-                @ match (build th) [#undef] @ m
-                @ list (rmap (range 0 8) @ fn (i) (lookup m (hexdigit i)))
-                @ fn (g x) (g x)]])
-          @ match (rec val) [#undef (break)] @ (arr f)
-          @ letrec (
-            [(rec2 i)
-              @ if {i = 8} #undef @ begin
-              (def s (rec2 {i + 1}))
-              @ match (nth i arr) [#undef s] @ (b _)
-              (def xi (hexdigit i))
-              @ match s
-                [#undef @ fn (ctx)
-                  (insert m xi @ list b ctx)
-                  @ list $ bit b ,xi = ,b $
-                  @ fn (arr2) (nth 1 @ nth i arr2)]
-                [recf @ fn (ctx) @ match (recf '(anld ,ctx)) @ (p f)
-                  (insert m xi @ list b '(anrd ,ctx))
-                  @ list $ ,p /\ bit b ,xi = ,b $
-                  @ fn (arr2) '(iand ,(f arr2) ,(nth 1 @ nth i arr2))]])
-          @ match (rec2 0) [#undef (break)] @ recf
-          @ match (recf name) @ (p g)
-          @ finish p (f g arr)]
+            -- Constructs theorems for all definitions in the disjuncts
+            [build-disj @ match-fn
+              [$ ,a \/ ,b $ (build-disj a) (build-disj b)]
+              ['(,th rex ast b l) (build th)]])
+          (build-disj val)]
         [(or 'ex 'an)
-          (def res (ref!))
           @ letrec (
-            [(rec x) @ match x
-              [$ E. _ ,val $ @ match (rec val) [#undef] [pr '(eex ,pr)]]
+            -- Given a subterm `t` in a decode case, returns #undef or (p pr) where pr: $ t -> p $
+            -- where `p` is a conjunction of `bit b x = i` for various `x`
+            [find-bits @ match-fn
+              [$ E. _ ,val $ @ match (find-bits val) [#undef] [(p pr) '(,p (eex ,pr))]]
               [$ ,a /\ ,b $
-                @ match (rec a)
-                [#undef @ match (rec b) [#undef] [pr '(anwr ,pr)]]
-                [pr '(anwl ,pr)]]
+                @ match (find-bits a)
+                [#undef @ match (find-bits b) [#undef] [(p pr) '(,p (anwr ,pr))]]
+                [(p pr) '(,p (anwl ,pr))]]
               [$ splitBits ,bs ,n $
                 @ match (mk-splatBits bs n) @ (p pr)
                 @ match p [$T.$ (error "undistinguished case")] @ _
-                (set! res p) '(:verb ,pr)]
+                '(,p (:verb ,pr))]
               [$ b = c2n (ch ,x ,y) $
                 @ match (mk-splatBits-ch x y 'b) @ (p pr)
-                (set! res p) '(:verb ,pr)]
-              [_]])
-          @ match (rec val) [#undef (error "undistinguished case")] @ pr
-          @ letrec (
-            [(gather p ctx) @ match p
-              [$ ,p /\ bit ,_ (h2n ,(i)) = ,b $
-                (insert m i @ list b '(anrd ,ctx))
-                (gather p '(anld ,ctx))]
-              [_]])
-          (def p (get! res))
-          (gather p name)
-          (finish p pr)]
-        [_]])
+                '(,p (:verb ,pr))]
+              [_]]
+            -- Given p and ctx: G -> p
+            -- where `p` is a conjunction of `bit b x = i` for various `x`
+            -- constructs a list of (x (i pr)) where pr: G -> bit b x = i
+            [gather @ match-fn*
+              [($ ,p /\ bit ,_ (h2n ,(i)) = ,b $ ctx)
+                @ cons (list i @ list b '(anrd ,ctx))
+                @ gather p '(anld ,ctx)]
+              [_ '()]])
+          @ match (find-bits val) [#undef (error "undistinguished case")] @ (p pr)
+          (def name (atom-app defn "_bit"))
+          (add-tac-thm! name (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
+            '(im (,defn rex ast b l) ,p) () @ fn () @ refine '{,pr : $ ,val -> ,p $})
+          (insert fields defn @ lookup-fn @ gather p name)]])
     (build defn)
     (def fields (get! fields))
-    @ fn (defn x) (match (lookup fields defn) [#undef] [m (lookup m x)]))
+    @ fn (defn x) (match (lookup fields defn) [#undef] [m (m x)]))
   --| `(decodeAux_bit defn x)` is a function which given `defn = 'decodeRet`
   --| and `x = 'x5`, returns `($0$ p)` where `p` is a refine script proving
   --| `$ decodeRet rex ast b l -> bit b x5 = 0 $`, and similarly for other
@@ -98,37 +74,37 @@ do {
 };
 
 theorem bitsplit_split
-  (h: $ G -> (p <-> ifp a p1 p0) $)
-  (h0: $ G /\ ~a -> (p0 <-> q0) $) (h1: $ G /\ a -> (p1 <-> q1) $):
-  $ G -> (p <-> ifp a q1 q0) $ =
-'(bitrd h @ bitrd (syl ifpeq1a @ exp h1) (syl ifpeq2a @ exp h0));
+  (h: $ p <-> ifp a p1 p0 $)
+  (h0: $ p0 <-> q0 $) (h1: $ p1 <-> q1 $):
+  $ p <-> ifp a q1 q0 $ =
+'(bitr h @ bitr (ifpeq2 h1) (ifpeq3 h0));
 
 theorem bitsplit_fal1
-  (h0: $ G -> (a0 <-> F.) $) (h1: $ G -> (a1 <-> b) $):
-  $ G -> (a0 \/ a1 <-> b) $ = '(syl6bb (bior1 notfal) (oreqd h0 h1));
+  (h0: $ a0 <-> F. $) (h1: $ a1 <-> b $):
+  $ a0 \/ a1 <-> b $ = '(bitr (oreq h0 h1) (bior1 notfal));
 theorem bitsplit_fal2
-  (h0: $ G -> (a0 <-> b) $) (h1: $ G -> (a1 <-> F.) $):
-  $ G -> (a0 \/ a1 <-> b) $ = '(syl6bb (bior2 notfal) (oreqd h0 h1));
+  (h0: $ a0 <-> b $) (h1: $ a1 <-> F. $):
+  $ a0 \/ a1 <-> b $ = '(bitr (oreq h0 h1) (bior2 notfal));
 
 theorem bitsplit_or (b0 b1 c0 c1 d0 d1)
-  (h0: $ G -> (b0 <-> ifp a c0 d0) $)
-  (h1: $ G -> (b1 <-> ifp a c1 d1) $):
-  $ G -> (b0 \/ b1 <-> ifp a (c0 \/ c1) (d0 \/ d1)) $ =
-'(syl6bbr ifpor @ oreqd h0 h1);
+  (h0: $ b0 <-> ifp a c0 d0 $)
+  (h1: $ b1 <-> ifp a c1 d1 $):
+  $ b0 \/ b1 <-> ifp a (c0 \/ c1) (d0 \/ d1) $ =
+'(bitr4 (oreq h0 h1) ifpor);
 
-theorem bitsplit_bit0 (h: $ a -> bit v i = 0 $): $ G -> (a <-> ifp (i e. v) F. a) $ =
-'(a1i @ bitr2 (ifpneg2 notfal) @ bian1a @ sylib nateq0 h);
-theorem bitsplit_bit1 (h: $ a -> bit v i = 1 $): $ G -> (a <-> ifp (i e. v) a F.) $ =
-'(a1i @ bitr2 (ifpneg3 notfal) @ bian1a @ sylib nateq1 h);
-theorem bitsplit_id: $ G -> (b <-> ifp a b b) $ = '(a1i @ bicom ifpid);
+theorem bitsplit_bit0 (h: $ a -> bit v i = 0 $): $ a <-> ifp (i e. v) F. a $ =
+'(bitr2 (ifpneg2 notfal) @ bian1a @ sylib nateq0 h);
+theorem bitsplit_bit1 (h: $ a -> bit v i = 1 $): $ a <-> ifp (i e. v) a F. $ =
+'(bitr2 (ifpneg3 notfal) @ bian1a @ sylib nateq1 h);
+theorem bitsplit_id: $ b <-> ifp a b b $ = '(bicom ifpid);
 theorem bitsplit_bit0or
-  (h1: $ b -> bit v i = 0 $) (h2: $ G -> (a <-> ifp (i e. v) c d) $):
-  $ G -> (a \/ b <-> ifp (i e. v) c (d \/ b)) $ =
-'(syl6bb (ifpeq2 @ bior2 notfal) @ bitsplit_or h2 @ bitsplit_bit0 h1);
+  (h1: $ b -> bit v i = 0 $) (h2: $ a <-> ifp (i e. v) c d $):
+  $ a \/ b <-> ifp (i e. v) c (d \/ b) $ =
+'(bitr (bitsplit_or h2 @ bitsplit_bit0 h1) (ifpeq2 @ bior2 notfal));
 theorem bitsplit_bit1or
-  (h1: $ b -> bit v i = 1 $) (h2: $ G -> (a <-> ifp (i e. v) c d) $):
-  $ G -> (a \/ b <-> ifp (i e. v) (c \/ b) d) $ =
-'(syl6bb (ifpeq3 @ bior2 notfal) @ bitsplit_or h2 @ bitsplit_bit1 h1);
+  (h1: $ b -> bit v i = 1 $) (h2: $ a <-> ifp (i e. v) c d $):
+  $ a \/ b <-> ifp (i e. v) (c \/ b) d $ =
+'(bitr (bitsplit_or h2 @ bitsplit_bit1 h1) (ifpeq3 @ bior2 notfal));
 
 theorem ifp_bit0 (h: $ G -> bit v i = 0 $) (h2: $ G -> (b <-> c) $): $ G -> (ifp (i e. v) a b <-> c) $ =
 '(bitrd (syl ifpneg @ sylib nateq0 h) h2);
@@ -143,14 +119,20 @@ theorem ifp_bit1 (h: $ G -> bit v i = 1 $) (h2: $ G -> (a <-> c) $): $ G -> (ifp
 --| where the expression on the right involves a tree of conditionals on
 --| bits of the opcode byte, with the leaves being individual decode cases.
 do (begin
+  -- Adds `theorem name_ifp: $ name rex ast b l <-> ... $ = ...;` .
+  -- Assumes (mkbit defn x) returns (i p) where p: defn rex ast b l -> bit b x = i
   (def (mk-decodeAux_ifp name mkbit tree) @ letrec (
+    -- returns one of:
+    -- * ($0$ pr) where pr: p -> bit b x = 0
+    -- * ($1$ pr) where pr: p -> bit b x = 1
+    -- * (p0 p1 pr) where pr: p <-> ifp (x e. b) p1 p0
     [(partition1 p x) @ match p
-      [(and e '(,defn rex ast b l))
+      ['(,defn rex ast b l)
         @ match (mkbit defn x)
         [#undef
           (def val (nth 6 @ get-decl defn))
           @ match (partition val x) @ (p0 p1 pr)
-          '(,p0 ,p1 {,pr : $ _ -> (,val <-> _) $})]
+          '(,p0 ,p1 {,pr : $ ,val <-> _ $})]
         [res res]]
       [$ ,a \/ ,b $
         @ match (partition a x) @ (p0 p1 pr1)
@@ -160,27 +142,42 @@ do (begin
         [(q0 q1 pr2) '((or ,p0 ,q0) (or ,p1 ,q1) (bitsplit_or ,pr1 ,pr2))]]
       [$F.$ '($F.$ $F.$ bitsplit_id)]
       [e (error @ pp @ list x e)]]
+    -- returns (p0 p1 pr) where pr: p <-> ifp (x e. b) p1 p0
     [(partition p x) @ match (partition1 p x)
       [($0$ pr) '(,p $F.$ (bitsplit_bit0 ,pr))]
       [($1$ pr) '($F.$ ,p (bitsplit_bit1 ,pr))]
       [res res]]
+    -- Removes all `F.` from an or-tree, for example (F. \/ F.) \/ (a \/ F.) => a
+    -- Given p returns (q pr) where pr: p <-> q
     [(unfal p) @ match p
       [$ ,a \/ ,b $ @ match (list (unfal a) (unfal b))
         [(($F.$ pr1) (b pr2)) '(,b (bitsplit_fal1 ,pr1 ,pr2))]
         [((b pr1) ($F.$ pr2)) '(,b (bitsplit_fal2 ,pr1 ,pr2))]]
-      [_ '(,p biidd)]]
+      [_ '(,p biid)]]
+    [(stats sp res)
+      -- uncomment this for info about the opcode patterns
+      -- (match (hd res)
+      --   ['(,defn rex ast b l)
+      --     (def bits @ map (fn (i)
+      --       @ match (mkbit defn (hexdigit i))
+      --       [#undef '*]
+      --       [(x _) (eval x)]) (range 0 8))
+      --     (report-at 'info sp @ pp @ list defn bits)]
+      --   [e (report-at 'info sp @ pp e)])
+      res]
+    -- returns (q pr) where pr: p <-> q, using tree to decide where to split
     [(go p tree) @ match tree
-      [(? atom?) (unfal p)]
+      [(? atom?) (stats tree @ unfal p)]
       [(n t0 t1)
         (def x (hexdigit n))
-        @ match (partition p x) @ (p0 p1 pr)
-        @ match (go p0 t0) @ (q0 pr0)
-        @ match (go p1 t1) @ (q1 pr1)
+        @ match (partition p x) @ (p0 p1 pr) -- pr: p <-> ifp (x e. b) p1 p0
+        @ match (go p0 t0) @ (q0 pr0) -- pr0: p0 <-> q0
+        @ match (go p1 t1) @ (q1 pr1) -- pr1: p1 <-> q1
         '($ ifp (h2n ,'(,x) e. b) ,q1 ,q0 $ (bitsplit_split ,pr ,pr0 ,pr1))]])
     (def p '(,name rex ast b l))
     @ match (go p tree) @ (q pr)
     (add-tac-thm! (atom-app name '_ifp) (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
-      $ ,p <-> ,q $ () @ fn () '(trud ,pr)))
+      $ ,p <-> ,q $ () @ fn () pr))
   (mk-decodeAux_ifp 'decodeAux decodeAux_bit
     '(6 (7 (2 _ (1 _ _)) (4 (2 (3 (1 _ _) (5 _ _)) (1 (3 _ _) (3 _ _))) (5 (3 _ _) _)))
       (4 (5 (7 _ (1 (3 _ _) (2 _ _))) (0 (7 _ _) (3 _ _)))

@@ -4064,10 +4064,10 @@ do {
 pub theorem writeBinopAdd {w c o: nat} (k sz ea a b k2: nat): $,(writeBinop_stmt 0)$  = (writeBinop_pf 0);
 pub theorem writeBinopSub {w c o: nat} (k sz ea a b k2: nat): $,(writeBinop_stmt 5)$  = (writeBinop_pf 5);
 pub theorem writeBinopCmp {w c o: nat} (k sz ea a b k2: nat): $,(writeBinop_stmt 7)$  = (writeBinop_pf 7);
-pub theorem writeBinopTst              (k sz ea a b k2: nat): $,(writeBinop_stmt 14)$ = (writeBinop_pf 14);
+pub theorem writeBinopOr               (k sz ea a b k2: nat): $,(writeBinop_stmt 1)$  = (writeBinop_pf 1);
 pub theorem writeBinopAnd              (k sz ea a b k2: nat): $,(writeBinop_stmt 4)$  = (writeBinop_pf 4);
 pub theorem writeBinopXor              (k sz ea a b k2: nat): $,(writeBinop_stmt 6)$  = (writeBinop_pf 6);
-pub theorem writeBinopOr               (k sz ea a b k2: nat): $,(writeBinop_stmt 1)$  = (writeBinop_pf 1);
+pub theorem writeBinopTst              (k sz ea a b k2: nat): $,(writeBinop_stmt 14)$ = (writeBinop_pf 14);
 pub theorem writeBinopShl {k3: nat}    (k sz ea a b k2: nat): $,(writeBinop_stmt 12)$ = (writeBinop_pf 12);
 pub theorem writeBinopShr {k3: nat}    (k sz ea a b k2: nat): $,(writeBinop_stmt 13)$ = (writeBinop_pf 13);
 pub theorem writeBinopSar {k3: nat}    (k sz ea a b k2: nat): $,(writeBinop_stmt 15)$ = (writeBinop_pf 15);
