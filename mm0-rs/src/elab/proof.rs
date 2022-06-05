@@ -719,9 +719,10 @@ impl ProofHash {
   /// Get the LHS (if `right = false`) or RHS (if `right = true`) of the conversion
   /// represented by proof term index `i`.
   pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
+    debug_assert!(Self::is_conv(de, i));
     match de[i] {
       Self::None => panic!("value missing"),
-      Self::Ref(_, j) => Self::conv_side(de, j, right),
+      Self::Ref(_, j) => { assert!(j < i); Self::conv_side(de, j, right) }
       Self::Dummy(..) |
       Self::Term(..) |
       Self::Hyp(..) |
@@ -759,21 +760,23 @@ impl NodeHash for ProofHash {
       de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match kind {
-        ProofKind::Expr | ProofKind::Conv => match nh.var_map.get(&a) {
-          Some(&i) => ProofHash::Ref(kind, i),
-          None => match nh.lc.vars.get(&a) {
-            Some(&(true, InferSort::Bound { sort, .. })) => {
-              if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
-                return Err(nh.err_sp(fsp,
-                  format!("dummy variable {{{}: {}}} not permitted for sort",
-                    nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+        ProofKind::Expr | ProofKind::Conv => {
+          let e = match nh.var_map.get(&a) {
+            Some(&i) => ProofHash::Ref(ProofKind::Expr, i),
+            None => match nh.lc.vars.get(&a) {
+              Some(&(true, InferSort::Bound { sort, .. })) => {
+                if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
+                  return Err(nh.err_sp(fsp,
+                    format!("dummy variable {{{}: {}}} not permitted for sort",
+                      nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+                }
+                ProofHash::Dummy(a, sort)
               }
-              let e = ProofHash::Dummy(a, sort);
-              if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else {e}
+              _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
             }
-            _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
-          }
-        },
+          };
+          if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else { e }
+        }
         ProofKind::Proof => match nh.lc.get_proof(a) {
           Some((_, _, p)) => return Ok(Err(de.dedup(nh, ProofKind::Proof, p)?)),
           None => return Err(nh.err_sp(fsp, format!("hypothesis '{}' not found", nh.fe.data[a].name))),
