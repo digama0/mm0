@@ -812,7 +812,8 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
         }
       }
       ObjectKind::LispVar(..) |
-      ObjectKind::Import(_) => return None,
+      ObjectKind::Import(_) |
+      ObjectKind::MathComment => return None,
     }))() {
       let sp = r.0;
       out.push(r);
@@ -876,7 +877,8 @@ async fn definition<T>(path: FileRef, pos: Position,
       ObjectKind::LispVar(..) |
       ObjectKind::Syntax(_) |
       ObjectKind::PatternSyntax(_) |
-      ObjectKind::RefineSyntax(_) => {}
+      ObjectKind::RefineSyntax(_) |
+      ObjectKind::MathComment => {}
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data()[a].decl()) {
@@ -1178,7 +1180,8 @@ async fn references<T>(
     ObjectKind::Import(_) |
     ObjectKind::Syntax(_) |
     ObjectKind::PatternSyntax(_) |
-    ObjectKind::RefineSyntax(_) => None,
+    ObjectKind::RefineSyntax(_) |
+    ObjectKind::MathComment => None,
     ObjectKind::Var(_, a) => Some(Key::Var(a)),
     ObjectKind::Hyp(_, a) => Some(Key::Hyp(a)),
     ObjectKind::LispVar(_, _, a) => Some(Key::LispVar(a)),
@@ -1233,6 +1236,7 @@ token_types! {
   [4]: const FUNCTION => SemanticTokenType::FUNCTION; // lisp function
   [5]: const MACRO => SemanticTokenType::MACRO; // lisp macro
   [6]: const KEYWORD => SemanticTokenType::KEYWORD; // lisp keyword
+  [7]: const COMMENT => SemanticTokenType::COMMENT; // math comment
 }
 
 async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<SemanticTokens>, ResponseError> {
@@ -1285,6 +1289,7 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
       ObjectKind::Import(_) |
       // Don't highlight non-text keywords
       ObjectKind::Syntax(Syntax::Quote | Syntax::Unquote) => {}
+      ObjectKind::MathComment => push(token_types::COMMENT, 0),
       ObjectKind::Thm(false, _) |
       ObjectKind::Proof(_) => push(token_types::THEOREM, 0),
       ObjectKind::Syntax(_) => push(token_types::KEYWORD, 0),

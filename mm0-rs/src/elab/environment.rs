@@ -580,6 +580,8 @@ pub enum ObjectKind {
   RefineSyntax(RefineSyntax),
   /// This is an import; hovering does nothing and go-to-definition goes to the file
   Import(FileRef),
+  /// This is comment span in a math expression, tracked for semantic highlighting
+  MathComment,
 }
 
 impl ObjectKind {

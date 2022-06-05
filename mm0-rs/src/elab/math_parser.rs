@@ -84,6 +84,7 @@ impl Elaborator {
         restart_pos: Some(0), // skip command checks
       },
       check_parens: self.options.check_parens,
+      mm0_mode: self.mm0_mode,
       spans: &mut self.spans,
     };
     p.ws();
@@ -99,6 +100,7 @@ impl Elaborator {
 
 struct MathParser<'a> {
   check_parens: bool,
+  mm0_mode: bool,
   p: Parser<'a>,
   pe: &'a ParserEnv,
   spans: &'a mut Spans<ObjectKind>,
@@ -116,9 +118,28 @@ impl<'a> MathParser<'a> {
     loop {
       match self.cur() {
         b' ' | b'\n' => self.idx += 1,
+        b'-' if !self.mm0_mode && self.source[self.idx + 1] == b'-' => {
+          let start = self.idx;
+          self.idx += 2;
+          // End the comment skip when you find a line break.
+          while !matches!(self.cur(), b'\n' | b'$') { self.idx += 1 }
+          self.spans.insert((start..self.idx).into(), ObjectKind::MathComment);
+        }
         _ => return
       }
     }
+  }
+
+  fn chr(&mut self, c: u8) -> Option<usize> {
+    if self.cur_opt()? != c {
+      return None
+    }
+    self.idx += 1;
+    (Some(self.idx), self.ws()).0
+  }
+
+  fn chr_err(&mut self, c: u8) -> Result<usize, ParseError> {
+    self.chr(c).ok_or_else(|| self.err(format!("expecting '{}'", c as char).into()))
   }
 
   fn token(&mut self) -> Option<Span> {
