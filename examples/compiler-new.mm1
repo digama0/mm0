@@ -1,5 +1,7 @@
 import "compiler-old.mm1";
 
+do (warn-unused-vars #f);
+
 --| `tyUnit: ty`:
 --| The type `()`, the unit type.
 @mmc-th local def tyUnit: set = $ 0 $; -- TODO
@@ -492,3 +494,5 @@ $ isBasicElfN elf /\ A. k (initialConfigN elf k -> terminates_ensuring k T) $;
   (hfs: $ parseU64 fs fss $)
   (hms: $ parseU64 ms mss $):
   $ okProg (ELF_lit fss mss c) T $ = 'sorry;
+
+do (warn-unused-vars #t);

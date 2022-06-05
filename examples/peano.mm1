@@ -1742,7 +1742,7 @@ theorem sbse (a: nat) (A: set x) (B: set)
 theorem sbsed (a: nat) (A: set x) (B: set)
   (e: $ G /\ x = a -> A == B $): $ G -> S[a / x] A == B $ =
 '(syl sbset @ ialda e);
-theorem sbsid (a: set x): $ S[x / x] A == A $ =
+theorem sbsid (A: set x): $ S[x / x] A == A $ =
 '(!! eqri y @ bitr elsbs sbid);
 theorem nfslem {y} (A: set y) (a: nat x) (B: set x)
   (e: $ y = a -> A == B $) (h: $ FN/ x a $): $ FS/ x B $ =
@@ -5220,13 +5220,13 @@ pub theorem eqlower: $ finite A <-> A == lower A $ =
 
 theorem ellower: $ finite A -> (a e. lower A <-> a e. A) $ = '(bicomd @ eleq2d @ bi1 eqlower);
 
-theorem lowerns (a: nat): $ lower a = a $ = '(eqcom @ axext @ mpbi eqlower finns);
+theorem lowerns: $ lower a = a $ = '(eqcom @ axext @ mpbi eqlower finns);
 
-theorem eqlower1 (a: nat): $ finite A -> (A == a <-> lower A = a) $ =
+theorem eqlower1: $ finite A -> (A == a <-> lower A = a) $ =
 '(ibida (anwr @ syl6eq lowerns lowereq) @ eqstrd (sylib eqlower anl) @ nseqd anr);
-theorem eqlower2 (a: nat): $ finite A -> (a == A <-> a = lower A) $ =
+theorem eqlower2: $ finite A -> (a == A <-> a = lower A) $ =
 '(bitr4g eqscomb eqcomb eqlower1);
-theorem lowerinj (a: nat): $ finite A -> finite B -> (A == B <-> lower A = lower B) $ =
+theorem lowerinj: $ finite A -> finite B -> (A == B <-> lower A = lower B) $ =
 '(exp @ bitrd (eqseq1d @ sylib eqlower anl) (anwr eqlower2));
 
 --| A singleton set `{a}`, as a `nat` because it is always finite.
@@ -5647,13 +5647,13 @@ theorem apprlam0 (b c: nat x): $ ~c e. a -> (\. x e. a, b) @ c = 0 $ =
 '(sylbir (noteq @ eleq2 dmrlam) ndmapp);
 theorem rlamrcl (b c: nat x): $ d e. (\. x e. a, b) @ c -> c e. a $ =
 '(ax_3 @ mpbiri nel0 @ noteqd @ elneq2d apprlam0);
-theorem rlamapp (b: nat x): $ \. x e. a, F @ x == F <-> isfun F /\ Dom F == a $ =
+theorem rlamapp: $ \. x e. a, F @ x == F <-> isfun F /\ Dom F == a $ =
 '(bitr (eqseq1 rlameqs) lamapp2);
 theorem eqsrlam (b: nat x): $ F == \. x e. a, b <->
   isfun F /\ Dom F == a /\ A. x (x e. a -> F @ x = b) $ =
-(named '(bitr2
+'(bitr2
   (aneq2a @ sylbir rlamapp @ syl5bbr rlameq2b @ syl5bbr nsinj eqseq1)
-  (bian1a @ iand (mpbiri rlamisf isfeq) (syl6eqs dmrlam dmeq))));
+  (bian1a @ iand (mpbiri rlamisf isfeq) (syl6eqs dmrlam dmeq)));
 theorem eqrlam (b: nat x): $ f = \. x e. a, b <->
   isfun f /\ Dom f == a /\ A. x (x e. a -> f @ x = b) $ = '(bitr3 nsinj eqsrlam);
 
@@ -6793,8 +6793,7 @@ theorem ex2nal:
   $ l1, l2 e. ex2 (Compl R) <-> len l1 = len l2 /\ ~l1, l2 e. all2 R $ =
 '(bitr dfex2_2 @ aneq2i @ noteqi @ eleq2 @ all2eq cplcpl);
 
-theorem mapeqg (F: set) (a l: nat):
-  $ all {x | F @ x = G @ x} l -> map F l = map G l $ =
+theorem mapeqg: $ all {x | F @ x = G @ x} l -> map F l = map G l $ =
 (named @ let ([h '(imeqd alleq2 @ eqeqd mapeq2 mapeq2)])
   '(listind ,h ,h ,h ,h
     (a1i @ eqtr4 map0 map0)

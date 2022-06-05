@@ -29,7 +29,7 @@ pub theorem binderSortBound (s: nat): $ binderSort (PBound s) = s $ =
 pub theorem binderSortReg (s vs: nat): $ binderSort (PReg s vs) = s $ =
 (named '(eqtr caser @ applame @ syl6eq fstpr fsteq));
 
-theorem binderSort_leid (s: nat): $ binderSort bi <= bi $ =
+theorem binderSort_leid: $ binderSort bi <= bi $ =
 '(eori
   (mpbiri b0leid (leeqd (syl6eq binderSortBound binderSorteq) id))
   (mpbiri (leb1tr fstleid)
@@ -209,7 +209,7 @@ pub theorem CtxReg (env ctx s vs: nat): $ Ctx env (ctx |> PReg s vs) <->
 (named '(bitr (trueeq Ctx_auxS) @ bitr truemul @ aneq2i @
   bitr truenat @ bitr Sumr @ elabe DepTypeeq3));
 
-@_ local def ExprBi_aux (env ctx e ih: nat): set = $ Sum
+@_ local def ExprBi_aux (ctx e ih: nat): set = $ Sum
   {s | E. v (e = SVar v /\ nth v ctx = suc (PBound s))}
   {svs | fst svs e. ih} $;
 
@@ -218,7 +218,7 @@ $ SExprRec
   (\ v, lower {s | E. bi (nth v ctx = suc bi /\ binderSort bi = s)})
   (\\ f, \\ xs, \ ih, lower {s | E. args E. ret E. o
     (getTerm env f args ret o /\
-     zip xs ih, args e. all2 (S\ x, ExprBi_aux env ctx (fst x) (snd x)) /\
+     zip xs ih, args e. all2 (S\ x, ExprBi_aux ctx (fst x) (snd x)) /\
      s = fst ret)}) $;
 
 theorem Expr_aux_Var: $ Expr_aux env ctx @ SVar v =
@@ -229,7 +229,7 @@ theorem Expr_aux_Var: $ Expr_aux env ctx @ SVar v =
 theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
   lower {s | E. args E. ret E. o
     (getTerm env f args ret o /\
-     zip es (map (Expr_aux env ctx) es), args e. all2 (S\ x, ExprBi_aux env ctx (fst x) (snd x)) /\
+     zip es (map (Expr_aux env ctx) es), args e. all2 (S\ x, ExprBi_aux ctx (fst x) (snd x)) /\
      s = fst ret)} $ =
 (named '(eqtr SExprRec_App @
   ! appslame _ $_, map (Expr_aux _ _) _$ _ _ _ @ appslamed @ applamed @
@@ -246,10 +246,10 @@ theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
 @_ abstract def Expr (env ctx e s: nat): wff = $ s e. Expr_aux env ctx @ e $;
 --| `ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool`
 @_ abstract def ExprBi (env ctx e bi: nat): wff =
-$ bi e. ExprBi_aux env ctx e (Expr_aux env ctx @ e) $;
+$ bi e. ExprBi_aux ctx e (Expr_aux env ctx @ e) $;
 
 theorem ExprBi_aux_map:
-  $ zip es (map (Expr_aux env ctx) es), args e. all2 (S\ p, ExprBi_aux env ctx (fst p) (snd p)) <->
+  $ zip es (map (Expr_aux env ctx) es), args e. all2 (S\ p, ExprBi_aux ctx (fst p) (snd p)) <->
     es, args e. all2 (S\ x, {a | ExprBi env ctx x a}) $ =
 (named @ focus
   (def h '(bieqd (eleq1d preq2) (eleq1d preq2)))
@@ -386,7 +386,7 @@ pub theorem FreeVar (env ctx u v: nat):
   (trueeq @ eqtr SExprRec_Var @ applame @ nateqd @ HasVareq2d SVareq)
   truenat));
 
-pub theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
+pub theorem FreeApp (env ctx f es v: nat) {args r rs o e a u: nat}:
   $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
     (getTerm env f args (r, rs) o /\
       (es, args e. ex2 (S\ e, {a | Free env ctx e v /\ MaybeFreeArgs es a v}) \/
@@ -465,7 +465,7 @@ pub theorem DeclAxiom (env args hs ret: nat) {x: nat}:
   $ Decl env (DAxiom args hs ret) <->
     Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $ =
 (named '(bitr Suml @ bitr Sumr DeclThm_aux_val));
-pub theorem DeclDef (env id args ret: nat) {ds e o v: nat}:
+pub theorem DeclDef (env id args ret: nat) {ds e o: nat}:
   $ Decl env (DDef id args ret o) <-> TermOk env id args ret /\
     A. ds A. e (o = suc (ds, e) -> DefOk env id args ret ds e) $ =
 (named '(bitr Sumr @ bitr Suml @ elsabe @ elsabed @ elsabed @ elabed @
@@ -612,7 +612,7 @@ pub theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
   '(sylib b1le @ sylib b0le @ sylib lepr2 @ sylib lepr2 @ sylib lepr2 _)
   '(eor (mpbiri le01 leeq1) eqle));
 
-pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
+pub theorem EnvExtendThm (e1 e2 a h r: nat) {e: nat}:
   $ EnvExtend e1 (e2 |> DThm a h r) <->
     E. e (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $ =
@@ -640,7 +640,7 @@ $ SExprRec (\ v, nth v subst - 1) (\\ f, \\ xs, \ ih, SApp f ih) $;
 theorem substExpr_aux_lam: $ substExpr_aux subst == \ e, substExpr subst e $ =
 (named '(eqscom (lameqi applam)));
 
-pub theorem substExprVar (subst v e: nat):
+pub theorem substExprVar (subst v: nat):
   $ substExpr subst (SVar v) = nth v subst - 1 $ =
 (named '(eqtr SExprRec_Var @ applame @ subeq1d ntheq1));
 pub theorem substExprApp (subst f es: nat) {e: nat}:
@@ -1107,7 +1107,7 @@ theorem VerifyProof_aux_Thm:
   '(elsabe @ elabed ,eqtac) '(elsabe @ elabed ,eqtac));
 
 pub theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
-  {args e a u v s y e2 p h: nat}:
+  {e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
       getThm env args2 hs2 ret2 /\
       es, args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
@@ -1164,18 +1164,18 @@ theorem EnvFull_aux_b0: $ EnvFull_aux (env |> b0 x) = EnvFull_aux env $ =
 --|
 --| `EnvFull : Env -> Bool`
 @_ abstract def EnvFull (env: nat): wff = $ true (EnvFull_aux env) $;
-pub theorem EnvFull0 (p: nat): $ EnvFull 0 $ = '(mpbir (trueeq EnvFull_aux_0) true1);
+pub theorem EnvFull0: $ EnvFull 0 $ = '(mpbir (trueeq EnvFull_aux_0) true1);
 pub theorem EnvFullSort (env id sd: nat):
   $ EnvFull (env |> DSort id sd) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
 pub theorem EnvFullTerm (env id a r: nat):
   $ EnvFull (env |> DTerm id a r) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
-pub theorem EnvFullAxiom (env a h r p: nat):
+pub theorem EnvFullAxiom (env a h r: nat):
   $ EnvFull (env |> DAxiom a h r) <-> EnvFull env $ = '(trueeq EnvFull_aux_b0);
 pub theorem EnvFullDef (env id a r o: nat):
   $ EnvFull (env |> DDef id a r o) <-> EnvFull env /\ o != 0 $ =
 (named '(bitr (trueeq @ eqtr EnvFull_aux_S @ eqtr caser @ eqtr casel @
     appslame @ appslamed @ appslamed @ applamed ,eqtac) truenat));
-pub theorem EnvFullThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
+pub theorem EnvFullThm (env a h r: nat) {ds pf ctx: nat}:
   $ EnvFull (env |> DThm a h r) <-> EnvFull env /\
     E. ds E. pf E. ctx (
       ctx = appendDummies a ds /\ Ctx env ctx /\
@@ -2347,7 +2347,7 @@ pub theorem getDelimitersOther {l r: nat} (ast t: nat):
     getDelimiters (ast |> t) = getDelimiters ast $ =
 '(syl5eq (getDelimitersS eqid eqid eqid @ eqcom fstsnd) ifneg);
 
-theorem getDelimiters_nonemptyNonwhite {l r: nat} (ast t: nat):
+theorem getDelimiters_nonemptyNonwhite:
   $ x e. fst (getDelimiters ast) \/ x e. snd (getDelimiters ast) ->
     x e. nonemptyNonwhite $ =
 (named @ induct '(rlistind) 'ast
@@ -2745,7 +2745,7 @@ theorem ptToStr_val:
 pub theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $ =
 (named '(eqtr ptToStr_val @ eqtr casel @ eqtr casel @ eqtr casel @ applame conseq1));
 
-pub theorem ptToStrParens {s: nat} (e: nat):
+pub theorem ptToStrParens (e: nat):
   $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $ =
 (named '(eqtr ptToStr_val @ eqtr casel @ eqtr casel @ eqtr caser @
   !! applame x @ appendeq1d @ conseq2d @ !! apprlamed y (ptToStreqd @ eqtrd anr anl) @
@@ -2783,13 +2783,12 @@ pub theorem ptToStrInfix (r f c x y: nat):
   appendeqd (apprlamed ,eqtac @ a1i @ mpbir elupto PTInfix_ltid1) @
   conseq2d (apprlamed ,eqtac @ a1i @ mpbir elupto PTInfix_ltid2)));
 
-pub theorem ptToStrCoe {y: nat} (f x: nat):
-  $ ptToStr (PTCoe f x) = ptToStr x $ =
+pub theorem ptToStrCoe (f x: nat): $ ptToStr (PTCoe f x) = ptToStr x $ =
 (named '(eqtr ptToStr_val @ eqtr caser @ eqtr caser @ eqtr caser @
   appslame @ applamed @ apprlamed (ptToStreqd @ eqtrd anr anlr) @
   mpbiri (mpbir elupto PTCoe_ltid) (eleq1d anr)));
 
-@_ local def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
+@_ local def ptCheckNotaLs_aux (bis lits: nat) (IH: set) (xs es p: nat): wff =
 $ nztails lits, xs e. all2 (S\ lits1, {x | lits1 e. S\ lit, {lr | lit e. Sum
     {c | x = b0 (fst c)}
     {v | E. y E. n E. e (x = b1 y /\
@@ -2798,21 +2797,21 @@ $ nztails lits, xs e. all2 (S\ lits1, {x | lits1 e. S\ lit, {lr | lit e. Sum
   }}) $;
 
 theorem ptCheckNotaLs_aux_0:
-  $ ptCheckNotaLs_aux eac bis 0 IH xs es p <-> xs = 0 $ =
+  $ ptCheckNotaLs_aux bis 0 IH xs es p <-> xs = 0 $ =
 (named '(bitr (eleq1 @ preq1 nztails0) all201));
 theorem ptCheckNotaLs_aux_S:
-  $ ptCheckNotaLs_aux eac bis (lit : lits) IH xs es p <-> E. x E. xs2 (
+  $ ptCheckNotaLs_aux bis (lit : lits) IH xs es p <-> E. x E. xs2 (
     xs = x : xs2 /\ (lit e. Sum
       {c | x = b0 (fst c)}
       {v | E. y E. n E. e (x = b1 y /\
         lookupVar bis v = suc n /\ nth n es = suc e /\
         e e. IH @ y @ litsPrec lits p)} /\
-    ptCheckNotaLs_aux eac bis lits IH xs2 es p)) $ =
+    ptCheckNotaLs_aux bis lits IH xs2 es p)) $ =
 '(bitr (eleq1 @ preq1 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
   aneq2i @ aneq1i @ elsabe @ elabed @ bitrd (eleq1d anl) @ elsabed @ elabed ,eqtac);
 
 theorem ptCheckNotaLs_aux_fin_lem:
-  $ ptCheckNotaLs_aux eac bis lits (ns ih) xs es p ->
+  $ ptCheckNotaLs_aux bis lits (ns ih) xs es p ->
     b1 v IN lits -> lookupVar bis v = suc n ->
     nth n es = suc e -> e < ih $ =
 (named @ focus
@@ -2851,7 +2850,7 @@ $ pt e. Sum
             f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
             len bis = len es /\
             A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
-            ptCheckNotaLs_aux eac bis lits ih xs es q /\
+            ptCheckNotaLs_aux bis lits ih xs es q /\
             e = SApp f es)}))
       (Sum
         (S\ r, S\ f, S\ c, S\ x, {y |
@@ -2889,7 +2888,7 @@ theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
     f, bis, ty, b0 (c, q) : lits e. getNota (pi21 eac) /\
     len bis = len es /\
     A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
-    ptCheckNotaLs_aux eac bis lits ih xs es q /\
+    ptCheckNotaLs_aux bis lits ih xs es q /\
     e = SApp f es) $ =
 (named '(bitr Sumr @ bitr Suml @ bitr Sumr @ elsabe @ elabed ,eqtac));
 theorem ptCheck_aux_Infix: $ ptCheck_aux1 eac ih p (PTInfix r f c x y) e <->
@@ -2988,7 +2987,7 @@ $ ptCheck_aux1 eac (\. pt1 e. upto pt, ptCheck_aux eac pt1) p pt e $;
 --| checks that `xs` consists of a list of constants and subtrees
 --| according to the given literal list.
 @_ abstract def ptCheckNotaLs (eac bis lits xs es p .pt1: nat): wff =
-$ ptCheckNotaLs_aux eac bis lits (\ pt1, ptCheck_aux eac pt1) xs es p $;
+$ ptCheckNotaLs_aux bis lits (\ pt1, ptCheck_aux eac pt1) xs es p $;
 
 theorem ptCheck_aux_val:
   $ ptCheck_aux eac pt = \. p e. upto (eac + 2), lower {e | ptCheck eac p pt e} $ =
@@ -3008,7 +3007,7 @@ theorem ptCheck_lem: $ p <= suc eac -> pt < pt1 ->
   (anwl ptCheck_val));
 
 theorem ptCheckNotaLs_lem: $ all (Sum Univ t) xs ->
-  (ptCheckNotaLs_aux eac bis lits (\. pt e. t, ptCheck_aux eac pt) xs es q <->
+  (ptCheckNotaLs_aux bis lits (\. pt e. t, ptCheck_aux eac pt) xs es q <->
   ptCheckNotaLs eac bis lits xs es q) $ =
 (named @ focus
   '(ax_mp (eale ,(eqtac-gen 'xs)) ,(induct '(listind) 'lits _ _))
@@ -3039,7 +3038,7 @@ pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
     aneq1i @ aneq (aneq1i @ aneq (getTermeq1 fstpr) @ eqeq1 @ lookupVareq1 pi22pr) @
     all2eqg @ ax_gen @ ax_gen @ anwl @ bitr4g _ _ @ syl (ptCheck_lem le01) PTFunc_ltid)
   '(elsabe ,eqtac) '(elsabe @ elabed ,eqtac));
-pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
+pub theorem ptCheckPfx (eac p f c xs e: nat) {l z q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f, c, q e. getPfx (pi21 eac) /\ q <=p p /\
@@ -3093,7 +3092,7 @@ pub theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
 pub theorem ptCheckNotaLs0 (eac bis xs es q: nat):
   $ ptCheckNotaLs eac bis 0 xs es q <-> xs = 0 $ =
 (named 'ptCheckNotaLs_aux_0);
-pub theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
+pub theorem ptCheckNotaLsC {xs2: nat} (eac bis c p lits xs es q: nat):
   $ ptCheckNotaLs eac bis (b0 (c, p) : lits) xs es q <->
     E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $ =
 (named @ focus
@@ -3170,7 +3169,7 @@ pub theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
 '(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d @ preq2d anl) @ anwr @
   syl5eq (appslame @ appslamed @ appslamed @ applamed ,eqtac) @
   syl5eq (appslame @ appslamed @ applamed ,eqtac) ifpos);
-pub theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
+pub theorem splitDummiesR (bis bis1 bis2 x t: nat): $
   splitDummies bis = bis1, bis2 ->
   splitDummies (bis |> (2, x, t)) = bis1, bis2 |> (x, t) $ =
 '(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d preq2) @ a1i @

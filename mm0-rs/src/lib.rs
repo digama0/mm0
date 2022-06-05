@@ -102,6 +102,7 @@ pub(crate) fn get_options() -> ElabOptions {
   ElabOptions {
     check_proofs: CHECK_PROOFS.load(Ordering::Relaxed),
     check_parens: CHECK_PARENS.load(Ordering::Relaxed),
+    unused_vars: true,
   }
 }
 

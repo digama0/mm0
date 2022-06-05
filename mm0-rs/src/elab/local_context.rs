@@ -21,9 +21,21 @@ use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
 #[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum InferSort {
   /// This is a declared bound variable with the given sort.
-  Bound(SortId),
+  Bound {
+    /// The sort of the variable.
+    sort: SortId,
+    /// True if the variable has been referenced.
+    used: bool
+  },
   /// This is a declared regular variable with the given sort and dependencies.
-  Reg(SortId, Box<[AtomId]>),
+  Reg {
+    /// The sort of the variable.
+    sort: SortId,
+    /// The variables this one depends on.
+    deps: Box<[AtomId]>,
+    /// True if the variable has been referenced.
+    used: bool
+  },
   /// This is a variable does not have a declared type.
   Unknown {
     /// The span of the first occurrence of the variable
@@ -51,7 +63,7 @@ impl InferSort {
   /// this variable has inferred exactly one sort, not counting the "[`None`]" provable sort.
   #[must_use] pub fn sort(&self) -> Option<SortId> {
     match *self {
-      InferSort::Bound(sort) | InferSort::Reg(sort, _) => Some(sort),
+      InferSort::Bound { sort, .. } | InferSort::Reg { sort, ..} => Some(sort),
       InferSort::Unknown {ref sorts, ..} => {
         let mut res = None;
         for s in sorts.keys() {
@@ -301,7 +313,7 @@ impl<'a> ElabTerm<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
-        Some(&(_, InferSort::Bound(sort) | InferSort::Reg(sort, _))) => Ok(sort),
+        Some(&(_, InferSort::Bound { sort, .. } | InferSort::Reg { sort, .. })) => Ok(sort),
         Some((_, InferSort::Unknown {..})) => panic!("finalized vars already"),
       },
       LispKind::List(es) if !es.is_empty() => {
@@ -346,17 +358,21 @@ impl<'a> ElabTermMut<'a> {
     let res = match (is, tgt) {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.as_ref().err(e, "expected a bound variable, got regular variable")),
-      (&mut InferSort::Bound(sort), InferTarget::Bound(sa)) => {
+      (&mut InferSort::Bound { sort, ref mut used }, InferTarget::Bound(sa)) => {
+        *used = true;
         let s = self.env.data[sa].sort.expect("expected a sort");
         if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
-          Err(self.as_ref().err(e,
-            format!("type error: expected {}, got {}", self.env.sorts[s].name, self.env.sorts[sort].name)))
+          Err(self.as_ref().err(e, format!("type error: expected {}, got {}",
+            self.env.sorts[s].name, self.env.sorts[sort].name)))
         }
       }
       (InferSort::Unknown {src, must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
-          InferTarget::Bound(sa) => {*must_bound = true; Some(self.elab.env.data[sa].sort.expect("expected a sort"))}
+          InferTarget::Bound(sa) => {
+            *must_bound = true;
+            Some(self.elab.env.data[sa].sort.expect("expected a sort"))
+          }
           InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.expect("expected a sort")),
           _ => None,
         };
@@ -365,8 +381,11 @@ impl<'a> ElabTermMut<'a> {
           new_mvar(&mut self.elab.lc.mvars, tgt, Some(sp)));
         Ok(val.clone())
       }
-      (&mut (InferSort::Reg(sort, _) | InferSort::Bound(sort)), tgt) =>
-        self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
+      (&mut (InferSort::Reg { sort, ref mut used, .. } |
+             InferSort::Bound { sort, ref mut used }), tgt) => {
+        *used = true;
+        self.as_ref().coerce(e, sort, LispVal::atom(a), tgt)
+      }
     };
     self.spans_insert(e, || ObjectKind::Var(false, a));
     res
@@ -465,11 +484,11 @@ impl BuildArgs {
     a: Option<AtomId>, is: &Option<InferSort>) -> Option<EType> {
     match is.as_ref().unwrap_or_else(||
         &vars[&a.expect("a variable must have a name or an expected type")].1) {
-      &InferSort::Bound(sort) => {
+      &InferSort::Bound { sort, .. } => {
         self.push_bound(a)?;
         Some(EType::Bound(sort))
       },
-      &InferSort::Reg(sort, ref deps) => {
+      &InferSort::Reg { sort, ref deps, .. } => {
         let n = self.deps(deps);
         if let Some(a) = a {self.map.insert(a, n);}
         Some(EType::Reg(sort, n))
@@ -541,7 +560,7 @@ impl Elaborator {
           "dependencies not allowed in curly binders or dummy variables"));
         *error = true;
       }
-      (lk == LocalKind::Dummy, InferSort::Bound(sort))
+      (lk == LocalKind::Dummy, InferSort::Bound { sort, used: false })
     } else {
       let deps = d.deps.iter().map(|&sp| {
         let y = self.env.get_atom(self.ast.span(sp));
@@ -558,7 +577,7 @@ impl Elaborator {
         }
         y
       }).collect::<Vec<_>>().into();
-      (false, InferSort::Reg(sort, deps))
+      (false, InferSort::Reg { sort, deps, used: false })
     })
   }
 
@@ -612,7 +631,7 @@ impl Elaborator {
     ElabTerm::new(self, sp).infer_sort(e)
   }
 
-  fn finalize_vars(&mut self, dummy: bool) -> Vec<ElabError> {
+  fn finalize_vars(&mut self, dummy: bool, unused_vars: bool) -> Vec<ElabError> {
     let mut errs = Vec::new();
     let mut newvars = Vec::new();
     for (&a, (new, is)) in &mut self.lc.vars {
@@ -645,7 +664,7 @@ impl Elaborator {
               } else {unreachable!()}
             }
             let new2 = if (dummy && *new) || must_bound {
-              *is = InferSort::Bound(sort);
+              *is = InferSort::Bound { sort, used: true };
               if self.mm0_mode {
                 errs.push(ElabError::warn(src,
                   format!("(MM0 mode) inferred {{{}: {}}}, type inference is not allowed in MM0 files",
@@ -653,7 +672,7 @@ impl Elaborator {
               }
               dummy && d2
             } else {
-              *is = InferSort::Reg(sort, Box::new([]));
+              *is = InferSort::Reg { sort, deps: Box::new([]), used: true };
               if self.mm0_mode {
                 errs.push(ElabError::warn(src,
                   format!("(MM0 mode) inferred ({}: {}), type inference is not allowed in MM0 files",
@@ -670,6 +689,17 @@ impl Elaborator {
     newvars.sort_by_key(|&(_, a)| &*self.env.data[a].name);
     let mut vec: Vec<_> = newvars.into_iter().map(|(src, a)| (src, Some(a), None)).collect();
     vec.append(&mut self.lc.var_order);
+    if unused_vars && self.options.unused_vars {
+      for (sp, a, is) in &vec {
+        if_chain! {
+          if let Some(a) = *a;
+          if let Some(InferSort::Bound { used: false, .. } | InferSort::Reg { used: false, .. }) =
+            is.as_ref().or_else(|| self.lc.vars.get(&a).map(|p| &p.1));
+          if !self.data[a].name.starts_with(b"_");
+          then { self.report(ElabError::warn(*sp, "Unused variable")) }
+        }
+      }
+    }
     self.lc.var_order = vec;
     errs
   }
@@ -697,14 +727,19 @@ impl Elaborator {
       match self.elab_binder(&mut error, check_vis, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
-          if !e_hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
-          if let InferSort::Bound(s) = is.1 {
-            let sp = bi.local.expect("this can't happen unless the variable was written explicitly");
-            let mods = self.sorts[s].mods;
+          if !e_hyps.is_empty() {
+            report!(bi.span, "hypothesis binders must come after variable binders")
+          }
+          if let InferSort::Bound { sort, .. } = is.1 {
+            let sp = bi.local.expect(
+              "this can't happen unless the variable was written explicitly");
+            let mods = self.sorts[sort].mods;
             if mods.contains(Modifiers::STRICT) {
-              report!(sp, format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str()))
+              report!(sp, format!("strict sort '{}' does not admit bound variables",
+                self.sorts[sort].name.as_str()))
             } else if is.0 && mods.contains(Modifiers::FREE) {
-              report!(sp, format!("free sort '{}' does not admit dummy variables", self.sorts[s].name.as_str()))
+              report!(sp, format!("free sort '{}' does not admit dummy variables",
+                self.sorts[sort].name.as_str()))
             } else {}
           }
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
@@ -732,7 +767,7 @@ impl Elaborator {
           }
           Some(Type::Formula(f)) => return Err(ElabError::new_e(f.0, "sort expected")),
           Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)?.1 {
-            InferSort::Reg(sort, deps) => {
+            InferSort::Reg { sort, deps, .. } => {
               if self.sorts[sort].mods.contains(Modifiers::PURE) {
                 report!(ty.sort, format!("pure sort '{}' cannot have term constructors",
                   self.sorts[sort].name.as_str()))
@@ -762,7 +797,7 @@ impl Elaborator {
             })?)))
           })().unwrap_or_else(|e| {self.report(e); None})
         };
-        for e in self.finalize_vars(true) {report!(e)}
+        for e in self.finalize_vars(true, val.is_some()) {report!(e)}
         if error {return Ok(())}
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
@@ -874,7 +909,7 @@ impl Elaborator {
         } else {
           self.report(ElabError::warn(d.id, "theorem declaration missing value"))
         }
-        for e in self.finalize_vars(false) {report!(e)}
+        for e in self.finalize_vars(false, true) {report!(e)}
         if error {return Ok(())}
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
@@ -1003,12 +1038,12 @@ fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal
     let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
     let sort = fe.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
       format!("unknown sort '{}'", fe.to(&s))))?;
-    if x != AtomId::UNDER {lc.vars.insert(x, (true, InferSort::Bound(sort)));}
+    if x != AtomId::UNDER { lc.vars.insert(x, (true, InferSort::Bound { sort, used: true })); }
     Ok(())
   };
   e.unwrapped(|r| {
     if let LispKind::AtomMap(m) = r {
-      for (&a, e) in m {dummy(a, e)?}
+      for (&a, e) in m { dummy(a, e)? }
     } else {
       for e in Uncons::from(e.clone()) {
         let mut u = Uncons::from(e.clone());
@@ -1027,7 +1062,9 @@ fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal
 type Binder = (Option<AtomId>, EType);
 
 impl Elaborator {
-  fn deps(&self, fsp: &FileSpan, vars: &HashMap<AtomId, u64>, vs: LispVal) -> Result<(Box<[AtomId]>, u64)> {
+  fn deps(&self,
+    fsp: &FileSpan, vars: &HashMap<AtomId, u64>, vs: LispVal
+  ) -> Result<(Box<[AtomId]>, u64)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut n = 0;
     let mut ids = Vec::new();
@@ -1040,8 +1077,9 @@ impl Elaborator {
     Ok((ids.into(), n))
   }
 
-  fn binders(&self, fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomId, u64>, u64)) ->
-      Result<(LocalContext, Box<[Binder]>)> {
+  fn binders(&self,
+    fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomId, u64>, u64)
+  ) -> Result<(LocalContext, Box<[Binder]>)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut lc = LocalContext::new();
     let mut args = Vec::new();
@@ -1063,11 +1101,11 @@ impl Elaborator {
               varmap.insert(a, *next_bv);
               *next_bv *= 2;
             }
-            (InferSort::Bound(sort), EType::Bound(sort))
+            (InferSort::Bound { sort, used: false }, EType::Bound(sort))
           }
           Some(vs) => {
             let (deps, n) = self.deps(fsp, varmap, vs)?;
-            (InferSort::Reg(sort, deps), EType::Reg(sort, n))
+            (InferSort::Reg { sort, deps, used: false }, EType::Reg(sort, n))
           }
         };
         lc.push_var(sp!(ea), a, (false, is));
@@ -1198,7 +1236,7 @@ impl Elaborator {
     })();
     mem::swap(&mut self.lc, &mut lc);
     let e_ret = e_ret?;
-    if let Some(e) = self.finalize_vars(true).into_iter().next() { return Err(e) }
+    if let Some(e) = self.finalize_vars(true, false).into_iter().next() { return Err(e) }
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(&args);
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());

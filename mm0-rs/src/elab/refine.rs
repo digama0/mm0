@@ -563,8 +563,8 @@ impl Elaborator {
     }
     Ok(match *e.unwrapped_arc() {
       LispKind::Atom(x) => match self.lc.vars.get(&x) {
-        Some(&(_, InferSort::Bound(s))) => InferTarget::Bound(self.sorts[s].atom),
-        Some(&(_, InferSort::Reg(s, _))) => InferTarget::Reg(self.sorts[s].atom),
+        Some(&(_, InferSort::Bound { sort, .. })) => InferTarget::Bound(self.sorts[sort].atom),
+        Some(&(_, InferSort::Reg { sort, .. })) => InferTarget::Reg(self.sorts[sort].atom),
         Some(&(_, InferSort::Unknown {..})) => InferTarget::Unknown,
         None => return Err(err!(e, format!("unknown variable '{}'", self.data[x].name)))
       },
@@ -884,8 +884,8 @@ impl Elaborator {
             if let Some((_, is)) = if empty {self.lc.vars.get(&a)} else {None} {
               self.spans.insert_if(sp2, || ObjectKind::Var(false, a));
               let (sort, bd) = match *is {
-                InferSort::Bound(sort) => (sort, true),
-                InferSort::Reg(sort, _) => (sort, false),
+                InferSort::Bound { sort, .. } => (sort, true),
+                InferSort::Reg { sort, .. } => (sort, false),
                 InferSort::Unknown {..} => unreachable!(),
               };
               RState::Ret(self.coerce_term(sp, tgt, sort, bd, head)?)
@@ -894,7 +894,7 @@ impl Elaborator {
               RState::RefineApp {sp2: sp2.unwrap_or(sp), tgt, t, u, args: vec![head]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
-              self.lc.vars.insert(a, (true, InferSort::Bound(sort)));
+              self.lc.vars.insert(a, (true, InferSort::Bound { sort, used: true }));
               self.spans.insert_if(sp2, || ObjectKind::Var(false, a));
               RState::Ret(head)
             } else {

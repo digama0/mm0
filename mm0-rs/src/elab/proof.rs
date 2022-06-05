@@ -455,7 +455,7 @@ impl NodeHash for ExprHash {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
         None => match nh.lc.vars.get(&a) {
-          Some(&(true, InferSort::Bound(sort))) => {
+          Some(&(true, InferSort::Bound { sort, .. })) => {
             if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
               return Err(nh.err_sp(fsp,
                 format!("dummy variable {{{}: {}}} not permitted for sort",
@@ -762,7 +762,7 @@ impl NodeHash for ProofHash {
         ProofKind::Expr | ProofKind::Conv => match nh.var_map.get(&a) {
           Some(&i) => ProofHash::Ref(kind, i),
           None => match nh.lc.vars.get(&a) {
-            Some(&(true, InferSort::Bound(sort))) => {
+            Some(&(true, InferSort::Bound { sort, .. })) => {
               if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
                 return Err(nh.err_sp(fsp,
                   format!("dummy variable {{{}: {}}} not permitted for sort",

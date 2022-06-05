@@ -138,7 +138,7 @@ def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
 axiom s2nstr (s: string): $ isStr s $;
-theorem s0str {c: nat}: $ isStr 0 $;
+theorem s0str: $ isStr 0 $;
 axiom s2ns0: $ s0 = 0 $;
 theorem s1str (c: char): $ isStr (c : 0) $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;

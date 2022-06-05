@@ -2223,7 +2223,7 @@ pub theorem decodeTwoCMovT (rex ast b l: nat):
 theorem decodeTwoCMov_len_le: $ decodeTwoCMov rex ast b l -> len l <= 6 $ =
 (named '(eex @ eex @ eex @ rsyl anlr readModRM_len_le));
 
-@_ def decodeTwoJCC (rex ast b l .c .imm: nat): wff =
+@_ def decodeTwoJCC (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 8) : 0) b /\
     readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
@@ -2309,7 +2309,7 @@ theorem decodeCMC_T_lem (c: char) (h: $ a e. XAST $):
   $ b = c /\ l = 0 /\ ast = a -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 '(iand (iand (anwr @ mpbiri h eleq1) @ mpbiri c2nT @ eleq1d anll) @ mpbiri elList0 @ eleq1d anlr);
 
-@_ def decodeTwoUD2 (rex ast b l: nat): wff =
+@_ def decodeTwoUD2 (_rex ast b l: nat): wff =
 $ b = ch x0 xb /\ l = 0 /\ ast = xastUD2 $;
 pub theorem decodeTwoUD2T (rex ast b l: nat):
   $ decodeTwoUD2 rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
@@ -2318,7 +2318,7 @@ pub theorem decodeTwoUD2T (rex ast b l: nat):
 theorem decodeTwoUD2_len_le: $ decodeTwoUD2 rex ast b l -> len l <= 6 $ =
 '(mpbiri le01 @ leeq1d @ syl6eq len0 @ leneqd anlr);
 
-@_ def decodeTwoSysCall (rex ast b l: nat): wff =
+@_ def decodeTwoSysCall (_rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 pub theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
@@ -2597,7 +2597,7 @@ theorem decodeMov_len_le: $ decodeMov rex ast b l -> len l <= 10 $ =
   (foldl '(Reg 64 Imm) (f 'SX)
     @ fn (x y) '(eor ,x ,(f y))));
 
-@_ def decodePushImm (rex ast b l .x .imm .r: nat): wff =
+@_ def decodePushImm (_rex ast b l .x .imm .r: nat): wff =
 $ E. x E. imm (
     splitBits ((1, 0) : (1, x) : (2, 2) : (4, 6) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
@@ -2673,7 +2673,7 @@ theorem decodeStack_len_le: $ decodeStack rex ast b l -> len l <= 10 $ =
   (foldl '(PushReg PopReg Pop0) (f 'PushImm)
     @ fn (x y) '(eor ,x ,(f y))));
 
-@_ def decodeJump (rex ast b l .x .imm: nat): wff =
+@_ def decodeJump (_rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
     splitBits ((1, 1) : (1, x) : (2, 2) : (4, 14) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
@@ -2689,7 +2689,7 @@ pub theorem decodeJumpT (rex ast b l: nat):
 theorem decodeJump_len_le: $ decodeJump rex ast b l -> len l <= 10 $ =
 (named '(eex @ eex @ letrd (rsyl anlr readImm8_32_len_le) @ a1i ,norm_num));
 
-@_ def decodeJCC8 (rex ast b l .c .imm: nat): wff =
+@_ def decodeJCC8 (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 7) : 0) b /\
     readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
 pub theorem decodeJCC8T (rex ast b l: nat):
@@ -2706,7 +2706,7 @@ theorem decodeJCC8_len: $ decodeJCC8 rex ast b l -> len l = 1 $ =
 theorem decodeJCC8_len_le: $ decodeJCC8 rex ast b l -> len l <= 10 $ =
 '(mpbird (leeq1d decodeJCC8_len) @ a1i ,norm_num);
 
-@_ def decodeCall (rex ast b l .imm: nat): wff =
+@_ def decodeCall (_rex ast b l .imm: nat): wff =
 $ E. imm (b = ch xe x8 /\
     readImmN 32 imm l /\ ast = xastCall (immRM_imm imm)) $;
 pub theorem decodeCallT (rex ast b l: nat):
@@ -2722,7 +2722,7 @@ theorem decodeCall_len: $ decodeCall rex ast b l -> len l = 4 $ =
 theorem decodeCall_len_le: $ decodeCall rex ast b l -> len l <= 10 $ =
 '(mpbird (leeq1d decodeCall_len) @ a1i ,norm_num);
 
-@_ def decodeRet (rex ast b l .v .imm: nat): wff =
+@_ def decodeRet (_rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1, v) : (3, 1) : (4, 12) : 0) b /\
     ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
@@ -2741,7 +2741,7 @@ theorem decodeRet_len_le: $ decodeRet rex ast b l -> len l <= 10 $ =
   (rsyl anrr @ mpbiri le01 @ leeq1d @ syl6eq len0 leneq)
   (anwr @ mpbird (leeq1d readImm16_len) @ a1i ,norm_num)));
 
-@_ def decodeLeave (rex ast b l: nat): wff =
+@_ def decodeLeave (_rex ast b l: nat): wff =
 $ b = ch xc x9 /\ l = 0 /\ ast = xastLeave $;
 pub theorem decodeLeaveT (rex ast b l: nat):
   $ decodeLeave rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
@@ -2865,15 +2865,15 @@ pub theorem decodeTestRAX_T (rex ast b l: nat):
 theorem decodeTestRAX_len_le: $ decodeTestRAX rex ast b l -> len l <= 10 $ =
 (named '(eex @ eex @ eex @ letrd (rsyl anlr readImm_len_le) @ a1i ,norm_num));
 
-@_ def decodeCMC (rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
+@_ def decodeCMC (_rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
 pub theorem decodeCMC_T (rex ast b l: nat):
   $ decodeCMC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ = '(decodeCMC_T_lem xastCMC_T);
 theorem decodeCMC_l0: $ decodeCMC rex ast b l -> l = 0 $ = 'anlr;
-@_ def decodeCLC (rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
+@_ def decodeCLC (_rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
 pub theorem decodeCLC_T (rex ast b l: nat):
   $ decodeCLC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ = '(decodeCMC_T_lem xastCLC_T);
 theorem decodeCLC_l0: $ decodeCLC rex ast b l -> l = 0 $ = 'anlr;
-@_ def decodeSTC (rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
+@_ def decodeSTC (_rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
 pub theorem decodeSTC_T (rex ast b l: nat):
   $ decodeSTC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ = '(decodeCMC_T_lem xastSTC_T);
 theorem decodeSTC_l0: $ decodeSTC rex ast b l -> l = 0 $ = 'anlr;
@@ -3313,7 +3313,7 @@ theorem getMemory_mk: $ getMemory (mkCfg e i r f m) = m $ = 'pi222pr;
 
 pub theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $ =
 '(syl xpfst xpfst);
-pub theorem readRIP_T (k r: nat): $ k e. Config -> readRIP k e. u64 $ =
+pub theorem readRIP_T (k: nat): $ k e. Config -> readRIP k e. u64 $ =
 '(syl xpsnd xpfst);
 pub theorem readRegT (k r: nat): $ k e. Config /\ r e. Regs -> readReg k r e. u64 $ =
 '(syl appT @ anim1 @ syl xpfst xpsnd);
@@ -3588,7 +3588,7 @@ pub theorem readBaseReg (k r: nat): $ readBase k (base_reg r) = readReg k r $ =
 (named '(eqtr obindS @ eqtr ocaseS @ applame readRegeq2));
 pub theorem readBaseT (k b: nat):
   $ k e. Config /\ b e. Base -> readBase k b e. u64 $ =
-(named @ split-sop 'b
+(split-sop 'b
   (fn (h1 h2) '(exp @ mpbird (eleq1d @ syl6eq ,h1 @ readBaseeq2d anr) ,h2))
   '{($0$ => readBase0 (a1i elBits01)) o
     ($base_RIP$ => readBaseRIP (anwll readRIP_T)) o
@@ -3748,8 +3748,7 @@ theorem setException_mk: $ setException (mkCfg e ip r f m) e2 = mkCfg e2 ip r f 
 '(preq (preq2 readRIP_mk) sndpr);
 theorem getMem_setException: $ getMemory (setException k e) = getMemory k $ =
 '(sndeq @ sndeq sndpr);
-theorem read_setException (ex ip rs f m e: nat):
-  $ readException (setException k e) = e $ = 'pi11pr;
+theorem read_setException: $ readException (setException k e) = e $ = 'pi11pr;
 theorem readRIP_setException: $ readRIP (setException k e) = readRIP k $ = 'pi12pr;
 theorem readReg_setException: $ readReg (setException k e) r = readReg k r $ = '(appneq1 @ fsteq sndpr);
 theorem readFlags_setException: $ readFlags (setException k e) = readFlags k $ = '(pi21eq sndpr);
@@ -4125,7 +4124,7 @@ pub theorem popWriteT (k rm k2: nat):
 
 @_ def popRIP (k k3 .q .k2: nat): wff =
 $ E. k2 E. q (popAux k q k2 /\ k3 = writeRIP k2 q) $;
-pub theorem popRIP_T (k rm k2: nat):
+pub theorem popRIP_T (k k2: nat):
   $ popRIP k k2 -> k e. Config /\ k2 e. Config $ =
 (named '(eex @ eex @ imp @ syl5ibrcom (aneq2d eleq1) @ rsyl popAuxT @
   iand anll @ sylan writeRIP_T anr anlr));
@@ -4145,7 +4144,7 @@ pub theorem pushImmRM_T (k irm k2: nat):
 (named '(sylibr anass @ sylib anlass @ anim2 @ eex @ anwr @ rsyl pushAuxT @ anim1 anl));
 
 @_ def pushRIP (k k2: nat): wff = $ pushAux k (readRIP k) k2 $;
-pub theorem pushRIP_T (k irm k2: nat):
+pub theorem pushRIP_T (k k2: nat):
   $ pushRIP k k2 -> k e. Config /\ k2 e. Config $ = '(rsyl pushAuxT @ anim1 anl);
 
 @_ def divModSz (sz a b d m: nat): wff =
@@ -4221,7 +4220,7 @@ do {
         {((sz ds) => (xastCMov v)
           $ E. v (readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
             writeEA k sz (destEA k ds) v k2) $)
-       + ((b rm) => (xastSetCC v)
+       + ((b rm) => (xastSetCC)
           $ writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $)})}}
 
     -- XASTFlow
@@ -5379,6 +5378,6 @@ theorem initialConfigNT:
   anim (a1i @ ian elList0 elList0) @ rsyl mapMemT @ anim1 anr));
 theorem initialConfigN_iff:
   $ initialConfig elf ks <-> initialConfigN elf ks $ = (named 'biid);
-pub theorem initialConfigT (elf: string) (i ks: nat):
+pub theorem initialConfigT (elf: string) (ks: nat):
   $ initialConfig elf ks -> ks e. KernelState $ =
 '(sylbi initialConfigN_iff initialConfigNT);

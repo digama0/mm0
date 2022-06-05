@@ -544,6 +544,8 @@ MM0-specific builtin functions
 
 * `(warn-unnecessary-parens b)` turns on (`b = #t`) or off (`b = #f`) the warning for using unnecessary parentheses in math expressions. Disabled by default.
 
+* `(warn-unused-vars b)` turns on (`b = #t`) or off (`b = #f`) the warning for unused variables in definitions and theorems. Enabled by default.
+
 * `(set-backtrace b)` turns on (`b = #t`) or off (`b = #f`) backtraces in lisp for theorems.
   `(set-backtrace type b)` does the same but for specific error type `type`,
   which can be `'error`, `'info` or `'warn`.

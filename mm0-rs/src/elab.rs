@@ -224,10 +224,14 @@ pub struct ElabOptions {
   pub check_proofs: bool,
   /// If true, the math parser will report a warning on unnecessary parentheses.
   pub check_parens: bool,
+  /// If true, we will report a warning on declarations with unused variables.
+  pub unused_vars: bool,
 }
 
 impl Default for ElabOptions {
-  fn default() -> Self { Self { check_proofs: true, check_parens: false } }
+  fn default() -> Self {
+    Self { check_proofs: true, check_parens: false, unused_vars: true }
+  }
 }
 
 /// The [`Elaborator`] struct contains the working data for elaboration, and is the

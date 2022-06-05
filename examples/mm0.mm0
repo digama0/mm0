@@ -186,7 +186,7 @@ $ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth u es = suc (SVar v)))) $;
 def Free (env ctx e v: nat): wff;
 theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
-theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
+theorem FreeApp (env ctx f es v: nat) {args r rs o e a u: nat}:
   $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
     (getTerm env f args (r, rs) o /\
       (es, args e. ex2 (S\ e, {a | Free env ctx e v /\ MaybeFreeArgs es a v}) \/
@@ -229,7 +229,7 @@ theorem DeclTerm (env id args ret: nat):
 theorem DeclAxiom (env args hs ret: nat) {x: nat}:
   $ Decl env (DAxiom args hs ret) <->
     Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
-theorem DeclDef (env id args ret: nat) {ds e o v: nat}:
+theorem DeclDef (env id args ret: nat) {ds e o: nat}:
   $ Decl env (DDef id args ret o) <-> TermOk env id args ret /\
     A. ds A. e (o = suc (ds, e) -> DefOk env id args ret ds e) $;
 theorem DeclThm (env args hs ret: nat) {x: nat}:
@@ -265,7 +265,7 @@ theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
     E. e E. o2 ((o2 != 0 -> o2 = o) /\
       e1 = e |> DDef id a r o2 /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $;
-theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
+theorem EnvExtendThm (e1 e2 a h r: nat) {e: nat}:
   $ EnvExtend e1 (e2 |> DThm a h r) <->
     E. e (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $;
@@ -279,7 +279,7 @@ theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
 --|
 --| `substExpr : list SExpr -> SExpr => SExpr`
 def substExpr (subst e: nat): nat;
-theorem substExprVar (subst v e: nat):
+theorem substExprVar (subst v: nat):
   $ substExpr subst (SVar v) = nth v subst - 1 $;
 theorem substExprApp (subst f es: nat) {e: nat}:
   $ substExpr subst (SApp f es) = SApp f (map (\ e, substExpr subst e) es) $;
@@ -380,7 +380,7 @@ def VerifyProof (env ctx hs pf ret: nat): wff;
 theorem VerifyProofHyp (env ctx hs n ret: nat):
   $ VerifyProof env ctx hs (VHyp n) ret <-> nth n hs = suc ret $;
 theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
-  {args e a u v s y e2 p h: nat}:
+  {e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
       getThm env args2 hs2 ret2 /\
       es, args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
@@ -401,16 +401,16 @@ theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
 --|
 --| `EnvFull : Env -> Bool`
 def EnvFull (env: nat): wff;
-theorem EnvFull0 (p: nat): $ EnvFull 0 $;
+theorem EnvFull0: $ EnvFull 0 $;
 theorem EnvFullSort (env id sd: nat):
   $ EnvFull (env |> DSort id sd) <-> EnvFull env $;
 theorem EnvFullTerm (env id a r: nat):
   $ EnvFull (env |> DTerm id a r) <-> EnvFull env $;
-theorem EnvFullAxiom (env a h r p: nat):
+theorem EnvFullAxiom (env a h r: nat):
   $ EnvFull (env |> DAxiom a h r) <-> EnvFull env $;
 theorem EnvFullDef (env id a r o: nat):
   $ EnvFull (env |> DDef id a r o) <-> EnvFull env /\ o != 0 $;
-theorem EnvFullThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
+theorem EnvFullThm (env a h r: nat) {ds pf ctx: nat}:
   $ EnvFull (env |> DThm a h r) <-> EnvFull env /\
     E. ds E. pf E. ctx (
       ctx = appendDummies a ds /\ Ctx env ctx /\
@@ -1099,7 +1099,7 @@ def PTCoe (f x: nat): nat = $ b1 (b1 (b1 (f, x))) $;
 --| Convert a parse tree object to a string of tokens. `ptToStr: ParseTree -> List String`
 def ptToStr (pt: nat): nat;
 theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
-theorem ptToStrParens {s: nat} (e: nat):
+theorem ptToStrParens (e: nat):
   $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $;
 theorem ptToStrFunc {s: nat} (f x: nat): $ ptToStr (PTFunc f x) =
   f : ljoin (map (\ s, ptToStr s) x) $;
@@ -1110,8 +1110,7 @@ theorem ptToStrNota {y: nat} (f x: nat):
     ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $;
 theorem ptToStrInfix (r f c x y: nat):
   $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $;
-theorem ptToStrCoe {y: nat} (f x: nat):
-  $ ptToStr (PTCoe f x) = ptToStr x $;
+theorem ptToStrCoe (f x: nat): $ ptToStr (PTCoe f x) = ptToStr x $;
 
 --| ```
 --| ptCheck (eac: (Env, List AST, Ctx')) (p: Prec) (pt: ParseTree) (e: SExpr): Bool
@@ -1143,7 +1142,7 @@ theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
     (getTerm env f args r v /\ lookupVar ctx f = 0 /\ len xs = len args /\
       xs, e2 e. all2 (S\ x, {y | ptCheck (env, ast, ctx) 0 x y}) /\
       e = SApp f e2) $;
-theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
+theorem ptCheckPfx (eac p f c xs e: nat) {l z q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f, c, q e. getPfx (pi21 eac) /\ q <=p p /\
@@ -1172,7 +1171,7 @@ theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
 
 theorem ptCheckNotaLs0 (eac bis xs es q: nat):
   $ ptCheckNotaLs eac bis 0 xs es q <-> xs = 0 $;
-theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
+theorem ptCheckNotaLsC {xs2: nat} (eac bis c p lits xs es q: nat):
   $ ptCheckNotaLs eac bis (b0 (c, p) : lits) xs es q <->
     E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $;
 theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
@@ -1224,7 +1223,7 @@ theorem splitDummies0: $ splitDummies 0 = 0 $;
 theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
   splitDummies bis = bis1, bis2 /\ bool c ->
   splitDummies (bis |> (c, x, t)) = bis1 |> (c, x, t), bis2 $;
-theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
+theorem splitDummiesR (bis bis1 bis2 x t: nat): $
   splitDummies bis = bis1, bis2 ->
   splitDummies (bis |> (2, x, t)) = bis1, bis2 |> (x, t) $;
 

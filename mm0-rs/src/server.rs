@@ -706,8 +706,8 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
         ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
       &ObjectKind::Var(_, x) => ((sp, mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
-        Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
-        Some((_, InferSort::Reg(sort, deps))) => {
+        Some((_, InferSort::Bound { sort, .. })) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
+        Some((_, InferSort::Reg { sort, deps, .. })) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
           for &a in &**deps {
             s += " ";
@@ -1290,7 +1290,7 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
       ObjectKind::Syntax(_) => push(token_types::KEYWORD, 0),
       ObjectKind::PatternSyntax(_) => push(token_types::FUNCTION, 1),
       &ObjectKind::Var(_, x) => push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
-        Some((_, InferSort::Bound(..))) => token_types::BVAR,
+        Some((_, InferSort::Bound {..})) => token_types::BVAR,
         _ => token_types::FVAR,
       }, 0),
       &ObjectKind::Hyp(..) => push(token_types::HVAR, 0),
@@ -1299,7 +1299,7 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
         let a = if let Some(a) = head.as_atom() { a } else { return };
         if let Some(DeclKey::Term(_)) = env.data()[a].decl() { return }
         push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&a)) {
-          Some((_, InferSort::Bound(..))) => token_types::BVAR,
+          Some((_, InferSort::Bound {..})) => token_types::BVAR,
           _ => token_types::FVAR,
         }, 0)
       }

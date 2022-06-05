@@ -386,7 +386,7 @@ $ E. c E. reg E. r (splitBits ((4, c) : (4, 4) : 0) b /\
 theorem decodeTwoCMovT (rex ast b l: nat):
   $ decodeTwoCMov rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeTwoJCC (rex ast b l .c .imm: nat): wff =
+def decodeTwoJCC (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 8) : 0) b /\
     readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
@@ -424,12 +424,12 @@ $ E. v E. reg E. r (
 theorem decodeTwoXaddT (rex ast b l: nat):
   $ decodeTwoXadd rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeTwoUD2 (rex ast b l: nat): wff =
+def decodeTwoUD2 (_rex ast b l: nat): wff =
 $ b = ch x0 xb /\ l = 0 /\ ast = xastUD2 $;
 theorem decodeTwoUD2T (rex ast b l: nat):
   $ decodeTwoUD2 rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeTwoSysCall (rex ast b l: nat): wff =
+def decodeTwoSysCall (_rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
@@ -543,7 +543,7 @@ $ decodeMovSX rex ast b l \/ decodeMovReg rex ast b l \/
 theorem decodeMovT (rex ast b l: nat):
   $ decodeMov rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodePushImm (rex ast b l .x .imm .r: nat): wff =
+def decodePushImm (_rex ast b l .x .imm .r: nat): wff =
 $ E. x E. imm (
     splitBits ((1, 0) : (1, x) : (2, 2) : (4, 6) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
@@ -576,7 +576,7 @@ $ decodePushImm rex ast b l \/ decodePushReg rex ast b l \/
 theorem decodeStackT (rex ast b l: nat):
   $ decodeStack rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeJump (rex ast b l .x .imm: nat): wff =
+def decodeJump (_rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
     splitBits ((1, 1) : (1, x) : (2, 2) : (4, 14) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
@@ -584,19 +584,19 @@ $ E. x E. imm (
 theorem decodeJumpT (rex ast b l: nat):
   $ decodeJump rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeJCC8 (rex ast b l .c .imm: nat): wff =
+def decodeJCC8 (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 7) : 0) b /\
     readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
 theorem decodeJCC8T (rex ast b l: nat):
   $ decodeJCC8 rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeCall (rex ast b l .imm: nat): wff =
+def decodeCall (_rex ast b l .imm: nat): wff =
 $ E. imm (b = ch xe x8 /\
     readImmN 32 imm l /\ ast = xastCall (immRM_imm imm)) $;
 theorem decodeCallT (rex ast b l: nat):
   $ decodeCall rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeRet (rex ast b l .v .imm: nat): wff =
+def decodeRet (_rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1, v) : (3, 1) : (4, 12) : 0) b /\
     ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
@@ -604,7 +604,7 @@ $ E. v E. imm (
 theorem decodeRetT (rex ast b l: nat):
   $ decodeRet rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeLeave (rex ast b l: nat): wff =
+def decodeLeave (_rex ast b l: nat): wff =
 $ b = ch xc x9 /\ l = 0 /\ ast = xastLeave $;
 theorem decodeLeaveT (rex ast b l: nat):
   $ decodeLeave rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
@@ -659,11 +659,11 @@ $ E. v E. imm E. sz (
 theorem decodeTestRAX_T (rex ast b l: nat):
   $ decodeTestRAX rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
-def decodeCMC (rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
+def decodeCMC (_rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
 theorem decodeCMC_T (rex ast b l: nat): $ decodeCMC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
-def decodeCLC (rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
+def decodeCLC (_rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
 theorem decodeCLC_T (rex ast b l: nat): $ decodeCLC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
-def decodeSTC (rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
+def decodeSTC (_rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
 theorem decodeSTC_T (rex ast b l: nat): $ decodeSTC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
 def decodeFlag (rex ast b l: nat): wff =
@@ -801,7 +801,7 @@ def getMemory (k: nat): nat = $ pi222 k $;
 def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
 theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $;
-theorem readRIP_T (k r: nat): $ k e. Config -> readRIP k e. u64 $;
+theorem readRIP_T (k: nat): $ k e. Config -> readRIP k e. u64 $;
 theorem readRegT (k r: nat): $ k e. Config /\ r e. Regs -> readReg k r e. u64 $;
 theorem readFlagsT (k: nat): $ k e. Config -> readFlags k e. Flags $;
 theorem getMemoryT (k: nat): $ k e. Config -> getMemory k e. Memory $;
@@ -1142,7 +1142,7 @@ theorem popWriteT (k rm k2: nat):
 
 def popRIP (k k3 .q .k2: nat): wff =
 $ E. k2 E. q (popAux k q k2 /\ k3 = writeRIP k2 q) $;
-theorem popRIP_T (k rm k2: nat):
+theorem popRIP_T (k k2: nat):
   $ popRIP k k2 -> k e. Config /\ k2 e. Config $;
 
 def pushAux (k q k2 .sp: nat): wff =
@@ -1158,7 +1158,7 @@ theorem pushImmRM_T (k irm k2: nat):
   $ pushImmRM k irm k2 -> k e. Config /\ irm e. ImmRM /\ k2 e. Config $;
 
 def pushRIP (k k2: nat): wff = $ pushAux k (readRIP k) k2 $;
-theorem pushRIP_T (k irm k2: nat):
+theorem pushRIP_T (k k2: nat):
   $ pushRIP k k2 -> k e. Config /\ k2 e. Config $;
 
 def divModSz (sz a b d m: nat): wff =
@@ -1233,7 +1233,7 @@ theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
   $ execXAST k (xastCMov c sz ds) k2 <-> E. v (
       readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
       writeEA k sz (destEA k ds) v k2) $;
-theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
+theorem execXASTSetCC (k c b rm k2: nat):
   $ execXAST k (xastSetCC c b rm) k2 <->
     writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $;
 theorem execXASTJump {v: nat} (k rm k2: nat):
@@ -1647,5 +1647,5 @@ $ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
     ks = mkKS 0 0 k2 km2) $;
-theorem initialConfigT (elf: string) (i ks: nat):
+theorem initialConfigT (elf: string) (ks: nat):
   $ initialConfig elf ks -> ks e. KernelState $;

@@ -364,7 +364,7 @@ theorem el_s_im: $ h e. (P ->s Q) <-> isfun h /\ (h e. P -> h e. Q) $ = '(elabe 
 notation s_ex {x} (A P) = ($E.s$:75) x ($e.$:50) A ($,$:55) P;
 theorem el_s_ex (A: set x) (P: set x):
   $ h e. E.s x e. A, P <-> E. x (x e. A /\ h e. P) $ = '(elabe ,eqtac);
-theorem el_s_exv (A: set x) (P: set x):
+theorem el_s_exv (P: set x):
   $ h e. E.s x e. _V, P <-> E. x h e. P $ = '(bitr el_s_ex @ exeqi @ bian1 elv);
 
 theorem s_exeq1 (P: set x): $ A == B -> E.s x e. A, P == E.s x e. B, P $ = '(s_exeq1d id);
@@ -958,7 +958,7 @@ theorem s_Sep_subsn_lem (P: set x) (G: wff x y)
   (h3: $ G -> A. x (x e. A -> lower (ns H1 |` {y | F1 @ y = x}) e. P) $)
   (h4: $ G -> A. x (x e. A -> lower (ns H2 |` {y | F2 @ y = x}) e. P) $)
   (h5: $ G -> a, b e. H1 $): $ G -> a, b e. H2 $ =
-(named @ focus
+(focus
   (have 'a1 '(sylc _
     (rsyl (sylibr ralan @ iand (sylibr ralan @ iand h1 h3) h4) @
       alimi @ imim2i @

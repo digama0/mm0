@@ -189,7 +189,7 @@ term s2n: string > nat; coercion s2n: string > nat;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
 axiom s2nstr (s: string): $ isStr s $;
-pub theorem s0str {c: nat}: $ isStr 0 $ = (named 'all0);
+pub theorem s0str: $ isStr 0 $ = (named 'all0);
 axiom s2ns0: $ s0 = 0 $;
 pub theorem s1str (c: char): $ isStr (c : 0) $ = '(mpbir all1 @ mpbir (elabe ,eqtac) c2nlt);
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;

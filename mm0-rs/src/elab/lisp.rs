@@ -1393,6 +1393,10 @@ str_enum! {
     /// the warning for using unnecessary parentheses in math expressions.
     /// Disabled by default.
     WarnUnnecessaryParens: "warn-unnecessary-parens",
+    /// `(warn-unused-vars b)` turns on (`b = #t`) or off (`b = #f`)
+    /// the warning for unused variables in definitions and theorems.
+    /// Enabled by default.
+    WarnUnusedVars: "warn-unused-vars",
     /// * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`)
     ///   error reporting for error type `type`, which can be `'error`, `'info` or `'warn`.
     ///   (Compilation will still be aborted if there are errors, even if the

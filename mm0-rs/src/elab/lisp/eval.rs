@@ -1305,7 +1305,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     Stack::Undef
   },
   NewDummy: AtLeast(1) => {
-    if args.len() > 2 {try1!(Err("expected 1 or 2 armuments"))}
+    if args.len() > 2 { try1!(Err("expected 1 or 2 arguments")) }
     let (x, s) = match args.get(1) {
       None => {
         let mut i = 1;
@@ -1319,7 +1319,7 @@ make_builtins! { self, tail, sp1, sp2, args,
       Some(s) => (try1!(args[0].as_atom().ok_or("expected an atom")), s)
     };
     let sort = try1!(s.as_atom().and_then(|s| self.data[s].sort).ok_or("expected a sort"));
-    self.lc.vars.insert(x, (true, InferSort::Bound(sort)));
+    self.lc.vars.insert(x, (true, InferSort::Bound { sort, used: false }));
     LispVal::atom(x).into()
   },
   SetReporting: AtLeast(1) => {
@@ -1341,6 +1341,12 @@ make_builtins! { self, tail, sp1, sp2, args,
   WarnUnnecessaryParens: Exact(1) => {
     if let Some(b) = args[0].as_bool() {
       self.options.check_parens = b;
+    } else {try1!(Err("invalid arguments"))}
+    Stack::Undef
+  },
+  WarnUnusedVars: Exact(1) => {
+    if let Some(b) = args[0].as_bool() {
+      self.options.unused_vars = b;
     } else {try1!(Err("invalid arguments"))}
     Stack::Undef
   },
@@ -1918,7 +1924,7 @@ impl<'a> Evaluator<'a> {
 
     // let mut stacklen = 0;
     loop {
-      // if self.check_proofs {
+      // if self.options.check_proofs {
       //   if self.stack.len() < stacklen {
       //     println!("stack -= {}", stacklen - self.stack.len());
       //     stacklen = self.stack.len()
