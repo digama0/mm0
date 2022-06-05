@@ -947,10 +947,12 @@ impl Elaborator {
               (|| -> Result<Option<Proof>> {
                 let mut de: Dedup<ProofHash> = de.map_proof();
                 let mut is2 = Vec::new();
-                for (i, (_, a, e)) in e_hyps.into_iter().enumerate() {
+                for (i, (bi, a, e)) in e_hyps.into_iter().enumerate() {
                   if let Some(a) = a {
                     let p = LispVal::atom(a);
-                    is2.push(de.add(ProofKind::Proof, p.clone(), ProofHash::Hyp(i, is[i].1)));
+                    let hyp = de.add(ProofKind::Proof, p.clone(), ProofHash::Hyp(i, is[i].1));
+                    let check = self.options.unused_vars && !self.data[a].name.starts_with(b"_");
+                    is2.push((bi.span, check, hyp));
                     self.lc.add_proof(a, e, p)
                   }
                 }
@@ -962,14 +964,20 @@ impl Elaborator {
                   self.call_goal_listener(&stat);
                 }
                 for g in mem::take(&mut self.lc.goals) {
-                  report!(try_get_span(&span, &g),
-                    format!("|- {}", self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)))
+                  report!(try_get_span(&span, &g), format!("|- {}",
+                    self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)))
                 }
                 if error {return Ok(None)}
                 let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
                 let ip = de.dedup(&nh, ProofKind::Proof, &g)?;
                 let (mut ids, heap, mut store) = build(&de);
-                let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
+                let hyps = is2.into_iter().map(|(sp, check, i)| {
+                  let val = &mut ids[i];
+                  if check && val.is_unshared() {
+                    self.report(ElabError::warn(sp, "Unused hypothesis"))
+                  }
+                  val.take()
+                }).collect();
                 store.push(ids[ip].take());
                 Ok(Some(Proof {heap, hyps, store: store.into()}))
               })().unwrap_or_else(|e| {self.report(e); None})

@@ -1,6 +1,7 @@
 import "assembler-old.mm1";
 
 axiom sorry (p: wff): $ p $;
+do (warn-unused-vars #f);
 
 do {
   --| A dummy annotation to indicate that the term/theorem is referenced in
@@ -879,3 +880,5 @@ $ assembledN (okContentN G) (okFileSzN G) (okMemSzN G) P $;
   (hfs: $ parseU64 fs fss $)
   (hms: $ parseU64 ms mss $):
   $ isBasicElf (ELF_lit fss mss c) $ = 'sorry;
+
+do (warn-unused-vars #t);

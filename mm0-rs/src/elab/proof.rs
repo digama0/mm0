@@ -395,6 +395,9 @@ impl<T: Node> Val<T> {
       Val::Done => panic!("taking a value twice")
     }
   }
+
+  /// Returns true if this value is unshared.
+  pub fn is_unshared(&self) -> bool { matches!(self, Val::Built(_)) }
 }
 
 /// Given a [`Dedup`] (or something that looks like one), consume it

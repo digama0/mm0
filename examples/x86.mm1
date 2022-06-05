@@ -3163,10 +3163,9 @@ theorem decodeRet0I: $ decode (xastRet 0) (s1 (ch xc x3)) $ =
 '(decode_s1 @ decodeRetI xsplitBits_313 @ mpbir (ifppos true1) @ iani eqid s2ns0);
 
 theorem decodeRetSI
-  (h1: $ splitBits ((1, v) : (3, 1) : 0) a $)
-  (h2: $ readImmN 16 imm l $):
+  (h: $ readImmN 16 imm l $):
   $ decode (xastRet imm) (ch xc x2 ': l) $ =
-'(decodeRetI xsplitBits_213 @ mpbir (ifpneg true0) h2);
+'(decodeRetI xsplitBits_213 @ mpbir (ifpneg true0) h);
 
 theorem decodeSysCallI: $ decode xastSysCall (ch x0 xf ': s1 (ch x0 x5)) $ =
 '(decode0I @ decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);

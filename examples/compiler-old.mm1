@@ -300,7 +300,6 @@ theorem hoare_frame_r: $ hoare T P Q -> hoare T (P *s R) (Q *s R) $ =
 
 theorem hoare_save_restore_lem (G: wff p)
   (hA: $ G -> finite A $)
-  (hp: $ G -> p e. P $)
   (h1: $ G -> Dom p i^i A == 0 $)
   (h2: $ G -> heap_join fr p = suc fp $)
   (h3: $ G -> k |=h fp $):
@@ -357,7 +356,7 @@ theorem hoare_save_restore (G: wff p a)
 (named @ focus
   '(!! iald fr @ exp @ iald @ eexd @
     impd @ syl5bi el_s_sep_sn1 @ eexda @ exp @
-    mpd (hoare_save_restore_lem (anw3l hA) (anld anlr) _ (anrd anlr) anr) _)
+    mpd (hoare_save_restore_lem (anw3l hA) _ (anrd anlr) anr) _)
   (focus '(sylc _ (anw3l h1) (anld anlr)) '(eale ,eqtac))
   '(eexd @ eexd @ eexd @ eexd @ eexda @ sylc eal {_ : $ _ -> s_ok _ _ $} _)
   (focus
@@ -774,13 +773,12 @@ theorem s_mem1_hoareCfg
       sylan (s_bian1 @ mpbir s_sn_sstop isfsn) (iand H1a @ anwll h1) (anrd H1))));
 
 theorem s_mem1_hoareCfg_err
-  (h1: $ G -> v e. u8 $)
-  (h2: $ G -> setMem1 (getMemory k) a v = m2, e $)
-  (h3: $ G -> e != 0 $):
+  (h1: $ G -> setMem1 (getMemory k) a v = m2, e $)
+  (h2: $ G -> e != 0 $):
   $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem1 p a w)
     (^s (e = suc exGPF) /\s s_mem1 p a w) $ =
-'(mpd (mpd h3 @ con3d @ exp @ anrd @ sylib prth @ eqtr3d (anwl h2) @ anwr ifpos) @
-  syld (exp @ sylib prth @ eqtr3d (anwl h2) (anwr ifneg)) @
+'(mpd (mpd h2 @ con3d @ exp @ anrd @ sylib prth @ eqtr3d (anwl h1) @ anwr ifpos) @
+  syld (exp @ sylib prth @ eqtr3d (anwl h1) (anwr ifneg)) @
   exp @ sylc hoareCfg_id2 (nseqd @ sneqd @ syl6eq set_getMemory @ setMemoryeq2d anrl) @
   mpbii s_weak_id @ s_weakeq1d @ rsyl anrr @ s_bian1 s_mem1_sstop);
 
@@ -943,7 +941,7 @@ theorem hoareCfg_setMem {p x}
     '(sylbid (anwr @ eqeq1d ifneg) @ syl5bi (eqeq1 fstsnd) @ exp @
       syl (hoareCfg_weakr @ ss_s_weak s_orl) @ syl (hoareCfg_weakl s_sepl) @
       sylib hoareCfg_eexb @ ialda @
-      rsyl (s_mem1_hoareCfg_err (rsyl an3lr anll) anlr @
+      rsyl (s_mem1_hoareCfg_err anlr @
         mpbid (neeq1d @ syl6eq sndpr @ sndeqd anlr) anllr) @
       hoareCfg_weakr s_weak_anl)));
 
@@ -1806,7 +1804,7 @@ theorem L_or_val: $ L_or L1 L2 @' lo @' a @' sz ==
 (focus '(trud _ @ ! eqsid $ L_or L1 L2 $)
   '(rappsabed1 @ rappsabed1 @ rappsabed2 ,eqtac));
 
-theorem L_or_sstop (h1: $ L1 C_ L_top $) (h2: $ L2 C_ L_top $): $ L_or L1 L2 C_ L_top $ =
+theorem L_or_sstop: $ L_or L1 L2 C_ L_top $ =
 (named
   (def (f x) '(syl s_sepssr @ mpbii (L_sstop L_pad_sstop) @
     sseq2d @ s_lifteqd @ eleq1d @ syl5eq addass @ addeq2d @ syl pncan3 @

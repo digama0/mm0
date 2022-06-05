@@ -378,7 +378,7 @@ theorem s_exeq2ia (P Q: set x) (h: $ x e. A -> P == Q $): $ E.s x e. A, P == E.s
 '(s_exeq2a @ ax_gen h);
 theorem s_exeq2i (P Q: set x) (h: $ P == Q $): $ E.s x e. A, P == E.s x e. A, Q $ =
 '(s_exeq2ia @ a1i h);
-theorem nfs_ex1 (A P: set x) (h1: $ FS/ x A $): $ FS/ x E.s x e. A, P $ = (named '(nfab nfex1));
+theorem nfs_ex1 (A P: set x): $ FS/ x E.s x e. A, P $ = (named '(nfab nfex1));
 theorem nfs_ex (A P: set x y)
   (h1: $ FS/ x A $) (h2: $ FS/ x P $): $ FS/ x E.s y e. A, P $ =
 (named '(nfab @ nfex @ nfan (nfel2 h1) (nfel2 h2)));
@@ -471,7 +471,7 @@ theorem s_aleq2a (P Q: set x):
 theorem s_aleq2da (P Q: set x) (h: $ G /\ x e. A -> P == Q $):
   $ G -> A.s x e. A, P == A.s x e. A, Q $ =
 '(syl s_aleq2a @ ialda h);
-theorem nfs_al1 (A P: set x) (h1: $ FS/ x A $): $ FS/ x A.s x e. A, P $ = (named '(nfab nfal1));
+theorem nfs_al1 (A P: set x): $ FS/ x A.s x e. A, P $ = (named '(nfab nfal1));
 theorem nfs_al (A P: set x y)
   (h1: $ FS/ x A $) (h2: $ FS/ x P $): $ FS/ x A.s y e. A, P $ =
 (named '(nfab @ nfal @ nfim (nfel2 h1) (nfel2 h2)));
@@ -794,25 +794,25 @@ theorem s_Sep_un_lem1: $ isfun F -> Ran (F |` Dom (F i^i Xp _V A)) C_ A $ =
   mpd (sylib eldm anrr) @ eexd @ syl5bi elin @ exp @
   mpbird (eleq1d @ preq2d @ isfd anll (anwl anrl) anrl) @ anrr));
 
-theorem s_Sep_un_lem2 (h1: $ C C_ A u. B $)
-  (h2: $ G -> func K (Dom H) (A u. B) $):
+theorem s_Sep_un_lem2
+  (h: $ G -> func K (Dom H) (A u. B) $):
   $ G -> func (K i^i Xp _V C) (Dom (H |` Dom (K i^i Xp _V C))) C $ =
-'(iand (iand (syl (isfss inss1) @ syl funcisf h2) @
+'(iand (iand (syl (isfss inss1) @ syl funcisf h) @
     eqscomd @ syl5eqs dmres @ sylib eqin2 @
-    mpbii (dmss inss1) @ sseq2d @ syl funcdm h2) @
+    mpbii (dmss inss1) @ sseq2d @ syl funcdm h) @
   a1i @ mpbir ssrn inss2);
 
-theorem s_Sep_un_lem3 (h1: $ C C_ A u. B $)
-  (h2: $ G -> func K (Dom H) (A u. B) $)
-  (h3: $ G -> x e. C $):
+theorem s_Sep_un_lem3
+  (h1: $ G -> func K (Dom H) (A u. B) $)
+  (h2: $ G -> x e. C $):
   $ G -> H |` Dom (K i^i Xp _V C) |` {y | (K i^i Xp _V C) @ y = x} ==
          H |` {y | K @ y = x} $ =
 (named '(eqrd2 @ bitr4g prelres prelres @
   bitr4g (aneq prelres @ elabe ,eqtac) (aneq2i @ elabe ,eqtac) @
   syl5bb anass @ syl aneq2a @ exp @
-  bitr3d (anwl @ syl isfappb @ syl (isfss inss1) @ syl funcisf h2) @
-  syl5bb elin @ bitrd (syl bian2 @ sylibr prelxp @ syl (ian elv) @ anwl h3) @
-  bitrd (anwl @ syl funcappb h2) @ anwr @ rsyl preldm bian1));
+  bitr3d (anwl @ syl isfappb @ syl (isfss inss1) @ syl funcisf h1) @
+  syl5bb elin @ bitrd (syl bian2 @ sylibr prelxp @ syl (ian elv) @ anwl h2) @
+  bitrd (anwl @ syl funcappb h1) @ anwr @ rsyl preldm bian1));
 
 theorem s_Sep_un_lem4 {p z}
   (h1: $ G -> func F (Dom H) A $)
@@ -837,9 +837,9 @@ theorem s_Sep_un (P: set x): $ A i^i B == 0 ->
   (focus
     (def (f x) '(!! iexde ,(dummy! 'nat) @
       sylbir (aneq2i @ eqlower2 @ infin1 finns) @ mpbird (anwr ,eqtac) @ anwl @
-      iand (s_Sep_un_lem2 ,x anrl) @ sylbir anass @ imp @
+      iand (s_Sep_un_lem2 anrl) @ sylbir anass @ imp @
       alimd @ syl5 (imim1i @ ssel ,x) @ a2d @ exp @ bi2d @
-      eleq1d @ lowereqd @ s_Sep_un_lem3 ,x anlr anr))
+      eleq1d @ lowereqd @ s_Sep_un_lem3 anlr anr))
     '(eexda @ !! iexde f @ !! iexde g @
       sylbir (aneq (aneq2i @ eqlower2 @ resfin finns) (eqlower2 @ resfin finns)) @
       sylibr (aneq2i heap_join_S) @ mpbird (rsyl (anim1 anr) ,eqtac) @ anwll @
