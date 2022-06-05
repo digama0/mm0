@@ -490,7 +490,8 @@ pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").expect("required arg");
   let path: FileRef = fs::canonicalize(path)?.into();
-  QUIET.store(args.is_present("quiet"), Ordering::Relaxed);
+  let quiet = args.is_present("quiet");
+  QUIET.store(quiet, Ordering::Relaxed);
   let (file, env) = elab_for_result(path.clone())?;
   let env = env.unwrap_or_else(|| std::process::exit(1));
   if let Some(s) = args.value_of_os("output") {
@@ -504,6 +505,10 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
         |s| println!("{}\n", DisplayList::from(s)));
       std::process::exit(1);
     }
+  }
+  if !quiet {
+    println!("{} sorts, {} term/def, {} ax/thm",
+      env.sorts().len(), env.terms().len(), env.thms().len());
   }
   if let Some(out) = args.value_of("OUTPUT") {
     use {fs::File, io::BufWriter};
