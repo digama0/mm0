@@ -473,10 +473,11 @@ impl Vfs {
 }
 
 macro_rules! request_type {
-  ($($s:literal => $name:ident($param:ty),)*) => {
+  ($self:ident, $($s:tt: $name:ident($pat:pat) => $e:expr,)*) => {
     #[derive(Debug)]
+    #[allow(clippy::large_enum_variant)]
     enum RequestType {
-      $($name($param),)*
+      $($name(<lsp_types::lsp_request!($s) as lsp_types::request::Request>::Params),)*
     }
 
     fn parse_request(Request {id, method, params}: Request) -> Result<Option<(RequestId, RequestType)>> {
@@ -485,21 +486,78 @@ macro_rules! request_type {
         _ => None
       })
     }
+
+    impl RequestHandler {
+      async fn handle($self, req: RequestType) -> Result<()> {
+        match req {
+          $(RequestType::$name($pat) => {
+            type T = <lsp_types::lsp_request!($s) as lsp_types::request::Request>::Result;
+            $self.finish::<T>($e)
+          }),*
+        }
+      }
+    }
   }
 }
 
-request_type! {
-  "textDocument/completion"           => Completion(CompletionParams),
-  "completionItem/resolve"            => CompletionResolve(Box<CompletionItem>),
-  "textDocument/hover"                => Hover(TextDocumentPositionParams),
-  "textDocument/definition"           => Definition(TextDocumentPositionParams),
-  "textDocument/documentSymbol"       => DocumentSymbol(DocumentSymbolParams),
-  "textDocument/references"           => References(ReferenceParams),
-  "textDocument/rename"               => Rename(RenameParams),
-  "textDocument/prepareRename"        => PrepareRename(TextDocumentPositionParams),
-  "textDocument/documentHighlight"    => DocumentHighlight(DocumentHighlightParams),
-  "textDocument/semanticTokens/full"  => SemanticTokens(SemanticTokensParams),
-  "textDocument/semanticTokens/range" => SemanticTokensRange(SemanticTokensRangeParams),
+request_type! { self,
+  "textDocument/hover": Hover(p) => {
+    let p = p.text_document_position_params;
+    hover(p.text_document.uri.into(), p.position).await
+  },
+  "textDocument/definition": Definition(p) => {
+    let p = p.text_document_position_params;
+    if SERVER.caps.ulock().definition_location_links {
+      definition(p.text_document.uri.into(), p.position,
+        |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
+          origin_selection_range: Some(text.to_range(src)),
+          target_uri: file.url().clone(),
+          target_range: text2.to_range(full),
+          target_selection_range: text2.to_range(span),
+        }).await.map(GotoDefinitionResponse::Link)
+    } else {
+      definition(p.text_document.uri.into(), p.position,
+        |_, text2, _, &FileSpan {ref file, span}, _| Location {
+          uri: file.url().clone(),
+          range: text2.to_range(span),
+        }).await.map(GotoDefinitionResponse::Array)
+    }.map(Some)
+  },
+  "textDocument/completion": Completion(p) => {
+    let doc = p.text_document_position;
+    completion(doc.text_document.uri.into(), doc.position).await
+  },
+  "completionItem/resolve": CompletionResolve(ci) => completion_resolve(ci).await,
+  "textDocument/documentSymbol": DocumentSymbol(p) =>
+    document_symbol(p.text_document.uri.into()).await,
+  "textDocument/references": References(p) => {
+    let ReferenceParams {text_document_position: doc, context, ..} = p;
+    let file: FileRef = doc.text_document.uri.into();
+    references(file.clone(), doc.position, context.include_declaration, false,
+      |range| Location { uri: file.url().clone(), range }).await.map(|p| Some(p.1))
+  },
+  "textDocument/rename": Rename(RenameParams {text_document_position: doc, new_name, ..}) => {
+    let file: FileRef = doc.text_document.uri.into();
+    rename(file.clone(), doc.position, new_name).await
+  },
+  "textDocument/prepareRename": PrepareRename(p) => {
+    let TextDocumentPositionParams {text_document: doc, position} = p;
+    prepare_rename(doc.uri.into(), position).await
+  },
+  "textDocument/documentHighlight": DocumentHighlight(p) => {
+    let DocumentHighlightParams {text_document_position_params: doc, ..} = p;
+    let file: FileRef = doc.text_document.uri.into();
+    references(file.clone(), doc.position, true, false,
+      |range| DocumentHighlight { range, kind: None }).await.map(|p| Some(p.1))
+  },
+  "textDocument/semanticTokens/full": SemanticTokens(p) =>
+    semantic_tokens(p.text_document.uri.into(), None).await
+      .map(|r| r.map(SemanticTokensResult::Tokens)),
+  "textDocument/semanticTokens/range": SemanticTokensRange(p) => {
+    let SemanticTokensRangeParams {text_document: doc, range, ..} = p;
+    semantic_tokens(doc.uri.into(), Some(range)).await
+      .map(|r| r.map(SemanticTokensRangeResult::Tokens))
+  },
 }
 
 fn send_message<T: Into<Message>>(t: T) -> Result<()> {
@@ -545,57 +603,6 @@ struct RequestHandler {
 }
 
 impl RequestHandler {
-  async fn handle(self, req: RequestType) -> Result<()> {
-    match req {
-      RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
-        self.finish(hover(doc.uri.into(), position).await),
-      RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
-        if SERVER.caps.ulock().definition_location_links {
-          self.finish(definition(doc.uri.into(), position,
-            |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
-              origin_selection_range: Some(text.to_range(src)),
-              target_uri: file.url().clone(),
-              target_range: text2.to_range(full),
-              target_selection_range: text2.to_range(span),
-            }).await)
-        } else {
-          self.finish(definition(doc.uri.into(), position,
-            |_, text2, _, &FileSpan {ref file, span}, _| Location {
-              uri: file.url().clone(),
-              range: text2.to_range(span),
-            }).await)
-        },
-      RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc, ..}) =>
-        self.finish(document_symbol(doc.uri.into()).await),
-      RequestType::Completion(p) => {
-        let doc = p.text_document_position;
-        self.finish(completion(doc.text_document.uri.into(), doc.position).await)
-      }
-      RequestType::CompletionResolve(ci) =>
-        self.finish(completion_resolve(*ci).await),
-      RequestType::References(ReferenceParams {text_document_position: doc, context, ..}) => {
-        let file: FileRef = doc.text_document.uri.into();
-        self.finish(references(file.clone(), doc.position, context.include_declaration, false,
-          |range| Location { uri: file.url().clone(), range }).await.map(|p| p.1))
-      }
-      RequestType::Rename(RenameParams {text_document_position: doc, new_name, ..}) => {
-        let file: FileRef = doc.text_document.uri.into();
-        self.finish(rename(file.clone(), doc.position, new_name).await)
-      }
-      RequestType::PrepareRename(TextDocumentPositionParams {text_document: doc, position}) =>
-        self.finish(prepare_rename(doc.uri.into(), position).await),
-      RequestType::DocumentHighlight(DocumentHighlightParams {text_document_position_params: doc, ..}) => {
-        let file: FileRef = doc.text_document.uri.into();
-        self.finish(references(file.clone(), doc.position, true, false,
-          |range| DocumentHighlight { range, kind: None }).await.map(|p| p.1))
-      }
-      RequestType::SemanticTokens(SemanticTokensParams {text_document: doc, ..}) =>
-        self.finish(semantic_tokens(doc.uri.into(), None).await),
-      RequestType::SemanticTokensRange(SemanticTokensRangeParams {text_document: doc, range, ..}) =>
-        self.finish(semantic_tokens(doc.uri.into(), Some(range)).await),
-    }
-  }
-
   fn finish<T: Serialize>(self, resp: Result<T, ResponseError>) -> Result<()> {
     let Server {reqs, conn, ..} = &*SERVER;
     reqs.ulock().remove(&self.id);
@@ -926,7 +933,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 }
 
 #[allow(deprecated)] // workaround rust#60681
-async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, ResponseError> {
+async fn document_symbol(path: FileRef) -> Result<Option<DocumentSymbolResponse>, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
 
@@ -937,7 +944,7 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
       .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
     match env.into_response_error()? {
-      None => return Ok(DocumentSymbolResponse::Nested(vec![])),
+      None => return Ok(None),
       Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
     }
   };
@@ -1010,7 +1017,7 @@ async fn document_symbol(path: FileRef) -> Result<DocumentSymbolResponse, Respon
       StmtTrace::OutputString(_) => {}
     }
   }
-  Ok(DocumentSymbolResponse::Nested(res))
+  Ok(Some(DocumentSymbolResponse::Nested(res)))
 }
 
 #[derive(Serialize_repr, Deserialize_repr)]
@@ -1077,14 +1084,14 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   }
 }
 
-async fn completion(path: FileRef, _pos: Position) -> Result<CompletionResponse, ResponseError> {
+async fn completion(path: FileRef, _pos: Position) -> Result<Option<CompletionResponse>, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let (text, env) = if let Some(old) = try_old(&file) { old } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
       .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
     match env.into_response_error()? {
-      None => return Ok(CompletionResponse::Array(vec![])),
+      None => return Ok(None),
       Some((_, env)) => (file.text.ulock().1.clone(), env)
     }
   };
@@ -1105,7 +1112,7 @@ async fn completion(path: FileRef, _pos: Position) -> Result<CompletionResponse,
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Decl) {res.push(ci)}
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Global) {res.push(ci)}
   }
-  Ok(CompletionResponse::Array(res))
+  Ok(Some(CompletionResponse::Array(res)))
 }
 
 async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, ResponseError> {
@@ -1277,17 +1284,17 @@ async fn prepare_rename(path: FileRef, pos: Position) -> Result<Option<PrepareRe
 
 async fn rename(
   path: FileRef, pos: Position, new_name: String
-) -> Result<WorkspaceEdit, ResponseError> {
+) -> Result<Option<WorkspaceEdit>, ResponseError> {
   let (version, edits) = references(path.clone(), pos, true, true,
     |range| OneOf::Left(TextEdit { range, new_text: new_name.clone() })).await?;
-  Ok(WorkspaceEdit {
+  Ok(Some(WorkspaceEdit {
     changes: None,
     document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
       text_document: OptionalVersionedTextDocumentIdentifier { uri: path.url().clone(), version },
       edits,
     }])),
     change_annotations: None,
-  })
+  }))
 }
 
 macro_rules! token_types {
@@ -1309,7 +1316,9 @@ token_types! {
   [7]: const COMMENT => SemanticTokenType::COMMENT; // math comment
 }
 
-async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<SemanticTokens>, ResponseError> {
+async fn semantic_tokens(
+  path: FileRef, range: Option<Range>
+) -> Result<Option<SemanticTokens>, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "semantic tokens nonexistent file"))?;
 
