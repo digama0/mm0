@@ -495,6 +495,8 @@ request_type! {
   "textDocument/definition"           => Definition(TextDocumentPositionParams),
   "textDocument/documentSymbol"       => DocumentSymbol(DocumentSymbolParams),
   "textDocument/references"           => References(ReferenceParams),
+  "textDocument/rename"               => Rename(RenameParams),
+  "textDocument/prepareRename"        => PrepareRename(TextDocumentPositionParams),
   "textDocument/documentHighlight"    => DocumentHighlight(DocumentHighlightParams),
   "textDocument/semanticTokens/full"  => SemanticTokens(SemanticTokensParams),
   "textDocument/semanticTokens/range" => SemanticTokensRange(SemanticTokensRangeParams),
@@ -573,13 +575,19 @@ impl RequestHandler {
         self.finish(completion_resolve(*ci).await),
       RequestType::References(ReferenceParams {text_document_position: doc, context, ..}) => {
         let file: FileRef = doc.text_document.uri.into();
-        self.finish(references(file.clone(), doc.position, context.include_declaration,
-          |range| Location { uri: file.url().clone(), range }).await)
+        self.finish(references(file.clone(), doc.position, context.include_declaration, false,
+          |range| Location { uri: file.url().clone(), range }).await.map(|p| p.1))
       }
+      RequestType::Rename(RenameParams {text_document_position: doc, new_name, ..}) => {
+        let file: FileRef = doc.text_document.uri.into();
+        self.finish(rename(file.clone(), doc.position, new_name).await)
+      }
+      RequestType::PrepareRename(TextDocumentPositionParams {text_document: doc, position}) =>
+        self.finish(prepare_rename(doc.uri.into(), position).await),
       RequestType::DocumentHighlight(DocumentHighlightParams {text_document_position_params: doc, ..}) => {
         let file: FileRef = doc.text_document.uri.into();
-        self.finish(references(file.clone(), doc.position, true,
-          |range| DocumentHighlight { range, kind: None }).await)
+        self.finish(references(file.clone(), doc.position, true, false,
+          |range| DocumentHighlight { range, kind: None }).await.map(|p| p.1))
       }
       RequestType::SemanticTokens(SemanticTokensParams {text_document: doc, ..}) =>
         self.finish(semantic_tokens(doc.uri.into(), None).await),
@@ -697,7 +705,11 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
         let sd = &env.sorts[s];
         ((sp, mk_mm0(format!("{}", sd))), sd.doc.clone())
       }
-      &ObjectKind::Term(_, t, sp1) => {
+      &ObjectKind::Term(_, t) => {
+        let td = &env.terms[t];
+        ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
+      }
+      &ObjectKind::TermNota(t, sp1) => {
         let td = &env.terms[t];
         ((sp1, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
@@ -870,7 +882,8 @@ async fn definition<T>(path: FileRef, pos: Position,
     };
     match k {
       &ObjectKind::Sort(_, s) => res.push(sort(s)),
-      &ObjectKind::Term(_, t, _) => res.push(term(t)),
+      &ObjectKind::Term(_, t) |
+      &ObjectKind::TermNota(t, _) => res.push(term(t)),
       &ObjectKind::Thm(_, t) => res.push(thm(t)),
       ObjectKind::Var(..) |
       ObjectKind::Hyp(..) |
@@ -1134,11 +1147,12 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
 }
 
 async fn references<T>(
-  path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T + Send
-) -> Result<Vec<T>, ResponseError> {
+  path: FileRef, pos: Position, include_self: bool, for_rename: bool,
+  mut f: impl FnMut(Range) -> T + Send
+) -> Result<(Option<i32>, Vec<T>), ResponseError> {
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
-    None => return Ok(vec![])
+    None => return Ok((None, vec![]))
   }}}
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
@@ -1153,7 +1167,10 @@ async fn references<T>(
 
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
+  let (version, text) = {
+    let (version, ref text) = *file.text.ulock();
+    (version, text.ascii().clone())
+  };
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
@@ -1182,11 +1199,13 @@ async fn references<T>(
     ObjectKind::PatternSyntax(_) |
     ObjectKind::RefineSyntax(_) |
     ObjectKind::MathComment => None,
+    ObjectKind::TermNota(..) if for_rename => None,
     ObjectKind::Var(_, a) => Some(Key::Var(a)),
     ObjectKind::Hyp(_, a) => Some(Key::Hyp(a)),
     ObjectKind::LispVar(_, _, a) => Some(Key::LispVar(a)),
     ObjectKind::Sort(_, a) => Some(Key::Sort(a)),
-    ObjectKind::Term(_, a, _) => Some(Key::Term(a)),
+    ObjectKind::Term(_, a) |
+    ObjectKind::TermNota(a, _) => Some(Key::Term(a)),
     ObjectKind::Thm(_, a) => Some(Key::Thm(a)),
     ObjectKind::Global(_, _, a) => Some(Key::Global(a)),
   };
@@ -1205,7 +1224,7 @@ async fn references<T>(
         _ => Some(key) == to_key(k2),
       };
       if eq && (include_self || sp != sp2) {
-        let sp2 = if let ObjectKind::Term(_, _, sp2) = *k2 {sp2} else {sp2};
+        let sp2 = if let ObjectKind::TermNota(_, sp2) = *k2 {sp2} else {sp2};
         res.push(f(text.to_range(sp2)))
       }
     };
@@ -1217,7 +1236,58 @@ async fn references<T>(
       }
     }
   }
-  Ok(res)
+  Ok((version, res))
+}
+
+async fn prepare_rename(path: FileRef, pos: Position) -> Result<Option<PrepareRenameResponse>, ResponseError> {
+  macro_rules! or_none {($e:expr) => {match $e {
+    Some(x) => x,
+    None => return Ok(None)
+  }}}
+  let file = SERVER.vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
+  let text = file.text.ulock().1.ascii().clone();
+  let idx = or_none!(text.to_idx(pos));
+  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or_none!(env.into_response_error()?).1;
+  let spans = or_none!(Spans::find(env.spans(), idx));
+  for &(sp, ref k) in spans.find_pos(idx) {
+    match k {
+      ObjectKind::Import(_) |
+      ObjectKind::Syntax(_) |
+      ObjectKind::PatternSyntax(_) |
+      ObjectKind::RefineSyntax(_) |
+      ObjectKind::MathComment |
+      ObjectKind::TermNota(..) => continue,
+      ObjectKind::Var(..) |
+      ObjectKind::Hyp(..) |
+      ObjectKind::LispVar(..) |
+      ObjectKind::Sort(..) |
+      ObjectKind::Term(..) |
+      ObjectKind::Thm(..) |
+      ObjectKind::Expr(_) |
+      ObjectKind::Proof(_) |
+      ObjectKind::Global(..) => {}
+    }
+    return Ok(Some(PrepareRenameResponse::Range(text.to_range(sp))))
+  }
+  Ok(None)
+}
+
+async fn rename(
+  path: FileRef, pos: Position, new_name: String
+) -> Result<WorkspaceEdit, ResponseError> {
+  let (version, edits) = references(path.clone(), pos, true, true,
+    |range| OneOf::Left(TextEdit { range, new_text: new_name.clone() })).await?;
+  Ok(WorkspaceEdit {
+    changes: None,
+    document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
+      text_document: OptionalVersionedTextDocumentIdentifier { uri: path.url().clone(), version },
+      edits,
+    }])),
+    change_annotations: None,
+  })
 }
 
 macro_rules! token_types {
@@ -1284,6 +1354,7 @@ async fn semantic_tokens(path: FileRef, range: Option<Range>) -> Result<Option<S
     match k {
       ObjectKind::Sort(..) |
       ObjectKind::Term(..) |
+      ObjectKind::TermNota(..) |
       ObjectKind::Thm(true, _) |
       ObjectKind::RefineSyntax(_) |
       ObjectKind::Import(_) |
@@ -1584,9 +1655,13 @@ impl Server {
           ..Default::default()
         }),
         definition_provider: Some(OneOf::Left(true)),
-        document_symbol_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         document_highlight_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+          prepare_provider: Some(true),
+          work_done_progress_options: Default::default(),
+        })),
         semantic_tokens_provider: Some(SemanticTokensOptions {
           legend: SemanticTokensLegend {
             token_types: get_token_types(),

@@ -402,8 +402,8 @@ impl<'a> ElabTermMut<'a> {
     }
     let tid = self.env.term(a).ok_or_else(||
       self.as_ref().err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
-    let sp1 = self.as_ref().try_get_span(e);
-    self.spans_insert(&t, || ObjectKind::Term(false, tid, sp1));
+    let sp1 = self.as_ref().try_get_span(&t);
+    self.spans_insert(&t, || ObjectKind::Term(false, tid));
     let mut tdata = &self.env.terms[tid];
     if self.check_vis && tdata.vis.contains(Modifiers::LOCAL) {
       let msg = format!("using private definition '{}' in a public context", self.env.data[a].name);
@@ -874,7 +874,7 @@ impl Elaborator {
         };
         if atom != AtomId::UNDER {
           let tid = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id))?;
-          self.spans.insert(d.id, ObjectKind::Term(true, tid, d.id));
+          self.spans.insert(d.id, ObjectKind::Term(true, tid));
         } else if VERIFY_ON_ADD {
           match self.env.verify_termdef(&Default::default(), &t) {
             Ok(()) | Err(VerifyError::UsesSorry) => {}

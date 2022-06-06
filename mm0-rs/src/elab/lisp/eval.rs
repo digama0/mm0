@@ -383,7 +383,7 @@ impl Elaborator {
       None => LispVal::undef(),
       Some(DeclKey::Term(t)) => {
         if let Some(fsp) = fsp {
-          self.spans.insert_if(Some(fsp.span), || ObjectKind::Term(false, t, fsp.span));
+          self.spans.insert_if(Some(fsp.span), || ObjectKind::Term(false, t));
         }
         let tdata = &self.env.terms[t];
         let mut bvs = Vec::new();

@@ -541,10 +541,13 @@ pub enum ObjectKind {
   /// The bool is true if this is the definition itself.
   /// This sort must actually exist in the [`Environment`] if is constructed
   Sort(bool, SortId),
-  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
+  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition and rename work.
   /// The bool is true if this is the definition itself.
   /// This term must actually exist in the [`Environment`] if is constructed
-  Term(bool, TermId, Span),
+  Term(bool, TermId),
+  /// This is a term/def notation; hovering yields `term foo ...;` and go-to-definition works.
+  /// This term must actually exist in the [`Environment`] if is constructed
+  TermNota(TermId, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
   /// The bool is true if this is the definition itself.
   /// This theorem must actually exist in the [`Environment`] if is constructed

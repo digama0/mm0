@@ -763,13 +763,13 @@ theorem ifpan2: $ c /\ ifp p a b <-> ifp p (c /\ a) (c /\ b) $ =
 theorem ifpor: $ ifp p (a \/ b) (c \/ d) <-> ifp p a c \/ ifp p b d $ =
 (let ([(f x) '(bitr4d ,x @ oreqd ,x ,x)]) '(cases ,(f 'ifppos) ,(f 'ifpneg)));
 
-theorem ifpeq1a: $ (p -> (a1 <-> a2)) -> (ifp p a1 b <-> ifp p a2 b) $ = '(oreq1d aneq2a);
-theorem ifpeq2a: $ (~p -> (b1 <-> b2)) -> (ifp p a b1 <-> ifp p a b2) $ = '(oreq2d aneq2a);
+theorem ifpeq2a: $ (p -> (a1 <-> a2)) -> (ifp p a1 b <-> ifp p a2 b) $ = '(oreq1d aneq2a);
+theorem ifpeq3a: $ (~p -> (b1 <-> b2)) -> (ifp p a b1 <-> ifp p a b2) $ = '(oreq2d aneq2a);
 
 theorem ifptreq (h: $ G -> (p <-> ifp a p0 p1) $)
   (h0: $ G /\ a -> (p0 <-> q0) $) (h1: $ G /\ ~a -> (p1 <-> q1) $):
   $ G -> (p <-> ifp a q0 q1) $ =
-'(bitrd h @ bitrd (syl ifpeq1a @ exp h0) (syl ifpeq2a @ exp h1));
+'(bitrd h @ bitrd (syl ifpeq2a @ exp h0) (syl ifpeq3a @ exp h1));
 
 theorem ifppos2: $ b -> (ifp a b c <-> a \/ c) $ = '(syl6bb (oreq2a bian1) (oreq1d bian2));
 theorem ifppos3: $ c -> (ifp a b c <-> ~a \/ b) $ = '(syl5bbr ifpnot ifppos2);
