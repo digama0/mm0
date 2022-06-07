@@ -68,44 +68,42 @@ impl<'a> Legalizer<'a> {
         if let RValue::Use(o) | RValue::Cast(_, o, _) = rv {
           return self.try_legalize_operand(o, pred)
         }
-        match pred {
-          Predicate::As(ity) => match rv {
-            RValue::Unop(op, o) => {
-              let op = op.as_(ity)?;
-              let o = self.try_legalize_operand(o, Predicate::As(ity))?.unpack();
-              let v = self.max_var.fresh();
-              self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
-                  Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
-                true, Ty::new(TyKind::Int(ity)),
-                RValue::Unop(op, o)));
-              Some(PackedOp::Copy(v))
-            }
-            RValue::Binop(Binop::Shl(_), o1, o2) => {
-              let op = Binop::Shl(ity);
-              let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
-              let o2 = self.try_legalize_operand(o2, Predicate::Into(ity))?.unpack();
-              let v = self.max_var.fresh();
-              self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
-                  Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
-                true, Ty::new(TyKind::Int(ity)),
-                RValue::Binop(op, o1, o2)));
-              Some(PackedOp::Copy(v))
-            }
-            RValue::Binop(op, o1, o2) => {
-              let op = op.as_(ity)?;
-              let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
-              let o2 = self.try_legalize_operand(o2, Predicate::As(ity))?.unpack();
-              let v = self.max_var.fresh();
-              self.buffer.insert(i+1, Statement::Let(
-                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
-                  Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
-                true, Ty::new(TyKind::Int(ity)),
-                RValue::Binop(op, o1, o2)));
-              Some(PackedOp::Copy(v))
-            }
-            _ => None,
+        let ity = if let Predicate::As(ity) = pred { ity } else { return None };
+        match rv {
+          RValue::Unop(op, o) => {
+            let op = op.as_(ity)?;
+            let o = self.try_legalize_operand(o, Predicate::As(ity))?.unpack();
+            let v = self.max_var.fresh();
+            self.buffer.insert(i+1, Statement::Let(
+              LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
+                Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
+              true, Ty::new(TyKind::Int(ity)),
+              RValue::Unop(op, o)));
+            Some(PackedOp::Copy(v))
+          }
+          RValue::Binop(Binop::Shl(_), o1, o2) => {
+            let op = Binop::Shl(ity);
+            let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
+            let o2 = self.try_legalize_operand(o2, Predicate::Into(ity))?.unpack();
+            let v = self.max_var.fresh();
+            self.buffer.insert(i+1, Statement::Let(
+              LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
+                Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
+              true, Ty::new(TyKind::Int(ity)),
+              RValue::Binop(op, o1, o2)));
+            Some(PackedOp::Copy(v))
+          }
+          RValue::Binop(op, o1, o2) => {
+            let op = op.as_(ity)?;
+            let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
+            let o2 = self.try_legalize_operand(o2, Predicate::As(ity))?.unpack();
+            let v = self.max_var.fresh();
+            self.buffer.insert(i+1, Statement::Let(
+              LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
+                Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
+              true, Ty::new(TyKind::Int(ity)),
+              RValue::Binop(op, o1, o2)));
+            Some(PackedOp::Copy(v))
           }
           _ => None,
         }

@@ -1317,13 +1317,11 @@ impl Constant {
 
   /// Construct a constant `c: iN`, if it fits in the target type.
   #[must_use] pub fn try_into(&self, ity: IntTy) -> Option<Self> {
-    match self.k {
-      ConstKind::Int => if_chain! {
-        if let Some(ExprKind::Int(n)) = self.ety.0.as_deref();
-        if ity.contains(n);
-        then { return Some(Self::int(ity, n.clone())) }
-      },
-      _ => {}
+    if_chain! {
+      if let ConstKind::Int = self.k;
+      if let Some(ExprKind::Int(n)) = self.ety.0.as_deref();
+      if ity.contains(n);
+      then { return Some(Self::int(ity, n.clone())) }
     }
     None
   }
