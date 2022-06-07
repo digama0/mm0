@@ -159,7 +159,9 @@ impl Vfs {
   /// while still holding the [`VFS`] mutex, so other threads will not be able to
   /// perform file operations (although they will be able to elaborate otherwise).
   fn get_or_insert(&self, path: FileRef) -> io::Result<(FileRef, Arc<VirtualFile>)> {
-    match self.0.ulock().entry(path) {
+    let mut lock = self.0.ulock();
+    let entry = lock.entry(path);
+    match entry {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();

@@ -119,8 +119,10 @@ impl Logger {
     let cancel2 = cancel.clone();
     let jh = std::thread::spawn(move || {
       let mut now = Instant::now();
+      let messages = &mut vec![];
       while !cancel.load(Ordering::Acquire) {
-        for (i, id, mem, s) in LOGGER.1.uwait(LOGGER.0.ulock()).drain(..) {
+        std::mem::swap(messages, &mut LOGGER.1.uwait(LOGGER.0.ulock()));
+        for (i, id, mem, s) in messages.drain(..) {
           let d = i.saturating_duration_since(now).as_millis();
           let msg = format!("[{:?}: {:?}ms{}] {}", id, d, mem, s);
           log_message(msg).expect("send failed");
@@ -326,7 +328,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   if !is_canceled {
     *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), deps});
     drop(g);
-    for d in file.downstream.ulock().iter() {
+    let downstream = file.downstream.ulock();
+    for d in &*downstream {
       log!("{:?} affects {:?}", path, d);
       Job::DepChange(path.clone(), d.clone(), DepChangeReason::Elab).spawn();
     }
@@ -405,7 +408,9 @@ impl Vfs {
   }
 
   fn get_or_insert(&self, path: FileRef) -> io::Result<(FileRef, Arc<VirtualFile>)> {
-    match self.0.ulock().entry(path) {
+    let mut vfs = self.0.ulock();
+    let entry = vfs.entry(path);
+    match entry {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
@@ -426,17 +431,26 @@ impl Vfs {
 
   fn open_virt(&self, path: FileRef, version: i32, text: String) -> Arc<VirtualFile> {
     let file = Arc::new(VirtualFile::new(Some(version), FileContents::new(text)));
-    let file = match self.0.ulock().entry(path.clone()) {
+    let out;
+    let mut vfs = self.0.ulock();
+    let entry = vfs.entry(path.clone());
+    match entry {
       Entry::Occupied(entry) => {
-        for dep in entry.get().downstream.ulock().iter() {
+        out = entry.get().clone();
+        drop(vfs);
+        let deps = out.downstream.ulock();
+        for dep in &*deps {
           Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Open).spawn();
         }
-        file
+        drop(deps);
       }
-      Entry::Vacant(entry) => entry.insert(file).clone()
-    };
+      Entry::Vacant(entry) => {
+        out = entry.insert(file).clone();
+        drop(vfs);
+      }
+    }
     Job::Elaborate(path, ElabReason::Open).spawn();
-    file
+    out
   }
 
   fn close(&self, path: &FileRef) -> Result<()> {
@@ -448,7 +462,8 @@ impl Vfs {
       } else if e.get().text.ulock().0.take().is_some() {
         let file = e.get().clone();
         drop(g);
-        for dep in file.downstream.ulock().clone() {
+        let deps = file.downstream.ulock().clone();
+        for dep in deps {
           Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Close).spawn();
         }
       } else {}

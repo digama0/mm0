@@ -461,7 +461,7 @@ impl Remap for FrozenProc {
       Proc::MergeMap(m) => Proc::MergeMap(unsafe {freeze_merge_strategy(m)}.remap(r)),
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), RefCell::new(
         // Safety: the cell is frozen, so we must not change the borrow flag
-        match &*unsafe { m.try_borrow_unguarded() }.expect("failed to deref ref") {
+        match unsafe { m.try_borrow_unguarded() }.expect("failed to deref ref") {
           Ok(e) => Ok(e.remap(r)),
           Err(v) => Err(v.remap(r)),
         }

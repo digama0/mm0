@@ -668,7 +668,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
     if n != 0 {
       let (entries, _) = (|| -> Option<_> {
         let (num_entries, rest) =
-          LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(&*buf.get(n..)?)?;
+          LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
         new_slice_prefix(rest, num_entries.get().try_into().ok()?)
       })()
       .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
@@ -963,7 +963,7 @@ str_list_wrapper! {
 impl<'a, X> MmbFile<'a, X> {
   fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
     let (num_vars, rest) = LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(
-      &*self.buf.get(u64_as_usize(p_vars)..)?,
+      self.buf.get(u64_as_usize(p_vars)..)?,
     )?;
     Some(StrListRef {
       buf: self.buf,

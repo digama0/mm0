@@ -742,32 +742,32 @@ impl<A: Remap, B: Remap, C: Remap> Remap for (A, B, C) {
   type Target = (A::Target, B::Target, C::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }
 }
-impl<A: Remap> Remap for Option<A> {
-  type Target = Option<A::Target>;
+impl<T: Remap> Remap for Option<T> {
+  type Target = Option<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.as_ref().map(|x| x.remap(r)) }
 }
-impl<A: Remap> Remap for Vec<A> {
-  type Target = Vec<A::Target>;
+impl<T: Remap> Remap for Vec<T> {
+  type Target = Vec<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|x| x.remap(r)).collect() }
 }
-impl<A: Remap> Remap for Box<A> {
-  type Target = Box<A::Target>;
+impl<T: Remap> Remap for Box<T> {
+  type Target = Box<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Box::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Rc<A> {
-  type Target = Rc<A::Target>;
+impl<T: Remap> Remap for Rc<T> {
+  type Target = Rc<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Rc::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Arc<A> {
-  type Target = Arc<A::Target>;
+impl<T: Remap> Remap for Arc<T> {
+  type Target = Arc<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Arc::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Box<[A]> {
-  type Target = Box<[A::Target]>;
+impl<T: Remap> Remap for Box<[T]> {
+  type Target = Box<[T::Target]>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
-impl<A: Remap> Remap for Arc<[A]> {
-  type Target = Arc<[A::Target]>;
+impl<T: Remap> Remap for Arc<[T]> {
+  type Target = Arc<[T::Target]>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
 impl Remap for Type {

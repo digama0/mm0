@@ -92,7 +92,7 @@ impl<T: EnvDebug> EnvDebug for [T] {
 }
 
 // Instances for a few common types that require some sort of special behavior to display nicely.
-impl<A: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.try_borrow() {
       Ok(x) => x.env_dbg(fe, f),
@@ -103,7 +103,7 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<A> {
 
 // using write directly with the regular debug formatter seems
 // to be the nicest formatting option.
-impl<A: EnvDebug, E: EnvDebug> EnvDebug for Result<A, E> {
+impl<T: EnvDebug, E: EnvDebug> EnvDebug for Result<T, E> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
@@ -115,7 +115,7 @@ impl<A: EnvDebug, E: EnvDebug> EnvDebug for Result<A, E> {
 
 // using write directly with the regular debug formatter seems
 // to be the nicest formatting option.
-impl<A: EnvDebug> EnvDebug for Option<A> {
+impl<T: EnvDebug> EnvDebug for Option<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
@@ -125,37 +125,37 @@ impl<A: EnvDebug> EnvDebug for Option<A> {
   }
 }
 
-impl<A: EnvDebug + Copy> EnvDebug for std::cell::Cell<A> {
+impl<T: EnvDebug + Copy> EnvDebug for std::cell::Cell<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.get().env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for &A {
+impl<T: EnvDebug + ?Sized> EnvDebug for &T {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for Box<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for Box<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug> EnvDebug for Vec<A> {
+impl<T: EnvDebug> EnvDebug for Vec<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
       None => write!(f, "_Weak_"),
@@ -164,13 +164,13 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<A> {
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Rc<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for std::rc::Rc<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     std::rc::Rc::as_ref(self).env_dbg(fe, f)
   }
 }
 
-impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<A> {
+impl<T: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<T> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
       None => write!(f, "_Weak_"),

@@ -153,7 +153,7 @@ impl Context {
             0
         } else {
             self.add_arc(arc);
-            f(&*arc, self)
+            f(arc, self)
         }
     }
 
@@ -162,7 +162,7 @@ impl Context {
             0
         } else {
             self.add_rc(rc);
-            f(&*rc, self)
+            f(rc, self)
         }
     }
 
@@ -172,7 +172,7 @@ impl Context {
             0
         } else {
             self.add_hybrid_arc(arc);
-            f(&*arc, self)
+            f(arc, self)
         }
     }
 
@@ -182,7 +182,7 @@ impl Context {
             0
         } else {
             self.add_hybrid_rc(rc);
-            f(&*rc, self)
+            f(rc, self)
         }
     }
 }
@@ -250,7 +250,7 @@ impl<K: Ord + DeepSizeOf, V: DeepSizeOf> DeepSizeOf for std::collections::BTreeM
 impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Box<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         // May cause inacuracies, measures size of the value, but not the allocation size
-        let val: &T = &*self;
+        let val: &T = self;
         size_of_val(val) + val.deep_size_of_children(context)
     }
 }
