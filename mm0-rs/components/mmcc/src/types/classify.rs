@@ -256,7 +256,7 @@ macro_rules! mk_fold {
   )*) => {
     /// A trait for consuming an instruction stream with alignment between the MIR and the
     /// generated instructions.
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::too_many_arguments)]
     pub trait Visitor<$a> {
       /// Called before each classifier's instructions are visited.
       /// This is the default implementation of `before_foo()`.
@@ -647,7 +647,7 @@ mk_fold! { <'a>
     for arg in args {
       let cl = it.next_list_elem();
       match (cl, arg) {
-        (Elem::Ghost, _) => {}
+        (Elem::Ghost, _) |
         (Elem::Operand(Operand::Const(Const::Value)), None) => {}
         (&Elem::Operand(cl), Some((_, o))) => self.do_operand(o, cl, it),
         _ => unreachable!(),
@@ -749,7 +749,7 @@ impl<'a> TraceIter<'a> {
   }
 
   /// Calculates a "snapshot" of the current trace state, which can be used with `from_snapshot`.
-  pub fn snapshot(&self) -> TraceIterSnapshot {
+  #[must_use] pub fn snapshot(&self) -> TraceIterSnapshot {
     if let Some(inner) = &self.0 {
       TraceIterSnapshot {
         insts: inner.insts.len().try_into().expect("overflow"),
@@ -764,7 +764,7 @@ impl<'a> TraceIter<'a> {
   /// Reconstitute a version of this iterator "from the future" by advancing it
   /// to match the given snapshot.
   /// If iterator `a` advances to `b`, then `a.from_snapshot(b.snapshot()) == b`.
-  pub fn from_snapshot(&self, snap: TraceIterSnapshot) -> Self {
+  #[must_use] pub fn from_snapshot(&self, snap: TraceIterSnapshot) -> Self {
     if let Some(inner) = &self.0 {
       let mut inner = inner.clone();
       let n = inner.insts.len() - usize::try_from(snap.insts).expect("overflow");
