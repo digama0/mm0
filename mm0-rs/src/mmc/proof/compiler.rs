@@ -3,15 +3,16 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 
 use mmcc::Idx;
-use mmcc::types::IdxVec;
+use mmcc::types::classify::TraceIter;
 use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId,
-  Operand, Place, ConstKind};
+  LetKind, Ty, TyKind, RValue, Operand, Place, ConstKind, Constant};
 use mmcc::types::vcode::{ProcAbi, ArgAbi};
-use mmcc::{Symbol, TEXT_START, types::Size};
-use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
+use mmcc::{Symbol, TEXT_START, types::{Size, IdxVec, classify as cl}};
+use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop, RegMem};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
   BlockProofTree, BlockTreeIter, ElfProof, Inst, InstIter, PReg, Proc, VBlockId, ProcId};
 use crate::LispVal;
@@ -39,16 +40,17 @@ struct Ctx {
   labs: ProofId,
   bctx: ProofId,
   ok0: ProofId,
+  asm0: ProofId,
 }
 
 impl Ctx {
   fn new(de: &mut ProofDedup<'_>, hex: &HexCache, proc: &Proc<'_>, t_gctx: TermId) -> Ctx {
     let ok0 = app!(de, (ok0));
+    let asm0 = app!(de, (ASM0));
     let gctx = app!(de, ({t_gctx}));
     let ret = app!(de, (ok0)); // TODO
     let se = app!(de, (tru)); // TODO
     let mut epi = app!(de, (epiRet));
-    #[allow(clippy::cast_possible_truncation)]
     for &reg in proc.saved_regs() {
       epi = app!(de, epiPop[hex[reg.index()], epi]);
     }
@@ -58,7 +60,7 @@ impl Ctx {
     let pctx = app!(de, mkPCtx[gctx, pctx1]);
     let labs = app!(de, (labelGroup0));
     let bctx = app!(de, mkBCtx[pctx, labs]);
-    Ctx { t_gctx, gctx, ret, se, epi, sp_max, pctx1, pctx, labs, bctx, ok0 }
+    Ctx { t_gctx, gctx, ret, se, epi, sp_max, pctx1, pctx, labs, bctx, ok0, asm0 }
   }
 }
 
@@ -313,10 +315,10 @@ trait NodeKind: Sized {
     }
   }
   fn ctx_left(
-    ctx: Self::Context, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>
+    ctx: Self::Context, _a: &P<MCtxNode<Self>>, _b: &P<MCtxNode<Self>>
   ) -> Self::Context { ctx }
   fn ctx_right(
-    ctx: Self::Context, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>
+    ctx: Self::Context, _a: &P<MCtxNode<Self>>, _b: &P<MCtxNode<Self>>
   ) -> Self::Context { ctx }
 
   /// Constructs a node `(a, b)`
@@ -340,14 +342,14 @@ impl<L> NodeKind for RegKind<L> {
   type Key = u8;
   type Node = u8;
   type Leaf = (u8, L);
-  fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node {
+  fn node(_: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, _: &P<MCtxNode<Self>>) -> Self::Node {
     match a.0 {
       MCtxNode::Zero => unreachable!(),
       MCtxNode::One((k, _)) | MCtxNode::Node(_, k, _) => k
     }
   }
-  fn leaf_key(_: &(), k: &(u8, L)) -> u8 { k.0 }
-  fn node_key(_: &(), k: &u8) -> u8 { *k }
+  fn leaf_key(_: &(), &(k, _): &(u8, L)) -> u8 { k }
+  fn node_key(_: &(), &k: &u8) -> u8 { k }
 }
 
 struct StackKind<L>(PhantomData<L>);
@@ -364,7 +366,7 @@ impl<L> NodeKind for StackKind<L> {
   type Key = u32;
   type Node = u32;
   type Leaf = (u32, L);
-  fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node {
+  fn node(_: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, _: &P<MCtxNode<Self>>) -> Self::Node {
     Self::get_key(&a.0)
   }
   fn leaf_key(ctx: &u32, _: &(u32, L)) -> u32 { *ctx }
@@ -389,9 +391,9 @@ trait NodeInsert<N: NodeKind> {
   fn node_gt(de: &mut ProofDedup<'_>, a_b_t_b2_th: [ProofId; 5]) -> ProofId;
 
   /// Given `|- insert x t = (a, (b, c))` proves `|- insert x t = ((a, b), c)`
-  fn rotate_left(de: &mut ProofDedup<'_>, x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
+  fn rotate_left(_de: &mut ProofDedup<'_>, _x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
   /// Given `|- insert x t = ((a, b), c)` proves `|- insert x t = (a, (b, c))`
-  fn rotate_right(de: &mut ProofDedup<'_>, x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
+  fn rotate_right(_de: &mut ProofDedup<'_>, _x_t_a_b_c_th: [ProofId; 6]) -> ProofId { panic!() }
 
   /// Given `|- insert x t = (b, c)` proves `|- insert (a, x) t = ((a, b), c)`
   fn single_left(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
@@ -556,7 +558,9 @@ impl<N: NodeKind> NodeInsert<N> for PushMCtx {
     thm!(de, pushMCtx1L(a, t): (pushMCtx a t (mctxA t a)))
   }
 
-  fn one_eq(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId { unreachable!() }
+  fn one_eq(_: &mut ProofDedup<'_>, _: ProofId, _: ProofId) -> ProofId {
+    unreachable!("inserting twice in the same mctx")
+  }
 
   fn one_gt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId {
     thm!(de, pushMCtx1R(a, t): (pushMCtx a t (mctxA a t)))
@@ -595,10 +599,12 @@ impl<N: NodeKind> NodeInsert<N> for NoProof {
   fn double_right(_: &mut ProofDedup<'_>, _: [ProofId; 7]) -> ProofId { ProofId::INVALID }
 }
 
+#[derive(Debug)]
 enum Expr {
   Var(VarId),
 }
 
+#[derive(Debug)]
 enum MCtxRegValue {
   Free,
   Expr(P<Expr>),
@@ -623,7 +629,7 @@ impl MCtxNode<MCtxRegKind> {
       MCtxNode::One((k, _)) => {
         app_match!(de, this.1 => {
           (FREE r) => ((k, r), (k, r), thm!(de, bddMCtx_FREE(r): bddMCtx[this.1, r, r])),
-          (REG r v) => ((k, r), (k, r), thm!(de, bddMCtx_REG(r): bddMCtx[this.1, r, r])),
+          (REG r v) => ((k, r), (k, r), thm!(de, bddMCtx_REG(r, v): bddMCtx[this.1, r, r])),
           !
         })
       }
@@ -686,33 +692,14 @@ impl MCtx {
   }
 }
 
-enum DeferredKind<'a> {
-  Exit(&'a Operand)
-}
-
-enum StatementIterKind<'a> {
-  Start,
-  PostCall(BlockId, &'a [(bool, VarId)]),
-  Jump1(BlockId),
-  Defer(u8, ProofId, DeferredKind<'a>),
-}
-
-struct StatementIter<'a> {
-  stmts: std::slice::Iter<'a, Statement>,
-  term: Option<&'a Terminator>,
-  kind: StatementIterKind<'a>,
-}
-
-struct TCtx<'a> {
-  viter: StatementIter<'a>,
-  piter: Option<std::iter::Peekable<InstIter<'a>>>,
+struct TCtx {
   vctx: VCtx,
   mctx: P<MCtx>,
 }
 
-type PTCtx<'a> = P<Box<TCtx<'a>>>;
+type PTCtx = P<Box<TCtx>>;
 
-impl<'a> TCtx<'a> {
+impl TCtx {
   /// Given `ty`, returns `(n, (tctx2, |- okPushVar tctx ty tctx2))`,
   /// where `tctx2` is the result of adding `vVar n ty` to `tctx`
   fn push_var(
@@ -726,13 +713,13 @@ impl<'a> TCtx<'a> {
     self.vctx.nvars = n2;
     let tctx2 = self.mk(de);
     (n, (tctx2, thm!(de, ((okPushVar tctx {*n2} tctx2)) =>
-      okPushVarI(self.mctx.1, self.mctx.1, *n, *n2, ty, old, self.vctx.e))))
+      okPushVarI(self.mctx.1, self.mctx.1, *n, *n2, ty, old, self.vctx.e, h1, h2))))
   }
 
   /// Given `ty`, returns `(tctx2, |- okPushVar tctx ty tctx2)`,
   /// where `tctx2` is the result of adding `vHyp ty` to `tctx`
   fn push_hyp(
-    &mut self, tctx: ProofId, de: &mut ProofDedup<'_>, hex: &HexCache, var: VarId, kind: VarKind,
+    &mut self, tctx: ProofId, de: &mut ProofDedup<'_>, var: VarId, kind: VarKind,
     ty: ProofId,
   ) -> (ProofId, ProofId) {
     let e = app!(de, (vHyp ty));
@@ -740,44 +727,12 @@ impl<'a> TCtx<'a> {
     let h1 = self.vctx.push(de, var, kind, e);
     let tctx2 = self.mk(de);
     (tctx2, thm!(de, ((okPushVar tctx {*self.vctx.nvars} tctx2)) =>
-      okPushVarI(self.mctx.1, *self.vctx.nvars, ty, old, self.vctx.e)))
+      okPushHypI(self.mctx.1, *self.vctx.nvars, ty, old, self.vctx.e, h1)))
   }
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
     app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx.1])
   }
-
-  /// Resets the iterators to point at a new block, without changing the variable context.
-  fn retarget(&mut self, bl: BlockProof<'a>) {
-    self.viter = StatementIter {
-      stmts: bl.block().stmts.iter(),
-      term: Some(bl.block().terminator()),
-      kind: StatementIterKind::Start,
-    };
-    self.piter = bl.vblock().map(|vbl| vbl.insts().peekable());
-  }
-}
-
-struct Prologue<'a> {
-  epi: ProofId,
-  sp: Num,
-  mctx: P<MCtx>,
-  iter: std::slice::Iter<'a, PReg>,
-  prol: ProofId,
-  viter: StatementIter<'a>,
-  piter: InstIter<'a>,
-  vctx: VCtx,
-}
-
-enum LCtx<'a> {
-  Dead,
-  Prologue(Box<Prologue<'a>>),
-  Reg(Box<TCtx<'a>>),
-  Epilogue(ProofId),
-}
-
-impl Default for LCtx<'_> {
-  fn default() -> Self { Self::Dead }
 }
 
 struct ProcProver<'a> {
@@ -838,6 +793,14 @@ impl<'a> ProcProver<'a> {
     old
   }
 
+  fn split_asm(&self, code: ProofId) -> (ProofId, ProofId) {
+    app_match!(self.thm, code => {
+      (ASM_A a b) => (a, b),
+      (ASM0) => (code, code),
+      !
+    })
+  }
+
   fn pop_label_group(&mut self, [labs, bctx]: [ProofId; 2]) {
     self.ctx.labs = labs;
     self.ctx.bctx = bctx;
@@ -845,7 +808,7 @@ impl<'a> ProcProver<'a> {
 
   fn prove_vblock_asm(&mut self, iter: &mut AssemblyBlocks<'_>, a: ProofId, th: ProofId) {
     app_match!(self.thm, a => {
-      (localAssembleA a b) => {
+      (ASM_A a b) => {
         let th1 = thm!(self.thm, okAssembled_l(a, b, self.pctx, th): okAssembled[self.pctx, a]);
         self.prove_vblock_asm(iter, a, th1);
         let th2 = thm!(self.thm, okAssembled_r(a, b, self.pctx, th): okAssembled[self.pctx, b]);
@@ -859,14 +822,8 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns the `tctx` type state for the entry of a block.
-  fn block_tctx(&mut self, bl: BlockProof<'a>, vctx: VCtx, base: CtxId) -> PTCtx<'a> {
+  fn block_tctx(&mut self, bl: BlockProof<'_>, vctx: VCtx, base: CtxId) -> PTCtx {
     let mut tctx = Box::new(TCtx {
-      viter: StatementIter {
-        stmts: bl.block().stmts.iter(),
-        term: Some(bl.block().terminator()),
-        kind: StatementIterKind::Start,
-      },
-      piter: bl.vblock().map(|vbl| vbl.insts().peekable()),
       vctx,
       mctx: MCtx::new(&mut self.thm), // TODO
     });
@@ -879,7 +836,7 @@ impl<'a> ProcProver<'a> {
           _ => true,
         } => {
           let ty = app!(self.thm, (ok0)); // TODO
-          tctx.push_hyp(l, &mut self.thm, &self.hex, v.k, VarKind::Typed, ty)
+          tctx.push_hyp(l, &mut self.thm, v.k, VarKind::Hyp, ty)
         }
         _ => {
           let ty = app!(self.thm, (ok0)); // TODO
@@ -891,6 +848,47 @@ impl<'a> ProcProver<'a> {
     (tctx, l)
   }
 
+  /// Given `[l1, l2, l3, code, |- okCode bctx l1 code1 l2, |- okCode bctx l2 code2 l3]`,
+  /// proves `|- okCode bctx l1 code tctx`
+  /// if `code = code1 +asm code2` or `code, code1, code2 = ASM0`
+  fn ok_code_join(&mut self, [l1, l2, l3, code, h1, h2]: [ProofId; 6]) -> ProofId {
+    app_match!(self.thm, code => {
+      (ASM_A code1 code2) => thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
+        okCode_A(self.bctx, code1, code2, l1, l2, l3, h1, h2)),
+      (ASM0) => thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
+        okCode_tr(self.bctx, l1, l2, l3, h1, h2)),
+      !
+    })
+  }
+
+  /// Returns
+  /// * `(ip, |- okBlock bctx (suc ip) tctx)`
+  /// * `(INVALID, |- okCode bctx tctx ASM0 ok0)` or
+  /// for the given block, starting from the given `tctx`.
+  fn ok_block_opt(&mut self, (tctx, l1): P<&mut TCtx>, tgt: BlockId) -> (ProofId, ProofId) {
+    if let Some(vid) = self.proc.vblock_id(tgt) {
+      let (a, h1) = self.vblock_asm[&vid];
+      let (ip, code) = app_match!(self.thm, a => { (asmAt ip code) => (ip, code), ! });
+      let h2 = self.ok_stmts(self.proc.block(tgt), code, (tctx, l1));
+      (ip, thm!(self.thm, ((okBlock {self.bctx} (suc ip) l1)) =>
+        okBlockI(self.labs, code, ip, self.pctx, l1, h1, h2)))
+    } else {
+      (ProofId::INVALID, self.ok_stmts(self.proc.block(tgt), self.asm0, (tctx, l1)))
+    }
+  }
+
+  /// Returns `(ip, |- okBlock bctx ip tctx)`
+  /// for the given block, starting from the given `tctx`.
+  fn ok_block(&mut self, (tctx, l1): P<&mut TCtx>, tgt: BlockId) -> (ProofId, ProofId) {
+    let (ip, th) = self.ok_block_opt((tctx, l1), tgt);
+    if ip == ProofId::INVALID {
+      let ip = app!(self.thm, (d0));
+      (ip, thm!(self.thm, okBlock0(self.bctx, l1, th): okBlock[self.bctx, ip, l1]))
+    } else {
+      (app!(self.thm, (suc ip)), th)
+    }
+  }
+
   /// Returns `|- okReadHyp tctx ty2` if `th: |- okReadHyp tctx ty`
   fn read_hyp_coerce(&mut self, ty: ProofId, th: ProofId, ty2: ProofId) -> ProofId {
     // TODO
@@ -898,37 +896,39 @@ impl<'a> ProcProver<'a> {
     th
   }
 
-  /// Returns `(ty, |- okReadHyp vctx ty)`
-  fn read_hyp_var(&mut self, vctx: &VCtx, v: VarId) -> (ProofId, ProofId) {
+  /// Returns `(ty, |- okReadHypVCtx vctx ty)`
+  fn read_hyp_vctx_var(&mut self, vctx: &VCtx, v: VarId) -> (ProofId, ProofId) {
     let (_, val, h1) = vctx.get(&mut self.thm, &self.vctxs, v);
     app_match!(self.thm, val => {
-      (vHyp ty) => (ty, thm!(self.thm, okReadHypI(ty, vctx.e, h1): okReadHyp[vctx.e, ty])),
-      (vVar v ty) => (ty, thm!(self.thm, okReadHypVar(ty, v, vctx.e, h1): okReadHyp[vctx.e, ty])),
+      (vHyp ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
+        okReadHypVCtxI(ty, vctx.e, h1))),
+      (vVar v ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
+        okReadHypVar(ty, v, vctx.e, h1))),
       !
     })
   }
 
-  /// Returns `(ty, |- okReadHyp vctx ty)`
-  fn read_hyp_place(&mut self, vctx: &VCtx, p: &Place) -> (ProofId, ProofId) {
+  /// Returns `(ty, |- okReadHypVCtx vctx ty)`
+  fn read_hyp_vctx_place(&mut self, vctx: &VCtx, p: &Place) -> (ProofId, ProofId) {
     assert!(p.proj.is_empty()); // TODO
-    self.read_hyp_var(vctx, p.local)
+    self.read_hyp_vctx_var(vctx, p.local)
   }
 
-  /// Returns `|- okReadHyp tctx ty`
-  fn read_hyp_wrapper(&mut self, (tctx, l1): P<&TCtx<'a>>, ty: ProofId, th: ProofId) -> ProofId {
-    app_match!(self.thm, l1 => {
+  /// Given `ty`, `|- okReadHypVCtx vctx ty`, returns `|- okReadHyp tctx ty`
+  fn read_hyp_from_vctx(&mut self, tctx: ProofId, ty: ProofId, th: ProofId) -> ProofId {
+    app_match!(self.thm, tctx => {
       (mkTCtx vctx n mctx) => thm!(self.thm,
-        okReadHypTCtx(mctx, n, ty, vctx, th): okReadHyp[l1, ty]),
+        okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty]),
       !
     })
   }
 
   /// Returns `(ty, |- okReadHyp tctx ty)`
-  fn read_hyp_operand(&mut self, (tctx, l1): P<&TCtx<'a>>, op: &Operand) -> (ProofId, ProofId) {
+  fn read_hyp_operand(&mut self, (tctx, l1): P<&TCtx>, op: &Operand) -> (ProofId, ProofId) {
     match op.place() {
       Ok(p) => {
-        let (ty, th) = self.read_hyp_place(&tctx.vctx, p);
-        (ty, self.read_hyp_wrapper((tctx, l1), ty, th))
+        let (ty, th) = self.read_hyp_vctx_place(&tctx.vctx, p);
+        (ty, self.read_hyp_from_vctx(l1, ty, th))
       }
       Err(c) => match c.k {
         ConstKind::Unit => {
@@ -1020,36 +1020,89 @@ impl<'a> ProcProver<'a> {
     }
   }
 
-  /// Returns `(fs, ms, tctx, |- buildStart pctx fs ms tctx)`
-  fn build_start(&mut self, root: VCtx) -> (Num, Num, PTCtx<'a>, ProofId) {
+  /// Returns `|- okPrologue epiRet x0 mctx1 code epi mctx2`
+  fn ok_prologue(&mut self, mctx: &mut P<MCtx>, mut code: ProofId) -> ProofId {
+    let mut epi = app!(self.thm, (epiRet));
+    let mut sp = self.hex.h2n(&mut self.thm, 0);
+    let mut stack = vec![];
+    for &reg in self.proc.saved_regs() {
+      let r = reg.index(); let er = self.hex[r];
+      let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+      let n = self.hex.h2n(&mut self.thm, 8);
+      let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
+      let mctx1 = mctx.1;
+      let t = ((r, MCtxRegValue::Free), app!(self.thm, (FREE er)));
+      let h2 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
+      stack.push([code, code2, epi, mctx1, mctx.1, er, *sp, *sp2, h1, h2]);
+      epi = app!(self.thm, epiPop[er, epi]);
+      sp = sp2;
+      code = code2;
+    }
+    let h1 = mctx.0.ok(&mut self.thm);
+    let mctx1 = mctx.1;
+    let mut th = if self.sp_max.val == 0 {
+      thm!(self.thm, (okPrologue[epi, *sp, mctx1, code, epi, mctx1]) =>
+        okPrologue_alloc0(epi, mctx1, *sp, h1))
+    } else {
+      MCtx::add_stack(mctx, &mut self.thm, self.ctx.sp_max);
+      let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
+      let max = self.hex.from_u32(&mut self.thm, 1 << 12);
+      let h3 = self.hex.lt(&mut self.thm, m, max);
+      thm!(self.thm, (okPrologue[epi, *sp, mctx1, code, self.epi, mctx.1]) =>
+        okPrologue_alloc(epi, *m, mctx1, *self.sp_max, *sp, h1, h2, h3))
+    };
+    for [code, code2, epi1, mctx1, mctx2, er, sp, sp2, h1, h2] in stack.into_iter().rev() {
+      th = thm!(self.thm, (okPrologue[epi1, sp, mctx1, code, epi, mctx.1]) =>
+        okPrologue_push(code2, epi1, epi, mctx1, mctx2, mctx.1, er, sp, sp2, h1, h2, th))
+    }
+    th
+  }
+
+  /// Returns `|- okEpilogue epi code`
+  fn ok_epilogue(&mut self, epi: ProofId, code: ProofId) -> ProofId {
+    app_match!(self.thm, epi => {
+      (epiPop r epi2) => {
+        let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+        let th = self.ok_epilogue(epi2, code2);
+        thm!(self.thm, okEpilogue_pop(code2, epi2, r, th): okEpilogue[epi, code])
+      }
+      (epiFree n epi2) => {
+        let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+        let th = self.ok_epilogue(epi2, code2);
+        thm!(self.thm, okEpilogue_free(code2, epi2, n, th): okEpilogue[epi, code])
+      }
+      (epiRet) => thm!(self.thm, okEpilogue_ret(): okEpilogue[epi, code]),
+      !
+    })
+  }
+
+  /// Returns `(fs, ms, tctx, |- buildStart gctx pctx fs ms tctx)`
+  fn build_start(&mut self, bl: BlockProof<'_>, root: VCtx) -> (Num, Num, PTCtx, ProofId) {
     let fs = self.hex.from_u64(&mut self.thm, self.elf_proof.p_filesz());
     let ms = self.hex.from_u64(&mut self.thm, self.elf_proof.p_memsz());
-    let tctx = self.block_tctx(self.proc.block(BlockId::ENTRY), root, CtxId::ROOT);
-    let bproc = app!(self.thm, buildStart[self.pctx, *fs, *ms, tctx.1]);
+    let tctx = self.block_tctx(bl, root, CtxId::ROOT);
+    let bproc = app!(self.thm, buildStart[self.gctx, self.pctx, *fs, *ms, tctx.1]);
     (fs, ms, tctx, thm!(self.thm, sorry(bproc): bproc)) // TODO
   }
 
   /// Returns `(v, |- okRead tctx loc v)`
-  fn read(&mut self, tctx: P<&TCtx<'a>>, loc: &P<Loc>) -> (P<Value>, ProofId) {
+  fn read(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>) -> (P<Value>, ProofId) {
     let v = app!(self.thm, (d0)); // TODO
     let ret = app!(self.thm, okRead[tctx.1, loc.1, v]);
     ((Value::Reg, v), thm!(self.thm, sorry(ret): ret)) // TODO
   }
 
   /// Returns `(tctx', |- okWrite tctx loc v tctx')`
-  fn write(&mut self,
-    (tctx, l1): P<&mut TCtx<'a>>, loc: &P<Loc>, v: &P<Value>
-  ) -> (ProofId, ProofId) {
-    let v = app!(self.thm, (d0)); // TODO
-    let l2 = l1;
-    let ret = app!(self.thm, okWrite[l1, loc.1, v, l2]);
-    (l2, thm!(self.thm, sorry(ret): ret)) // TODO
+  fn write(&mut self, tctx: &mut P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
+    let l1 = tctx.1;
+    tctx.1 = l1;
+    let ret = app!(self.thm, okWrite[l1, loc.1, v.1, tctx.1]);
+    thm!(self.thm, sorry(ret): ret) // TODO
   }
 
-  /// Returns `(tctx', |- okCode bctx tctx code tctx')` for a regalloc operation.
-  fn ok_spill_op(&mut self,
-    (tctx, l1): P<&mut TCtx<'a>>, inst: &PInst, code: ProofId
-  ) -> (ProofId, ProofId) {
+  /// Returns `|- okCode bctx tctx code tctx'` for a regalloc operation.
+  fn ok_spill_op(&mut self, tctx: &mut P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
+    let l1 = tctx.1;
     let (dst, src) = app_match!(self.thm, code => { (instMov _ dst src) => (dst, src), ! });
     let reg_or_mem = |arg| app_match!(self.thm, arg => {
       (IRM_reg reg) => Ok(reg),
@@ -1060,39 +1113,52 @@ impl<'a> ProcProver<'a> {
       (Ok(edst), Ok(esrc), &PInst::MovRR { dst, src, .. }) => {
         let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
         let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let (v, h1) = match self.read((tctx, l1), &lsrc) {
+        let (v, h1) = match self.read(tctx, &lsrc) {
           ((Value::Reg, v), h1) => (v, h1),
           _ => unreachable!(),
         };
-        let (l2, h2) = self.write((tctx, l1), &ldst, &(Value::Reg, v));
-        (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-          ok_movRR(self.bctx, edst, esrc, l1, l2, v, h1, h2)))
+        let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
+        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+          ok_movRR(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
       }
       (Ok(edst), Err(esrc), &PInst::Load64 { dst, .. }) => {
         let lsrc = Loc::Local(esrc).as_expr(&mut self.thm);
         let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let (v, h1) = match self.read((tctx, l1), &lsrc) {
+        let (v, h1) = match self.read(tctx, &lsrc) {
           ((Value::SpillSlot(v), _), h1) => (v, h1),
           _ => unreachable!(),
         };
-        let (l2, h2) = self.write((tctx, l1), &ldst, &(Value::Reg, v));
-        (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-          ok_unspill(self.bctx, edst, esrc, l1, l2, v, h1, h2)))
+        let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
+        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+          ok_unspill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
       }
       (Err(edst), Ok(esrc), &PInst::Store { src, .. }) => {
         let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
         let ldst = Loc::Local(edst).as_expr(&mut self.thm);
-        let (v, h1) = match self.read((tctx, l1), &lsrc) {
+        let (v, h1) = match self.read(tctx, &lsrc) {
           ((Value::Reg, v), h1) => (v, h1),
           _ => unreachable!(),
         };
         let ss = app!(self.thm, (spillslot v));
-        let (l2, h2) = self.write((tctx, l1), &ldst, &(Value::SpillSlot(v), ss));
-        (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-          ok_spill(self.bctx, edst, esrc, l1, l2, v, h1, h2)))
+        let h2 = self.write(tctx, &ldst, &(Value::SpillSlot(v), ss));
+        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+          ok_spill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
       }
       _ => unreachable!()
     }
+  }
+
+  /// Returns `(T, |- getResult gctx T)`
+  fn get_result(&mut self) -> (ProofId, ProofId) {
+    let u_gctx = self.thm.get_def0(self.elab, self.t_gctx);
+    app_match!(self.thm, u_gctx => {
+      (mkGCtx c fs ms ty) => {
+        let th = thm!(self.thm, getResultGI(ty, c, fs, ms): getResult[u_gctx, ty]);
+        (ty, thm!(self.thm, (getResult[self.gctx, ty]) =>
+          CONV({th} => (getResult (UNFOLD({self.t_gctx}); u_gctx) ty))))
+      }
+      !
+    })
   }
 
   /// Returns `|- getEpi bctx ret epi`
@@ -1103,276 +1169,34 @@ impl<'a> ProcProver<'a> {
 
   /// Returns `|- checkRet bctx tctx ret`
   fn check_ret(&mut self,
-    tctx: PTCtx<'a>, out: &[VarId], args: &[(VarId, bool, Operand)]
+    tctx: &mut P<&mut TCtx>, outs: &[VarId], args: &[(VarId, bool, Operand)]
   ) -> ProofId {
-    drop(tctx.0);
-    thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
-      checkRetI(self.bctx, self.ret, tctx.1))
+    let th = thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
+      checkRetI(self.bctx, self.ret, tctx.1));
+    tctx.1 = self.ok0;
+    th
   }
 
   /// Returns `(tctx2, |- applyCall tctx1 args ret clob tctx2)`,
   /// or `(tctx2, |- applyCallG tctx1 args ret tctx2)` if `rel` is false
   #[allow(clippy::too_many_arguments)]
   fn apply_call(&mut self,
-    (tctx, l1): P<&mut TCtx<'a>>,
-    abi: &'a ProcAbi,
+    tctx: &mut P<&mut TCtx>,
+    abi: &ProcAbi,
     args: ProofId,
     ret: ProofId,
     clob: ProofId,
     rel: bool,
-  ) -> (ProofId, ProofId) {
-    let l2 = l1;
+  ) -> ProofId {
+    let l1 = tctx.1;
+    let l2 = tctx.1;
     if rel {
       let ret = app!(self.thm, applyCall[l1, args, ret, clob, l2]);
-      (l2, thm!(self.thm, sorry(ret): ret)) // TODO
+      thm!(self.thm, sorry(ret): ret) // TODO
     } else {
       let ret = app!(self.thm, applyCallG[l1, args, ret, l2]);
-      (l2, thm!(self.thm, sorry(ret): ret)) // TODO
+      thm!(self.thm, sorry(ret): ret) // TODO
     }
-  }
-
-  /// Returns `(lctx', |- okCode bctx tctx code lctx')`
-  /// or `(lctx', |- okWeak bctx lctx lctx')` in the regular case, assuming
-  /// regalloc moves have already been handled and `code` is atomic.
-  fn ok_code_reg(&mut self, (lctx, l1): P<&mut LCtx<'a>>, code: Option<ProofId>) -> (ProofId, ProofId) {
-    let tctx = if let LCtx::Reg(tctx) = lctx { &mut **tctx } else { unreachable!() };
-    // println!("ok_code_reg");
-    // dbg!(self.pp(l1), code.map(|code| self.pp(code)));
-    loop {
-      return match tctx.viter.kind {
-        StatementIterKind::Start => if let Some(stmt) = tctx.viter.stmts.next() {
-          // dbg!(stmt);
-          // if let Some(iter) = &mut tctx.piter {
-          //   if let Some(inst) = iter.peek() {
-          //     dbg!(inst.inst);
-          //   }
-          // }
-          match stmt {
-            Statement::Let(lk, r, ty, rv) => todo!(),
-            Statement::Assign(_, _, _, _) => todo!(),
-            Statement::LabelGroup(..) => todo!(),
-            Statement::PopLabelGroup => todo!(),
-            Statement::DominatedBlock(_, _) => todo!(),
-          }
-        } else if let Some(x) = tctx.viter.term.take() {
-          match x {
-            Terminator::Jump(_, _, _) => todo!(),
-            &Terminator::Jump1(_, tgt) => {
-              tctx.viter.kind = StatementIterKind::Jump1(tgt);
-              continue
-            }
-            Terminator::Return(out, args) => {
-              let h1 = self.get_epi();
-              let_unchecked!(tctx as LCtx::Reg(tctx) =
-                std::mem::replace(lctx, LCtx::Epilogue(self.epi)));
-              let h2 = self.check_ret((tctx, l1), out, args);
-              let l2 = app!(self.thm, okEpilogue[self.epi]);
-              let (l3, h3) = self.ok_code1((lctx, l2), code);
-              let code = code.expect("ghost return not allowed, I think");
-              (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
-                okEpilogue_code(self.bctx, code, self.epi, self.ret, l1, l3, h1, h2, h3)))
-            }
-            Terminator::Unreachable(_) => todo!(),
-            Terminator::If(_, _, _) => todo!(),
-            Terminator::Assert(_, _, _, _) => todo!(),
-            &Terminator::Call { ctx: _, f, se, ref tys, ref args, reach, tgt: block, ref rets } => {
-              let f = self.elf_proof.get_func(f).expect("missing function");
-              let abi = self.elf_proof.proc_abi(f);
-              let proc_thm = *self.proc_proof.get(&Some(f))
-                .unwrap_or_else(|| unimplemented!("recursive function"));
-              let (x, h1) = self.thm.thm0(self.elab, proc_thm);
-              let (tgt, args, ret, clob) = app_match!(self.thm, x => {
-                (okProc _ tgt args ret clob _) => (tgt, args, ret, clob),
-                !
-              });
-              let (l2, h2) = self.apply_call((tctx, l1), abi, args, ret, clob, code.is_some());
-              if reach {
-                tctx.viter.kind = StatementIterKind::PostCall(block, rets);
-              } else {
-                *lctx = LCtx::Dead
-              }
-              match (code, se) {
-                (Some(code), true) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-                  ok_call_proc(args, clob, self.epi, self.gctx, self.labs, ret, self.ret,
-                    l1, l2, tgt, h1, h2))),
-                (Some(code), false) => (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-                  ok_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
-                    l1, l2, tgt, h1, h2))),
-                (None, false) => (l2, thm!(self.thm, (okWeak[self.bctx, l1, l2]) =>
-                  okWeak_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
-                    l1, l2, tgt, h1, h2))),
-                (None, true) => unreachable!("side effecting function must have control flow"),
-              }
-            }
-            Terminator::Exit(op) => {
-              tctx.viter.kind = StatementIterKind::Defer(2, l1, DeferredKind::Exit(op));
-              continue
-            }
-            Terminator::Dead => unreachable!(),
-          }
-        } else {
-          todo!()
-        }
-        StatementIterKind::PostCall(tgt, rets) => {
-          assert!(rets.is_empty()); // TODO
-          tctx.viter.kind = StatementIterKind::Jump1(tgt);
-          continue
-        }
-        StatementIterKind::Jump1(tgt) => {
-          tctx.retarget(self.proc.block(tgt));
-          let lctx = std::mem::take(lctx);
-          if let Some(vid) = self.proc.vblock_id(tgt) {
-            let code = code.expect("jumping to a real block requires code");
-            let (a, h1) = self.vblock_asm[&vid];
-            let (ip, code1) = app_match!(self.thm, a => { (asmAt ip code) => (ip, code), ! });
-            let h2 = self.ok_code0((lctx, l1), Some(code1));
-            let th = thm!(self.thm, (okBlock[self.bctx, ip, l1]) =>
-              okBlockI(self.labs, code1, ip, l1, self.pctx, h1, h2));
-            (self.ok0, thm!(self.thm, (okCode[self.bctx, l1, code, self.ok0]) =>
-              ok_jump(self.bctx, l1, ip, th)))
-          } else {
-            (self.ok0, self.ok_code0((lctx, l1), None))
-          }
-        }
-        StatementIterKind::Defer(0, l0, DeferredKind::Exit(op)) => {
-          let code = code.expect("defer requires code");
-          let u_gctx = self.thm.get_def0(self.elab, self.t_gctx);
-          let (c, fs, ms, ty) = app_match!(self.thm, u_gctx => {
-            (mkGCtx c fs ms t) => (c, fs, ms, t),
-            !
-          });
-          let th = thm!(self.thm, okResultGI(ty, c, fs, ms): okResult[u_gctx, ty]);
-          let h1 = thm!(self.thm, (okResult[self.gctx, ty]) =>
-            CONV({th} => (okResult (UNFOLD({self.t_gctx}); u_gctx) ty)));
-          let (ty2, h2) = self.read_hyp_operand((tctx, l0), op);
-          let h2 = self.read_hyp_coerce(ty2, h2, ty);
-          *lctx = LCtx::Dead;
-          (self.ok0, thm!(self.thm, (okCode[self.bctx, l1, code, self.ok0]) =>
-            ok_exit(ty, self.gctx, self.labs, self.pctx1, l0, h1, h2)))
-        }
-        StatementIterKind::Defer(ref mut n, _, _) => {
-          let code = code.expect("defer requires code");
-          tctx.piter.as_mut().and_then(Iterator::next).expect("defer requires code");
-          *n -= 1;
-          let l2 = app!(self.thm, (okDefer l1 code));
-          (l2, thm!(self.thm, okDeferI(self.bctx, code, l1): okCode[self.bctx, l1, code, l2]))
-        }
-      }
-    }
-  }
-
-  /// Returns `(lctx', |- okCode bctx lctx code lctx')` or `(lctx', |- okWeak bctx lctx lctx')`,
-  /// where `code` is atomic.
-  fn ok_code1(&mut self,
-    (lctx, l1): P<&mut LCtx<'a>>, code: Option<ProofId>
-  ) -> (ProofId, ProofId) {
-    match (&mut *lctx, code) {
-      (LCtx::Dead, None) =>
-        (l1, thm!(self.thm, okWeak_id(self.bctx, l1): okWeak[self.bctx, l1, l1])),
-      (LCtx::Dead, Some(code)) =>
-        (l1, thm!(self.thm, okCode_0(self.bctx, code): okCode[self.bctx, l1, code, l1])),
-      (LCtx::Prologue(_), None) => unreachable!("entry block must have code"),
-      (LCtx::Prologue(p), Some(code)) => if let Some(&reg) = p.iter.next() {
-        let Prologue { epi, sp, ref mut mctx, prol, ref mut piter, .. } = **p;
-        let r = reg.index(); let er = self.hex[r];
-        let n = self.hex.h2n(&mut self.thm, 8);
-        let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
-        let mctx1 = mctx.1;
-        let t = ((r, MCtxRegValue::Free), app!(self.thm, (FREE er)));
-        let h2 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
-        p.epi = app!(self.thm, epiPop[er, epi]);
-        p.sp = sp2;
-        piter.next();
-        let l2 = app!(self.thm, okPrologue[p.epi, *sp2, mctx.1, prol]);
-        (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-          okPrologue_push(self.bctx, epi, mctx1, mctx.1, prol, er, *sp, *sp2, h1, h2)))
-      } else {
-        let Prologue { epi, sp, mut mctx, viter, mut piter, vctx, .. } =
-          *let_unchecked!(LCtx::Prologue(p) = std::mem::take(lctx), p);
-        let h1 = mctx.0.ok(&mut self.thm);
-        let mctx1 = mctx.1;
-        if self.sp_max.val != 0 {
-          piter.next();
-          MCtx::add_stack(&mut mctx, &mut self.thm, self.ctx.sp_max);
-        }
-        let (vctx1, sz1) = (vctx.e, *vctx.nvars);
-        let tctx = Box::new(TCtx { viter, piter: Some(piter.peekable()), vctx, mctx });
-        let l2 = tctx.mk(&mut self.thm);
-        *lctx = LCtx::Reg(tctx);
-        if self.sp_max.val == 0 {
-          let (l3, h2) = self.ok_code1((lctx, l2), Some(code));
-          (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
-            okPrologue_alloc0(self.bctx, code, epi, l3, mctx1, *sp, sz1, vctx1, h1, h2)))
-        } else {
-          let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
-          let max = self.hex.from_u32(&mut self.thm, 1 << 12);
-          let h3 = self.hex.lt(&mut self.thm, m, max);
-          (l2, thm!(self.thm, (okCode[self.bctx, l1, code, l2]) =>
-            okPrologue_alloc(self.bctx, epi, *m, mctx1, *self.sp_max, *sp,
-              sz1, vctx1, h1, h2, h3)))
-        }
-      }
-      (LCtx::Reg(tctx), code) => {
-        if_chain! {
-          if let Some(iter) = &mut tctx.piter;
-          if let Some(code) = code;
-          if let Some(inst) = iter.peek();
-          if matches!(inst.inst, PInst::MovRR { .. } |
-            PInst::Load64 { spill: true, .. } | PInst::Store { spill: true, .. });
-          then {
-            let inst = iter.next().expect("impossible");
-            return self.ok_spill_op((tctx, l1), inst.inst, code)
-          }
-        }
-        self.ok_code_reg((lctx, l1), code)
-      }
-      (LCtx::Epilogue(_), None) => unreachable!("epilogue must have code"),
-      (LCtx::Epilogue(epi), Some(code)) => app_match!(self.thm, *epi => {
-        (epiFree n epi2) => {
-          let l2 = app!(self.thm, (okEpilogue epi2));
-          *epi = epi2;
-          (l2, thm!(self.thm,
-            okEpilogue_free(epi2, self.bctx, n): (okCode {self.bctx} l1 code l2)))
-        }
-        (epiPop r epi2) => {
-          let l2 = app!(self.thm, (okEpilogue epi2));
-          *epi = epi2;
-          (l2, thm!(self.thm, okEpilogue_pop(epi2, self.bctx, r): (okCode {self.bctx} l1 code l2)))
-        }
-        (epiRet) => {
-          let l2 = app!(self.thm, (ok0));
-          *lctx = LCtx::Dead;
-          (l2, thm!(self.thm, okEpilogue_ret(self.bctx): (okCode {self.bctx} l1 code l2)))
-        }
-        !
-      })
-    }
-  }
-
-  /// Returns `(lctx', |- okCode bctx lctx code lctx')` or `(lctx', |- okWeak bctx lctx lctx')`
-  fn ok_code(&mut self,
-    (lctx, l1): P<&mut LCtx<'a>>, mut code: Option<ProofId>
-  ) -> (ProofId, ProofId) {
-    if !matches!(lctx, LCtx::Dead) {
-      if let Some(code) = code {
-        app_match!(self.thm, code => {
-          (localAssembleA c1 c2) => {
-            let (l2, h1) = self.ok_code((lctx, l1), Some(c1));
-            let (l3, h2) = self.ok_code((lctx, l2), Some(c2));
-            return (l3, thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
-              okCode_A(self.bctx, c1, c2, l1, l2, l3, h1, h2)))
-          }
-          _ => {}
-        })
-      }
-    }
-    self.ok_code1((lctx, l1), code)
-  }
-
-  /// Returns `|- okCode bctx lctx code ok0` or `|- okWeak bctx lctx ok0`
-  fn ok_code0(&mut self, (mut lctx, l1): P<LCtx<'a>>, code: Option<ProofId>) -> ProofId {
-    let (_, th) = self.ok_code((&mut lctx, l1), code);
-    if let LCtx::Dead = lctx { th } else { panic!("incomplete block") }
   }
 
   /// Proves `|- okProc gctx start args ret clob se`,
@@ -1392,39 +1216,425 @@ impl<'a> ProcProver<'a> {
       !
     });
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
-    let (start, code) = app_match!(self.thm, a => { (asmEntry start code) => (start, code), ! });
+    let (start, prol, code) = app_match!(self.thm, a => {
+      (asmEntry start (ASM_A prol code)) => (start, prol, code),
+      !
+    });
+    let bl = self.proc.block(BlockId::ENTRY);
     if name.is_some() {
-      let bl = self.proc.block(BlockId::ENTRY);
       let abi = self.elf_proof.proc_abi(self.proc.id.expect("not start"));
       let mut vctx = root;
       let (args, mut mctx, h2) = self.accum_args(&mut vctx, bl.block().ctx, &abi.args);
+      let (vctx1, sz1) = (vctx.e, *vctx.nvars);
       let mctx1 = mctx.1;
       let args2 = app!(self.thm, (mkArgs args mctx1));
       let (clob, h3) = self.accum_clob(&mut mctx, abi.clobbers.iter().map(|r| r.index()));
       let mctx2 = mctx.1;
-      let viter = StatementIter {
-        stmts: bl.block().stmts.iter(),
-        term: Some(bl.block().terminator()),
-        kind: StatementIterKind::Start,
-      };
-      let piter = bl.vblock().expect("entry block must have code").insts();
-      let mut sp = self.hex.h2n(&mut self.thm, 0);
-      let epi0 = app!(self.thm, (epiRet));
-      let iter = self.proc.saved_regs().iter();
-      let (vctx1, sz1) = (vctx.e, *vctx.nvars);
-      let prol = app!(self.thm, mkPrologue[vctx1, sz1, self.epi]);
-      let lctx = app!(self.thm, okPrologue[epi0, *sp, mctx2, prol]);
-      let prol = Box::new(Prologue { epi: epi0, sp, mctx, iter, prol, viter, piter, vctx });
-      let h4 = self.ok_code0((LCtx::Prologue(prol), lctx), Some(code));
+      let h4 = self.ok_prologue(&mut mctx, prol);
+      let mctx3 = mctx.1;
+      let tctx = &mut TCtx { vctx, mctx };
+      let l2 = tctx.mk(&mut self.thm);
+      let h5 = self.ok_stmts(bl, code, (tctx, l2));
       thm!(self.thm, (okProc[self.gctx, start, args2, self.ret, clob, self.se]) =>
-        okProcI(args, clob, code, self.epi, self.gctx, mctx1, mctx2, self.ret, self.se,
-          start, sz1, vctx1, h1, h2, h3, h4))
+        okProcI(args, clob, code, self.epi, self.gctx, mctx1, mctx2, mctx3,
+          prol, self.ret, self.se, start, sz1, vctx1, h1, h2, h3, h4, h5))
     } else {
-      let (fs, ms, (tctx, l1), h2) = self.build_start(root);
-      let mut sp = self.hex.h2n(&mut self.thm, 0);
-      let h3 = self.ok_code0((LCtx::Reg(tctx), l1), Some(code));
+      let (fs, ms, (mut tctx, l1), h2) = self.build_start(bl, root);
+      let h3 = self.ok_stmts(bl, code, (&mut *tctx, l1));
       thm!(self.thm, (okStart[self.gctx, *fs, *ms]) =>
-        okStartI(code, *fs, self.gctx, *ms, self.pctx1, l1, h1, h2, h3))
+        okStartI(code, *fs, self.gctx, *ms, self.pctx, l1, h1, h2, h3))
+    }
+  }
+}
+
+#[derive(Debug)]
+enum StmtState<'a> {
+  None,
+  Call {
+    f: ProcId, abi: &'a ProcAbi, args: &'a [(bool, Operand)],
+    reach: bool, rets: &'a [(bool, VarId)], se: bool,
+  },
+}
+
+impl Default for StmtState<'_> {
+  fn default() -> Self { Self::None }
+}
+
+enum InstState {
+  None,
+  StartSkip,
+  Skip,
+  Call,
+  Move,
+  Fallthrough(BlockId),
+}
+
+#[derive(Debug)]
+enum Parent {
+  /// `code1 +asm code2, code2`
+  Left(ProofId, ProofId),
+  /// `code, l1, |- okCode bctx l1 code1 l2`
+  Right(ProofId, ProofId, ProofId),
+}
+
+struct BlockProofVisitor<'a, 'b> {
+  proc: &'b mut ProcProver<'a>,
+  /// The id of the current block
+  block_id: BlockId,
+  /// The id of the current physical block
+  vblock_id: Option<VBlockId>,
+  tctx: P<&'b mut TCtx>,
+  /// Stack of `n` corresponding to binary subtrees of `code`
+  /// that have not been broken down and consumed yet.
+  stmts_in: Vec<usize>,
+  /// The data for the current statement
+  stmt_state: StmtState<'a>,
+  /// The path to the current position in the tree
+  /// * `Left(code1 +asm code2, code2)` or
+  /// * `Right((code1 +asm code2), l1, |- okCode bctx l1 code1 l2)`
+  stack: Vec<Parent>,
+  /// The current position in the tree
+  code: ProofId,
+  /// The `tctx` prior to executing `code`
+  lhs_tctx: ProofId,
+  /// Must be set before calling `do_inst`
+  inst_state: InstState,
+  /// Set prior to lists for position dependent handling
+  arg_count: usize,
+  /// Set at the end of the block
+  out: ProofId,
+}
+
+impl<'a> Deref for BlockProofVisitor<'a, '_> {
+  type Target = ProcProver<'a>;
+  fn deref(&self) -> &Self::Target { self.proc }
+}
+impl<'a, 'b> DerefMut for BlockProofVisitor<'a, 'b> {
+  fn deref_mut(&mut self) -> &mut Self::Target { self.proc }
+}
+
+impl<'a> ProcProver<'a> {
+  fn ok_stmts(&mut self, bl: BlockProof<'a>, code: ProofId, tctx: P<&mut TCtx>) -> ProofId {
+    // eprintln!("\n{:?}: {:?}", bl.id, bl.vblock().map(|bl| bl.insts));
+    let n = bl.block().stmts.len();
+    let mut visitor = BlockProofVisitor {
+      proc: self,
+      block_id: bl.id,
+      vblock_id: bl.vblock_id(),
+      lhs_tctx: tctx.1,
+      tctx,
+      stmts_in: if n == 0 { vec![] } else { vec![n] },
+      stmt_state: StmtState::None,
+      stack: vec![],
+      code,
+      inst_state: InstState::None,
+      arg_count: 0,
+      out: ProofId::INVALID,
+    };
+    if n != 0 { visitor.split() }
+    bl.visit(&mut visitor);
+    assert!(visitor.out != ProofId::INVALID, "{:?}", visitor.stack);
+    visitor.out
+  }
+}
+
+impl<'a, 'b> BlockProofVisitor<'a, 'b> {
+  /// Assuming a `|- code1 +asm code2` proof obligation, pops this and
+  /// adds two `|- code1`, `|- code2` proof obligations. (See `finish`)
+  fn split(&mut self) {
+    let (code1, code2) = self.proc.split_asm(self.code);
+    // eprintln!("split {}, {}", self.pp(code1), self.pp(code2));
+    self.stack.push(Parent::Left(self.code, code2));
+    self.code = code1;
+  }
+
+  /// Closes a `|- okCode bctx lhs_tctx code tctx` proof obligation.
+  /// Advances the state to the next unproven right sibling `code`,
+  /// or sets `out` if the tree is complete
+  fn finish(&mut self, mut th: ProofId) {
+    // eprintln!("finish {}", self.proc.pp(self.code));
+    while let Some(parent) = self.stack.pop() {
+      match parent {
+        Parent::Left(code, code2) => {
+          self.stack.push(Parent::Right(code, self.lhs_tctx, th));
+          self.lhs_tctx = self.tctx.1;
+          self.code = code2;
+          return
+        }
+        Parent::Right(code, l1, h1) => {
+          th = self.proc.ok_code_join([l1, self.lhs_tctx, self.tctx.1, code, h1, th]);
+          self.lhs_tctx = l1;
+          self.code = code;
+        }
+      }
+    }
+    self.out = th
+  }
+
+  /// Closes a proof where `code = ASM0` using the identity
+  fn finish_id(&mut self) {
+    let l = self.tctx.1;
+    let th = thm!(self.thm, okCode_id(self.bctx, l): okCode[self.bctx, l, self.asm0, l]);
+    self.finish(th)
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn call(&mut self,
+    f: ProcId, abi: &'a ProcAbi, _args: &'a [(bool, Operand)],
+    _reach: bool, _rets: &'a [(bool, VarId)], se: bool,
+    inst: Option<&Inst<'a>>,
+  ) {
+    let proc = &mut *self.proc;
+    let proc_thm = *proc.proc_proof.get(&Some(f))
+      .unwrap_or_else(|| unimplemented!("recursive function"));
+    let (x, h1) = proc.thm.thm0(proc.elab, proc_thm);
+    let (tgt, args, ret, clob) = app_match!(proc.thm, x => {
+      (okProc _ tgt args ret clob _) => (tgt, args, ret, clob),
+      !
+    });
+    let rel = inst.is_some();
+    let l1 = self.tctx.1;
+    let h2 = proc.apply_call(&mut self.tctx, abi, args, ret, clob, rel);
+    let l2 = self.tctx.1;
+    let th = match (rel, se) {
+      (true, true) => thm!(self.thm, (okCode[self.bctx, l1, self.code, l2]) =>
+        ok_call_proc(args, clob, self.epi, self.gctx, self.labs, ret, self.ret,
+          l1, l2, tgt, h1, h2)),
+      (true, false) => thm!(self.thm, (okCode[self.bctx, l1, self.code, l2]) =>
+        ok_call_func(args, clob, self.gctx, self.labs, self.pctx1, ret,
+          l1, l2, tgt, h1, h2)),
+      (false, false) => thm!(self.thm, (okCode[self.bctx, l1, self.code, l2]) =>
+        ok_call_func_0(args, clob, self.gctx, self.labs, self.pctx1, ret,
+          l1, l2, tgt, h1, h2)),
+      (false, true) => unreachable!("side effecting function must have control flow"),
+    };
+    self.finish(th)
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn fallthrough(&mut self, tgt: BlockId) {
+    let l1 = self.tctx.1;
+    let bctx = self.bctx;
+    let (ip, mut th) = self.proc.ok_block_opt((self.tctx.0, l1), tgt);
+    // eprintln!("returning to {:?}", self.block_id);
+    if ip != ProofId::INVALID {
+      th = thm!(self.thm, ok_jump(bctx, l1, ip, th): okCode[bctx, l1, self.code, self.ok0]);
+    }
+    self.tctx.1 = self.ok0;
+    self.finish(th)
+  }
+}
+
+impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
+  fn on_inst(&mut self, _: &TraceIter<'a>, spill: bool, inst: &Inst<'a>) {
+    if spill {
+      match self.inst_state {
+        InstState::None => panic!("unexpected instruction: {:?}", inst.inst),
+        InstState::Skip => panic!("unexpected spill instruction"),
+        _ => {}
+      }
+      self.split();
+      let th = self.proc.ok_spill_op(&mut self.tctx, inst.inst, self.code);
+      self.finish(th);
+    } else {
+      match self.inst_state {
+        InstState::None => panic!("unexpected instruction: {:?}", inst.inst),
+        InstState::StartSkip => self.inst_state = InstState::Skip,
+        InstState::Skip => {}
+        InstState::Call =>
+          if let StmtState::Call { f, abi, args, reach, rets, se, .. } = self.stmt_state {
+            self.call(f, abi, args, reach, rets, se, Some(inst));
+            self.inst_state = InstState::None
+          } else { unreachable!() },
+        InstState::Move => todo!(),
+        InstState::Fallthrough(tgt) => {
+          self.fallthrough(tgt);
+          self.inst_state = InstState::None
+        }
+      }
+    }
+  }
+
+  fn before_copy(&mut self, _: &TraceIter<'a>, cl: cl::Copy) {
+    if matches!(cl, cl::Copy::Two) { self.split() }
+    self.inst_state = InstState::Move
+  }
+  fn after_copy(&mut self, _: &TraceIter<'a>, _: cl::Copy) {
+    self.inst_state = InstState::None
+  }
+
+  fn before_prologue(&mut self, _: &TraceIter<'a>,
+    _: &'a [PReg], _: u32, _: &'a [ArgAbi], _: Option<&'a [ArgAbi]>,
+  ) { self.inst_state = InstState::Skip }
+
+  fn after_prologue(&mut self, _: &TraceIter<'a>,
+    _: &'a [PReg], _: u32, _: &'a [ArgAbi], _: Option<&'a [ArgAbi]>,
+  ) { self.inst_state = InstState::None }
+
+  fn before_epilogue(&mut self, _: &cl::TraceIter<'_>) { self.inst_state = InstState::StartSkip }
+
+  fn before_stmt(&mut self, _: &TraceIter<'a>, stmt: &Statement, _: &cl::Statement) {
+    let mut n = self.stmts_in.pop().expect("underflow");
+    while n > 1 {
+      let m = n >> 1;
+      self.stmts_in.push(n - m);
+      self.split();
+      n = m;
+    }
+    self.stmt_state = match stmt {
+      Statement::Let(_, _, _, _) => todo!(),
+      Statement::Assign(_, _, _, _) => todo!(),
+      Statement::LabelGroup(_, _) => todo!(),
+      Statement::PopLabelGroup => todo!(),
+      Statement::DominatedBlock(_, _) => todo!(),
+    }
+  }
+
+  fn after_stmt(&mut self, _: &TraceIter<'a>, stmt: &Statement, _: &cl::Statement) {
+    let th = match stmt {
+      Statement::Let(_, _, _, _) => todo!(),
+      Statement::Assign(_, _, _, _) => todo!(),
+      Statement::LabelGroup(_, _) => todo!(),
+      Statement::PopLabelGroup => todo!(),
+      Statement::DominatedBlock(_, _) => todo!(),
+    };
+    self.finish(th)
+  }
+
+  fn before_call_args(&mut self, _: &TraceIter<'a>,
+    _: ProcId, _: &ProcAbi, args: &[(bool, Operand)]
+  ) {
+    self.arg_count = args.len();
+    if self.arg_count == 0 { self.finish_id() }
+  }
+
+  fn before_call_arg(&mut self, _: &TraceIter<'a>,
+    _: bool, _: &'a Operand, _: &'a ArgAbi, _: &'a cl::Elem
+  ) {
+    self.arg_count -= 1;
+    if self.arg_count != 0 { self.split() }
+  }
+
+  fn after_call_arg(&mut self, _: &TraceIter<'a>,
+    _: bool, _: &'a Operand, _: &'a ArgAbi, _: &'a cl::Elem
+  ) {
+    self.finish(todo!());
+  }
+
+  fn after_call_args(&mut self, _: &TraceIter<'a>,
+    _: ProcId, _: &ProcAbi, _: &[(bool, Operand)]
+  ) { self.inst_state = InstState::Call }
+
+  fn before_call_retargs(&mut self, _: &TraceIter<'a>,
+    _: ProcId, _: &'a ProcAbi, rets: &'a [(bool, VarId)],
+  ) {
+    self.arg_count = rets.len();
+    self.split();
+    if self.arg_count == 0 { self.finish_id() }
+  }
+
+  fn before_call_retarg(&mut self, _: &TraceIter<'a>, _: cl::IntoMem, _: &'a ArgAbi) {
+    self.arg_count -= 1;
+    if self.arg_count != 0 { self.split() }
+  }
+
+  fn after_call_retarg(&mut self, _: &TraceIter<'a>, _: cl::IntoMem, _: &'a ArgAbi) {
+    self.finish(todo!())
+  }
+
+  fn after_call_retargs(&mut self, _: &TraceIter<'a>,
+    _: ProcId, _: &'a ProcAbi, _: &'a [(bool, VarId)],
+  ) { self.split() }
+
+  fn before_call_ret(&mut self, _: &TraceIter<'a>, _: &'a ArgAbi, _: &'a cl::Elem) {
+    self.split()
+  }
+
+  fn after_call_ret(&mut self, _: &TraceIter<'a>, _: &'a ArgAbi, _: &'a cl::Elem) {
+    self.finish(todo!());
+  }
+
+  // override the main handling
+  fn do_call_rets(&mut self,
+    boxes: u8, retabi: &'a [ArgAbi], rets: &'a [(bool, VarId)], tgt: BlockId,
+    it: &mut TraceIter<'a>,
+  ) {
+    // eprintln!("before_call_rets");
+    for (arg, &(vr, _)) in retabi.iter().zip(rets) {
+      if !vr { continue }
+      self.do_call_ret(arg, it.next_list_elem(), it)
+    }
+    for _ in 0..boxes { self.do_copy(cl::Copy::One, it) }
+    self.inst_state = InstState::Fallthrough(tgt);
+    self.do_inst(it);
+    // eprintln!("after_call_rets");
+  }
+
+  fn before_call(&mut self, _: &TraceIter<'a>,
+    f: ProcId, abi: &'a ProcAbi, args: &'a [(bool, Operand)],
+    reach: bool, rets: &'a [(bool, VarId)], se: bool, _: BlockId,
+  ) {
+    self.stmt_state = StmtState::Call { f, abi, args, reach, rets, se };
+    self.split();
+  }
+
+  fn after_call(&mut self, _: &TraceIter<'a>,
+    _: ProcId, _: &ProcAbi, _: &[(bool, Operand)],
+    _: bool, _: &[(bool, VarId)], _: bool, _: BlockId,
+  ) {
+  }
+
+  fn before_terminator(&mut self, _: &TraceIter<'a>,
+    _: &IdxVec<ProcId, ProcAbi>, _: Option<&[ArgAbi]>,
+    term: &'a Terminator, _: &cl::Terminator
+  ) {
+    match term {
+      Terminator::Jump(_, _, _) => todo!(),
+      Terminator::Jump1(_, _) => todo!(),
+      Terminator::Return(..) => {}
+      Terminator::Unreachable(_) => todo!(),
+      Terminator::If(_, _, _) => todo!(),
+      Terminator::Assert(_, _, _, _) => todo!(),
+      Terminator::Call { .. } => {}
+      Terminator::Exit(_) => self.inst_state = InstState::StartSkip,
+      Terminator::Dead => unreachable!(),
+    }
+  }
+
+  fn after_terminator(&mut self, _: &TraceIter<'a>,
+    _: &IdxVec<ProcId, ProcAbi>, _: Option<&[ArgAbi]>,
+    term: &Terminator, cl: &cl::Terminator
+  ) {
+    // let (l1, code) = self.stmt_in.take().expect("nesting fail");
+    match term {
+      Terminator::Jump(_, _, _) => todo!(),
+      Terminator::Jump1(_, _) => todo!(),
+      Terminator::Return(outs, args) => {
+        assert!(!matches!(cl, cl::Terminator::Ghost), "ghost return not allowed, I think");
+        self.inst_state = InstState::None;
+        let h1 = self.get_epi();
+        let proc = &mut *self.proc;
+        let h2 = proc.check_ret(&mut self.tctx, outs, args);
+        let h3 = proc.ok_epilogue(proc.epi, self.code);
+        let th = thm!(proc.thm, (okCode[proc.bctx, self.lhs_tctx, self.code, proc.ok0]) =>
+          okEpilogue_E(proc.bctx, self.code, proc.epi, proc.ret, self.lhs_tctx, h1, h2, h3));
+        self.finish(th)
+      }
+      Terminator::Unreachable(_) => todo!(),
+      Terminator::If(_, _, _) => todo!(),
+      Terminator::Assert(_, _, _, _) => todo!(),
+      Terminator::Call { .. } => {}
+      Terminator::Exit(op) => {
+        let proc = &mut *self.proc;
+        let (ty, h1) = proc.get_result();
+        let l1 = self.tctx.1;
+        let (ty2, h2) = proc.read_hyp_operand((self.tctx.0, l1), op);
+        let h2 = proc.read_hyp_coerce(ty2, h2, ty);
+        let th = thm!(proc.thm, (okCode[proc.bctx, l1, self.code, proc.ok0]) =>
+          ok_exit(ty, proc.gctx, proc.labs, proc.pctx1, l1, h1, h2));
+        self.finish(th)
+      }
+      Terminator::Dead => unreachable!(),
     }
   }
 }
@@ -1459,7 +1669,6 @@ pub(super) fn compile_proof(
       thm,
     };
     let th = build.prove_proc(root());
-    let ctx = &build.ctx;
     let (ok_thm, doc) = mangler.get_data(build.elab,
       proc.name().map_or(Name::StartOkThm, Name::ProcOkThm));
     let ok_thm = build.elab.env

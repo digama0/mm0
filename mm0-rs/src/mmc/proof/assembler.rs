@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
-use mmcc::{types::{mir, classify as cl, vcode::{ArgAbi, ProcAbi}, IdxVec}, arch::{SysCall, PReg}};
+use mmcc::{types::{mir, classify::{self as cl, TraceIter}, vcode::{ArgAbi, ProcAbi}, IdxVec}, arch::{SysCall, PReg}};
 use mmcc::{Symbol, TEXT_START, types::Size};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop};
 use mmcc::proof::{AssemblyItem, AssemblyItemIter, ElfProof, Inst, Proc, ProcId};
@@ -1070,7 +1070,7 @@ impl Stack {
       (s, Stack::Empty(pos)) => s,
       (Stack::Asm(s, x, y, a, th1), Stack::Asm(t, y2, z, b, th2)) => {
         assert!(*y == *y2);
-        let ab = app!(de, (localAssembleA a b));
+        let ab = app!(de, (ASM_A a b));
         let st = app!(de, (sadd s t));
         let th = thm!(de, localAssembleA_I(a, b, *de.start, s, t, *x, *y, *z, th1, th2):
           localAssemble[*de.start, st, *x, *z, ab]);
@@ -1078,21 +1078,21 @@ impl Stack {
       }
       (Stack::Asm(s, x, z1, a, th1), Stack::Asm0(z, b, th2)) => {
         assert!(*z1 == *z);
-        let ab = app!(de, (localAssembleA a b));
+        let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_r(a, b, *de.start, s, *x, *z, th1, th2):
           localAssemble[*de.start, s, *x, *z, ab]);
         Stack::Asm(s, x, z, ab, th)
       }
       (Stack::Asm0(x, a, th1), Stack::Asm(s, x2, z, b, th2)) => {
         assert!(*x == *x2);
-        let ab = app!(de, (localAssembleA a b));
+        let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_l(a, b, *de.start, s, *x, *z, th1, th2):
           localAssemble[*de.start, s, *x, *z, ab]);
         Stack::Asm(s, x, z, ab, th)
       }
       (Stack::Asm0(z1, a, th1), Stack::Asm0(z, b, th2)) => {
         assert!(*z1 == *z);
-        let ab = app!(de, (localAssembleA a b));
+        let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_A(a, b, *de.start, *z, th1, th2):
           localAssemble0[*de.start, *z, ab]);
         Stack::Asm0(z, ab, th)
@@ -1137,6 +1137,13 @@ impl<'a, 'b> BuildAssemblyVisitor<'a, 'b> {
     }
   }
 
+  fn end_rassoc0(&mut self, force: bool) {
+    let n = self.groups.pop().expect("stack underflow");
+    let mut s = Stack::dummy(self.pos, self.proc);
+    for t in self.stack.drain(n..).rev() { s = t.join(s, force, self.proc) }
+    self.stack.push(s)
+  }
+
   fn pop_binary(&mut self, force: bool, n: usize) -> Stack {
     match n {
       0 => Stack::Empty(self.pos),
@@ -1145,7 +1152,11 @@ impl<'a, 'b> BuildAssemblyVisitor<'a, 'b> {
         let m = n >> 1;
         let b = self.pop_binary(force, n - m);
         let a = self.pop_binary(force, m);
-        a.join(b, force, self.proc)
+        if !force && matches!((&a, &b), (Stack::Empty(_), Stack::Empty(_))) {
+          a
+        } else {
+          a.join(b, true, self.proc)
+        }
       }
     }
   }
@@ -1158,7 +1169,14 @@ impl<'a, 'b> BuildAssemblyVisitor<'a, 'b> {
 }
 
 impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
-  fn on_inst(&mut self, _: bool, inst: &Inst<'_>) {
+
+  // Every group is handled the same way: agglomerate all children of the node into a
+  // right-associative list of children with instructions at the nodes.
+  // This accumulates the desired proof in `self.stack`.
+  fn before(&mut self, _: &cl::TraceIter<'_>) { self.start() }
+  fn after(&mut self, _: &cl::TraceIter<'_>) { self.end_rassoc(false) }
+
+  fn on_inst(&mut self, _: &cl::TraceIter<'_>, _: bool, inst: &Inst<'_>) {
     let n = inst.layout.len();
     let x = self.pos;
     let elem = if n == 0 {
@@ -1181,24 +1199,33 @@ impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
     self.stack.push(elem);
   }
 
-  // Every group is handled the same way: agglomerate all children of the node into a
-  // right-associative list of children with instructions at the nodes.
-  // This accumulates the desired proof in `self.stack`.
-
-  fn before(&mut self) { self.start() }
-  fn after(&mut self) { self.end_rassoc(false) }
+  // We override epilogue handling completely so that
+  // the epilogue sequence is not broken up by spill instructions
+  fn do_epilogue(&mut self, it: &mut cl::TraceIter<'_>) {
+    self.start();
+    while let Some(inst) = it.next_inst() {
+      let spill = inst.inst.is_spill();
+      self.on_inst(it, spill, &inst);
+      if matches!(inst.inst, PInst::Ret) { break }
+    }
+    self.end_rassoc(false)
+  }
 
   // This is not required, but it is helpful to add `ASM0` nodes as needed in some groups
   // to ensure a consistent number of children of the node, rather than opportunistically
   // collapsing these nodes.
 
-  fn after_prologue(&mut self,
-    _: &[PReg], _: u32, _: &[ArgAbi], _: Option<&[ArgAbi]>
-  ) { self.end_rassoc(false) }
+  fn after_prologue(&mut self, _: &TraceIter<'_>,
+    _: &[PReg], n: u32, _: &[ArgAbi], _: Option<&[ArgAbi]>
+  ) {
+    if n == 0 { self.end_rassoc0(false) } else { self.end_rassoc(false) }
+  }
 
-  fn after_shift(&mut self, _: &mir::Operand, _: &cl::Shift) { self.end_rassoc(true) }
+  fn after_shift(&mut self, _: &TraceIter<'_>, _: &mir::Operand, _: &cl::Shift) {
+    self.end_rassoc(true)
+  }
 
-  fn after_rvalue(&mut self,
+  fn after_rvalue(&mut self, _: &TraceIter<'_>,
     _: &mir::Ty, _: &mir::RValue, cl: &cl::RValue
   ) {
     // use binary reduction for lists and arrays
@@ -1206,21 +1233,29 @@ impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
     else { self.end_rassoc(true) }
   }
 
-  fn after_call_arg(&mut self,
+  fn after_call_arg(&mut self, _: &TraceIter<'_>,
     _: bool, _: &mir::Operand, _: &ArgAbi, _: &cl::Elem
   ) { self.end_rassoc(true) }
 
-  fn after_call(&mut self, _: ProcId, _: &ProcAbi,
-    _: &[(bool, mir::Operand)], _: bool, _: &[(bool, mir::VarId)]
+  fn after_call_args(&mut self, _: &TraceIter<'_>,
+    _: ProcId, _: &ProcAbi, _: &[(bool, mir::Operand)],
   ) { self.end_rassoc(true) }
 
-  fn after_syscall(&mut self, _: SysCall,
-    _: &[Option<&(bool, mir::Operand)>], _: Option<cl::Copy>,
+  fn after_call_rets(&mut self, _: &TraceIter<'_>,
+    _: u8, _: &[ArgAbi], _: &[(bool, mir::VarId)], _: mir::BlockId,
   ) { self.end_rassoc(true) }
 
-  fn after_terminator(
-    &mut self, _: &IdxVec<ProcId, ProcAbi>, _: Option<&[ArgAbi]>,
-    _: &mir::Terminator, _: &cl::Terminator,
+  fn after_call(&mut self, _: &TraceIter<'_>,
+    _: ProcId, _: &ProcAbi, _: &[(bool, mir::Operand)],
+    _: bool, _: &[(bool, mir::VarId)], _: bool, _: mir::BlockId,
+  ) { self.end_rassoc(true) }
+
+  fn after_syscall(&mut self, _: &TraceIter<'_>,
+    _: SysCall, _: &[Option<&(bool, mir::Operand)>], _: Option<cl::Copy>,
+  ) { self.end_rassoc(true) }
+
+  fn after_terminator(&mut self, _: &TraceIter<'_>,
+    _: &IdxVec<ProcId, ProcAbi>, _: Option<&[ArgAbi]>, _: &mir::Terminator, _: &cl::Terminator,
   ) { self.end_rassoc(true) }
 }
 
@@ -1234,18 +1269,21 @@ impl<'a> BuildAssemblyProc<'a> {
     for block in proc.assembly_blocks() {
       let n = visitor.stack.len();
       block.visit(&mut visitor);
+      let term = visitor.stack.pop().expect("stack underflow");
       let n = visitor.stack.len().checked_sub(n).expect("group mismatch");
       let mut stk = if block.mir_id == mir::BlockId::ENTRY {
         let t = visitor.pop_binary(false, n - 1);
+        let t = t.join(term, false, visitor.proc);
         let s = visitor.stack.pop().expect("stack underflow");
         s.join(t, true, visitor.proc)
       } else {
-        visitor.pop_binary(false, n)
+        let t = visitor.pop_binary(false, n);
+        t.join(term, false, visitor.proc)
       };
       let this = &mut *visitor.proc;
       if let Stack::Empty(pos) = stk { stk = Stack::dummy(pos, this) }
       stk = match (stk, std::mem::take(&mut entry)) {
-        (Stack::Empty(_), _) => unreachable!(),
+        (Stack::Empty(_), _) => unreachable!("empty block"),
         (Stack::Asm(s, x, y, a, th), true) => {
           let a2 = app!(this.thm, (asmEntry {*this.start} a));
           Stack::Asm(s, x, y, a2, thm!(this.thm, asmEntryI(a, *this.start, s, *y, th):

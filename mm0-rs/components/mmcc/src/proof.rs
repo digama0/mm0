@@ -654,9 +654,32 @@ impl<'a> BlockProof<'a> {
   /// The underlying MIR block object.
   #[must_use] pub fn block(&self) -> &'a mir::BasicBlock { &self.ctx.cfg.blocks[self.id] }
 
+  /// The ID of the physical block associated to this proof,
+  /// or `None` if this is a virtual-only block.
+  #[must_use] pub fn vblock_id(&self) -> Option<VBlockId> {
+    self.ctx.vblock_id(self.id)
+  }
+
   /// The physical block associated to this proof, or `None` if this is a virtual-only block.
   #[must_use] pub fn vblock(&self) -> Option<VBlock<'a>> {
-    Some(self.ctx.vblock(self.ctx.vblock_id(self.id)?))
+    Some(self.ctx.vblock(self.vblock_id()?))
+  }
+
+  /// Calls a visitor on the MIR block and its physical counterpart.
+  pub fn visit(&self, v: &mut impl classify::Visitor<'a>) {
+    if let Some(vbl) = self.vblock() {
+      vbl.visit(v)
+    } else {
+      let funcs = &self.ctx.code.func_abi;
+      let abi_rets = self.ctx.id.map(|id| &funcs[id])
+        .and_then(|func| func.reach.then(|| &*func.rets));
+      let mut iter = classify::TraceIter::GHOST;
+      let bl = self.block();
+      for stmt in &bl.stmts {
+        v.do_stmt(stmt, &classify::Statement::Ghost, &mut iter);
+      }
+      v.do_terminator(funcs, abi_rets, bl.terminator(), &classify::Terminator::Ghost, &mut iter);
+    }
   }
 }
 

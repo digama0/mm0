@@ -170,6 +170,8 @@ make_dedup! {
 
 impl ProofDedup<'_> {
   fn thm(&mut self, t: ThmId, args: &[ProofId], res: ProofId) -> ProofId {
+    debug_assert!(args.iter().all(|arg| *arg != ProofId::INVALID));
+    debug_assert!(res != ProofId::INVALID);
     self.add(proof::ProofHash::Thm(t,
       args.iter().map(|x| x.into_usize()).collect(), res.into_usize()))
   }
@@ -193,23 +195,31 @@ impl ProofDedup<'_> {
   }
 
   fn refl_conv(&mut self, e: ProofId) -> ProofId {
+    debug_assert!(e != ProofId::INVALID);
     self.add(proof::ProofHash::Refl(e.into_usize()))
   }
 
   fn sym(&mut self, conv: ProofId) -> ProofId {
+    debug_assert!(conv != ProofId::INVALID);
     self.add(proof::ProofHash::Sym(conv.into_usize()))
   }
 
   fn cong(&mut self, t: TermId, args: &[ProofId]) -> ProofId {
+    debug_assert!(args.iter().all(|arg| *arg != ProofId::INVALID));
     self.add(proof::ProofHash::Cong(t, args.iter().map(|x| x.into_usize()).collect()))
   }
 
   /// `conv(tgt, conv, th)` is a proof of `|- tgt` if `th: src` and `conv: tgt = src`.
   fn conv(&mut self, tgt: ProofId, conv: ProofId, th: ProofId) -> ProofId {
+    debug_assert!(tgt != ProofId::INVALID);
+    debug_assert!(conv != ProofId::INVALID);
+    debug_assert!(th != ProofId::INVALID);
     self.add(proof::ProofHash::Conv(tgt.into_usize(), conv.into_usize(), th.into_usize()))
   }
 
   fn unfold(&mut self, t: TermId, args: &[ProofId], conv: ProofId) -> ProofId {
+    debug_assert!(args.iter().all(|arg| *arg != ProofId::INVALID));
+    debug_assert!(conv != ProofId::INVALID);
     let sub_lhs = proof::ProofHash::conv_side(&mut self.de, conv.into_usize(), false);
     let lhs = self.app(t, args);
     self.add(proof::ProofHash::Unfold(t,
@@ -237,6 +247,7 @@ impl ProofDedup<'_> {
 
   /// Get the conclusion of the provided proof term.
   fn concl(&self, e: ProofId) -> ProofId {
+    debug_assert!(e != ProofId::INVALID);
     match *self.get(e) {
       proof::ProofHash::Ref(ProofKind::Proof, i) => self.concl(ProofId::from_usize(i)),
       proof::ProofHash::Hyp(_, concl) |
@@ -250,6 +261,7 @@ impl ProofDedup<'_> {
   fn build_thm0(&mut self,
     atom: AtomId, vis: Modifiers, span: FileSpan, full: Span, doc: Option<Arc<str>>, thm: ProofId,
   ) -> Thm {
+    debug_assert!(thm != ProofId::INVALID);
     let mut de = ExprDedup::new(self.pd, &[]);
     let concl = self.to_expr(&mut de, self.concl(thm));
     let (eheap, estore, ret) = de.build0(concl);
@@ -438,8 +450,8 @@ pub(crate) fn render_proof(
   scope_ast_source(&elab.ast.source.clone(), || {
     let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      // compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
-      Ok(())
+      compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+      // Ok(())
     })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))
   })?;
   // elab.report(ElabError::info(sp, format!("{:#?}", proof)));

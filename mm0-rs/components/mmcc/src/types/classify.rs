@@ -209,6 +209,8 @@ pub enum Statement {
 /// A block terminator statement
 #[derive(Clone, Copy, Debug)]
 pub enum Terminator {
+  /// A terminator in a ghost block.
+  Ghost,
   /// A `Jump` statement. The arguments are stored in `Trace.lists`
   Jump(u32),
   /// A `Jump1` statement.
@@ -247,7 +249,7 @@ pub struct Block {
 }
 
 macro_rules! mk_fold {
-  ($(
+  (<$a:lifetime> $(
     fn $before:ident, $after:ident, $do:ident(
       $self:ident, $it:ident $(, $e:ident: $ty:ty)* $(,)?
     ) $body:expr
@@ -255,44 +257,57 @@ macro_rules! mk_fold {
     /// A trait for consuming an instruction stream with alignment between the MIR and the
     /// generated instructions.
     #[allow(unused_variables)]
-    pub trait Visitor<'a> {
+    pub trait Visitor<$a> {
+      /// Called before each classifier's instructions are visited.
+      /// This is the default implementation of `before_foo()`.
+      fn before(&mut self, it: &TraceIter<$a>) {}
+
+      /// Called after each classifier's instructions are visited.
+      /// This is the default implementation of `after_foo()`.
+      fn after(&mut self, it: &TraceIter<$a>) {}
+
       /// Called every time an instruction is emitted.
-      fn on_inst(&mut self, spill: bool, inst: &crate::proof::Inst<'a>) {}
-        /// Visit a single regular instruction from the stream,
-        /// preceded by zero or more spill instructions.
-      fn do_inst(&mut self, it: &mut TraceIter<'a>) -> crate::proof::Inst<'a> {
-        loop {
-          let inst = it.insts.next().expect("missing instruction");
+      fn on_inst(&mut self, it: &TraceIter<$a>, spill: bool, inst: &crate::proof::Inst<$a>) {}
+
+      /// Called at the beginning of a spill instruction sequence.
+      fn before_inst(&mut self, it: &TraceIter<$a>) { self.before(it) }
+
+      /// Called after a non-spill instruction is emitted.
+      fn after_inst(&mut self, it: &TraceIter<$a>, inst: Option<&crate::proof::Inst<$a>>) {
+        self.after(it)
+      }
+
+      /// Visit a single regular instruction from the stream,
+      /// preceded by zero or more spill instructions.
+      fn do_inst(&mut self, it: &mut TraceIter<$a>) -> Option<crate::proof::Inst<$a>> {
+        self.before_inst(it);
+        while let Some(inst) = it.next_inst() {
           // eprintln!("inst {:?}", inst.inst);
           let spill = inst.inst.is_spill();
-          self.on_inst(spill, &inst);
+          self.on_inst(it, spill, &inst);
           if spill { continue }
-          return inst
+          self.after_inst(it, Some(&inst));
+          return Some(inst)
         }
+        self.after_inst(it, None);
+        None
       }
       /// Visit `n` instructions from the stream.
-      fn do_insts(&mut self, n: usize, it: &mut TraceIter<'a>) {
+      fn do_insts(&mut self, n: usize, it: &mut TraceIter<$a>) {
         for _ in 0..n { self.do_inst(it); }
       }
 
-      /// Called before each classifier's instructions are visited.
-      /// This is the default implementation of `before_foo()`.
-      fn before(&mut self) {}
-      /// Called after each classifier's instructions are visited.
-      /// This is the default implementation of `after_foo()`.
-      fn after(&mut self) {}
-
       $(
         /// Called before a certain classifier's instructions are visited. Intended for overriding.
-        fn $before(&mut self, $($e: $ty),*) { self.before() }
+        fn $before(&mut self, $it: &TraceIter<$a>, $($e: $ty),*) { self.before($it) }
         /// Called after a certain classifier's instructions are visited. Intended for overriding.
-        fn $after(&mut self, $($e: $ty),*) { self.after() }
+        fn $after(&mut self, $it: &TraceIter<$a>, $($e: $ty),*) { self.after($it) }
         /// Consumes the instructions for a classifier. Not intended for overriding.
-        fn $do(&mut $self, $($e: $ty,)* $it: &mut TraceIter<'a>) {
+        fn $do(&mut $self, $($e: $ty,)* $it: &mut TraceIter<$a>) {
           // eprintln!(stringify!($before));
-          $self.$before($($e),*);
+          $self.$before($it, $($e),*);
           { $body }
-          $self.$after($($e),*);
+          $self.$after($it, $($e),*);
           // eprintln!(stringify!($after));
         }
       )*
@@ -300,9 +315,10 @@ macro_rules! mk_fold {
   }
 }
 
-mk_fold! {
+mk_fold! { <'a>
   fn before_prologue, after_prologue, do_prologue(self, it,
-    saved_regs: &[PReg], stack_size: u32, args: &[ArgAbi], rets: Option<&[ArgAbi]>) {
+    saved_regs: &'a [PReg], stack_size: u32, args: &'a [ArgAbi], rets: Option<&'a [ArgAbi]>
+  ) {
     self.do_insts(saved_regs.len(), it);
     if stack_size != 0 { self.do_inst(it); }
     if let Some(rets) = rets {
@@ -322,8 +338,7 @@ mk_fold! {
   }
 
   fn before_arg_copy, after_arg_copy, do_arg_copy(self, it) {
-    let cl = it.lists.next().expect("iter mismatch");
-    match *cl {
+    match *it.next_list_elem() {
       Elem::ArgCopy(cl) => self.do_copy(cl, it),
       _ => unreachable!()
     }
@@ -351,7 +366,7 @@ mk_fold! {
   }
 
   fn before_proj, after_proj, do_proj(self, it,
-    ty: &mir::Ty, proj: &mir::Projection, cl: &Projection
+    ty: &'a mir::Ty, proj: &'a mir::Projection, cl: &'a Projection
   ) {
     match *cl {
       Projection::Ghost |
@@ -362,17 +377,16 @@ mk_fold! {
     }
   }
 
-  fn before_place, after_place, do_place(self, it, p: &mir::Place, cl: Place) {
+  fn before_place, after_place, do_place(self, it, p: &'a mir::Place, cl: Place) {
     assert!(usize::from(cl.projs) == p.proj.len());
     for (ty, proj) in &p.proj {
-      let cl = it.projs.next().expect("iter mismatch");
-      self.do_proj(ty, proj, cl, it);
+      self.do_proj(ty, proj, it.next_proj_elem(), it);
     }
   }
 
-  fn before_const, after_const, do_const(self, it, c: &mir::Constant, cl: Const) {}
+  fn before_const, after_const, do_const(self, it, c: &'a mir::Constant, cl: Const) {}
 
-  fn before_operand, after_operand, do_operand(self, it, o: &mir::Operand, cl: Operand) {
+  fn before_operand, after_operand, do_operand(self, it, o: &'a mir::Operand, cl: Operand) {
     match (cl, o.place()) {
       (Operand::Place(cl), Ok(p)) => self.do_place(p, cl, it),
       (Operand::Const(cl), Err(c)) => self.do_const(c, cl, it),
@@ -380,17 +394,17 @@ mk_fold! {
     }
   }
 
-  fn before_operand_reg, after_operand_reg, do_operand_reg(self, it, o: &mir::Operand, cl: &OperandReg) {
+  fn before_operand_reg, after_operand_reg, do_operand_reg(self, it, o: &'a mir::Operand, cl: &'a OperandReg) {
     self.do_operand(o, cl.0, it);
     self.do_into_reg(cl.1, it);
   }
 
-  fn before_operand_rm, after_operand_rm, do_operand_rm(self, it, o: &mir::Operand, cl: &OperandRM) {
+  fn before_operand_rm, after_operand_rm, do_operand_rm(self, it, o: &'a mir::Operand, cl: &'a OperandRM) {
     self.do_operand(o, cl.0, it);
     self.do_into_rm(cl.1, it);
   }
 
-  fn before_operand_32, after_operand_32, do_operand_32(self, it, o: &mir::Operand, cl: &Operand32) {
+  fn before_operand_32, after_operand_32, do_operand_32(self, it, o: &'a mir::Operand, cl: &'a Operand32) {
     self.do_operand(o, cl.0, it);
     self.do_into_32(cl.1, it);
   }
@@ -402,7 +416,7 @@ mk_fold! {
     }
   }
 
-  fn before_move, after_move, do_move(self, it, o: &mir::Operand, cl: Move) {
+  fn before_move, after_move, do_move(self, it, o: &'a mir::Operand, cl: Move) {
     let Move::Small(cl1, cl2) = cl;
     self.do_operand(o, cl1, it);
     self.do_copy(cl2, it);
@@ -415,7 +429,7 @@ mk_fold! {
     }
   }
 
-  fn before_shift, after_shift, do_shift(self, it, o: &mir::Operand, cl: &Shift) {
+  fn before_shift, after_shift, do_shift(self, it, o: &'a mir::Operand, cl: &'a Shift) {
     match cl {
       Shift::Zero => self.do_copy(Copy::One, it),
       Shift::Imm(cl) => { self.do_inst(it); self.do_copy(*cl, it) }
@@ -427,7 +441,7 @@ mk_fold! {
     }
   }
 
-  fn before_list_elem, after_list_elem, do_list_elem(self, it, o: &mir::Operand, cl: &Elem) {
+  fn before_list_elem, after_list_elem, do_list_elem(self, it, o: &'a mir::Operand, cl: &'a Elem) {
     match *cl {
       Elem::Ghost => {}
       Elem::Move(cl) => self.do_move(o, cl, it),
@@ -436,7 +450,7 @@ mk_fold! {
   }
 
   fn before_rvalue, after_rvalue, do_rvalue(self, it,
-    ty: &mir::Ty, rv: &mir::RValue, cl: &RValue
+    ty: &'a mir::Ty, rv: &'a mir::RValue, cl: &'a RValue
   ) {
     match (cl, rv) {
       (RValue::Ghost, _) => {}
@@ -488,8 +502,7 @@ mk_fold! {
       (RValue::Array1(cl), mir::RValue::Array(os)) => self.do_move(&os[0], *cl, it),
       (RValue::List(_), mir::RValue::List(os)) | (RValue::Array(_), mir::RValue::Array(os)) => {
         for o in &**os {
-          let cl = it.lists.next().expect("iter mismatch");
-          self.do_list_elem(o, cl, it)
+          self.do_list_elem(o, it.next_list_elem(), it)
         }
       }
       (&RValue::Borrow(cl1, cl2), mir::RValue::Borrow(p)) => {
@@ -501,7 +514,7 @@ mk_fold! {
     }
   }
 
-  fn before_stmt, after_stmt, do_stmt(self, it, stmt: &mir::Statement, cl: &Statement) {
+  fn before_stmt, after_stmt, do_stmt(self, it, stmt: &'a mir::Statement, cl: &'a Statement) {
     match (cl, stmt) {
       (Statement::Ghost, _) => {}
       (Statement::Let(cl), mir::Statement::Let(_, _, ty, rv)) => self.do_rvalue(ty, rv, cl, it),
@@ -514,7 +527,7 @@ mk_fold! {
   }
 
   fn before_jump_elem, after_jump_elem, do_jump_elem(self, it,
-    v: mir::VarId, r: bool, o: &mir::Operand, cl: &Elem
+    v: mir::VarId, r: bool, o: &'a mir::Operand, cl: &'a Elem
   ) {
     match *cl {
       Elem::Ghost => {}
@@ -524,7 +537,7 @@ mk_fold! {
   }
 
   fn before_ret_elem, after_ret_elem, do_ret_elem(self, it,
-    v: mir::VarId, r: bool, o: &mir::Operand, ret: &ArgAbi, cl: &Elem
+    v: mir::VarId, r: bool, o: &'a mir::Operand, ret: &'a ArgAbi, cl: &'a Elem
   ) {
     match *cl {
       Elem::Ghost => {}
@@ -538,11 +551,11 @@ mk_fold! {
   }
 
   fn before_epilogue, after_epilogue, do_epilogue(self, it) {
-    while !matches!(self.do_inst(it).inst, PInst::Ret) {}
+    while self.do_inst(it).map_or(false, |inst| !matches!(inst.inst, PInst::Ret)) {}
   }
 
   fn before_call_arg, after_call_arg, do_call_arg(self, it,
-    r: bool, o: &mir::Operand, arg: &ArgAbi, cl: &Elem
+    r: bool, o: &'a mir::Operand, arg: &'a ArgAbi, cl: &'a Elem
   ) {
     match *cl {
       Elem::Ghost => {}
@@ -563,12 +576,12 @@ mk_fold! {
     }
   }
 
-  fn before_call_retarg, after_call_retarg, do_call_retarg(self, it, cl: IntoMem, arg: &ArgAbi) {
+  fn before_call_retarg, after_call_retarg, do_call_retarg(self, it, cl: IntoMem, arg: &'a ArgAbi) {
     self.do_inst(it);
     if let ArgAbi::BoxedMem {..} = arg { self.do_copy(Copy::One, it) }
   }
 
-  fn before_call_ret, after_call_ret, do_call_ret(self, it, arg: &ArgAbi, cl: &Elem) {
+  fn before_call_ret, after_call_ret, do_call_ret(self, it, arg: &'a ArgAbi, cl: &'a Elem) {
     match (cl, arg) {
       (Elem::Ghost, _) => {}
       (Elem::RetReg, ArgAbi::Reg(_, _)) => { self.do_copy(Copy::One, it) }
@@ -578,63 +591,63 @@ mk_fold! {
   }
 
   fn before_call_rets, after_call_rets, do_call_rets(self, it,
-    boxes: u8, retabi: &[ArgAbi], rets: &[(bool, mir::VarId)],
+    boxes: u8, retabi: &'a [ArgAbi], rets: &'a [(bool, mir::VarId)], tgt: mir::BlockId,
   ) {
     for (arg, &(vr, _)) in retabi.iter().zip(rets) {
       if !vr { continue }
-      let cl = it.lists.next().expect("iter mismatch");
-      self.do_call_ret(arg, cl, it)
+      self.do_call_ret(arg, it.next_list_elem(), it)
     }
     for _ in 0..boxes { self.do_copy(Copy::One, it) }
     self.do_inst(it);
   }
 
   fn before_call_args, after_call_args, do_call_args(self, it,
-    f: ProcId, fabi: &ProcAbi, args: &[(bool, mir::Operand)],
+    f: ProcId, fabi: &'a ProcAbi, args: &'a [(bool, mir::Operand)],
   ) {
     for (arg, &(r, ref o)) in fabi.args.iter().zip(args) {
-      let cl = it.lists.next().expect("iter mismatch");
-      self.do_call_arg(r, o, arg, cl, it);
+      self.do_call_arg(r, o, arg, it.next_list_elem(), it);
     }
   }
 
   // do_call_retargs is unused, before and after are called directly
   fn before_call_retargs, after_call_retargs, do_call_retargs(self, it,
-    f: ProcId, fabi: &ProcAbi, rets: &[(bool, mir::VarId)],
+    f: ProcId, fabi: &'a ProcAbi, rets: &'a [(bool, mir::VarId)],
   ) {}
 
   fn before_call, after_call, do_call(self, it,
-    f: ProcId, fabi: &ProcAbi, args: &[(bool, mir::Operand)],
-    reach: bool, rets: &[(bool, mir::VarId)],
+    f: ProcId, fabi: &'a ProcAbi, args: &'a [(bool, mir::Operand)],
+    reach: bool, rets: &'a [(bool, mir::VarId)], se: bool, tgt: mir::BlockId,
   ) {
     self.do_call_args(f, fabi, args, it);
     if reach {
       let mut boxes = 0;
-      self.before_call_retargs(f, fabi, rets);
+      self.before_call_retargs(it, f, fabi, rets);
       for (arg, &(vr, _)) in fabi.rets.iter().zip(rets) {
         if vr && matches!(arg, ArgAbi::Boxed {..} | ArgAbi::BoxedMem {..}) {
-          let cl = match it.lists.next() {
-            Some(&Elem::RetArg(cl)) => cl,
+          let cl = match *it.next_list_elem() {
+            Elem::Ghost => continue,
+            Elem::RetArg(cl) => cl,
             _ => unreachable!(),
           };
           if cl.0 { boxes += 1 }
           self.do_call_retarg(cl, arg, it)
         }
       }
-      self.after_call_retargs(f, fabi, rets);
+      self.after_call_retargs(it, f, fabi, rets);
       self.do_inst(it);
-      self.do_call_rets(boxes, &fabi.rets, rets, it);
+      self.do_call_rets(boxes, &fabi.rets, rets, tgt, it);
     } else {
       self.do_inst(it);
     }
   }
 
   fn before_syscall, after_syscall, do_syscall(self, it,
-    f: SysCall, args: &[Option<&(bool, mir::Operand)>], cl: Option<Copy>
+    f: SysCall, args: &[Option<&'a (bool, mir::Operand)>], cl: Option<Copy>
   ) {
     for arg in args {
-      let cl = it.lists.next().expect("iter mismatch");
+      let cl = it.next_list_elem();
       match (cl, arg) {
+        (Elem::Ghost, _) => {}
         (Elem::Operand(Operand::Const(Const::Value)), None) => {}
         (&Elem::Operand(cl), Some((_, o))) => self.do_operand(o, cl, it),
         _ => unreachable!(),
@@ -648,22 +661,21 @@ mk_fold! {
   }
 
   fn before_terminator, after_terminator, do_terminator(self, it,
-    funcs: &IdxVec<ProcId, ProcAbi>, abi_rets: Option<&[ArgAbi]>,
-    term: &mir::Terminator, cl: &Terminator
+    funcs: &'a IdxVec<ProcId, ProcAbi>, abi_rets: Option<&'a [ArgAbi]>,
+    term: &'a mir::Terminator, cl: &'a Terminator
   ) {
     match (cl, term) {
+      (Terminator::Ghost, _) => {}
       (Terminator::Jump(_), mir::Terminator::Jump(_, args, _)) => {
         for &(v, r, ref o) in &**args {
-          let cl = it.lists.next().expect("iter mismatch");
-          self.do_jump_elem(v, r, o, cl, it)
+          self.do_jump_elem(v, r, o, it.next_list_elem(), it)
         }
         self.do_inst(it);
       }
       (Terminator::Jump1 | Terminator::Fail, _) => { self.do_inst(it); }
       (Terminator::Return, mir::Terminator::Return(_, args)) => {
         for (&(v, r, ref o), ret) in args.iter().zip(abi_rets.expect("expected return ABI")) {
-          let cl = it.lists.next().expect("iter mismatch");
-          self.do_ret_elem(v, r, o, ret, cl, it)
+          self.do_ret_elem(v, r, o, ret, it.next_list_elem(), it)
         }
         self.do_epilogue(it);
       }
@@ -676,8 +688,8 @@ mk_fold! {
         self.do_operand_reg(o, cl, it);
         self.do_insts(2, it);
       }
-      (&Terminator::Call(f), mir::Terminator::Call { args, reach, rets, .. }) => {
-        self.do_call(f, &funcs[f], args, *reach, rets, it)
+      (&Terminator::Call(f), mir::Terminator::Call { args, reach, rets, se, tgt, .. }) => {
+        self.do_call(f, &funcs[f], args, *reach, rets, *se, *tgt, it)
       }
       (&Terminator::Intrinsic(f, cl), mir::Terminator::Call { args, rets, .. }) => {
         use SysCall::*;
@@ -702,12 +714,85 @@ mk_fold! {
   }
 }
 
-/// Internal state for [`Visitor`].
 #[derive(Clone, Debug)]
-pub struct TraceIter<'a> {
+struct TraceIterInner<'a> {
   insts: crate::proof::InstIter<'a>,
   projs: std::slice::Iter<'a, Projection>,
   lists: std::slice::Iter<'a, Elem>,
+}
+
+/// Internal state for [`Visitor`].
+#[derive(Clone, Debug)]
+pub struct TraceIter<'a>(Option<TraceIterInner<'a>>);
+
+impl<'a> TraceIter<'a> {
+  /// A dummy `TraceIter` instance that always yields ghost values.
+  pub const GHOST: Self = Self(None);
+
+  /// Get the next instruction in the stream.
+  pub fn next_inst(&mut self) -> Option<crate::proof::Inst<'a>> {
+    Some(self.0.as_mut()?.insts.next().expect("missing instruction"))
+  }
+
+  /// Get the next projection element in the stream.
+  pub fn next_proj_elem(&mut self) -> &'a Projection {
+    self.0.as_mut().map_or(&Projection::Ghost, |inner| {
+      inner.projs.next().expect("missing projection")
+    })
+  }
+
+  /// Get the next list element in the stream.
+  pub fn next_list_elem(&mut self) -> &'a Elem {
+    self.0.as_mut().map_or(&Elem::Ghost, |inner| {
+      inner.lists.next().expect("missing list element")
+    })
+  }
+
+  /// Calculates a "snapshot" of the current trace state, which can be used with `from_snapshot`.
+  pub fn snapshot(&self) -> TraceIterSnapshot {
+    if let Some(inner) = &self.0 {
+      TraceIterSnapshot {
+        insts: inner.insts.len().try_into().expect("overflow"),
+        projs: inner.projs.len().try_into().expect("overflow"),
+        lists: inner.lists.len().try_into().expect("overflow"),
+      }
+    } else {
+      TraceIterSnapshot::GHOST
+    }
+  }
+
+  /// Reconstitute a version of this iterator "from the future" by advancing it
+  /// to match the given snapshot.
+  /// If iterator `a` advances to `b`, then `a.from_snapshot(b.snapshot()) == b`.
+  pub fn from_snapshot(&self, snap: TraceIterSnapshot) -> Self {
+    if let Some(inner) = &self.0 {
+      let mut inner = inner.clone();
+      let n = inner.insts.len() - usize::try_from(snap.insts).expect("overflow");
+      if let Some(i) = n.checked_sub(1) { inner.insts.nth(i); }
+      let n = inner.projs.len() - usize::try_from(snap.projs).expect("overflow");
+      if let Some(i) = n.checked_sub(1) { inner.projs.nth(i); }
+      let n = inner.lists.len() - usize::try_from(snap.lists).expect("overflow");
+      if let Some(i) = n.checked_sub(1) { inner.lists.nth(i); }
+      Self(Some(inner))
+    } else {
+      Self::GHOST
+    }
+  }
+}
+
+
+/// Captures a "snapshot" of the state of a `TraceIter`. It can be used to
+/// reconstitute the iterator using [`TraceIter::from_snapshot`].
+#[derive(Copy, Clone, Debug)]
+pub struct TraceIterSnapshot {
+  insts: u32,
+  projs: u32,
+  lists: u32,
+}
+
+impl TraceIterSnapshot {
+  /// A snapshot corresponding to a ghost iterator.
+  pub const GHOST: Self = Self { insts: 0, projs: u32::MAX, lists: u32::MAX };
 }
 
 impl Trace {
@@ -716,10 +801,11 @@ impl Trace {
     id: BlockId, insts: crate::proof::InstIter<'a>,
   ) -> (TraceIter<'a>, &'a Terminator) {
     let Block { proj_start, list_start, ref term } = self.block[id];
-    (TraceIter {
+    let inner = TraceIterInner {
       insts,
       projs: self.projs[proj_start as usize..].iter(),
       lists: self.lists[list_start as usize..].iter(),
-    }, term)
+    };
+    (TraceIter(Some(inner)), term)
   }
 }

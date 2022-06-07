@@ -1609,14 +1609,35 @@ theorem L_sstop_b: $ L C_ L_top <->
 theorem L_sstop: $ L C_ L_top -> L @' lo @' a @' sz C_ ^s (a + sz e. u64) $ =
 '(sylib (sseq2 L_top_val) @ syl rappss @ syl rappss rappss);
 
---| A padding layout.
+--| A padding layout with flexible size.
 @_ local def L_pad: set = $ S\ lo, S\ a, S\ sz, (a >=>.[lo] sz) $;
 
 theorem L_pad_val: $ L_pad @' lo @' a @' sz == a >=>.[lo] sz $ =
 (focus '(trud _ @ ! eqsid $ L_pad $)
   '(rappsabed1 @ rappsabed1 @ rappsabed2 ,eqtac));
 
---| The null layout.
+theorem L_pad_sstop: $ L_pad C_ L_top $ = (named '(sabssi @ sabssi @ sabssi s_blockS_T));
+
+--| A padding layout with fixed size.
+@_ local def L_padn (n: nat): set = $ S\ lo, S\ a, S\ sz, (^s (sz = n) /\s a >=>.[lo] sz) $;
+
+theorem L_padn_val: $ L_padn n @' lo @' a @' sz == ^s (sz = n) /\s a >=>.[lo] sz $ =
+(focus '(trud _ @ ! eqsid $ L_padn n $)
+  '(rappsabed1 @ rappsabed1 @ rappsabed2 ,eqtac));
+
+theorem L_padn_ss2: $ L_padn n @' lo @' a @' sz C_ L_pad @' lo @' a @' sz $ =
+'(mpbir (sseq L_padn_val L_pad_val) s_anr);
+
+theorem L_padn_ss: $ L_padn n C_ L_pad $ =
+(named '(mpbir rappssb @ ax_gen @ mpbir rappssb @ ax_gen @
+  mpbir rappssb @ ax_gen L_padn_ss2));
+
+theorem L_padn_sstop: $ L_padn n C_ L_top $ = '(sstr L_padn_ss L_pad_sstop);
+
+theorem L_padn_sized: $ L_padn n @' lo @' a @' sz C_ ^s (sz = n) $ =
+'(mpbir (sseq1 L_padn_val) s_anl);
+
+--| Add a propositional condition to a layout.
 @_ local def L_with (p: wff) (L: set): set =
 $ S\ lo, S\ a, S\ sz, (^s p /\s L @' lo @' a @' sz) $;
 
@@ -1637,6 +1658,28 @@ theorem L_with_sstop (h: $ L C_ L_top $): $ L_with p L C_ L_top $ =
 theorem L_with_sized (h: $ G -> L @' lo @' a @' sz C_ ^s (sz = n) $):
  $ G -> L_with p L @' lo @' a @' sz C_ ^s (sz = n) $ =
 '(syl (sstr L_with_ss2) h);
+
+--| Add a propositional condition to a layout.
+@_ local def L_at (x: nat) (L: set): set =
+$ S\ lo, S\ a, S\ sz, (^s (a = x) /\s L @' lo @' a @' sz) $;
+
+theorem L_at_val: $ L_at x L @' lo @' a @' sz == ^s (a = x) /\s L @' lo @' a @' sz $ =
+(focus '(trud _ @ ! eqsid $ L_at x L $)
+  '(rappsabed1 @ rappsabed1 @ rappsabed2 ,eqtac));
+
+theorem L_at_ss2: $ L_at x L @' lo @' a @' sz C_ L @' lo @' a @' sz $ =
+'(mpbir (sseq1 L_at_val) s_anr);
+
+theorem L_at_ss: $ L_at x L C_ L $ =
+(named '(mpbir rappssb @ ax_gen @ mpbir rappssb @ ax_gen @
+  mpbir rappssb @ ax_gen L_at_ss2));
+
+theorem L_at_sstop (h: $ L C_ L_top $): $ L_at x L C_ L_top $ =
+(named '(sabssi @ sabssi @ sabssi @ s_anwr @ L_sstop h));
+
+theorem L_at_sized (h: $ G -> L @' lo @' a @' sz C_ ^s (sz = n) $):
+ $ G -> L_at x L @' lo @' a @' sz C_ ^s (sz = n) $ =
+'(syl (sstr L_at_ss2) h);
 
 --| The null layout.
 @_ local def L_emp: set = $ S\ lo, S\ a, S\ sz, (^e (a e. u64 /\ sz = 0)) $;
@@ -1756,6 +1799,18 @@ theorem L_seqass: $ L_seq (L_seq L1 L2) L3 == L_seq L1 (L_seq L2 L3) $ =
     aneq2i @ eqeq2 addass) @
   eqstr3 s_sepass @ s_sepeq2 @ rappeq1 @ rappeq2 addass));
 
+theorem L_pad_seq: $ L_seq L_pad L_pad == L_pad $ =
+(named '(sabeqi @ sabeqi @ sabeqi @
+  eqstr (s_exeq2i @ s_exeq2i @ s_aneq2 @ s_sepeq L_pad_val L_pad_val) @
+  ssasym (s_eex @ s_eex @
+    mpbi (sseq1 @ s_aneq2a @ anwr @ syl6eqs s_blockS_A s_blockSeq3) s_anr) @
+  mpbi (sseq1 @ mpbi s_bian1a s_blockS_T) @ s_imp @
+  syl s_iex @ !! iexde x @ iand (a1i elv) @
+  syl s_iex @ !! iexde y @ iand (a1i elv) @
+  syl eqssr @ eqstrd (syl (s_bian1 s_sep_sstop) @
+    iand (anwll @ u64le1 leaddid2) @ eqcomd @ syl6eq add0 ,eqtac) @
+  syl5eqsr s_blockS_A @ s_blockSeq3d @ syl6eq add0 ,eqtac));
+
 --| The layout for a single value `v: List u8`.
 @_ local def L_1 (v: nat): set =
 $ S\ lo, S\ a, S\ sz, (^s (lo + 2 ^ 12 <= a /\ sz = len v) /\s a >=> v) $;
@@ -1774,21 +1829,6 @@ theorem L_1_sized: $ L_1 v @' lo @' a @' sz C_ ^s (sz = len v) $ =
 theorem L_1_sstop: $ L_1 v C_ L_top $ =
 (named '(sabssi @ sabssi @ sabssi @ s_imp @ syl (sstr s_block_T) @
   sylibr s_lift_ss @ syl5 anl @ bi2d @ eleq1d @ addeq2d anr));
-
-theorem L_pad_sstop: $ L_pad C_ L_top $ =
-(named '(sabssi @ sabssi @ sabssi s_blockS_T));
-
-theorem L_pad_seq: $ L_seq L_pad L_pad == L_pad $ =
-(named '(sabeqi @ sabeqi @ sabeqi @
-  eqstr (s_exeq2i @ s_exeq2i @ s_aneq2 @ s_sepeq L_pad_val L_pad_val) @
-  ssasym (s_eex @ s_eex @
-    mpbi (sseq1 @ s_aneq2a @ anwr @ syl6eqs s_blockS_A s_blockSeq3) s_anr) @
-  mpbi (sseq1 @ mpbi s_bian1a s_blockS_T) @ s_imp @
-  syl s_iex @ !! iexde x @ iand (a1i elv) @
-  syl s_iex @ !! iexde y @ iand (a1i elv) @
-  syl eqssr @ eqstrd (syl (s_bian1 s_sep_sstop) @
-    iand (anwll @ u64le1 leaddid2) @ eqcomd @ syl6eq add0 ,eqtac) @
-  syl5eqsr s_blockS_A @ s_blockSeq3d @ syl6eq add0 ,eqtac));
 
 --| An overlapping composition of layouts.
 @_ local def L_or (L1 L2: set): set =

@@ -74,7 +74,7 @@ $ y = x + len s /\ (text_start + y e. u64 -> s, x e. P) $;
 @mmc-th local def assemble (s: string) (x y: nat) (P: set): wff =
 $ s != 0 /\ assembleN s x y P $;
 
-@mmc-th local def assembleA (A B: set): set =
+@_ @mmc-th local def assembleA (A B: set): set =
 $ S\ s, {x | E. t1 E. t2 (s = t1 ++ t2 /\ t1, x e. A /\ t2, x + len t1 e. B)} $;
 infixr assembleA: $++asm$ prec 120;
 
@@ -85,8 +85,8 @@ infixr assembleA: $++asm$ prec 120;
 @mmc-th local def localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff =
 $ assembleN s (p + x) (p + y) (P @' p) $;
 
-@mmc-th local def localAssembleA (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
-infixr localAssembleA: $+asm$ prec 122;
+@_ @mmc-th local def ASM_A (A B: set): set = $ S\ p, A @' p ++asm B @' p $;
+infixr ASM_A: $+asm$ prec 122;
 
 @mmc-th local def ASM0: set = $ S\ p, S\ s, {x | s = 0} $;
 
@@ -163,7 +163,8 @@ $ A. l (readPrefixes rex l -> parseInstN p ip (l ++ opc : s) I) $;
 @_ local def asI32 (imm: nat): nat = $ guard (imm e. u32) (suc (chopZ 64 imm)) $;
 @_ local def asI64 (imm: nat): nat = $ guard (imm e. u64) (suc (chopZ 64 imm)) $;
 
-@mmc-th local def IRM_reg (reg: hex): nat = $ suc (immRM_rm (RM_reg reg)) $;
+@_ local def IRM_reg_N (reg: nat): nat = $ suc (immRM_rm (RM_reg reg)) $;
+@mmc-th local def IRM_reg (reg: hex): nat = $ IRM_reg_N reg $;
 @mmc-th @_ local def IRM_mem (si base off: nat): nat =
 $ obind (asI64 off) (\ q, suc (immRM_rm (RM_mem si base q))) $;
 @mmc-th @_ local def IRM_imm32 (imm: nat): nat = $ obind (asI32 imm) (\ x, suc (immRM_imm x)) $;
@@ -418,12 +419,21 @@ $ parseModRM_N rex rn rm l l2 $;
   (h6: $ consStr (ch x y) l s $):
   $ parseModRM rex rn rm s l2 $ = 'sorry;
 
-local def mkRegRMI (dst src ds): wff =
-$ ds e. DestSrc /\ destRM ds = IRM_reg dst /\ src = suc (srcIRM ds) $;
+@_ local def mkRegRMI_N (dst src ds): wff =
+$ ds e. DestSrc /\ destRM ds = IRM_reg_N dst /\ src = suc (srcIRM ds) $;
+
+local def mkRegRMI (dst src ds): wff = $ mkRegRMI_N dst src ds $;
+
+@_ local def instBinopN (opc sz dst src: nat): set =
+$ S\ p, S\ s, {x | E. ds (mkRegRMI_N dst src ds /\
+  opc < x8 -> decode (xastBinop opc sz ds) s)} $;
 
 @mmc-th local def instBinop (opc: hex) (sz: nat) (dst: hex) (src: nat): set =
 $ S\ p, S\ s, {x | E. ds (mkRegRMI dst src ds /\
   opc < x8 -> decode (xastBinop opc sz ds) s)} $;
+
+@_ local def instAddN (sz dst src: nat): set = $ instBinopN x0 sz dst src $;
+@_ local def instSubN (sz dst src: nat): set = $ instBinopN x5 sz dst src $;
 
 do {
   --| A macro for `(instBinop x0 sz dst src)` which is a bit easier to read
@@ -834,16 +844,16 @@ do (ignore @ on-hexstrings @ fn (n)
 @mmc-th local def mkGCtx (content: string) (filesz memsz: nat) (result: set): set =
 $ Sum (Sum (content, filesz, memsz) result) 0 $;
 
-local def okContentN (G: set): nat = $ fst (lower (Fst G)) $;
-@mmc-th local def okContent (G: set) (c: string): wff = $ okContentN G = c $;
-@mmc-th theorem okContentGI: $ okContent (mkGCtx c fs ms T) c $ = 'sorry;
+@_ local def gctx_content (G: set): nat = $ fst (lower (Fst G)) $;
+@mmc-th local def getContent (G: set) (c: string): wff = $ gctx_content G = c $;
+@mmc-th theorem getContentGI: $ getContent (mkGCtx c fs ms T) c $ = 'sorry;
 
-local def okFileSzN (G: set): nat = $ pi21 (lower (Fst G)) $;
-local def okMemSzN (G: set): nat = $ pi22 (lower (Fst G)) $;
+@_ local def gctx_filesz (G: set): nat = $ pi21 (lower (Fst G)) $;
+@_ local def gctx_memsz (G: set): nat = $ pi22 (lower (Fst G)) $;
 
-local def okResultN (G: set): set = $ Snd (Fst G) $;
-@mmc-th local def okResult (G: set) (T: set): wff = $ okResultN G == T $;
-@mmc-th theorem okResultGI: $ okResult (mkGCtx c fs ms T) T $ = 'sorry;
+@_ local def gctx_result (G: set): set = $ Snd (Fst G) $;
+@mmc-th local def getResult (G: set) (T: set): wff = $ gctx_result G == T $;
+@mmc-th theorem getResultGI: $ getResult (mkGCtx c fs ms T) T $ = 'sorry;
 
 --| `assembled c fs ms P` (assembly output) asserts that
 --| if the full file content is `c`, then `len c` is in range, and
@@ -860,7 +870,7 @@ $ len c = fs /\ fs <= ms /\ text_start + ms e. u64 /\
 --| `P` will contain embedded assertions about the position or the
 --| string where relevant (using `asmAt`), so that the existential is uniquely determined.
 @mmc-th local def assembled (G P: set): wff =
-$ assembledN (okContentN G) (okFileSzN G) (okMemSzN G) P $;
+$ assembledN (gctx_content G) (gctx_filesz G) (gctx_memsz G) P $;
 
 @mmc-th theorem assembledI
   (h1: $ assemble c x0 filesz A $)

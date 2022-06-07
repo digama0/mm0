@@ -227,13 +227,14 @@ make_predefs! {
   assembleA: TermId => "assembleA";
   assembleA_I: ThmId => "assembleA_I";
 
-  /// `localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff`
-  localAssemble: TermId => "localAssemble";
-  /// `localAssembleA (A B: set): set`
-  localAssembleA: TermId => "localAssembleA";
-  localAssembleA_I: ThmId => "localAssembleA_I";
   /// `ASM0: set`
   ASM0: TermId => "ASM0";
+  /// `asmA (A B: set): set`
+  ASM_A: TermId => "ASM_A";
+
+  /// `localAssemble (p: nat) (s: string) (x y: nat) (P: set): wff`
+  localAssemble: TermId => "localAssemble";
+  localAssembleA_I: ThmId => "localAssembleA_I";
 
   /// `localAssemble0 (p: nat) (x: nat) (P: set): wff`
   localAssemble0: TermId => "localAssemble0";
@@ -263,8 +264,8 @@ make_predefs! {
   assembled_l: ThmId => "assembled_l";
   assembled_r: ThmId => "assembled_r";
 
-  okResult: TermId => "okResult";
-  okResultGI: ThmId => "okResultGI";
+  getResult: TermId => "getResult";
+  getResultGI: ThmId => "getResultGI";
 
   /// `strlen (s: string) (n: nat): wff`
   strlen: TermId => "strlen";
@@ -520,7 +521,6 @@ make_predefs! {
 
   vctx0: TermId => "vctx0";
   vctxA: TermId => "vctxA";
-  vProp: TermId => "vProp";
 
   okVCtxPush: TermId => "okVCtxPush";
   okVCtxPush_1: ThmId => "okVCtxPush_1";
@@ -566,10 +566,12 @@ make_predefs! {
   okPushHyp: TermId => "okPushHyp";
   okPushHypI: ThmId => "okPushHypI";
 
-  okReadHyp: TermId => "okReadHyp";
-  okReadHypTCtx: ThmId => "okReadHypTCtx";
-  okReadHypI: ThmId => "okReadHypI";
+  okReadHypVCtx: TermId => "okReadHypVCtx";
+  okReadHypVCtxI: ThmId => "okReadHypVCtxI";
   okReadHypVar: ThmId => "okReadHypVar";
+
+  okReadHyp: TermId => "okReadHyp";
+  okReadHypI: ThmId => "okReadHypI";
   okReadHyp_unit: ThmId => "okReadHyp_unit";
 
   okAssembled: TermId => "okAssembled";
@@ -577,12 +579,11 @@ make_predefs! {
   okAssembled_l: ThmId => "okAssembled_l";
   okAssembled_r: ThmId => "okAssembled_r";
 
-  okWeak: TermId => "okWeak";
-  okWeak_id: ThmId => "okWeak_id";
-
   okCode: TermId => "okCode";
   okCode_0: ThmId => "okCode_0";
+  okCode_id: ThmId => "okCode_id";
   okCode_A: ThmId => "okCode_A";
+  okCode_tr: ThmId => "okCode_tr";
 
   arg0: TermId => "arg0";
   argS: TermId => "argS";
@@ -607,6 +608,7 @@ make_predefs! {
   okProcI: ThmId => "okProcI";
 
   buildStart: TermId => "buildStart";
+  buildStartI: ThmId => "buildStartI";
 
   okStart: TermId => "okStart";
   okStartI: ThmId => "okStartI";
@@ -616,7 +618,6 @@ make_predefs! {
   okBlockI: ThmId => "okBlockI";
   okBlock0: ThmId => "okBlock0";
 
-  mkPrologue: TermId => "mkPrologue";
   okPrologue: TermId => "okPrologue";
   okPrologue_push: ThmId => "okPrologue_push";
   okPrologue_alloc: ThmId => "okPrologue_alloc";
@@ -629,7 +630,7 @@ make_predefs! {
   checkRetI: ThmId => "checkRetI";
 
   okEpilogue: TermId => "okEpilogue";
-  okEpilogue_code: ThmId => "okEpilogue_code";
+  okEpilogue_E: ThmId => "okEpilogue_E";
   okEpilogue_free: ThmId => "okEpilogue_free";
   okEpilogue_pop: ThmId => "okEpilogue_pop";
   okEpilogue_ret: ThmId => "okEpilogue_ret";
@@ -643,8 +644,8 @@ make_predefs! {
 
   spillslot: TermId => "spillslot";
 
-  okDefer: TermId => "okDefer";
-  okDeferI: ThmId => "okDeferI";
+  // okDefer: TermId => "okDefer";
+  // okDeferI: ThmId => "okDeferI";
 
   ok_movRR: ThmId => "ok_movRR";
   ok_spill: ThmId => "ok_spill";
@@ -654,7 +655,7 @@ make_predefs! {
   applyCall: TermId => "applyCall";
   applyCallG: TermId => "applyCallG";
   ok_call_func: ThmId => "ok_call_func";
-  okWeak_call_func: ThmId => "okWeak_call_func";
+  ok_call_func_0: ThmId => "ok_call_func_0";
   ok_call_proc: ThmId => "ok_call_proc";
   ok_exit: ThmId => "ok_exit";
 
