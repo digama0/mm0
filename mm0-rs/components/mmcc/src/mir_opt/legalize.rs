@@ -9,6 +9,7 @@ use super::super::types::{self, Size, IntTy};
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Predicate {
   As(IntTy),
+  Into(IntTy),
 }
 
 #[derive(Clone, Debug)]
@@ -80,6 +81,18 @@ impl<'a> Legalizer<'a> {
                 RValue::Unop(op, o)));
               Some(PackedOp::Copy(v))
             }
+            RValue::Binop(Binop::Shl(_), o1, o2) => {
+              let op = Binop::Shl(ity);
+              let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
+              let o2 = self.try_legalize_operand(o2, Predicate::Into(ity))?.unpack();
+              let v = self.max_var.fresh();
+              self.buffer.insert(i+1, Statement::Let(
+                LetKind::Let(lk.clone().map_into(|_| v), e.as_ref().map(|e|
+                  Expr::new(ExprKind::Unop(types::Unop::As(ity), e.clone())))),
+                true, Ty::new(TyKind::Int(ity)),
+                RValue::Binop(op, o1, o2)));
+              Some(PackedOp::Copy(v))
+            }
             RValue::Binop(op, o1, o2) => {
               let op = op.as_(ity)?;
               let o1 = self.try_legalize_operand(o1, Predicate::As(ity))?.unpack();
@@ -94,6 +107,7 @@ impl<'a> Legalizer<'a> {
             }
             _ => None,
           }
+          _ => None,
         }
       }
       Statement::Assign(p, _, _, vars) if vars.len() == 1 => self.try_legalize_place(p, pred),
@@ -111,7 +125,8 @@ impl<'a> Legalizer<'a> {
     match o.place() {
       Ok(p) => self.try_legalize_place(p, pred),
       Err(c) => match pred {
-        Predicate::As(ity) => Some(PackedOp::Const(Box::new(c.as_(ity))))
+        Predicate::As(ity) => Some(PackedOp::Const(Box::new(c.as_(ity)))),
+        Predicate::Into(ity) => Some(PackedOp::Const(Box::new(c.try_into(ity)?))),
       }
     }
   }
@@ -148,11 +163,24 @@ impl<'a> Legalizer<'a> {
             }
           },
           // TODO: Compile equations like x + y < 17
-          // RValue::Binop(op, _, _) if match op {
-          //   Binop::Lt(ity) | Binop::Le(ity) |
-          //   Binop::Eq(ity) | Binop::Ne(ity) => ity.size() == Size::Inf,
-          //   _ => false,
-          // } => {}
+          &RValue::Binop(
+            mut op@(Binop::Lt(ity) | Binop::Le(ity) | Binop::Eq(ity) | Binop::Ne(ity)),
+            ref o1, ref o2
+          ) if ity.size() == Size::Inf => {
+            let ity = match &mut op {
+              Binop::Lt(ity) | Binop::Le(ity) | Binop::Eq(ity) | Binop::Ne(ity) => ity,
+              _ => unreachable!()
+            };
+            let (IntTy::UInt(sz) | IntTy::Int(sz)) = ity;
+            *sz = Size::S64;
+            if_chain! {
+              if let Some(o1) = self.try_legalize_operand(o1, Predicate::Into(*ity));
+              if let Some(o2) = self.try_legalize_operand(o2, Predicate::Into(*ity));
+              then {
+                self.buffer.replace(i, RValue::Binop(op, o1.unpack(), o2.unpack()))
+              }
+            }
+          }
           _ => {}
         }
       }

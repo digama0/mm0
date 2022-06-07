@@ -2193,7 +2193,7 @@ impl PInst {
         write_opc_modrm(modrm, &mut rex, buf, 0, dst.into());
       }
       (OpcodeLayout::CMov(modrm), &PInst::CMov { sz, cc, dst, src }) => {
-        assert!(op_size_w(&mut rex, sz) == 1);
+        assert!(op_size_w(&mut rex, sz.max(Size::S32)) == 1);
         buf.push_u8(0x0f);
         buf.push_u8(0x40 + cc as u8);
         write_modrm(modrm, &mut rex, buf, dst, src);

@@ -179,7 +179,17 @@ impl Cfg {
     impl GhostDom {
       #[inline] fn apply_local(&mut self, v: VarId) { self.vars.insert(v); }
 
-      #[inline] fn apply_place(&mut self, p: &Place) { self.apply_local(p.local) }
+      #[inline] fn apply_place(&mut self, p: &Place) {
+        self.apply_local(p.local);
+        for proj in &p.proj {
+          match proj.1 {
+            Projection::Index(i, _) |
+            Projection::Slice(i, _, _) => self.apply_local(i),
+            Projection::Proj(_, _) |
+            Projection::Deref => {}
+          }
+        }
+      }
 
       fn apply_operand(&mut self, o: &Operand) {
         if let Operand::Copy(p) | Operand::Move(p) | Operand::Ref(p) = o { self.apply_place(p) }

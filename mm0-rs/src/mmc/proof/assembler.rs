@@ -585,7 +585,7 @@ impl BuildAssemblyProc<'_> {
           (l2, (src, h4))
         });
         let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
-        let inst = app!(self, (instShift opc sz dst (IRM_imm32 (posZ src))));
+        let inst = app!(self, (instShift opc sz dst (IRM_imm32 src)));
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
           parseBinopHi(dst, *ip, l1, l2, opc, *self.start,
             rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));

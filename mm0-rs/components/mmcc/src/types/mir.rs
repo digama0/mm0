@@ -1188,8 +1188,8 @@ impl std::fmt::Debug for Projection {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Proj(_, i) => write!(f, ".{}", i),
-      Self::Index(i, _) => write!(f, "[{}]", i),
-      Self::Slice(i, l, _) => write!(f, "[{}..+{}]", i, l),
+      Self::Index(i, h) => write!(f, "[{:?}, {:?}]", i, h),
+      Self::Slice(i, l, h) => write!(f, "[{:?}..+{:?}, {:?}]", i, l, h),
       Self::Deref => write!(f, ".*"),
     }
   }
@@ -1313,6 +1313,19 @@ impl Constant {
       ety: (self.ety.0.clone(), Ty::new(TyKind::Int(ity))),
       k: ConstKind::As(Box::new((self.clone(), ity)))
     }
+  }
+
+  /// Construct a constant `c: iN`, if it fits in the target type.
+  #[must_use] pub fn try_into(&self, ity: IntTy) -> Option<Self> {
+    match self.k {
+      ConstKind::Int => if_chain! {
+        if let Some(ExprKind::Int(n)) = self.ety.0.as_deref();
+        if ity.contains(n);
+        then { return Some(Self::int(ity, n.clone())) }
+      },
+      _ => {}
+    }
+    None
   }
 }
 
