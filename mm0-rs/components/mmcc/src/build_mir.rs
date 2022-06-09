@@ -1374,7 +1374,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let vh_s = self.tr(if b { hyp[0] } else { hyp[1] }).cloned();
         self.push_stmt(Statement::Let(
           LetKind::Let(vh_s, Some(Rc::new(ExprKind::Unit))), false,
-          Rc::new(TyKind::Pure(pe.clone())),
+          Rc::new(TyKind::Pure(pe)),
           Constant::itrue().into()));
       }
       return self.expr(if b { e_tru } else { e_fal }, dest)
