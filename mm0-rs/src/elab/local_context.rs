@@ -9,9 +9,20 @@ use crate::elab::verify::{VERIFY_ON_ADD, VerifyError};
 use crate::{AtomId, TermKind, ThmKind, Type as EType, Span, FileSpan, BoxError, MAX_BOUND_VARS};
 use crate::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
-  Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortId, Term, TermId, Thm};
+  Expr, Modifiers, ObjectKind, OneOrMore, Proof, Result, SExprKind, SortId, Term, TermId, Thm};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
+
+/// The contexts in which an unknown var can appear.
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, EnvDebug, DeepSizeOf)]
+pub enum VarContext {
+  /// An unconstrained context
+  Unknown,
+  /// A context which requires a provable sort
+  Provable,
+  /// A context which requires this sort
+  Sort(SortId),
+}
 
 /// The infer status of a variable in a declaration. For example in
 /// `def foo {x} (ph: wff x y): wff = $ all z ph $;`, `x` has no declared type
@@ -51,7 +62,7 @@ pub enum InferSort {
     /// to an unknown provable sort; the values of the map are metavariables
     /// of the indicated sorts that are awaiting assignment when the dummy's
     /// actual sort is determined.
-    sorts: Box<HashMap<Option<SortId>, LispVal>>,
+    sorts: Box<HashMap<VarContext, LispVal>>,
   },
 }
 
@@ -60,14 +71,14 @@ impl InferSort {
     InferSort::Unknown { src, must_bound: false, dummy: true, sorts: Box::new(HashMap::new()) }
   }
   /// The sort of this variable. For an unknown variable, it returns a sort iff
-  /// this variable has inferred exactly one sort, not counting the "[`None`]" provable sort.
+  /// this variable has inferred exactly one sort, not counting `Unknown` or `Provable`.
   #[must_use] pub fn sort(&self) -> Option<SortId> {
     match *self {
       InferSort::Bound { sort, .. } | InferSort::Reg { sort, ..} => Some(sort),
       InferSort::Unknown {ref sorts, ..} => {
         let mut res = None;
         for s in sorts.keys() {
-          if let Some(s) = *s {
+          if let VarContext::Sort(s) = *s {
             if mem::replace(&mut res, Some(s)).is_some() {return None}
           }
         }
@@ -371,10 +382,12 @@ impl<'a> ElabTermMut<'a> {
         let s = match tgt {
           InferTarget::Bound(sa) => {
             *must_bound = true;
-            Some(self.elab.env.data[sa].sort.expect("expected a sort"))
+            VarContext::Sort(self.elab.env.data[sa].sort.expect("expected a sort"))
           }
-          InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.expect("expected a sort")),
-          _ => None,
+          InferTarget::Reg(sa) =>
+            VarContext::Sort(self.elab.env.data[sa].sort.expect("expected a sort")),
+          InferTarget::Provable => VarContext::Provable,
+          InferTarget::Unknown => VarContext::Unknown,
         };
         let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
         let val = &*sorts.entry(s).or_insert_with(||
@@ -606,7 +619,7 @@ impl Elaborator {
         let dummy = lk == LocalKind::Dummy;
         InferBinder::Var(x, (dummy, InferSort::Unknown {
           src, must_bound: lk.is_bound(), dummy,
-          sorts: Box::new(Some((None, mv)).into_iter().collect())
+          sorts: Box::new(Some((VarContext::Unknown, mv)).into_iter().collect())
         }))
       },
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
@@ -635,54 +648,64 @@ impl Elaborator {
     let mut errs = Vec::new();
     let mut newvars = Vec::new();
     for (&a, (new, is)) in &mut self.lc.vars {
-      if let InferSort::Unknown {src, must_bound, dummy: d2, ref sorts} = *is {
-        match if sorts.len() == 1 {
-          sorts.keys().next().expect("impossible")
-            .ok_or_else(|| ElabError::new_e(src, "could not infer type"))
-        } else {
-          sorts.keys().find_map(|s| s.filter(|&s| {
-            match self.env.pe.coes.get(&s) {
-              None => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2)),
-              Some(m) => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2 || m.contains_key(&s2))),
-            }
-          })).ok_or_else(|| {
-            ElabError::new_e(src, format!("could not infer consistent type from {{{}}}",
-              sorts.keys().filter_map(|&k| k.map(|s| &self.env.sorts[s].name)).format(", ")))
-          })
-        } {
-          Ok(sort) => {
-            for (s, e) in &**sorts {
-              let mut val = LispVal::atom(a);
-              if let Some(s) = *s {
-                if s != sort {
-                  let fsp = Some(FileSpan {file: self.path.clone(), span: src});
-                  val = self.env.apply_coe(&fsp, &self.env.pe.coes[&sort][&s], val);
-                }
-              }
-              if let LispKind::Ref(m) = &**e {
-                m.get_mut(|e| *e = val);
-              } else {unreachable!()}
-            }
-            let new2 = if (dummy && *new) || must_bound {
-              *is = InferSort::Bound { sort, used: true };
-              if self.mm0_mode {
-                errs.push(ElabError::warn(src,
-                  format!("(MM0 mode) inferred {{{}: {}}}, type inference is not allowed in MM0 files",
-                    self.env.data[a].name, self.env.sorts[sort].name)))
-              }
-              dummy && d2
-            } else {
-              *is = InferSort::Reg { sort, deps: Box::new([]), used: true };
-              if self.mm0_mode {
-                errs.push(ElabError::warn(src,
-                  format!("(MM0 mode) inferred ({}: {}), type inference is not allowed in MM0 files",
-                    self.env.data[a].name, self.env.sorts[sort].name)))
-              }
-              false
-            };
-            if !new2 && *new {*new = false; newvars.push((src, a))}
+      if let InferSort::Unknown {src, must_bound, dummy: d2, ref mut sorts} = *is {
+        let unk = sorts.remove(&VarContext::Unknown);
+        let prov = sorts.remove(&VarContext::Provable);
+        let as_sort = |s| if let VarContext::Sort(s) = s { s } else { unreachable!() };
+        let iter = sorts.keys().map(|&s| as_sort(s));
+        let result = match sorts.len() {
+          0 if prov.is_none() => if self.env.sorts.len() == 1 { Some(SortId(0)) } else { None },
+          0 => if let OneOrMore::One(s) = self.env.provable_sort { Some(s) } else { None },
+          1 => {
+            let s = iter.clone().next().expect("impossible");
+            if prov.is_none() || self.env.coe_prov_refl(s).is_some() { Some(s) } else { None }
           }
-          Err(e) => errs.push(e),
+          _ => iter.clone().find(|&s| {
+            (prov.is_none() || self.env.coe_prov_refl(s).is_some()) &&
+            match self.env.pe.coes.get(&s) {
+              None => iter.clone().all(|s2| s == s2),
+              Some(m) => iter.clone().all(|s2| s == s2 || m.contains_key(&s2)),
+            }
+          })
+        };
+        if let Some(sort) = result {
+          for (s, e) in sorts.iter().map(|(&s, e)| (as_sort(s), e))
+            .chain(prov.iter().map(|e| (self.env.coe_prov_refl(sort).expect("impossible"), e)))
+            .chain(unk.iter().map(|e| (sort, e)))
+          {
+            let mut val = LispVal::atom(a);
+            if s != sort {
+              let fsp = Some(FileSpan {file: self.path.clone(), span: src});
+              val = self.env.apply_coe(&fsp, &self.env.pe.coes[&sort][&s], val);
+            }
+            if let LispKind::Ref(m) = &**e { m.get_mut(|e| *e = val); } else {unreachable!()}
+          }
+          let new2 = if (dummy && *new) || must_bound {
+            *is = InferSort::Bound { sort, used: true };
+            if self.mm0_mode {
+              errs.push(ElabError::warn(src,
+                format!("(MM0 mode) inferred {{{}: {}}}, type inference is not allowed in MM0 files",
+                  self.env.data[a].name, self.env.sorts[sort].name)))
+            }
+            dummy && d2
+          } else {
+            *is = InferSort::Reg { sort, deps: Box::new([]), used: true };
+            if self.mm0_mode {
+              errs.push(ElabError::warn(src,
+                format!("(MM0 mode) inferred ({}: {}), type inference is not allowed in MM0 files",
+                  self.env.data[a].name, self.env.sorts[sort].name)))
+            }
+            false
+          };
+          if !new2 && *new {*new = false; newvars.push((src, a))}
+        } else {
+          let iter = prov.iter().map(|_| std::borrow::Cow::Borrowed("<provable>"))
+            .chain(iter
+              .map(|s| &*self.env.sorts[s].name)
+              .sorted()
+              .map(String::from_utf8_lossy));
+          errs.push(ElabError::new_e(src, format!("could not infer consistent type from {{{}}}",
+            iter.format(", "))))
         }
       }
     }

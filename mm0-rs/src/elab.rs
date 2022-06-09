@@ -36,7 +36,7 @@ use lisp::LispVal;
 use local_context::try_get_span_opt;
 use crate::{ArcList, ArcString, AtomId, BoxError, Coe, DeclKey, DocComment, EnvMergeIter,
   Environment, ErrorLevel, Expr, ExprNode, FileRef, FileSpan, FrozenEnv,
-  FrozenLispVal, LocalContext, Modifiers, NotaInfo, ObjectKind, Prec,
+  FrozenLispVal, LocalContext, Modifiers, NotaInfo, ObjectKind, OneOrMore, Prec,
   Proof, ProofNode, Remap, Remapper, SortId, Span, Term, TermId, Thm, ThmId};
 
 #[cfg(feature = "server")]

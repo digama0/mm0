@@ -606,11 +606,24 @@ impl ObjectKind {
   }
 }
 
+/// A way to track the unique element of a set.
+#[derive(Debug, DeepSizeOf)]
+pub enum OneOrMore<T> {
+  /// There are no elements.
+  Zero,
+  /// There is one element, of type `T`.
+  One(T),
+  /// There is more than one element, and we do not track them.
+  More,
+}
+
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
 #[derive(Debug, DeepSizeOf)]
 pub struct Environment {
   /// The sort map, which is a vector because sort names are allocated in order.
   pub sorts: SortVec<Sort>,
+  /// The unique provable sort, if one exists.
+  pub provable_sort: OneOrMore<SortId>,
   /// The dynamic parser environment, used for parsing math expressions
   pub pe: ParserEnv,
   /// The term/def map, which is a vector because term names are allocated in order.
@@ -642,6 +655,7 @@ impl Environment {
     Environment {
       atoms, data,
       sorts: Default::default(),
+      provable_sort: OneOrMore::Zero,
       pe: Default::default(),
       terms: Default::default(),
       thms: Default::default(),
@@ -1142,6 +1156,16 @@ impl<A> AddItemError<A> {
 }
 
 impl Environment {
+  /// If this sort is a provable sort, returns that;
+  /// otherwise returns the provable sort that this would coerce to, if any
+  #[must_use] pub fn coe_prov_refl(&self, sort: SortId) -> Option<SortId> {
+    if self.sorts[sort].mods.contains(Modifiers::PROVABLE) {
+      Some(sort)
+    } else {
+      self.pe.coe_prov.get(&sort).copied()
+    }
+  }
+
   /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
   /// or if we hit the maximum number of sorts.
   pub fn add_sort(&mut self, a: AtomId, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<DocComment>) ->
@@ -1162,6 +1186,13 @@ impl Environment {
       data.sort = Some(new_id);
       self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, doc, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
+      if sd.contains(Modifiers::PROVABLE) {
+        match &mut self.provable_sort {
+          ps @ OneOrMore::Zero => *ps = OneOrMore::One(new_id),
+          ps @ OneOrMore::One(_) => *ps = OneOrMore::More,
+          OneOrMore::More => {}
+        }
+      }
       Ok(new_id)
     }
   }
