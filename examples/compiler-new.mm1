@@ -4,28 +4,35 @@ do (warn-unused-vars #f);
 
 --| `tyUnit: Ty`:
 --| The type `()`, the unit type.
-@mmc-th local def tyUnit: set = $ S\ vs, S\ x, emp $;
+@_ @mmc-th local def tyUnit: set = $ S\ vs, S\ x, emp $;
 
 --| `tyFalse: Ty`:
 --| The type `F.`, the empty type.
-@mmc-th local def tyFalse: set = $ 0 $;
+@_ @mmc-th local def tyFalse: set = $ 0 $;
 
 --| `isTyped: Expr -> Ty -> SProp`:
---| The type constructor `[e: ty]`, which asserts that expression `e` has type `ty`.
-@mmc-th local def isTyped (e ty: set): set = $ S\ vs, ty @' vs @' (e @ vs) $;
+--| The assertion `[e: ty]`, which asserts that expression `e` has type `ty`.
+@_ @mmc-th local def isTyped (e ty: set): set = $ S\ vs, ty @' vs @' (e @ vs) $;
+
+--| `isHyp: Ty -> SProp`:
+--| The assertion `[(): ty]`, which asserts that type `ty` is inhabited.
+@_ @mmc-th local def isHyp (ty: set): set = $ S\ vs, ty @' vs @' 0 $;
 
 --| `asTy: SProp -> Ty`: Convert a SProp to a Ty by ignoring the value argument.
-@mmc-th local def asTy (P: set): set = $ S\ vs, S\ x, P @' vs $;
+@_ @mmc-th local def asTy (P: set): set = $ S\ vs, S\ x, P @' vs $;
 
 --| `tyTyped: Expr -> Ty -> Ty`:
 --| The type constructor `[e: ty]`, which asserts that expression `e` has type `ty`.
-@mmc-th local def tyTyped (e ty: set): set = $ asTy (isTyped e ty) $;
+@_ @mmc-th local def tyTyped (e ty: set): set = $ asTy (isTyped e ty) $;
 
 --| `eVar: Var -> Expr`: An expression denoting a variable
-@mmc-th local def eVar (v: nat): set = $ \ vs, vs @ v $;
+@_ @mmc-th local def eVar (v: nat): set = $ \ vs, vs @ v $;
+
+--| `tyMoved: Ty => Ty`: computes the moved version of a type.
+@_ @mmc-th local def tyMoved (ty moved: set): wff = $ F. $; -- TODO
 
 --| A return ABI saying you can't return
-@mmc-th local def noRet: set = $ 0 $; -- TODO
+@_ @mmc-th local def noRet: set = $ 0 $; -- TODO
 
 -- inductive epilogue
 -- | free : nat -> epilogue -> epilogue
@@ -159,11 +166,11 @@ infixl vctxA: $*V$ prec 20;
 
 --| `vVar: nat -> ty -> vctx`:
 --| A variable record in a variable context. This asserts that `v_n: ty`.
-@_ @mmc-th local def vVar (n: nat) (ty: set): set = $ S\ vs, ty @' vs @' (vs @ n) $;
+@_ @mmc-th local def vVar (n: nat) (ty: set): set = $ isTyped (eVar n) ty $;
 
 --| `vHyp: ty -> vctx`:
 --| A hypothesis, or unnamed variable. This asserts that `(): ty`.
-@_ @mmc-th local def vHyp (ty: set): set = $ S\ vs, ty @' vs @' 0 $;
+@_ @mmc-th local def vHyp (ty: set): set = $ isHyp ty $;
 
 @_ @mmc-th local def okVCtxPush (vctx1 A vctx2: set): wff = $ vctx2 == (vctx1 *V A) $;
 
@@ -185,6 +192,24 @@ infixl vctxA: $*V$ prec 20;
   $ okVCtxGet (A *V (B *V C)) ty $ = 'sorry;
 @mmc-th theorem okVCtxGet_l (h: $ okVCtxGet A ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
 @mmc-th theorem okVCtxGet_r (h: $ okVCtxGet B ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
+
+
+@_ @mmc-th local def okVCtxTake (vctx A vctx2: set): wff =
+$ A. vs vctx @' vs =>*s A @' vs *s vctx2 @' vs $;
+
+@mmc-th theorem okVCtxTake_move_var (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vVar n ty) (vVar n ty) (vVar n moved) $ = 'sorry;
+@mmc-th theorem okVCtxTake_ref_var (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vVar n ty) (vVar n moved) (vVar n ty) $ = 'sorry;
+@mmc-th theorem okVCtxTake_move_Hyp (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vHyp ty) (vHyp ty) (vHyp moved) $ = 'sorry;
+@mmc-th theorem okVCtxTake_ref_Hyp (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vHyp ty) (vHyp moved) (vHyp ty) $ = 'sorry;
+
+@mmc-th theorem okVCtxTake_l (h: $ okVCtxTake A ty A2 $):
+  $ okVCtxTake (A *V B) ty (A2 *V B) $ = 'sorry;
+@mmc-th theorem okVCtxTake_r (h: $ okVCtxTake B ty B2 $):
+  $ okVCtxTake (A *V B) ty (A *V B2) $ = 'sorry;
 
 --| `mctx0: mctx`: the empty machine context.
 @mmc-th local def mctx0: set = $ S\ vs, Sum emp L_emp $;
@@ -290,7 +315,7 @@ $ A. vs E. n vctx @' vs =>*s ty @' vs @' n $;
 @_ @mmc-th local def okReadHyp (tctx ty: set): wff = $ okReadHypVCtx (S\ vs, tctx_P tctx vs) ty $;
 
 @mmc-th theorem okReadHypI
-  (h1: $ okReadHypVCtx vctx ty $):
+  (h1: $ okVCtxTake vctx ty vctx2 $):
   $ okReadHyp (mkTCtx vctx n mctx) ty $ = 'sorry;
 
 @mmc-th theorem okReadHyp_unit:
@@ -595,8 +620,46 @@ $ epi_ok epi -> instEpilogue epi == code $;
 -- @mmc-th theorem okDeferI:
 --   $ okCode bctx tctx code (okDefer tctx code) $ = 'sorry;
 
+@mmc-th local def subst0: set = $ 0 $; -- TODO
+@mmc-th local def substS (subst e: set): set = $ 0 $; -- TODO
+infixl substS: $|>S$ prec 90;
+
+@mmc-th local def substTy (subst ty ty2: set): wff = $ F. $; -- TODO
+
+@mmc-th local def buildSubst (vctx1 subst1 args: set) (vctx2 subst2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem buildSubst_0:
+  $ buildSubst vctx subst arg0 vctx subst $ = 'sorry;
+
+@mmc-th theorem buildSubst_var
+  (h1: $ buildSubst vctx1 subst1 args vctx2 subst2 $)
+  (h2: $ substTy subst2 ty ty2 $)
+  (h3: $ okVCtxTake vctx2 (isTyped e ty2) vctx3 $):
+  $ buildSubst vctx1 subst1 (args |>A aVar ty) vctx3 (subst2 |>S e) $ = 'sorry;
+
+@mmc-th theorem buildSubst_hyp
+  (h1: $ buildSubst vctx1 subst1 args vctx2 subst2 $)
+  (h2: $ substTy subst2 ty ty2 $)
+  (h3: $ okVCtxTake vctx2 (isHyp ty2) vctx3 $):
+  $ buildSubst vctx1 subst1 (args |>A aHyp ty) vctx3 subst2 $ = 'sorry;
+
 @mmc-th local def applyCall (tctx1 args ret: set) (clob: nat) (tctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem applyCall_I
+  (h1: $ okProc gctx tgt args ret clob F. $)
+  (h2: $ buildSubst vctx1 subst0 args vctx2 subst $)
+  -- TODO
+  : $ applyCall (mkTCtx vctx1 sz1 mctx1)
+      (mkArgs args mctx_a) (mkArgs ret mctx_r) clob tctx2 $ = 'sorry;
+
 @mmc-th local def applyCallG (tctx1 args ret: set) (tctx2: set): wff = $ F. $; -- TODO
+
+@mmc-th theorem applyCallG_I
+  (h1: $ okProc gctx tgt args ret clob F. $)
+  (h2: $ buildSubst vctx1 subst0 args vctx2 subst $)
+  -- TODO
+  : $ applyCallG (mkTCtx vctx1 sz1 mctx1)
+      (mkArgs args mctx_a) (mkArgs ret mctx_r) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_call_func
   (h1: $ okProc gctx tgt args ret clob F. $)

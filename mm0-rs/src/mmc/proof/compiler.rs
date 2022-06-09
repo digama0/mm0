@@ -26,6 +26,12 @@ pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D
   app!(de, (tyUnit)) // TODO
 }
 
+fn format_to_string(f: impl FnOnce(&mut String) -> std::fmt::Result) -> String {
+  let mut s = String::new();
+  f(&mut s).expect("impossible");
+  s
+}
+
 type P<A> = (A, ProofId);
 
 struct Ctx {
@@ -67,11 +73,22 @@ impl Ctx {
 mmcc::mk_id! { VCtxId, }
 
 impl VCtxId {
-  const ROOT: Self = Self(0);
+  /// A sentinel value used in `VCtx::parent` to indicate the root context.
+  const ROOT: Self = Self(u32::MAX);
 }
 
 #[derive(Clone, Copy)]
 enum VarKind { Var, Hyp, Typed }
+
+impl std::fmt::Display for VarKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      VarKind::Var => "var",
+      VarKind::Hyp => "hyp",
+      VarKind::Typed => "typed",
+    }.fmt(f)
+  }
+}
 
 #[derive(Clone)]
 struct VCtxVar {
@@ -139,6 +156,21 @@ struct VCtx {
 }
 
 impl VCtx {
+  fn pp(&self, thm: &ProofDedup<'_>, elab: &mut Elaborator,
+    vctxs: &IdxVec<VCtxId, VCtx>,
+    f: &mut impl std::fmt::Write
+  ) -> std::fmt::Result {
+    if self.parent != VCtxId::ROOT {
+      vctxs[self.parent].pp(thm, elab, vctxs, f)?;
+    }
+    for v in &self.vars {
+      write!(f, "{} {:?}: ", v.kind, v.var)?;
+      thm.pp(elab, v.e, f)?;
+      writeln!(f)?
+    }
+    Ok(())
+  }
+
   /// Build the root context. Note that variables can be added to the root context with `add`
   fn root(de: &mut ProofDedup<'_>, hex: &HexCache) -> impl Fn() -> Self + Copy {
     let e = app!(de, (vctx0));
@@ -781,9 +813,7 @@ impl<'a> std::ops::Deref for ProcProver<'a> {
 
 impl<'a> ProcProver<'a> {
   fn pp(&mut self, i: ProofId) -> String {
-    let mut s = String::new();
-    self.thm.pp(self.elab, i, &mut s).expect("impossible");
-    s
+    format_to_string(|s| self.thm.pp(self.elab, i, s))
   }
 
   fn push_label_group(&mut self, var: ProofId, ls: ProofId) -> [ProofId; 2] {
@@ -898,6 +928,8 @@ impl<'a> ProcProver<'a> {
 
   /// Returns `(ty, |- okReadHypVCtx vctx ty)`
   fn read_hyp_vctx_var(&mut self, vctx: &VCtx, v: VarId) -> (ProofId, ProofId) {
+    // eprintln!("get {:?} in\n{}", v,
+    //   format_to_string(|s| vctx.pp(&self.thm, self.elab, &self.vctxs, s)));
     let (_, val, h1) = vctx.get(&mut self.thm, &self.vctxs, v);
     app_match!(self.thm, val => {
       (vHyp ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
@@ -1188,6 +1220,7 @@ impl<'a> ProcProver<'a> {
     clob: ProofId,
     rel: bool,
   ) -> ProofId {
+    if !abi.args.is_empty() || !abi.rets.is_empty() { todo!() }
     let l1 = tctx.1;
     let l2 = tctx.1;
     if rel {
