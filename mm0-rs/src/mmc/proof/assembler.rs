@@ -940,9 +940,9 @@ impl BuildAssemblyProc<'_> {
       }
       OpcodeLayout::Ud2 => {
         let l = app!(self, (s1 {self.hex.ch(&mut self.thm, 0x0b)}));
-        let inst = app!(self, (instSysCall));
+        let inst = app!(self, (instUD2));
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
-          parseSysCall(*ip, *self.start, rex.1));
+          parseUD2(*ip, *self.start, rex.1));
         [l, opch, inst, th]
       }
     }

@@ -1595,8 +1595,8 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
       Terminator::Unreachable(_) => todo!(),
       Terminator::If(_, _, _) => todo!(),
       Terminator::Assert(_, _, _) => todo!(),
-      Terminator::Fail => todo!(),
       Terminator::Call { .. } => {}
+      Terminator::Fail |
       Terminator::Exit(_) => self.inst_state = InstState::StartSkip,
       Terminator::Dead => unreachable!(),
     }
@@ -1624,7 +1624,12 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
       Terminator::Unreachable(_) => todo!(),
       Terminator::If(_, _, _) => todo!(),
       Terminator::Assert(_, _, _) => todo!(),
-      Terminator::Fail => todo!(),
+      Terminator::Fail => {
+        let l1 = self.tctx.1;
+        let th = thm!(self.thm, (okCode[self.bctx, l1, self.code, self.ok0]) =>
+          ok_fail(self.bctx, l1));
+        self.finish(th)
+      }
       Terminator::Call { .. } => {}
       Terminator::Exit(op) => {
         let proc = &mut *self.proc;

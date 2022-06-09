@@ -614,6 +614,8 @@ $ epi_ok epi -> instEpilogue epi == code $;
   $ okCode (mkBCtx (mkPCtx gctx (mkPCtx1 ret2 epi T.)) labs) tctx (instCall tgt) tctx2 $ =
 'sorry;
 
+@mmc-th theorem ok_fail: $ okCode bctx tctx instUD2 ok0 $ = 'sorry;
+
 @mmc-th theorem ok_exit
   (h1: $ getResult gctx T $)
   (h2: $ okReadHyp tctx T $):

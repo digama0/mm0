@@ -657,6 +657,7 @@ make_predefs! {
   ok_call_func: ThmId => "ok_call_func";
   ok_call_func_0: ThmId => "ok_call_func_0";
   ok_call_proc: ThmId => "ok_call_proc";
+  ok_fail: ThmId => "ok_fail";
   ok_exit: ThmId => "ok_exit";
 
   // basicElf_ok: ThmId => "basicElf_ok";
