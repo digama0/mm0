@@ -1140,7 +1140,7 @@ impl<'a> Iterator for Successors<'a> {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Jump1, bl))
         }
-        Terminator::Assert(_, _, _, bl) => {
+        Terminator::Assert(_, _, bl) => {
           self.0 = SuccessorsState::Zero;
           Some((Edge::Assert, bl))
         }
@@ -1150,6 +1150,7 @@ impl<'a> Iterator for Successors<'a> {
         }
         Terminator::Return(..) |
         Terminator::Exit(_) |
+        Terminator::Fail |
         Terminator::Unreachable(_) |
         Terminator::Dead => {
           self.0 = SuccessorsState::Zero;
@@ -1733,8 +1734,9 @@ pub enum Terminator {
   /// An assert expression `if cond {h. goto l1} else {fail}`.
   /// This is lowered the same as a branch, but there is no actual `fail` basic block to
   /// jump to.
-  /// The `bool` is true if the following block is reachable (i.e. this is not `assert false`).
-  Assert(Operand, VarId, bool, BlockId),
+  Assert(Operand, VarId, BlockId),
+  /// An `assert false;` expression.
+  Fail,
   /// A `f(tys, es) -> l(xs)` function call, which calls `f` with type arguments `tys` and
   /// values `es`, and jumps to `l`, using `xs` to store the return values.
   Call {
@@ -1792,8 +1794,8 @@ impl std::fmt::Debug for Terminator {
       Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
       Self::If(ctx, cond, [(v1, bl1), (v2, bl2)]) => write!(f,
         "{ctx:?} := if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
-      Self::Assert(cond, v, true, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
-      Self::Assert(cond, _, false, _) => write!(f, "assert {:?} -> !", cond),
+      Self::Assert(cond, v, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
+      Self::Fail => write!(f, "fail -> !"),
       Self::Call { f: func, tys, args, reach, ctx, tgt, rets, .. } => {
         write!(f, "{ctx:?} := call {func}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
@@ -1887,8 +1889,8 @@ pub(crate) trait Visitor {
       Terminator::Unreachable(o) |
       Terminator::Exit(o) |
       Terminator::If(_, o, _) |
-      Terminator::Assert(o, _, true, _) => self.visit_operand(o),
-      Terminator::Assert(_, _, false, _) |
+      Terminator::Assert(o, _, _) => self.visit_operand(o),
+      Terminator::Fail |
       Terminator::Jump1(_, _) |
       Terminator::Dead => {}
     }

@@ -928,13 +928,13 @@ impl<'a> LowerCtx<'a> {
         self.unpatched.push((vbl, cond.branch(VBlockId(bl1.0), VBlockId(bl2.0))));
         cl::Terminator::If(cl)
       }
-      Terminator::Assert(ref o, _, true, bl) => {
+      Terminator::Assert(ref o, _, bl) => {
         let (src, cl1) = self.get_operand_reg(o, Size::S8)?;
         let cond = self.code.emit_cmp(Size::S8, Cmp::Cmp, CC::NZ, src, 0_u32);
         self.unpatched.push((vbl, cond.assert(VBlockId(bl.0))));
         cl::Terminator::Assert(cl1)
       }
-      Terminator::Assert(_, _, false, _) => {
+      Terminator::Fail => {
         self.code.emit(Inst::Ud2);
         cl::Terminator::Fail
       }

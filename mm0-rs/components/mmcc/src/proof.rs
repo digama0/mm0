@@ -563,9 +563,9 @@ impl<'a> BlockProofTree<'a> {
         mir::Terminator::Exit(_) |
         mir::Terminator::Dead |
         mir::Terminator::Call { reach: false, .. } |
-        mir::Terminator::Assert(_, _, false, _) => return id,
+        mir::Terminator::Fail => return id,
         mir::Terminator::Jump1(_, tgt) |
-        mir::Terminator::Assert(_, _, _, tgt) |
+        mir::Terminator::Assert(_, _, tgt) |
         mir::Terminator::Call { tgt, .. } => stack.push((true, std::mem::replace(&mut id, tgt))),
         mir::Terminator::If(_, _, [(_, bl1), (_, bl2)]) => {
           stack.push((true, std::mem::replace(&mut id, bl1)));
@@ -768,9 +768,9 @@ impl<'a> BlockProof<'a> {
         mir::Terminator::Exit(_) |
         mir::Terminator::Dead |
         mir::Terminator::Call { reach: false, .. } |
-        mir::Terminator::Assert(_, _, false, _) => {}
+        mir::Terminator::Fail => {}
         mir::Terminator::Jump1(_, tgt) |
-        mir::Terminator::Assert(_, _, _, tgt) |
+        mir::Terminator::Assert(_, _, tgt) |
         mir::Terminator::Call { tgt, .. } => self.ctx.block(tgt).validate(ctx),
         mir::Terminator::If(_, _, [(_, bl1), (_, bl2)]) => {
           self.ctx.block(bl1).validate(ctx);

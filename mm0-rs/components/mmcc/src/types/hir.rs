@@ -585,7 +585,12 @@ pub enum ExprKind<'a> {
   /// Take the type of a variable, producing a proof of type `T`.
   Typeof(Box<Expr<'a>>),
   /// `(assert p)` evaluates `p: bool` and returns a proof of `T` (coerced from `p`).
-  Assert(Box<Expr<'a>>),
+  Assert {
+    /// The condition to check.
+    cond: Box<Expr<'a>>,
+    /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the branch trivializes.
+    trivial: Option<bool>,
+  },
   /// An assignment / mutation.
   Assign {
     /// A place (lvalue) to write to.
@@ -622,6 +627,8 @@ pub enum ExprKind<'a> {
     gen: GenId,
     /// The variables that were modified by the if statement.
     muts: Vec<VarId>,
+    /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the branch trivializes.
+    trivial: Option<bool>,
   },
   /// A while loop. If `cond` is a pure expression and there are no early `break`s inside the loop,
   /// then the return type is `!cond`; otherwise `()`.
@@ -765,9 +772,9 @@ impl ExprKind<'_> {
         e.k.0.debug_indent(i, f)?;
         write!(f, ")")
       }
-      ExprKind::Assert(e) => {
+      ExprKind::Assert { cond, .. } => {
         write!(f, "assert(")?;
-        e.k.0.debug_indent(i, f)?;
+        cond.k.0.debug_indent(i, f)?;
         write!(f, ")")
       }
       ExprKind::Assign { lhs, rhs, map, .. } => {

@@ -66,6 +66,7 @@ impl Cfg {
       matches!(t,
         Terminator::Return(..) |
         Terminator::Exit(..) |
+        Terminator::Fail |
         Terminator::Assert(..) |
         Terminator::Call {se: true, ..})
     }
@@ -107,25 +108,29 @@ impl Cfg {
         Reachability::Unreachable => { bl.reachable = false; continue }
         Reachability::Reachable => {}
       }
-      match bl.term.as_mut() {
-        Some(Terminator::Assert(_, _, reach, tgt) | Terminator::Call {reach, tgt, ..}) =>
-          *reach = reachable[*tgt].reach(),
-        Some(&mut Terminator::If(_, _, [(_, tgt1), (_, tgt2)])) => {
-          let reach1 = reachable[tgt1].reach();
-          if reach1 == reachable[tgt2].reach() { continue }
-          let_unchecked!(Some(Terminator::If(ctx, _, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
-            if reach1 { mem::swap(&mut vtgt1, &mut vtgt2) }
-            let (_, _, (_, ty1)) = &self.ctxs.head(self[vtgt1.1].ctx);
-            let (v2, _, (e2, ty2)) = &self.ctxs.head(self[vtgt2.1].ctx);
-            bl = &mut self.blocks[id];
-            bl.stmts.push(Statement::Let(
-              LetKind::Let(v2.clone().map_into(|_| vtgt2.0), e2.clone()), false, ty2.clone(),
-              Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
-            ));
-            bl.term = Some(Terminator::Jump1(ctx, tgt2));
-          });
+      if let Some(term) = bl.term.as_mut() {
+        match term {
+          Terminator::Call {reach, tgt, ..} =>
+            *reach = reachable[*tgt].reach(),
+          &mut Terminator::Assert(_, _, tgt) if !reachable[tgt].reach() =>
+            *term = Terminator::Fail,
+          &mut Terminator::If(_, _, [(_, tgt1), (_, tgt2)]) => {
+            let reach1 = reachable[tgt1].reach();
+            if reach1 == reachable[tgt2].reach() { continue }
+            let_unchecked!(Some(Terminator::If(ctx, _, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
+              if reach1 { mem::swap(&mut vtgt1, &mut vtgt2) }
+              let (_, _, (_, ty1)) = &self.ctxs.head(self[vtgt1.1].ctx);
+              let (v2, _, (e2, ty2)) = &self.ctxs.head(self[vtgt2.1].ctx);
+              bl = &mut self.blocks[id];
+              bl.stmts.push(Statement::Let(
+                LetKind::Let(v2.clone().map_into(|_| vtgt2.0), e2.clone()), false, ty2.clone(),
+                Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
+              ));
+              bl.term = Some(Terminator::Jump1(ctx, tgt2));
+            });
+          }
+          _ => {}
         }
-        _ => {}
       }
     }
   }
@@ -147,7 +152,7 @@ impl Cfg {
         match *bl.terminator() {
           Terminator::Return(..) |
           Terminator::Exit(_) => *d = true,
-          Terminator::Assert(_, _, false, _) |
+          Terminator::Fail |
           Terminator::Call {reach: false, ..} => *d = false,
           Terminator::Assert(..) |
           Terminator::Call {..} |
@@ -302,6 +307,7 @@ impl Cfg {
             }
           }
           Terminator::Jump1(_, _) |
+          Terminator::Fail |
           Terminator::Exit(_) => {}
           Terminator::Return(_, args) => {
             d.active = OptBlockId::new(id);
@@ -313,7 +319,7 @@ impl Cfg {
           Terminator::If(_, o, _) => if d.active == OptBlockId::new(id) {
             d.apply_operand(o)
           }
-          Terminator::Assert(o, _, _, _) => {
+          Terminator::Assert(o, _, _) => {
             d.active = OptBlockId::new(id);
             d.apply_operand(o)
           }

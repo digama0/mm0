@@ -616,7 +616,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let n = self.cfg.ctxs.len(self.cur_ctx);
     self.extend_ctx(Spanned { span, k: vh }, false, (None, Rc::new(TyKind::Pure(cond))));
     let tgt = self.new_block(n);
-    self.cur_block().terminate(Terminator::Assert(v_cond, vh, true, tgt));
+    self.cur_block().terminate(Terminator::Assert(v_cond, vh, tgt));
     self.cur_block = tgt;
     vh
   }
@@ -773,7 +773,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::ArgRef(e) => self.copy_or_move_place(*e)?,
       hir::ExprKind::Ref(e) => self.copy_or_ref(*e)?,
       hir::ExprKind::Unit => Constant::unit().into(),
-      hir::ExprKind::ITrue => Constant::itrue().into(),
+      hir::ExprKind::ITrue |
+      hir::ExprKind::Assert { trivial: Some(true), .. } => Constant::itrue().into(),
       hir::ExprKind::Bool(b) => Constant::bool(b).into(),
       hir::ExprKind::Int(n) => let_unchecked!(ty::TyKind::Int(ity) = e.ty().k,
         Constant::int(ity, n.clone()).into()),
@@ -842,14 +843,14 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
       hir::ExprKind::Sizeof(ty) => Constant::sizeof(Size::Inf, self.tr(ty)).into(),
       hir::ExprKind::Typeof(e) => RValue::Typeof(self.operand(*e)?),
-      hir::ExprKind::Assert(e) => {
+      hir::ExprKind::Assert { cond, trivial: None } => {
         let span = e.span.clone();
         if let Some(pe) = e.k.1 .0 {
-          let e = self.operand(*e)?;
-          let cond = self.tr(pe);
-          self.assert(span, e, cond).into()
+          let e = self.operand(*cond)?;
+          let pe = self.tr(pe);
+          self.assert(span, e, pe).into()
         } else {
-          let v = self.as_temp(*e)?;
+          let v = self.as_temp(*cond)?;
           self.assert(span, Operand::Move(v.into()), Rc::new(ExprKind::Var(v))).into()
         }
       }
@@ -872,6 +873,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
       hir::ExprKind::Block(bl) => self.rvalue_block(e.span, bl, Some(e.k.1))?,
       hir::ExprKind::While(while_) => self.rvalue_while(e.span, *while_)?,
+      hir::ExprKind::Assert { trivial: Some(false), .. } |
       hir::ExprKind::Unreachable(_) |
       hir::ExprKind::Jump(_, _, _, _) |
       hir::ExprKind::Break(_, _) |
@@ -894,6 +896,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Int(_) |
       hir::ExprKind::Const(_) |
       hir::ExprKind::Call(_) |
+      hir::ExprKind::Assert { trivial: Some(true), .. } |
       hir::ExprKind::If {..} => self.operand(e)?.into(),
       hir::ExprKind::Error => unreachable!(),
     })
@@ -927,8 +930,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   fn expr(&mut self, e: hir::Expr<'a>, dest: Dest<'a>) -> Block<()> {
     self.fulfill_unit_dest(e.k.1, dest, |this, dest| {
       match e.k.0 {
-        hir::ExprKind::If {hyp, cond, cases, gen, muts} =>
-          return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, dest),
+        hir::ExprKind::If { hyp, cond, cases, gen, muts, trivial } =>
+          return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, trivial, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
           return this.expr_call(e.span, call, e.k.1 .1,
@@ -945,7 +948,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ExprKind::Bool(_) |
           hir::ExprKind::Int(_) |
           hir::ExprKind::Uninit |
-          hir::ExprKind::Sizeof(_) => {}
+          hir::ExprKind::Sizeof(_) |
+          hir::ExprKind::Assert { trivial: Some(true), .. } => {}
           hir::ExprKind::Unop(_, e) |
           hir::ExprKind::Rval(e) |
           hir::ExprKind::Ghost(e) |
@@ -980,7 +984,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           }
           hir::ExprKind::List(_, es) => for e in es { this.expr(e, None)? }
           hir::ExprKind::Mm0(e) => for e in e.subst { this.expr(e, None)? }
-          hir::ExprKind::Assert(_) => {
+          hir::ExprKind::Assert { trivial: None, .. } => {
             let span = dest.map_or(e.span, |v| v.span);
             this.expr(e, Some(hir::Spanned { span, k: PreVar::Fresh }))?
           }
@@ -1011,6 +1015,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             hir::ReturnKind::Struct(n) =>
               this.expr_call(e.span, call, e.k.1 .1,
                 &vec![hir::Spanned { span: e.span, k: PreVar::Fresh }; n.into()])?,
+          }
+          hir::ExprKind::Assert { trivial: Some(false), .. } => {
+            this.cur_block().terminate(Terminator::Fail);
+            return Err(Diverged)
           }
           hir::ExprKind::Unreachable(h) => {
             let h = this.as_temp(*h)?;
@@ -1340,6 +1348,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     [e_tru, e_fal]: [hir::Expr<'a>; 2],
     gen: GenId,
     muts: Vec<HVarId>,
+    trivial: Option<bool>,
     dest: Dest<'a>,
   ) -> Block<()> {
     // In the general case, we generate:
@@ -1358,6 +1367,19 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     //   v_cond := cond
     let v_cond = self.as_temp(cond)?;
     let pe = pe.map_or_else(|| Rc::new(ExprKind::Var(v_cond)), |e| self.tr(e));
+
+    if let Some(b) = trivial {
+      // If the condition is trivial, then we just go straight to the appropriate side of the if
+      if let Some(hyp) = hyp {
+        let vh_s = self.tr(if b { hyp[0] } else { hyp[1] }).cloned();
+        self.push_stmt(Statement::Let(
+          LetKind::Let(vh_s, Some(Rc::new(ExprKind::Unit))), false,
+          Rc::new(TyKind::Pure(pe.clone())),
+          Constant::itrue().into()));
+      }
+      return self.expr(if b { e_tru } else { e_fal }, dest)
+    }
+
     let (vh1_s, vh2_s) = match hyp {
       None => (self.fresh_var_span(cond_span.clone()), self.fresh_var_span(cond_span.clone())),
       Some([vh1, vh2]) => (self.tr(vh1).cloned(), self.tr(vh2).cloned()),

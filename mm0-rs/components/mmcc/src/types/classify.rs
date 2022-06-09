@@ -684,7 +684,7 @@ mk_fold! { <'a>
         self.do_operand_reg(o, cl, it);
         self.do_insts(3, it);
       }
-      (Terminator::Assert(cl), mir::Terminator::Assert(o, _, true, _)) => {
+      (Terminator::Assert(cl), mir::Terminator::Assert(o, _, _)) => {
         self.do_operand_reg(o, cl, it);
         self.do_insts(2, it);
       }

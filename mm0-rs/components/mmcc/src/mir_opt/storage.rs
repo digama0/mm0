@@ -246,6 +246,7 @@ impl Cfg {
     let mut allocs = Allocations::default();
 
     let init = self.blocks.0.iter().map(|bl| {
+      if bl.is_dead() { return Default::default() }
       bl.ctx_rev_iter(&self.ctxs).filter(|p| p.1).map(|p| p.0.k).collect()
     }).collect();
     for (_, bl) in self.blocks.enum_iter_mut() {

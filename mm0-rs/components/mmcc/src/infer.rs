@@ -3699,7 +3699,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           None => ExpectExpr::HasTy(self.common.t_bool)
         });
         let tgt = intern!(self, pe.map_or(TyKind::True, TyKind::Pure));
-        ret![Assert(Box::new(e)), Ok(unit!()), tgt]
+        let trivial = if_chain! {
+          if let Ok(pe) = pe;
+          if let ExprKind::Bool(b) = self.whnf_expr(e.span, pe).k;
+          then { Some(b) }
+          else { None }
+        };
+        ret![Assert { cond: Box::new(e), trivial }, Ok(unit!()), tgt]
       }
 
       ast::ExprKind::Assign {lhs, rhs, oldmap} => {
@@ -3803,12 +3809,21 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let muts = self.merge(span, &mut [dc1, dc2]);
         let ((then, p_then), (els, p_els)) = (e1, e2);
         let cases = Box::new([then, els]);
+        let trivial = if_chain! {
+          if let Ok(pe) = pe;
+          if let ExprKind::Bool(b) = self.whnf_expr(cond.span, pe).k;
+          then { Some(b) }
+          else { None }
+        };
         let pe = pe.and_then(|cond| Ok(match ik {
           ast::IfKind::If => intern!(self, ExprKind::If {cond, then: p_then?, els: p_els?}),
           ast::IfKind::And => intern!(self, ExprKind::Binop(Binop::And, cond, p_els?)),
           ast::IfKind::Or => intern!(self, ExprKind::Binop(Binop::Or, cond, p_then?)),
         }));
-        ret![If {hyp, cond: Box::new(cond), cases, gen: self.dc.generation, muts}, pe, tgt]
+        ret![If {
+          hyp, cond: Box::new(cond), cases,
+          gen: self.dc.generation, muts, trivial
+        }, pe, tgt]
       }
 
       &ast::ExprKind::While {label, ref hyp, ref cond, ref muts, ref var, ref body, has_break} => {
@@ -4018,7 +4033,15 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let ty1 = cases[0].ty();
         let ty2 = cases[1].ty();
         if self.relate_ty(span, None, ty1, ty2, Relation::Equal).is_err() { return None }
-        (hir::ExprKind::If {hyp: None, cond, cases, gen: self.dc.generation, muts: vec![]}, ty1)
+        let trivial = if_chain! {
+          if let Some(pe) = cond.k.1 .0;
+          if let ExprKind::Bool(b) = self.whnf_expr(cond.span, pe).k;
+          then { Some(b) }
+          else { None }
+        };
+        (hir::ExprKind::If {
+          hyp: None, cond, cases, gen: self.dc.generation, muts: vec![], trivial
+        }, ty1)
       }
       ExprKind::Index(_, _) |
       ExprKind::Slice(_) |

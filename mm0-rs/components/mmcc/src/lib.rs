@@ -393,7 +393,7 @@ mod test {
     let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None,
       Rc::new(TyKind::Pure(Rc::new(ExprKind::Var(eq))))));
     let bl2 = cfg.new_block(bl2ctx, 0);
-    cfg[bl1].terminate(Terminator::Assert(eq.into(), y, true, bl2));
+    cfg[bl1].terminate(Terminator::Assert(eq.into(), y, bl2));
     cfg[bl2].terminate(Terminator::Exit(Constant::unit().into()));
 
     // println!("before opt:\n{:#?}", cfg);
