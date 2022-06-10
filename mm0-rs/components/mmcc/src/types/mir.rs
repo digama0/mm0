@@ -710,7 +710,7 @@ impl Contexts {
       let buf_id = self.0.push(CtxBuf {parent: *id, size: size + id.1, vars: vec![]});
       *id = CtxId(buf_id, 0);
       // Safety: We just pushed so it's not empty
-      unsafe { self.0 .0.last_mut().unwrap_unchecked() }
+      unsafe { self.0.0.last_mut().unwrap_unchecked() }
     }
   }
 
@@ -798,7 +798,7 @@ impl Contexts {
 
   /// Clear all computational relevance settings in the contexts.
   pub fn reset_ghost(&mut self) {
-    self.0 .0.iter_mut().for_each(|ctx| ctx.vars.iter_mut().for_each(|v| v.1 = false))
+    self.0.0.iter_mut().for_each(|ctx| ctx.vars.iter_mut().for_each(|v| v.1 = false))
   }
 
   /// Set computational relevance for all variables in the context for which `vars` returns true.

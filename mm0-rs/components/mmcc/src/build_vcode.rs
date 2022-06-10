@@ -793,7 +793,7 @@ impl<'a> LowerCtx<'a> {
         if !vr { continue }
         let a = self.allocs.get(v);
         assert_ne!(a, AllocId::ZERO);
-        let dst = self.get_alloc(a).0 .0;
+        let dst = self.get_alloc(a).0.0;
         let cl = match *arg {
           ArgAbi::Reg(_, sz) => {
             let _ = self.code.emit_copy(sz, dst, ret_regs.next().expect("pushed"));
@@ -962,7 +962,7 @@ impl<'a> LowerCtx<'a> {
     let mut insert = |out: &mut Vec<_>, v| {
       let a = self.allocs.get(v);
       if a == AllocId::ZERO { return Err(v) }
-      if let RegMem::Reg(v) = self.get_alloc(a).0 .0 {
+      if let RegMem::Reg(v) = self.get_alloc(a).0.0 {
         if !out.contains(&v) { out.push(v) }
       }
       Ok(())
@@ -1126,7 +1126,7 @@ impl<'a> LowerCtx<'a> {
         if !r { continue }
         let a = self.allocs.get(v.k);
         assert_ne!(a, AllocId::ZERO);
-        let val = self.get_alloc(a).0 .0;
+        let val = self.get_alloc(a).0.0;
         self.code.emit(Inst::BlockParam { var: v.k, val });
       }
       self.build_block(block_args, bl, vblock).map_err(|err| match err {

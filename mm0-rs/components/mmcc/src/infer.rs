@@ -280,7 +280,7 @@ impl<'a> Interner<'a> {
     match T::get_mut(self).raw_entry_mut().from_key(&t) {
       RawEntryMut::Occupied(e) => e.key().0,
       RawEntryMut::Vacant(e) =>
-        e.insert(Interned(alloc.alloc(WithMeta::new(t))), ()).0 .0,
+        e.insert(Interned(alloc.alloc(WithMeta::new(t))), ()).0.0,
     }
   }
 }
@@ -2849,7 +2849,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   ) -> (hir::Expr<'a>, RExpr<'a>) {
     (match c {
       Coercion::TypedPure(ty) => {
-        let pe1 = e.k.1 .0;
+        let pe1 = e.k.1.0;
         hir::Spanned {
           span: e.span,
           k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Wand(None)), (pe1, ty))
@@ -2864,7 +2864,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           let ret = (hir::ExprKind::Error, (Some(self.common.e_error), self.common.t_error));
           return (e.map_into(|_| ret), pe)
         }
-        let pe1 = e.k.1 .0;
+        let pe1 = e.k.1.0;
         hir::Spanned {
           span: e.span,
           k: (hir::ExprKind::Cast(Box::new(e), ty, CastKind::Shr), (pe1, ty))
@@ -4034,7 +4034,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let ty2 = cases[1].ty();
         if self.relate_ty(span, None, ty1, ty2, Relation::Equal).is_err() { return None }
         let trivial = if_chain! {
-          if let Some(pe) = cond.k.1 .0;
+          if let Some(pe) = cond.k.1.0;
           if let ExprKind::Bool(b) = self.whnf_expr(cond.span, pe).k;
           then { Some(b) }
           else { None }
@@ -4278,7 +4278,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         self.dc.context = ctx;
         let rhs = self.check_expr(rhs, lhs1.ctx.ty).0;
         // lower the LHS again to unify the types better
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, rhs.k.1 .0, Some(rhs.k.1 .1)).0;
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, rhs.k.1.0, Some(rhs.k.1.1)).0;
         UnelabStmt::Let {lhs, rhs}
       }
       ast::StmtKind::Expr(e) => UnelabStmt::Expr(

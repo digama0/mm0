@@ -828,7 +828,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::Cast(e, _, hir::CastKind::Ptr) =>
         RValue::Pun(PunKind::Ptr, self.expr_place(*e)?),
       hir::ExprKind::Cast(e, _, ck) => {
-        let e_ty = e.k.1 .1;
+        let e_ty = e.k.1.1;
         let e = self.operand(*e)?;
         let ck = match ck {
           hir::CastKind::Int => CastKind::Int,
@@ -840,12 +840,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         };
         RValue::Cast(ck, e, self.tr(e_ty))
       }
-      hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1 .1)).into(),
+      hir::ExprKind::Uninit => Constant::uninit_core(self.tr(e.k.1.1)).into(),
       hir::ExprKind::Sizeof(ty) => Constant::sizeof(Size::Inf, self.tr(ty)).into(),
       hir::ExprKind::Typeof(e) => RValue::Typeof(self.operand(*e)?),
       hir::ExprKind::Assert { cond, trivial: None } => {
         let span = e.span.clone();
-        if let Some(pe) = e.k.1 .0 {
+        if let Some(pe) = e.k.1.0 {
           let e = self.operand(*cond)?;
           let pe = self.tr(pe);
           self.assert(span, e, pe).into()
@@ -865,12 +865,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let dest = (0..n).map(|_| {
           hir::Spanned { span: e.span, k: PreVar::Ok(self.fresh_var()) }
         }).collect::<Vec<_>>();
-        self.expr_call(e.span, call, e.k.1 .1, &dest)?;
+        self.expr_call(e.span, call, e.k.1.1, &dest)?;
         RValue::List(dest.into_iter().map(|v| {
           let_unchecked!(PreVar::Ok(v) = v.k, v.into())
         }).collect())
       }
-      hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1 .1), p).into(),
+      hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1.1), p).into(),
       hir::ExprKind::Block(bl) => self.rvalue_block(e.span, bl, Some(e.k.1))?,
       hir::ExprKind::While(while_) => self.rvalue_while(e.span, *while_)?,
       hir::ExprKind::Assert { trivial: Some(false), .. } |
@@ -934,7 +934,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, trivial, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
-          return this.expr_call(e.span, call, e.k.1 .1,
+          return this.expr_call(e.span, call, e.k.1.1,
             &[dest.unwrap_or(hir::Spanned { span: e.span, k: PreVar::Fresh })])
         }
         _ => {}
@@ -1010,10 +1010,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           hir::ExprKind::While {..} => { this.rvalue(e)?; }
           hir::ExprKind::Call(call) => match call.rk {
             hir::ReturnKind::Unreachable |
-            hir::ReturnKind::Unit => this.expr_call(e.span, call, e.k.1 .1, &[])?,
+            hir::ReturnKind::Unit => this.expr_call(e.span, call, e.k.1.1, &[])?,
             hir::ReturnKind::One => unreachable!(),
             hir::ReturnKind::Struct(n) =>
-              this.expr_call(e.span, call, e.k.1 .1,
+              this.expr_call(e.span, call, e.k.1.1,
                 &vec![hir::Spanned { span: e.span, k: PreVar::Fresh }; n.into()])?,
           }
           hir::ExprKind::Assert { trivial: Some(false), .. } => {
@@ -1044,7 +1044,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
               .1.brk.as_ref().expect("label does not expect break").clone();
             let args = match dest {
               None => { this.expr(*e, None)?; vec![] }
-              Some((v, _)) => vec![(v.k, !e.k.1 .1.ghostly(), this.operand(*e)?)]
+              Some((v, _)) => vec![(v.k, !e.k.1.1.ghostly(), this.operand(*e)?)]
             };
             this.join(&jb, args, None);
             return Err(Diverged)
@@ -1214,7 +1214,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         let dest = pats.iter()
           .map(|&pat| lhs.map_into(|_| PreVar::Pre(pat.k.var)))
           .collect::<Vec<_>>();
-        self.expr_call(rhs.span, call, rhs.k.1 .1, &dest)?;
+        self.expr_call(rhs.span, call, rhs.k.1.1, &dest)?;
         for (&pat, v) in pats.iter().zip(dest) {
           let v = self.tr(v.k);
           self.tup_pat(lhs.span, global, pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
@@ -1248,7 +1248,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           self.cfg[base_bl].stmts.push(Statement::LabelGroup(bls.clone(), base_ctx));
           self.tree.push_group(bls);
           self.labels.push((v, LabelGroupData {
-            jumps: Some(((base_gen, brk.1 .1.clone()), jumps.clone())),
+            jumps: Some(((base_gen, brk.1.1.clone()), jumps.clone())),
             brk: Some((brk.clone(), *dest))
           }));
           for (&(bl, _), body) in jumps.iter().zip(bodies) {
@@ -1362,7 +1362,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     //   v := e_fal
     //   goto after(v)
     // after(dest: T):
-    let pe = cond.k.1 .0;
+    let pe = cond.k.1.0;
     let cond_span = cond.span;
     //   v_cond := cond
     let v_cond = self.as_temp(cond)?;
@@ -1535,7 +1535,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     // `body` diverges we still have to construct `after` and anything after that, provided that
     // `after` itself is reachable (which we signal by `exit_point` having a value).
     (|| -> Block<()> {
-      let pe: Option<ty::Expr<'_>> = cond.k.1 .0;
+      let pe: Option<ty::Expr<'_>> = cond.k.1.0;
       if trivial == Some(true) {
         // If `cond` evaluates to `true`, then this is an infinite loop and `after` is not
         // reachable, unless it is accessed indirectly via `break`.
@@ -1640,7 +1640,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       unimplemented!("recursive functions not supported")
     }
     let tys = self.tr(tys);
-    let args = args.into_iter().map(|e| Ok((!e.k.1 .1.ghostly(), self.operand(e)?)))
+    let args = args.into_iter().map(|e| Ok((!e.k.1.1.ghostly(), self.operand(e)?)))
       .collect::<Block<Box<[_]>>>()?;
     let base_ctx = self.cur_ctx;
     let base_len = self.cfg.ctxs.len(base_ctx);

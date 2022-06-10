@@ -484,7 +484,7 @@ trait NodeInsert<N: NodeKind> {
       }
       MCtxNode::Node(bal, n, ns) => {
         let ns = &mut **ns; let ((_, a), (_, b)) = *ns; let et = t.1;
-        if *key < N::key(&ctx, &ns.1 .0) {
+        if *key < N::key(&ctx, &ns.1.0) {
           let ctx = N::ctx_left(ctx, &ns.0, &ns.1);
           let (grew, th) = Self::insert(de, &mut ns.0, ctx, key, t);
           let rotate_right = grew && match bal {
@@ -494,8 +494,8 @@ trait NodeInsert<N: NodeKind> {
           };
           if rotate_right {
             let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
-              std::mem::take(&mut ns.0 .0));
-            let nb = std::mem::take(&mut ns.1 .0);
+              std::mem::take(&mut ns.0.0));
+            let nb = std::mem::take(&mut ns.1.0);
             let (al, ar) = *ns1;
             match bal1 {
               Ordering::Less => {
@@ -526,7 +526,7 @@ trait NodeInsert<N: NodeKind> {
               }
             }
           } else {
-            let th = Self::node_lt(de, [a, b, et, ns.0 .1, th]);
+            let th = Self::node_lt(de, [a, b, et, ns.0.1, th]);
             *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Greater, th)
           }
         } else {
@@ -539,8 +539,8 @@ trait NodeInsert<N: NodeKind> {
           };
           if rotate_left {
             let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
-              std::mem::take(&mut ns.1 .0));
-            let na = std::mem::take(&mut ns.0 .0);
+              std::mem::take(&mut ns.1.0));
+            let na = std::mem::take(&mut ns.0.0);
             let (bl, br) = *ns1;
             match bal1 {
               Ordering::Greater => {
@@ -571,7 +571,7 @@ trait NodeInsert<N: NodeKind> {
               }
             }
           } else {
-            let th = Self::node_lt(de, [a, b, et, ns.0 .1, th]);
+            let th = Self::node_lt(de, [a, b, et, ns.0.1, th]);
             *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Less, th)
           }
         }

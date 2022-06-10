@@ -515,7 +515,7 @@ pub type Expr<'a> = Spanned<'a, (ExprKind<'a>, ty::ExprTy<'a>)>;
 
 impl<'a> Expr<'a> {
   /// Get the (stored) type of the expression.
-  #[inline] #[must_use] pub fn ty(&self) -> ty::Ty<'a> { self.k.1 .1 }
+  #[inline] #[must_use] pub fn ty(&self) -> ty::Ty<'a> { self.k.1.1 }
 }
 
 /// An expression. A block is a list of expressions.

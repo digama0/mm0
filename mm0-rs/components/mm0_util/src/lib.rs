@@ -353,7 +353,7 @@ pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 impl<'a, T> Iterator for ArcListIter<'a, T> {
   type Item = &'a T;
   fn next(&mut self) -> Option<&'a T> {
-    let (l, t) = &**self.0 .0.as_ref()?;
+    let (l, t) = &**self.0.0.as_ref()?;
     self.0 = l;
     Some(t)
   }
