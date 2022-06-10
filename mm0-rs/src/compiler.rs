@@ -20,7 +20,6 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use once_cell::sync::Lazy;
 use typed_arena::Arena;
-use clap::ArgMatches;
 use mm1_parser::{parse, ErrorLevel, ParseError};
 use crate::elab::{ElabError, ElabErrorKind, ElabResult, ElaborateBuilder};
 use crate::{ArcList, FileRef, FileSpan, FrozenEnv, LinedString, MutexExt, Position, Range, Span};
@@ -479,66 +478,94 @@ pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option
   Ok((file.text.clone(), env))
 }
 
-/// Main entry point for `mm0-rs compile` subcommand.
-///
-/// # Arguments
-///
-/// `mm0-rs compile <in.mm1> [out.mmb]`, where:
-///
-/// - `in.mm1` is the MM1 (or MM0) file to elaborate
-/// - `out.mmb` (or `out.mmu`) is the MMB file to generate, if the elaboration is
-///   successful. The file extension is used to determine if we are outputting
-///   binary. If this argument is omitted, the input is only elaborated.
-pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
-  let path = args.value_of("INPUT").expect("required arg");
-  let path: FileRef = fs::canonicalize(path)?.into();
-  let quiet = args.is_present("quiet");
-  QUIET.store(quiet, Ordering::Relaxed);
-  let (file, env) = elab_for_result(path.clone())?;
-  let env = env.unwrap_or_else(|| std::process::exit(1));
-  if let Some(s) = args.value_of_os("output") {
-    if let Err((fsp, e)) =
-      if s == "-" { env.run_output(io::stdout()) }
-      else { env.run_output(fs::File::create(s)?) }
-    {
-      let e = ElabError::new_e(fsp.span, e);
-      let file = VFS.get_or_insert(fsp.file.clone())?.1;
-      e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
-        |s| println!("{}\n", DisplayList::from(s)));
+/// Compile MM1 files into MMB
+#[allow(clippy::struct_excessive_bools)]
+#[derive(clap::Args, Debug)]
+pub struct Args {
+  /// Disable proof checking until (check-proofs #t)
+  #[clap(short, long)]
+  pub no_proofs: bool,
+  /// Warn on unnecessary parentheses
+  #[clap(long = "warn-unnecessary-parens")]
+  pub check_parens: bool,
+  /// Hide diagnostic messages
+  #[clap(short, long)]
+  pub quiet: bool,
+  /// Don't add debugging data to .mmb files
+  #[clap(short, long)]
+  pub strip: bool,
+  /// Report error code 1 for warnings
+  #[clap(short = 'W', long)]
+  pub warn_as_error: bool,
+  /// Print 'output' commands to a file (use '-' to print to stdout)
+  #[clap(short, long = "output", value_name = "FILE")]
+  pub output_str: Option<std::ffi::OsString>,
+  /// Sets the input file (.mm1 or .mm0)
+  pub input: String,
+  /// Sets the output file (.mmb or .mmu)
+  pub output: Option<String>,
+}
+
+impl Args {
+  /// Main entry point for `mm0-rs compile` subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// `mm0-rs compile <in.mm1> [out.mmb]`, where:
+  ///
+  /// - `in.mm1` is the MM1 (or MM0) file to elaborate
+  /// - `out.mmb` (or `out.mmu`) is the MMB file to generate, if the elaboration is
+  ///   successful. The file extension is used to determine if we are outputting
+  ///   binary. If this argument is omitted, the input is only elaborated.
+  pub fn main(self) -> io::Result<()> {
+    let path: FileRef = fs::canonicalize(self.input)?.into();
+    QUIET.store(self.quiet, Ordering::Relaxed);
+    let (file, env) = elab_for_result(path.clone())?;
+    let env = env.unwrap_or_else(|| std::process::exit(1));
+    if let Some(s) = self.output_str {
+      if let Err((fsp, e)) =
+        if s == "-" { env.run_output(io::stdout()) }
+        else { env.run_output(fs::File::create(s)?) }
+      {
+        let e = ElabError::new_e(fsp.span, e);
+        let file = VFS.get_or_insert(fsp.file.clone())?.1;
+        e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
+          |s| println!("{}\n", DisplayList::from(s)));
+        std::process::exit(1);
+      }
+    }
+    if !self.quiet {
+      println!("{} sorts, {} term/def, {} ax/thm",
+        env.sorts().len(), env.terms().len(), env.thms().len());
+    }
+    if let Some(out) = self.output {
+      use {fs::File, io::BufWriter};
+      let w = BufWriter::new(File::create(&out)?);
+      if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
+        env.export_mmu(w)?;
+      } else {
+        let mut report = |lvl: ErrorLevel, err: &str| {
+          println!("{}\n", DisplayList::from(Snippet {
+            title: Some(Annotation {
+              label: Some(err),
+              id: None,
+              annotation_type: lvl.to_annotation_type(),
+            }),
+            footer: vec![],
+            slices: vec![],
+            opt: FormatOptions { color: true, ..Default::default() },
+          }));
+          MAX_EMITTED_ERROR.fetch_max(lvl as u8, Ordering::Relaxed);
+        };
+        let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
+        ex.run(!self.strip)?;
+        ex.finish()?;
+      }
+    }
+    let max_error = if self.warn_as_error { ErrorLevel::Warning } else { ErrorLevel::Error };
+    if max_error as u8 <= MAX_EMITTED_ERROR.load(Ordering::Relaxed) {
       std::process::exit(1);
     }
+    Ok(())
   }
-  if !quiet {
-    println!("{} sorts, {} term/def, {} ax/thm",
-      env.sorts().len(), env.terms().len(), env.thms().len());
-  }
-  if let Some(out) = args.value_of("OUTPUT") {
-    use {fs::File, io::BufWriter};
-    let w = BufWriter::new(File::create(out)?);
-    if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
-      env.export_mmu(w)?;
-    } else {
-      let mut report = |lvl: ErrorLevel, err: &str| {
-        println!("{}\n", DisplayList::from(Snippet {
-          title: Some(Annotation {
-            label: Some(err),
-            id: None,
-            annotation_type: lvl.to_annotation_type(),
-          }),
-          footer: vec![],
-          slices: vec![],
-          opt: FormatOptions { color: true, ..Default::default() },
-        }));
-        MAX_EMITTED_ERROR.fetch_max(lvl as u8, Ordering::Relaxed);
-      };
-      let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
-      ex.run(!args.is_present("strip"))?;
-      ex.finish()?;
-    }
-  }
-  let max_error = if args.is_present("Werror") { ErrorLevel::Warning } else { ErrorLevel::Error };
-  if max_error as u8 <= MAX_EMITTED_ERROR.load(Ordering::Relaxed) {
-    std::process::exit(1);
-  }
-  Ok(())
 }

@@ -1,7 +1,6 @@
 //! Build documentation pages for MM1/MM0 files
 use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
 use bit_set::BitSet;
-use clap::ArgMatches;
 use lsp_types::Url;
 use pulldown_cmark::escape::WriteWrapper;
 use std::fs::{self, File};
@@ -434,8 +433,18 @@ impl PartialEq for CaseInsensitiveName {
 }
 impl Eq for CaseInsensitiveName {}
 
-#[derive(Clone, Copy)]
-enum ProofOrder { Pre, Post }
+/// Sets the order of steps in a proof.
+#[derive(Clone, Copy, Debug, clap::ArgEnum)]
+pub enum ProofOrder {
+  /// Preorder traversal. This means that each step precedes its subproofs,
+  /// which makes it easier to read proofs top-down but may be confusing
+  /// since this does not match logical order.
+  Pre,
+  /// Postorder traversal. Each step comes after all its subproofs.
+  /// This is the standard ordering of proofs, but can make the beginning
+  /// of the proof consist of unmotivated steps.
+  Post
+}
 
 struct BuildDoc<'a, W> {
   thm_folder: PathBuf,
@@ -711,90 +720,110 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     Ok(open_path)
   }
 }
-/// Main entry point for `mm0-rs doc` subcommand.
-///
-/// # Arguments
-///
-/// `mm0-rs doc <in.mm1> [doc]`, where:
-///
-/// - `in.mm1` is the initial file to elaborate.
-/// - `doc` is the output folder, which will be created if not present.
-pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
-  let path = args.value_of("INPUT").expect("required arg");
-  let path: FileRef = fs::canonicalize(path)?.into();
-  let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
-  let old = old.unwrap_or_else(|| std::process::exit(1));
-  println!("writing docs");
-  let mut env = Environment::new();
-  assert!(matches!(
-    EnvMergeIter::new(&mut env, &old, (0..0).into()).next(&mut env, &mut vec![]), Ok(None)));
-  let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
-  fs::create_dir_all(&dir)?;
-  macro_rules! import {($($str:expr),*) => {$({
-    let mut file = dir.to_owned();
-    file.push($str);
-    if !file.exists() {
-      File::create(file)?.write_all(include_bytes!($str))?;
+
+/// Build documentation pages
+#[derive(clap::Args, Debug)]
+pub struct Args {
+  /// Show only declarations THMS (a comma separated list)
+  #[clap(long, value_name = "THMS", use_value_delimiter = true)]
+  pub only: Vec<String>,
+  /// Open the generated documentation in a browser
+  #[clap(long)]
+  pub open: bool,
+  /// Open a particular generated page (implies --open)
+  #[clap(long, value_name = "THM")]
+  pub open_to: Option<String>,
+  /// Proof tree traversal order
+  #[clap(long, arg_enum, default_value_t = ProofOrder::Post)]
+  pub order: ProofOrder,
+  /// Use URL as the base for source doc links (use - to disable)
+  #[clap(long, value_name = "URL")]
+  pub src: Option<String>,
+  /// Sets the input file (.mm1 or .mm0)
+  pub input: String,
+  /// Sets the output folder, or 'doc' if omitted
+  pub output: Option<String>,
+}
+
+impl Args {
+  /// Main entry point for `mm0-rs doc` subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// `mm0-rs doc <in.mm1> [doc]`, where:
+  ///
+  /// - `in.mm1` is the initial file to elaborate.
+  /// - `doc` is the output folder, which will be created if not present.
+  pub fn main(self) -> io::Result<()> {
+    let path: FileRef = fs::canonicalize(self.input)?.into();
+    let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
+    let old = old.unwrap_or_else(|| std::process::exit(1));
+    println!("writing docs");
+    let mut env = Environment::new();
+    assert!(matches!(
+      EnvMergeIter::new(&mut env, &old, (0..0).into()).next(&mut env, &mut vec![]), Ok(None)));
+    let mut dir = PathBuf::from(self.output.as_deref().unwrap_or("doc"));
+    fs::create_dir_all(&dir)?;
+    macro_rules! import {($($str:expr),*) => {$({
+      let mut file = dir.to_owned();
+      file.push($str);
+      if !file.exists() {
+        File::create(file)?.write_all(include_bytes!($str))?;
+      }
+    })*}}
+    import!("stylesheet.css", "proof.js");
+    let mut to_open = None;
+    let index = if self.only.is_empty() {
+      let mut path = dir.clone();
+      path.push("index.html");
+      let file = File::create(&path)?;
+      to_open = Some(path);
+      Some(BufWriter::new(file))
+    } else { None };
+    dir.push("thms");
+    fs::create_dir_all(&dir)?;
+    let base_url = match self.src.as_deref() {
+      Some("-") => None,
+      src => Some(Url::parse(src.unwrap_or("https://github.com/digama0/mm0/blob/master/examples/"))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?),
+    };
+    let mut bd = BuildDoc {
+      source: fc.ascii(),
+      base_url, order: self.order,
+      axuse: AxiomUse::new(&env),
+      thm_folder: dir, env, index,
+      mangler: Mangler::default(),
+    };
+    let mut get_thm = |thm: &str| {
+      let a = bd.env.get_atom(thm.as_bytes());
+      match bd.env.data[a].decl {
+        None => eprintln!("warning: unknown theorem '{}'", thm),
+        Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
+        Some(DeclKey::Thm(tid)) => return Some(tid),
+      }
+      None
+    };
+    let target = self.open_to.as_deref().and_then(&mut get_thm);
+    if !self.only.is_empty() {
+      let thms = self.only.iter().filter_map(|s| get_thm(s)).collect::<Vec<_>>();
+      for (i, &tid) in thms.iter().enumerate() {
+        let path = bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
+        if to_open.is_none() || target == Some(tid) {
+          to_open = Some(path)
+        }
+      }
+    } else if let Some(path) = bd.write_all(&path, target, old.stmts())? {
+      to_open = Some(path)
     }
-  })*}}
-  import!("stylesheet.css", "proof.js");
-  let order = match args.value_of("order") {
-    Some("pre") => ProofOrder::Pre,
-    Some("post") => ProofOrder::Post,
-    _ => unreachable!(),
-  };
-  let mut to_open = None;
-  let only = args.values_of("only");
-  let index = if only.is_some() {None} else {
-    let mut path = dir.clone();
-    path.push("index.html");
-    let file = File::create(&path)?;
-    to_open = Some(path);
-    Some(BufWriter::new(file))
-  };
-  dir.push("thms");
-  fs::create_dir_all(&dir)?;
-  let base_url = match args.value_of("src") {
-    Some("-") => None,
-    src => Some(Url::parse(src.unwrap_or("https://github.com/digama0/mm0/blob/master/examples/"))
-      .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?),
-  };
-  let mut bd = BuildDoc {
-    source: fc.ascii(),
-    base_url, order,
-    axuse: AxiomUse::new(&env),
-    thm_folder: dir, env, index,
-    mangler: Mangler::default(),
-  };
-  let mut get_thm = |thm: &str| {
-    let a = bd.env.get_atom(thm.as_bytes());
-    match bd.env.data[a].decl {
-      None => eprintln!("warning: unknown theorem '{}'", thm),
-      Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
-      Some(DeclKey::Thm(tid)) => return Some(tid),
-    }
-    None
-  };
-  let target = args.value_of("open").and_then(&mut get_thm);
-  if let Some(only) = only {
-    let thms = only.filter_map(get_thm).collect::<Vec<_>>();
-    for (i, &tid) in thms.iter().enumerate() {
-      let path = bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
-      if to_open.is_none() || target == Some(tid) {
-        to_open = Some(path)
+    if self.open || self.open_to.is_some() {
+      if let Some(path) = to_open {
+        let path = std::fs::canonicalize(path).expect("bad path");
+        let path = Url::from_file_path(path).expect("bad path");
+        drop(webbrowser::open(path.as_str()))
+      } else {
+        eprintln!("warning: --open specified but no pages generated")
       }
     }
-  } else if let Some(path) = bd.write_all(&path, target, old.stmts())? {
-    to_open = Some(path)
+    Ok(())
   }
-  if args.is_present("open") || args.is_present("open_to") {
-    if let Some(path) = to_open {
-      let path = std::fs::canonicalize(path).expect("bad path");
-      let path = Url::from_file_path(path).expect("bad path");
-      drop(webbrowser::open(path.as_str()))
-    } else {
-      eprintln!("warning: --open specified but no pages generated")
-    }
-  }
-  Ok(())
 }

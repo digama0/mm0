@@ -43,7 +43,7 @@ pathdiff = "0.2"
 arrayvec = "0.7"
 num = "0.4"
 pretty = "0.11"
-clap = "2.34"
+clap = { version = "3.1", features = ["derive", "unstable-v4"] }
 futures = { version = "0.3", features = ["thread-pool"] }
 serde = "1.0"
 serde_json = "1.0"

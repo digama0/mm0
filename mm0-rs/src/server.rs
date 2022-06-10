@@ -19,7 +19,6 @@ use serde_repr::{Serialize_repr, Deserialize_repr};
 use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
-use clap::ArgMatches;
 use crate::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
   MutexExt, CondvarExt};
 use mm1_parser::{Ast, parse};
@@ -1828,34 +1827,55 @@ fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
   ResponseError {code: code as i32, message: message.into(), data: None}
 }
 
-/// Main entry point for `mm0-rs server` subcommand.
-///
-/// This function is not intended for interactive use, but instead sets up an [LSP] connection
-/// using stdin and stdout. This allows for extensions such as [`vscode-mm0`] to use `mm0-rs`
-/// as a language server.
-///
-/// # Arguments
-///
-/// `mm0-rs server [--debug]`, where:
-///
-/// - `-d`, `--debug`: enables debugging output to `lsp.log`
-///
-/// [LSP]: https://microsoft.github.io/language-server-protocol/
-/// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
-pub fn main(args: &ArgMatches<'_>) {
-  if args.is_present("debug") {
-    use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};
-    std::env::set_var("RUST_BACKTRACE", "1");
-    if let Ok(f) = File::create("lsp.log") {
-      let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), f);
+
+/// MM1 LSP server
+#[allow(clippy::struct_excessive_bools)]
+#[derive(clap::Args, Clone, Copy, Debug)]
+pub struct Args {
+  /// Disable proof checking until (check-proofs #t)
+  #[clap(short, long)]
+  pub no_proofs: bool,
+  /// Warn on unnecessary parentheses
+  #[clap(long = "warn-unnecessary-parens")]
+  pub check_parens: bool,
+  /// Enable debug logging
+  #[clap(short, long)]
+  pub debug: bool,
+  /// Don't print errors in server output log
+  #[clap(short, long)]
+  pub quiet: bool,
+}
+
+impl Args {
+  /// Main entry point for `mm0-rs server` subcommand.
+  ///
+  /// This function is not intended for interactive use, but instead sets up an [LSP] connection
+  /// using stdin and stdout. This allows for extensions such as [`vscode-mm0`] to use `mm0-rs`
+  /// as a language server.
+  ///
+  /// # Arguments
+  ///
+  /// `mm0-rs server [--debug]`, where:
+  ///
+  /// - `-d`, `--debug`: enables debugging output to `lsp.log`
+  ///
+  /// [LSP]: https://microsoft.github.io/language-server-protocol/
+  /// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
+  pub fn main(self) {
+    if self.debug {
+      use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};
+      std::env::set_var("RUST_BACKTRACE", "1");
+      if let Ok(f) = File::create("lsp.log") {
+        let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), f);
+      }
     }
+    let server = &*SERVER; // start the server
+    drop(log_message("started".into()));
+    if self.quiet {
+      server.options.ulock().log_errors = Some(false)
+    }
+    server.run();
+    std::mem::take(&mut *server.reqs.ulock());
+    std::mem::take(&mut *server.vfs.0.ulock());
   }
-  let server = &*SERVER; // start the server
-  drop(log_message("started".into()));
-  if args.is_present("no_log_errors") {
-    server.options.ulock().log_errors = Some(false)
-  }
-  server.run();
-  std::mem::take(&mut *server.reqs.ulock());
-  std::mem::take(&mut *server.vfs.0.ulock());
 }
