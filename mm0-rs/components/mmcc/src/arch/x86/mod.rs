@@ -74,9 +74,8 @@ const R15: PReg = PReg::new(15);
 // pub(crate) const ARG_REGS: [PReg; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 pub(crate) const RET_AND_ARG_REGS: [PReg; 7] = [RAX, RDI, RSI, RDX, RCX, R8, R9];
 pub(crate) const SYSCALL_ARG_REGS: (PReg, [PReg; 6]) = (RAX, [RDI, RSI, RDX, R10, R8, R9]);
-pub(crate) const CALLER_SAVED: [PReg; 8] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10];
+pub(crate) const CALLER_SAVED: [PReg; 9] = [RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11];
 pub(crate) const CALLEE_SAVED: [PReg; 6] = [RBX, RBP, R12, R13, R14, R15];
-pub(crate) const SCRATCH: PReg = R11;
 
 pub(crate) fn callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
   CALLEE_SAVED.iter().copied()
@@ -84,14 +83,10 @@ pub(crate) fn callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
 pub(crate) fn caller_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
   CALLER_SAVED.iter().copied()
 }
-pub(crate) fn non_callee_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
-  caller_saved().chain([SCRATCH])
-}
 
 pub(crate) static MACHINE_ENV: Lazy<MachineEnv> = Lazy::new(|| MachineEnv {
   preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
   non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
-  scratch_by_class: [SCRATCH.0, PReg::invalid().0],
   fixed_stack_slots: vec![],
 });
 

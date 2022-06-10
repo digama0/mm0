@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use mm0_util::u32_as_usize;
 use regalloc2::{Allocation, Edit, Function, ProgPoint, SpillSlot};
 
-use crate::arch::{AMode, Inst, callee_saved, non_callee_saved, MACHINE_ENV, Offset, PAMode, PInst,
+use crate::arch::{AMode, Inst, callee_saved, caller_saved, MACHINE_ENV, Offset, PAMode, PInst,
   PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, PReg, RegMem, RegMemImm};
 use crate::types::classify::Trace;
 use crate::types::{IdxVec, Size};
@@ -309,7 +309,7 @@ impl VCode {
     // eprintln!("{:#?}", out);
     let clobbers = get_clobbers(&self, &out);
     let saved_regs = callee_saved().filter(move |&r| clobbers.get(r)).collect::<Vec<_>>();
-    self.abi.clobbers = non_callee_saved().filter(|&r| clobbers.get(r)).collect();
+    self.abi.clobbers = caller_saved().filter(|&r| clobbers.get(r)).collect();
     let mut edits = out.edits.into_iter().peekable();
     for _ in 0..out.num_spillslots { self.fresh_spill(8); }
     let stack_size_no_ret;
