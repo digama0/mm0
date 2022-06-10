@@ -20,7 +20,7 @@ typed-arena = { version = "2.0", optional = true }
 smallvec = { version = "1.8", optional = true }
 bit-vec = { version = "0.6", optional = true }
 bit-set = { version = "0.5", optional = true }
-lsp-types = { version = "0.92", optional = true }
+lsp-types = { version = "0.93", optional = true }
 futures = { version = "0.3", optional = true }
 owning_ref = { version = "0.4", optional = true }
 hybrid-rc = { version = "0.6", optional = true }

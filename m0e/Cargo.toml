@@ -17,11 +17,11 @@ crate-type = ["cdylib"]
 lto = true
 
 [dependencies]
-lsp-types = "0.85.0"
+lsp-types = "0.93"
 mm0-rs = { path = "../mm0-rs", default-features = false, features = ["wasm", "server"] }
-wasm-bindgen = "0.2.69"
-console_error_panic_hook = "0.1.6"
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
 
 [dependencies.web-sys]
-version = "0.3.46"
+version = "0.3"
 features = ["console"]

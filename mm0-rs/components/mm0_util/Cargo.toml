@@ -23,7 +23,7 @@ mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", defa
 once_cell = { version = "1.12", optional = true }
 pathdiff = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
-lsp-types = { version = "0.92", optional = true }
+lsp-types = { version = "0.93", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = { version = "0.4", optional = true }

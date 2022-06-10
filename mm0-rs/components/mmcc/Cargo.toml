@@ -28,7 +28,7 @@ bit-set = "0.5"
 hashbrown = "0.12"
 typed-arena = "2.0"
 # simplelog = "0.11"
-bumpalo = { version = "3.9", features = ["boxed", "collections"] }
+bumpalo = { version = "3.10", features = ["boxed", "collections"] }
 regalloc2 = "0.2"
 mm0_util = { path = "../mm0_util", default-features = false }
 mm0_deepsize = { path = "../mm0_deepsize", optional = true, features = [
