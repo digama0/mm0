@@ -309,7 +309,7 @@ impl Bound {
 
 #[derive(Clone, Copy)]
 enum HeapEl<'a> {
-  Expr(&'a ProofNode, SortId, bool, u64),
+  Expr(&'a ProofNode, SortId, bool),
   Proof(&'a ProofNode, &'a ProofNode),
   Conv(&'a ProofNode),
 }
@@ -317,9 +317,9 @@ enum HeapEl<'a> {
 impl<'a> HeapEl<'a> {
   fn as_expr(&self,
     heap: &'a [ProofNode], store: &'a [ProofNode], parent: Option<&'a ProofNode>
-  ) -> Result<(&'a ProofNode, SortId, bool, u64), VerifyError<'a>> {
+  ) -> Result<(&'a ProofNode, SortId, bool), VerifyError<'a>> {
     match *self {
-      HeapEl::Expr(node, s, bv, d) => Ok((node, s, bv, d)),
+      HeapEl::Expr(node, s, bv) => Ok((node, s, bv)),
       HeapEl::Proof(node, _) |
       HeapEl::Conv(node) => Err(VerifyError::ProofVerifyError(heap, store, parent,
         ProofVerifyError::ExpectedExpr(node))),
@@ -426,8 +426,10 @@ impl Environment {
 
 struct Unifier<'a, 'b> {
   env: &'b Environment,
-  heap: &'b [ExprNode],
-  store: &'b [ExprNode],
+  e_heap: &'b [ExprNode],
+  e_store: &'b [ExprNode],
+  p_heap: &'a [ProofNode],
+  p_store: &'a [ProofNode],
   tr: Vec<Option<&'a ProofNode>>,
   dummy: HashMap<AtomId, &'a ProofNode>,
 }
@@ -439,46 +441,77 @@ fn unref<'a>(heap: &'a [ProofNode], pf: &'a ProofNode) -> &'a ProofNode {
   }
 }
 
+enum UnifyExprErr {
+  UnifyFailure,
+  DisjointVariableViolation,
+}
+
+impl UnifyExprErr {
+  fn into_err<'a>(self, i: Option<usize>, tgt: &'a ProofNode,
+    p_heap: &'a [ProofNode], p_store: &'a [ProofNode], parent: Option<&'a ProofNode>,
+  ) -> VerifyError<'a> {
+    VerifyError::ProofVerifyError(p_heap, p_store, parent, match self {
+      UnifyExprErr::UnifyFailure => ProofVerifyError::UnifyFailure(i, tgt),
+      UnifyExprErr::DisjointVariableViolation => ProofVerifyError::DisjointVariableViolation,
+    })
+  }
+}
+
 impl<'a, 'b> Unifier<'a, 'b> {
-  fn new(env: &'b Environment, heap: &'b [ExprNode], store: &'b [ExprNode]) -> Self {
-    Self { env, heap, store, tr: vec![None; heap.len()], dummy: HashMap::new() }
+  fn new(env: &'b Environment,
+    e_heap: &'b [ExprNode], e_store: &'b [ExprNode],
+    p_heap: &'a [ProofNode], p_store: &'a [ProofNode],
+  ) -> Self {
+    Self {
+      env, e_heap, e_store, p_heap, p_store,
+      tr: vec![None; e_heap.len()], dummy: HashMap::new()
+    }
   }
 
-  fn unify_expr(&mut self,
-    e: &ExprNode, heap: &'a [ProofNode], store: &'a [ProofNode], pf: &'a ProofNode
-  ) -> Result<&'a ProofNode, ()> {
+  fn unify_expr(&mut self, deps: &HashMap<*const ProofNode, u64>,
+    e: &ExprNode, pf: &'a ProofNode
+  ) -> Result<&'a ProofNode, UnifyExprErr> {
     match *e {
       ExprNode::Ref(i) => {
         if let Some(pf2) = self.tr[i] {
-          let pf = unref(heap, pf);
-          if !std::ptr::eq(pf, pf2) { return Err(()) }
+          let pf = unref(self.p_heap, pf);
+          if !std::ptr::eq(pf, pf2) { return Err(UnifyExprErr::UnifyFailure) }
           Ok(pf)
         } else {
-          let pf = self.unify_expr(&self.heap[i], heap, store, pf)?;
+          let pf = self.unify_expr(deps, &self.e_heap[i], pf)?;
           self.tr[i] = Some(pf);
           Ok(pf)
         }
       }
       ExprNode::Dummy(a, _) => {
-        let pf = unref(heap, pf);
+        let pf = unref(self.p_heap, pf);
         if let Some(pf2) = self.dummy.insert(a, pf) {
-          if !std::ptr::eq(pf, pf2) { return Err(()) }
+          if !std::ptr::eq(pf, pf2) { return Err(UnifyExprErr::UnifyFailure) }
+        } else {
+          let d = deps[&(pf as *const _)];
+          for pf2 in &self.tr {
+            if let Some(pf2) = *pf2 {
+              if deps[&(pf2 as *const _)] & d != 0 {
+                return Err(UnifyExprErr::DisjointVariableViolation)
+              }
+            }
+          }
         }
         Ok(pf)
       }
       ExprNode::App(t, p) => {
         let td = &self.env.terms[t];
-        let es = td.unpack_app(&self.store[p..]);
-        let pf = unref(heap, pf);
+        let es = td.unpack_app(&self.e_store[p..]);
+        let pf = unref(self.p_heap, pf);
         match *pf {
           ProofNode::Term(term, p2) if term == t => {
-            let args = td.unpack_term(&store[p2..]);
+            let args = td.unpack_term(&self.p_store[p2..]);
             for (e, arg) in es.iter().zip(args) {
-              self.unify_expr(e, heap, store, arg)?;
+              self.unify_expr(deps, e, arg)?;
             }
             Ok(pf)
           }
-          _ => Err(())
+          _ => Err(UnifyExprErr::UnifyFailure)
         }
       }
     }
@@ -490,6 +523,7 @@ struct VerifyProof<'a, 'b> {
   bound: &'b Bound,
   orig_heap: &'a [ProofNode],
   store: &'a [ProofNode],
+  deps: HashMap<*const ProofNode, u64>,
   heap: Vec<HeapEl<'a>>,
   found_hyps: Box<[Option<&'a ProofNode>]>,
   dummies: HashMap<AtomId, SortId>,
@@ -510,7 +544,8 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         let deps = self.bvars;
         vassert!(deps < 1 << MAX_BOUND_VARS, VerifyError::MaxBoundVars);
         self.bvars <<= 1;
-        HeapEl::Expr(node, s, true, deps)
+        self.deps.insert(node, deps);
+        HeapEl::Expr(node, s, true)
       }
       ProofNode::Term(term, p) => {
         self.bound.check_term(term)?;
@@ -520,8 +555,9 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         let mut deps = vec![];
         let mut accum = 0;
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
-          let (_, s, bv, d) = self.verify_proof_node(e)?.as_expr(
+          let (pr, s, bv) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
+          let d = self.deps[&(pr as *const _)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
@@ -539,7 +575,8 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
             }
           }
         }
-        HeapEl::Expr(node, td.ret.0, false, accum)
+        self.deps.insert(node, accum);
+        HeapEl::Expr(node, td.ret.0, false)
       }
       ProofNode::Hyp(i, p) => {
         vassert!(p < self.store.len(), VerifyError::MalformedStore);
@@ -555,10 +592,11 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         self.thm_parent = Some(thm);
         let mut deps = vec![];
         let mut uheap = vec![];
-        let mut unify = Unifier::new(self.env, &td.heap, &td.store);
+        let mut unify = Unifier::new(self.env, &td.heap, &td.store, self.orig_heap, self.store);
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
-          let (e2, s, bv, d) = self.verify_proof_node(e)?.as_expr(
+          let (e2, s, bv) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
+          let d = self.deps[&(e2 as *const _)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
@@ -589,16 +627,12 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         }
         let res = self.verify_proof_node(res)?.as_expr(self.orig_heap, self.store, Some(node))?.0;
         for ((e, _), o) in uheap.into_iter().zip(&mut unify.tr) { *o = Some(e) }
-        let res = unify.unify_expr(&td.ret, self.orig_heap, self.store, res).map_err(|_| {
-          VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
-            ProofVerifyError::UnifyFailure(None, res))
-        })?;
+        let res = unify.unify_expr(&self.deps, &td.ret, res).map_err(|e| e.into_err(
+          None, res, self.orig_heap, self.store, Some(node)))?;
         for (i, (arg, (_, tgt))) in subproofs.iter().zip(&*td.hyps).enumerate() {
           let h = self.verify_proof_node(arg)?.as_proof(self.orig_heap, self.store, Some(node))?;
-          unify.unify_expr(tgt, self.orig_heap, self.store, h).map_err(|_| {
-            VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
-              ProofVerifyError::UnifyFailure(Some(i), h))
-          })?;
+          unify.unify_expr(&self.deps, tgt, h).map_err(|e| e.into_err(
+            Some(i), h, self.orig_heap, self.store, Some(node)))?;
         }
         self.thm_parent = None;
         HeapEl::Proof(node, res)
@@ -613,8 +647,8 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
       }
       ProofNode::Refl(_) |
       ProofNode::Sym(_) |
-      ProofNode::Cong { .. } |
-      ProofNode::Unfold { .. } => HeapEl::Conv(node)
+      ProofNode::Cong(..) |
+      ProofNode::Unfold(..) => HeapEl::Conv(node)
     })
   }
 
@@ -662,7 +696,8 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
           let (sub_lhs, c, args) = td.unpack_unfold(&self.store[p..]);
           let lhss = td.unpack_term(&self.store[p1..]);
           if let TermKind::Def(Some(expr)) = &td.kind {
-            let mut unify = Unifier::new(self.env, &expr.heap, &expr.store);
+            let mut unify = Unifier::new(self.env,
+              &expr.heap, &expr.store, self.orig_heap, self.store);
             for ((e, e2), o) in args.iter().zip(lhss).zip(&mut unify.tr) {
               let e = unref(self.orig_heap, e);
               vassert!(std::ptr::eq(e, unref(self.orig_heap, e2)),
@@ -670,12 +705,8 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
                   ProofVerifyError::ExpectedConvSides(lhs, rhs)));
               *o = Some(e)
             }
-            let sub_lhs = unify
-              .unify_expr(expr.head(), self.orig_heap, self.store, sub_lhs)
-              .map_err(|_| {
-                VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
-                  ProofVerifyError::UnifyFailure(None, sub_lhs))
-              })?;
+            let sub_lhs = unify.unify_expr(&self.deps, expr.head(), sub_lhs).map_err(|e| e.into_err(
+              None, sub_lhs, self.orig_heap, self.store, Some(node)))?;
             self.verify_conv_node(node, c, sub_lhs, rhs)?
           } else {
             return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
@@ -759,15 +790,17 @@ impl Environment {
           orig_heap: &pf.heap,
           store: &pf.store,
           found_hyps: vec![None; td.hyps.len()].into(),
+          deps: Default::default(),
           dummies: Default::default(),
           thm_parent: None,
           bvars,
         };
-        let mut hyp_unify = Unifier::new(self, &td.heap, &td.store);
+        let mut hyp_unify = Unifier::new(self, &td.heap, &td.store, &pf.heap, &pf.store);
         for (i, (&(s, bv, d), e)) in e_heap.iter().zip(&*pf.heap).enumerate() {
           vassert!(matches!(*e, ProofNode::Ref(j) if j == i), VerifyError::MalformedHeap);
           hyp_unify.tr[i] = Some(e);
-          ver.heap.push(HeapEl::Expr(e, s, bv, d))
+          ver.deps.insert(e, d);
+          ver.heap.push(HeapEl::Expr(e, s, bv))
         }
         for e in &pf.heap[e_heap.len()..] {
           let el = ver.verify_proof_node(e)?;
@@ -778,15 +811,19 @@ impl Environment {
           match *unref(&pf.heap, hyp) {
             ProofNode::Hyp(j, p) if j == i => {
               vassert!(p < pf.store.len(), VerifyError::MalformedStore);
-              hyp_unify.unify_expr(arg, &pf.heap, &pf.store, &pf.store[p])
-                .map_err(|_| VerifyError::HypUnifyFailure(i))?;
+              hyp_unify.unify_expr(&ver.deps, arg, &pf.store[p]).map_err(|e| match e {
+                UnifyExprErr::UnifyFailure => VerifyError::HypUnifyFailure(i),
+                UnifyExprErr::DisjointVariableViolation => VerifyError::InvalidDummy,
+              })?;
             }
             _ => return Err(VerifyError::MalformedHyp(i)),
           }
         }
         let res = ver.verify_proof_node(pf.head())?.as_proof(&pf.heap, &pf.store, None)?;
-        hyp_unify.unify_expr(&td.ret, &pf.heap, &pf.store, res)
-          .map_err(|_| VerifyError::ThmUnifyFailure(res))?;
+        hyp_unify.unify_expr(&ver.deps, &td.ret, res).map_err(|e| match e {
+          UnifyExprErr::UnifyFailure => VerifyError::ThmUnifyFailure(res),
+          UnifyExprErr::DisjointVariableViolation => VerifyError::InvalidDummy,
+        })?;
         Ok(())
       }
     }
