@@ -221,7 +221,7 @@ impl VCtx {
       new = app!(de, (vctxA l r));
       th = thm!(de, okVCtxPush_S(v, old): (okVCtxPush old v new));
       for _ in 0..rotation_sequence(len, self.parent != VCtxId::ROOT) {
-        let (a, b) = app_match!(de, l => { (vctxA a b) => (a, b), ! });
+        app_match!(de, let (vctxA a b) = l);
         let c = r;
         l = a; r = app!(de, (vctxA b c)); new = app!(de, (vctxA l r));
         th = thm!(de, okVCtxPush_R(a, b, c, v, old): (okVCtxPush old v new));
@@ -261,14 +261,10 @@ impl VCtx {
         let th = build(de, base, src, tgt - cut, l, v, th);
         return thm!(de, okVCtxGet_l(l, r, v, th): (okVCtxGet (vctxA l r) v))
       }
-      app_match!(de, r => {
-        (vctxA b c) => {
-          let l2 = app!(de, (vctxA l b));
-          let th = build_cut(de, [base, src, tgt, cut >> 1], [l2, c, v, th]);
-          thm!(de, okVCtxGet_R(l, b, c, v, th): (okVCtxGet (vctxA l r) v))
-        },
-        !
-      })
+      app_match!(de, let (vctxA b c) = r);
+      let l2 = app!(de, (vctxA l b));
+      let th = build_cut(de, [base, src, tgt, cut >> 1], [l2, c, v, th]);
+      thm!(de, okVCtxGet_R(l, b, c, v, th): (okVCtxGet (vctxA l r) v))
     }
 
     fn build(de: &mut ProofDedup<'_>,
@@ -278,10 +274,8 @@ impl VCtx {
       if src == tgt { return th }
       let mut cut = 1 << tgt.trailing_zeros();
       if base == 0 && cut == tgt { cut >>= 1 }
-      app_match!(de, e => {
-        (vctxA a b) => build_cut(de, [base, src, tgt, cut], [a, b, v, th]),
-        !
-      })
+      app_match!(de, let (vctxA a b) = e);
+      build_cut(de, [base, src, tgt, cut], [a, b, v, th])
     }
 
     let mut cache = self.access_cache.borrow_mut();
@@ -292,7 +286,7 @@ impl VCtx {
     });
     let mut last = cache.last_mut().expect("impossible");
     let len = self.len();
-    let v = app_match!(de, de.concl(last.1) => { (okVCtxGet _ v) => v, ! });
+    app_match!(de, let (okVCtxGet _ v) = de.concl(last.1));
     if last.0 == len { return (i, v, last.1) }
 
     let bound = i.saturating_sub(self.base);
@@ -311,7 +305,7 @@ impl VCtx {
           break
         }
         cur = cur2;
-        let e2 = app_match!(de, e => { (vctxA a _) => a, ! });
+        app_match!(de, let (vctxA e2 _) = e);
         stack.push((len, std::mem::replace(&mut e, e2)));
       }
     }
@@ -898,7 +892,7 @@ impl<'a> ProcProver<'a> {
   fn ok_block_opt(&mut self, (tctx, l1): P<&mut TCtx>, tgt: BlockId) -> (ProofId, ProofId) {
     if let Some(vid) = self.proc.vblock_id(tgt) {
       let (a, h1) = self.vblock_asm[&vid];
-      let (ip, code) = app_match!(self.thm, a => { (asmAt ip code) => (ip, code), ! });
+      app_match!(self.thm, let (asmAt ip code) = a);
       let h2 = self.ok_stmts(self.proc.block(tgt), code, (tctx, l1));
       (ip, thm!(self.thm, ((okBlock {self.bctx} (suc ip) l1)) =>
         okBlockI(self.labs, code, ip, self.pctx, l1, h1, h2)))
@@ -948,11 +942,8 @@ impl<'a> ProcProver<'a> {
 
   /// Given `ty`, `|- okReadHypVCtx vctx ty`, returns `|- okReadHyp tctx ty`
   fn read_hyp_from_vctx(&mut self, tctx: ProofId, ty: ProofId, th: ProofId) -> ProofId {
-    app_match!(self.thm, tctx => {
-      (mkTCtx vctx n mctx) => thm!(self.thm,
-        okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty]),
-      !
-    })
+    app_match!(self.thm, let (mkTCtx vctx n mctx) = tctx);
+    thm!(self.thm, okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty])
   }
 
   /// Returns `(ty, |- okReadHyp tctx ty)`
@@ -1059,7 +1050,7 @@ impl<'a> ProcProver<'a> {
     let mut stack = vec![];
     for &reg in self.proc.saved_regs() {
       let r = reg.index(); let er = self.hex[r];
-      let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+      app_match!(self.thm, let (ASM_A _ code2) = code);
       let n = self.hex.h2n(&mut self.thm, 8);
       let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
       let mctx1 = mctx.1;
@@ -1094,12 +1085,12 @@ impl<'a> ProcProver<'a> {
   fn ok_epilogue(&mut self, epi: ProofId, code: ProofId) -> ProofId {
     app_match!(self.thm, epi => {
       (epiPop r epi2) => {
-        let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+        app_match!(self.thm, let (ASM_A _ code2) = code);
         let th = self.ok_epilogue(epi2, code2);
         thm!(self.thm, okEpilogue_pop(code2, epi2, r, th): okEpilogue[epi, code])
       }
       (epiFree n epi2) => {
-        let code2 = app_match!(self.thm, code => { (ASM_A _ code) => code, ! });
+        app_match!(self.thm, let (ASM_A _ code2) = code);
         let th = self.ok_epilogue(epi2, code2);
         thm!(self.thm, okEpilogue_free(code2, epi2, n, th): okEpilogue[epi, code])
       }
@@ -1135,7 +1126,7 @@ impl<'a> ProcProver<'a> {
   /// Returns `|- okCode bctx tctx code tctx'` for a regalloc operation.
   fn ok_spill_op(&mut self, tctx: &mut P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
     let l1 = tctx.1;
-    let (dst, src) = app_match!(self.thm, code => { (instMov _ dst src) => (dst, src), ! });
+    app_match!(self.thm, let (instMov _ dst src) = code);
     let reg_or_mem = |arg| app_match!(self.thm, arg => {
       (IRM_reg reg) => Ok(reg),
       (IRM_mem _ _ (posZ off)) => Err(off),
@@ -1183,14 +1174,10 @@ impl<'a> ProcProver<'a> {
   /// Returns `(T, |- getResult gctx T)`
   fn get_result(&mut self) -> (ProofId, ProofId) {
     let u_gctx = self.thm.get_def0(self.elab, self.t_gctx);
-    app_match!(self.thm, u_gctx => {
-      (mkGCtx c fs ms ty) => {
-        let th = thm!(self.thm, getResultGI(ty, c, fs, ms): getResult[u_gctx, ty]);
-        (ty, thm!(self.thm, (getResult[self.gctx, ty]) =>
-          CONV({th} => (getResult (UNFOLD({self.t_gctx}); u_gctx) ty))))
-      }
-      !
-    })
+    app_match!(self.thm, let (mkGCtx c fs ms ty) = u_gctx);
+    let th = thm!(self.thm, getResultGI(ty, c, fs, ms): getResult[u_gctx, ty]);
+    (ty, thm!(self.thm, (getResult[self.gctx, ty]) =>
+      CONV({th} => (getResult (UNFOLD({self.t_gctx}); u_gctx) ty))))
   }
 
   /// Returns `|- getEpi bctx ret epi`
@@ -1220,6 +1207,7 @@ impl<'a> ProcProver<'a> {
     clob: ProofId,
     rel: bool,
   ) -> ProofId {
+    app_match!(self.thm, let (mkArgs args mctx_a) = args);
     if !abi.args.is_empty() || !abi.rets.is_empty() { todo!() }
     let l1 = tctx.1;
     let l2 = tctx.1;
@@ -1238,21 +1226,14 @@ impl<'a> ProcProver<'a> {
     let name = self.proc.name();
     let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
     let (x, th) = self.thm.thm0(self.elab, asmd_thm);
-    app_match!(self.thm, x => {
-      (assembled g (asmProc p a)) => {
-        let th = thm!(self.thm, okAssembledI(a, g, self.pctx1, p, th): okAssembled[self.pctx, a]);
-        let a2 = self.thm.get_def0(self.elab, asm);
-        let th = thm!(self.thm, (okAssembled[self.pctx, a2]) =>
-          CONV({th} => SYM (okAssembled (REFL {self.pctx}) (UNFOLD({asm}); a2))));
-        self.prove_vblock_asm(&mut self.proc.assembly_blocks(), a2, th)
-      }
-      !
-    });
+    app_match!(self.thm, let (assembled g (asmProc p a)) = x);
+    let th = thm!(self.thm, okAssembledI(a, g, self.pctx1, p, th): okAssembled[self.pctx, a]);
+    let a2 = self.thm.get_def0(self.elab, asm);
+    let th = thm!(self.thm, (okAssembled[self.pctx, a2]) =>
+      CONV({th} => SYM (okAssembled (REFL {self.pctx}) (UNFOLD({asm}); a2))));
+    self.prove_vblock_asm(&mut self.proc.assembly_blocks(), a2, th);
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
-    let (start, prol, code) = app_match!(self.thm, a => {
-      (asmEntry start (ASM_A prol code)) => (start, prol, code),
-      !
-    });
+    app_match!(self.thm, let (asmEntry start (ASM_A prol code)) = a);
     let bl = self.proc.block(BlockId::ENTRY);
     if name.is_some() {
       let abi = self.elf_proof.proc_abi(self.proc.id.expect("not start"));
@@ -1421,10 +1402,7 @@ impl<'a, 'b> BlockProofVisitor<'a, 'b> {
     let proc_thm = *proc.proc_proof.get(&Some(f))
       .unwrap_or_else(|| unimplemented!("recursive function"));
     let (x, h1) = proc.thm.thm0(proc.elab, proc_thm);
-    let (tgt, args, ret, clob) = app_match!(proc.thm, x => {
-      (okProc _ tgt args ret clob _) => (tgt, args, ret, clob),
-      !
-    });
+    app_match!(proc.thm, let (okProc _ tgt args ret clob _) = x);
     let rel = inst.is_some();
     let l1 = self.tctx.1;
     let h2 = proc.apply_call(&mut self.tctx, abi, args, ret, clob, rel);

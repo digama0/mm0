@@ -303,7 +303,7 @@ impl BuildAssemblyProc<'_> {
         ([imm, s, s2, th], ret)
       },
       _ => {
-        let c1 = app_match!(self.thm, s => { (s1 c1) => c1, ! });
+        app_match!(self.thm, let (s1 c1) = s);
         let s = app!(self.thm, (scons c1 s2));
         let th = thm!(self.thm, parseImm8S_I(c1, imm, s2, th): (parseImm8S imm s s2));
         ([imm, s, s2, th], ret)
@@ -324,10 +324,7 @@ impl BuildAssemblyProc<'_> {
         ([imm, s, s2, th], ret)
       },
       _ => {
-        let (c1, c2, c3, c4) = app_match!(self.thm, s => {
-          (scons c1 (scons c2 (scons c3 (s1 c4)))) => (c1, c2, c3, c4),
-          !
-        });
+        app_match!(self.thm, let (scons c1 (scons c2 (scons c3 (s1 c4)))) = s);
         let s = app!(self.thm, (scons c1 (scons c2 (scons c3 (scons c4 s2)))));
         let th = thm!(self.thm, parseImm32S_I(c1, c2, c3, c4, imm, s2, th): (parseImm32S imm s s2));
         ([imm, s, s2, th], ret)
@@ -542,7 +539,7 @@ impl BuildAssemblyProc<'_> {
           let [src, l2, h4] = this.parse_imm(p, sz);
           (l2, (src, h4))
         });
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let esrc = app!(self.thm, (IRM_imm32 src));
         let [inst, h5] = self.parse_binop(pinst, opc, sz, dst, esrc);
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
@@ -557,7 +554,7 @@ impl BuildAssemblyProc<'_> {
           let [src, l2, h3] = this.parse_imm_8(p);
           (l2, (src, h3))
         });
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let esrc = app!(self.thm, (IRM_imm32 src));
         let [inst, h4] = self.parse_binop(pinst, opc, sz, dst, esrc);
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
@@ -584,7 +581,7 @@ impl BuildAssemblyProc<'_> {
           let [src, l2, h4] = this.parse_imm_8(p);
           (l2, (src, h4))
         });
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let inst = app!(self, (instShift opc sz dst (IRM_imm32 src)));
         let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
           parseBinopHi(dst, *ip, l1, l2, opc, *self.start,
@@ -595,7 +592,7 @@ impl BuildAssemblyProc<'_> {
         let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
         let [sz, h2] = self.op_size_w(rex, v);
         let [opc, dst, l, h3] = self.parse_modrm(p, rex);
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let inst = app!(self, (instShift opc sz dst (IRM_imm32 (posZ (dn[1_usize])))));
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
           parseBinopHi1(dst, *ip, l, opc, *self.start,
@@ -606,7 +603,7 @@ impl BuildAssemblyProc<'_> {
         let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
         let [sz, h2] = self.op_size_w(rex, v);
         let [opc, dst, l, h3] = self.parse_modrm(p, rex);
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let inst = app!(self, (instShift opc sz dst (IRM_reg {self.hex[1]})));
         let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
           parseBinopHiReg(dst, *ip, l, opc, *self.start,
@@ -698,7 +695,7 @@ impl BuildAssemblyProc<'_> {
           (l2, (src, h4))
         });
         if matches!(pinst, PInst::Imm {..}) {
-          let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+          app_match!(self, let (IRM_reg dst) = dst);
           let inst = app!(self, (instImm sz dst src));
           let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
             parseMovImmI(dst, *ip, l1, l2, *self.start,
@@ -808,10 +805,7 @@ impl BuildAssemblyProc<'_> {
       }
       OpcodeLayout::Lea(_) => {
         let [dst, addr, l, h1] = self.parse_modrm(p, rex);
-        let (si, base, off) = app_match!(self, addr => {
-          (IRM_mem si base off) => (si, base, off),
-          !
-        });
+        app_match!(self, let (IRM_mem si base off) = addr);
         let (w, h2) = self.rex_val(rex, Rex::W);
         if w.0 == 0 {
           let inst = app!(self, (instLea (wSz32) dst si base off));
@@ -861,7 +855,7 @@ impl BuildAssemblyProc<'_> {
         (PInst::Unop { op, .. }, [_, dst, l, h3]) => {
           let ([v, _], h1) = self.hex.split_bits_13(&mut self.thm, y);
           let [sz, h2] = self.op_size_w(rex, v);
-          let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+          app_match!(self, let (IRM_reg dst) = dst);
           macro_rules! op { ($inst:ident, $th:ident) => {{
             let inst = app!(self, (instUnop ($inst) sz dst));
             let th = thm!(self, (parseOpc[*self.start, *ip, l, rex.1, opch, inst]) =>
@@ -902,7 +896,7 @@ impl BuildAssemblyProc<'_> {
         let opc2 = parse_u8(p);
         let [b, h1] = self.has_rex(rex);
         let [_, dst, l, h2] = self.parse_modrm(p, rex);
-        let dst = app_match!(self, dst => { (IRM_reg dst) => dst, ! });
+        app_match!(self, let (IRM_reg dst) = dst);
         let c = self.hex[opc2 & 15];
         let l2 = app!(self, (scons {self.hex.ch(&mut self.thm, opc2)} l));
         let inst = app!(self, (instSetCC c b dst));
@@ -1498,23 +1492,15 @@ impl<'a> BuildAssembly<'a> {
       let m = n >> 1;
       let left = |this: &Self, de: &mut ProofDedup<'a>| {
         let (x, th) = mk_proof(this, de);
-        app_match!(de, x => {
-          (assembled c (assembleA a b)) => {
-            let tgt = app!(de, (assembled c a));
-            (tgt, thm!(de, assembled_l(a, b, c, th): tgt))
-          }
-          !
-        })
+        app_match!(de, let (assembled c (assembleA a b)) = x);
+        let tgt = app!(de, (assembled c a));
+        (tgt, thm!(de, assembled_l(a, b, c, th): tgt))
       };
       let right = |this: &Self, de: &mut ProofDedup<'a>| {
         let (x, th) = mk_proof(this, de);
-        app_match!(de, x => {
-          (assembled c (assembleA a b)) => {
-            let tgt = app!(de, (assembled c b));
-            (tgt, thm!(de, assembled_r(a, b, c, th): tgt))
-          }
-          !
-        })
+        app_match!(de, let (assembled c (assembleA a b)) = x);
+        let tgt = app!(de, (assembled c b));
+        (tgt, thm!(de, assembled_r(a, b, c, th): tgt))
       };
       if n > 16 {
         let lem1 = self.mk_lemma(&left)?;
