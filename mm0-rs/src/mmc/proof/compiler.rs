@@ -656,7 +656,6 @@ impl MCtxNode<MCtxRegKind> {
         app_match!(de, this.1 => {
           (FREE r) => ((k, r), (k, r), thm!(de, bddMCtx_FREE(r): bddMCtx[this.1, r, r])),
           (REG r v) => ((k, r), (k, r), thm!(de, bddMCtx_REG(r, v): bddMCtx[this.1, r, r])),
-          !
         })
       }
       MCtxNode::Node(_, _, ref ns) => {
@@ -821,7 +820,6 @@ impl<'a> ProcProver<'a> {
     app_match!(self.thm, code => {
       (ASM_A a b) => (a, b),
       (ASM0) => (code, code),
-      !
     })
   }
 
@@ -881,7 +879,6 @@ impl<'a> ProcProver<'a> {
         okCode_A(self.bctx, code1, code2, l1, l2, l3, h1, h2)),
       (ASM0) => thm!(self.thm, (okCode[self.bctx, l1, code, l3]) =>
         okCode_tr(self.bctx, l1, l2, l3, h1, h2)),
-      !
     })
   }
 
@@ -930,7 +927,6 @@ impl<'a> ProcProver<'a> {
         okReadHypVCtxI(ty, vctx.e, h1))),
       (vVar v ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
         okReadHypVar(ty, v, vctx.e, h1))),
-      !
     })
   }
 
@@ -1095,7 +1091,6 @@ impl<'a> ProcProver<'a> {
         thm!(self.thm, okEpilogue_free(code2, epi2, n, th): okEpilogue[epi, code])
       }
       (epiRet) => thm!(self.thm, okEpilogue_ret(): okEpilogue[epi, code]),
-      !
     })
   }
 
@@ -1130,7 +1125,6 @@ impl<'a> ProcProver<'a> {
     let reg_or_mem = |arg| app_match!(self.thm, arg => {
       (IRM_reg reg) => Ok(reg),
       (IRM_mem _ _ (posZ off)) => Err(off),
-      !
     });
     match (reg_or_mem(dst), reg_or_mem(src), inst) {
       (Ok(edst), Ok(esrc), &PInst::MovRR { dst, src, .. }) => {

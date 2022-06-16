@@ -286,7 +286,6 @@ impl BuildAssemblyProc<'_> {
         let [imm, s, th] = self.parse_imm_32(p);
         [imm, s, thm!(self.thm, parseImm_64(imm, s, th): (parseImm sz imm s))]
       }
-      !
     })
   }
 
