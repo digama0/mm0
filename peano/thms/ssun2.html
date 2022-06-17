@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">ssun2</a>
-      <span class="nav"><a href="ssun1.html" title="ssun1">&#8810;</a> | <a href="../index.html#ssun2">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1429">src</a> | <a href="elun1.html" title="elun1">&#8811;</a></span>
+      <span class="nav"><a href="ssun1.html" title="ssun1">&#8810;</a> | <a href="../index.html#ssun2">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1608">src</a> | <a href="elun1.html" title="elun1">&#8811;</a></span>
     </h1>
     <pre>theorem ssun2 (A B: set): $ B C_ A u. B $;</pre>
     <table class="proof">
@@ -25,52 +25,55 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#5">5</a></td>
-          <td><a class="thm" href="mpbi.html">mpbi</a></td>
-          <td><pre>B C_ A u. B</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>B C_ B u. A &lt;-&gt; B C_ A u. B</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="sseq2.html">sseq2</a></td>
           <td><pre>B u. A == A u. B -&gt; (B C_ B u. A &lt;-&gt; B C_ A u. B)</pre></td>
         </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="thm" href="uncom.html">uncom</a></td>
           <td><pre>B u. A == A u. B</pre></td>
         </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>B C_ B u. A &lt;-&gt; B C_ A u. B</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
           <td></td>
           <td><a class="thm" href="ssun1.html">ssun1</a></td>
           <td><pre>B C_ B u. A</pre></td>
         </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="mpbi.html">mpbi</a></td>
+          <td><pre>B C_ A u. B</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>
   </div>
 </body>
 </html>

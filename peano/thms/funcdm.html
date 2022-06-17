@@ -17,31 +17,32 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">funcdm</a>
-      <span class="nav"><a href="funcisf.html" title="funcisf">&#8810;</a> | <a href="../index.html#funcdm">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5144">src</a> | <a href="funcrn.html" title="funcrn">&#8811;</a></span>
+      <span class="nav"><a href="funcisf.html" title="funcisf">&#8810;</a> | <a href="../index.html#funcdm">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5499">src</a> | <a href="funcrn.html" title="funcrn">&#8811;</a></span>
     </h1>
     <pre>theorem funcdm (A B F: set): $ func F A B -> Dom F == A $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#func">func</a></td>
-          <td><pre>func F A B -&gt; Dom F == A</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="anlr.html">anlr</a></td>
           <td><pre>isfun F /\ Dom F == A /\ Ran F C_ B -&gt; Dom F == A</pre></td>
         </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#func">func</a></td>
+          <td><pre>func F A B -&gt; Dom F == A</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

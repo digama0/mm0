@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">bian22da</a>
-      <span class="nav"><a href="bian12da.html" title="bian12da">&#8810;</a> | <a href="../index.html#bian22da">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L601">src</a> | <a href="anidm.html" title="anidm">&#8811;</a></span>
+      <span class="nav"><a href="bian12da.html" title="bian12da">&#8810;</a> | <a href="../index.html#bian22da">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L660">src</a> | <a href="anidm.html" title="anidm">&#8811;</a></span>
     </h1>
     <pre>theorem bian22da (G a b c d: wff):
   $ G /\ d -> (a <-> b /\ c) $ >
@@ -27,35 +27,36 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="syl6bbr.html">syl6bbr</a></td>
-          <td><pre>G -&gt; (d /\ a &lt;-&gt; d /\ b /\ c)</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="anass.html">anass</a></td>
           <td><pre>d /\ b /\ c &lt;-&gt; d /\ (b /\ c)</pre></td>
         </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="aneq2da.html">aneq2da</a></td>
-          <td><pre>G -&gt; (d /\ a &lt;-&gt; d /\ (b /\ c))</pre></td>
-        </tr>
-        <tr id="4" class="step-hyp">
-          <td>4</td>
+        <tr id="2" class="step-hyp">
+          <td>2</td>
           <td></td>
           <td><i>hyp h</i></td>
           <td><pre>G /\ d -&gt; (a &lt;-&gt; b /\ c)</pre></td>
         </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="aneq2da.html">aneq2da</a></td>
+          <td><pre>G -&gt; (d /\ a &lt;-&gt; d /\ (b /\ c))</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="syl6bbr.html">syl6bbr</a></td>
+          <td><pre>G -&gt; (d /\ a &lt;-&gt; d /\ b /\ c)</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

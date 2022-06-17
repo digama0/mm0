@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">anl</a>
-      <span class="nav"><a href="eimd.html" title="eimd">&#8810;</a> | <a href="../index.html#anl">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L413">src</a> | <a href="anr.html" title="anr">&#8811;</a></span>
+      <span class="nav"><a href="mt2d.html" title="mt2d">&#8810;</a> | <a href="../index.html#anl">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L464">src</a> | <a href="anr.html" title="anr">&#8811;</a></span>
     </h1>
     <pre>theorem anl (a b: wff): $ a /\ b -> a $;</pre>
     <table class="proof">
@@ -25,35 +25,36 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a /\ b -&gt; a</pre></td>
+          <td></td>
+          <td><a class="thm" href="con1.html">con1</a></td>
+          <td><pre>(~a -&gt; a -&gt; ~b) -&gt; ~(a -&gt; ~b) -&gt; a</pre></td>
         </tr>
         <tr id="2" class="step-conv">
           <td>2</td>
-          <td><a href="#3">3</a></td>
+          <td><a href="#1">1</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#an">an</a></td>
           <td><pre>(~a -&gt; a -&gt; ~b) -&gt; a /\ b -&gt; a</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
           <td></td>
-          <td><a class="thm" href="con1.html">con1</a></td>
-          <td><pre>(~a -&gt; a -&gt; ~b) -&gt; ~(a -&gt; ~b) -&gt; a</pre></td>
+          <td><a class="thm" href="absurd.html">absurd</a></td>
+          <td><pre>~a -&gt; a -&gt; ~b</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td></td>
-          <td><a class="thm" href="absurd.html">absurd</a></td>
-          <td><pre>~a -&gt; a -&gt; ~b</pre></td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a /\ b -&gt; a</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

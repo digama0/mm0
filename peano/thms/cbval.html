@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">cbval</a>
-      <span class="nav"><a href="cbvalh.html" title="cbvalh">&#8810;</a> | <a href="../index.html#cbval">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1013-L1014">src</a> | <a href="cbvexh.html" title="cbvexh">&#8811;</a></span>
+      <span class="nav"><a href="cbvalh.html" title="cbvalh">&#8810;</a> | <a href="../index.html#cbval">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1098-L1099">src</a> | <a href="cbvexh.html" title="cbvexh">&#8811;</a></span>
     </h1>
     <pre>theorem cbval {x y: nat} (p: wff x) (q: wff y):
   $ x = y -> (p <-> q) $ >
@@ -27,43 +27,45 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="thm" href="cbvalh.html">cbvalh</a></td>
-          <td><pre>A. x p &lt;-&gt; A. y q</pre></td>
+          <td></td>
+          <td><a class="thm" href="nfv.html">nfv</a></td>
+          <td><pre>F/ y p</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
           <td></td>
           <td><a class="thm" href="nfv.html">nfv</a></td>
-          <td><pre>F/ y p</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td></td>
-          <td><a class="thm" href="nfv.html">nfv</a></td>
           <td><pre>F/ x q</pre></td>
         </tr>
-        <tr id="4" class="step-hyp">
-          <td>4</td>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
           <td></td>
           <td><i>hyp e</i></td>
           <td><pre>x = y -&gt; (p &lt;-&gt; q)</pre></td>
         </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="cbvalh.html">cbvalh</a></td>
+          <td><pre>A. x p &lt;-&gt; A. y q</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>
   </div>
 </body>
 </html>

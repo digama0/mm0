@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">receqd</a>
-      <span class="nav"><a href="psetfn.html" title="psetfn">&#8810;</a> | <a href="../index.html#receqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4445">src</a> | <a href="receq.html" title="receq">&#8811;</a></span>
+      <span class="nav"><a href="psetfn.html" title="psetfn">&#8810;</a> | <a href="../index.html#receqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L398">src</a> | <a href="receq.html" title="receq">&#8811;</a></span>
     </h1>
     <pre>theorem receqd (_G: wff) (_z1 _z2: nat) (_S1 _S2: set) (_n1 _n2: nat):
   $ _G -> _z1 = _z2 $ >
@@ -27,175 +27,180 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#rec">rec</a></td>
-          <td><pre>_G -&gt; rec _z1 _S1 _n1 = rec _z2 _S2 _n2</pre></td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; pset a @ 0 = pset a @ 0</pre></td>
         </tr>
-        <tr id="2" class="step-thm">
+        <tr id="2" class="step-hyp">
           <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="theeqd.html">theeqd</a></td>
-          <td><pre>_G -&gt;
-  the {v | E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)))} =
-    the {v | E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))}</pre></td>
+          <td></td>
+          <td><i>hyp _zh</i></td>
+          <td><pre>_G -&gt; _z1 = _z2</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="abeqd.html">abeqd</a></td>
-          <td><pre>_G -&gt;
-  {v | E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)))} ==
-    {v | E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))}</pre></td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -&gt; (pset a @ 0 = _z1 &lt;-&gt; pset a @ 0 = _z2)</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="exeqd.html">exeqd</a></td>
-          <td><pre>_G -&gt;
-  (E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i))) &lt;-&gt;
-    E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i))))</pre></td>
+          <td></td>
+          <td><a class="thm" href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -&gt; pset a == pset a</pre></td>
         </tr>
-        <tr id="5" class="step-thm">
+        <tr id="5" class="step-hyp">
           <td>5</td>
-          <td><a href="#6">6</a>, <a href="#14">14</a></td>
+          <td></td>
+          <td><i>hyp _nh</i></td>
+          <td><pre>_G -&gt; _n1 = _n2</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="appeqd.html">appeqd</a></td>
+          <td><pre>_G -&gt; pset a @ _n1 = pset a @ _n2</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; v = v</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -&gt; (pset a @ _n1 = v &lt;-&gt; pset a @ _n2 = v)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#3">3</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -&gt; (pset a @ 0 = _z1 /\ pset a @ _n1 = v &lt;-&gt; pset a @ 0 = _z2 /\ pset a @ _n2 = v)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; i = i</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#10">10</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="lteqd.html">lteqd</a></td>
+          <td><pre>_G -&gt; (i &lt; _n1 &lt;-&gt; i &lt; _n2)</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; pset a @ suc i = pset a @ suc i</pre></td>
+        </tr>
+        <tr id="13" class="step-hyp">
+          <td>13</td>
+          <td></td>
+          <td><i>hyp _Sh</i></td>
+          <td><pre>_G -&gt; _S1 == _S2</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; pset a @ i = pset a @ i</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="appeqd.html">appeqd</a></td>
+          <td><pre>_G -&gt; _S1 @ (pset a @ i) = _S2 @ (pset a @ i)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#12">12</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -&gt; (pset a @ suc i = _S1 @ (pset a @ i) &lt;-&gt; pset a @ suc i = _S2 @ (pset a @ i))</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#11">11</a>, <a href="#16">16</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>_G -&gt; (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i) &lt;-&gt; i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i))</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#17">17</a></td>
+          <td><a class="thm" href="aleqd.html">aleqd</a></td>
+          <td><pre>_G -&gt; (A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)) &lt;-&gt; A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#9">9</a>, <a href="#18">18</a></td>
           <td><a class="thm" href="aneqd.html">aneqd</a></td>
           <td><pre>_G -&gt;
   (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)) &lt;-&gt;
     pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))</pre></td>
         </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#7">7</a>, <a href="#10">10</a></td>
-          <td><a class="thm" href="aneqd.html">aneqd</a></td>
-          <td><pre>_G -&gt; (pset a @ 0 = _z1 /\ pset a @ _n1 = v &lt;-&gt; pset a @ 0 = _z2 /\ pset a @ _n2 = v)</pre></td>
-        </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
-          <td><pre>_G -&gt; (pset a @ 0 = _z1 &lt;-&gt; pset a @ 0 = _z2)</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; pset a @ 0 = pset a @ 0</pre></td>
-        </tr>
-        <tr id="9" class="step-hyp">
-          <td>9</td>
-          <td></td>
-          <td><i>hyp _zh</i></td>
-          <td><pre>_G -&gt; _z1 = _z2</pre></td>
-        </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td><a href="#11">11</a>, <a href="#13">13</a></td>
-          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
-          <td><pre>_G -&gt; (pset a @ _n1 = v &lt;-&gt; pset a @ _n2 = v)</pre></td>
-        </tr>
-        <tr id="11" class="step-thm">
-          <td>11</td>
-          <td><a href="#12">12</a>, <a href="#18">18</a></td>
-          <td><a class="thm" href="appeqd.html">appeqd</a></td>
-          <td><pre>_G -&gt; pset a @ _n1 = pset a @ _n2</pre></td>
-        </tr>
-        <tr id="12" class="step-thm">
-          <td>12</td>
-          <td></td>
-          <td><a class="thm" href="eqsidd.html">eqsidd</a></td>
-          <td><pre>_G -&gt; pset a == pset a</pre></td>
-        </tr>
-        <tr id="13" class="step-thm">
-          <td>13</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; v = v</pre></td>
-        </tr>
-        <tr id="14" class="step-thm">
-          <td>14</td>
-          <td><a href="#15">15</a></td>
-          <td><a class="thm" href="aleqd.html">aleqd</a></td>
-          <td><pre>_G -&gt; (A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)) &lt;-&gt; A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))</pre></td>
-        </tr>
-        <tr id="15" class="step-thm">
-          <td>15</td>
-          <td><a href="#16">16</a>, <a href="#19">19</a></td>
-          <td><a class="thm" href="imeqd.html">imeqd</a></td>
-          <td><pre>_G -&gt; (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i) &lt;-&gt; i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i))</pre></td>
-        </tr>
-        <tr id="16" class="step-thm">
-          <td>16</td>
-          <td><a href="#17">17</a>, <a href="#18">18</a></td>
-          <td><a class="thm" href="lteqd.html">lteqd</a></td>
-          <td><pre>_G -&gt; (i &lt; _n1 &lt;-&gt; i &lt; _n2)</pre></td>
-        </tr>
-        <tr id="17" class="step-thm">
-          <td>17</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; i = i</pre></td>
-        </tr>
-        <tr id="18" class="step-hyp">
-          <td>18</td>
-          <td></td>
-          <td><i>hyp _nh</i></td>
-          <td><pre>_G -&gt; _n1 = _n2</pre></td>
-        </tr>
-        <tr id="19" class="step-thm">
-          <td>19</td>
-          <td><a href="#20">20</a>, <a href="#21">21</a></td>
-          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
-          <td><pre>_G -&gt; (pset a @ suc i = _S1 @ (pset a @ i) &lt;-&gt; pset a @ suc i = _S2 @ (pset a @ i))</pre></td>
-        </tr>
         <tr id="20" class="step-thm">
           <td>20</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; pset a @ suc i = pset a @ suc i</pre></td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="exeqd.html">exeqd</a></td>
+          <td><pre>_G -&gt;
+  (E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i))) &lt;-&gt;
+    E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i))))</pre></td>
         </tr>
         <tr id="21" class="step-thm">
           <td>21</td>
-          <td><a href="#22">22</a>, <a href="#23">23</a></td>
-          <td><a class="thm" href="appeqd.html">appeqd</a></td>
-          <td><pre>_G -&gt; _S1 @ (pset a @ i) = _S2 @ (pset a @ i)</pre></td>
+          <td><a href="#20">20</a></td>
+          <td><a class="thm" href="abeqd.html">abeqd</a></td>
+          <td><pre>_G -&gt;
+  {v | E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)))} ==
+    {v | E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))}</pre></td>
         </tr>
-        <tr id="22" class="step-hyp">
+        <tr id="22" class="step-thm">
           <td>22</td>
-          <td></td>
-          <td><i>hyp _Sh</i></td>
-          <td><pre>_G -&gt; _S1 == _S2</pre></td>
+          <td><a href="#21">21</a></td>
+          <td><a class="thm" href="theeqd.html">theeqd</a></td>
+          <td><pre>_G -&gt;
+  the {v | E. a (pset a @ 0 = _z1 /\ pset a @ _n1 = v /\ A. i (i &lt; _n1 -&gt; pset a @ suc i = _S1 @ (pset a @ i)))} =
+    the {v | E. a (pset a @ 0 = _z2 /\ pset a @ _n2 = v /\ A. i (i &lt; _n2 -&gt; pset a @ suc i = _S2 @ (pset a @ i)))}</pre></td>
         </tr>
-        <tr id="23" class="step-thm">
+        <tr id="23" class="step-conv">
           <td>23</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; pset a @ i = pset a @ i</pre></td>
+          <td><a href="#22">22</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#rec">rec</a></td>
+          <td><pre>_G -&gt; rec _z1 _S1 _n1 = rec _z2 _S2 _n2</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>)</span>
   </div>
 </body>
 </html>

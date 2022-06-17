@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">cbvlamh</a>
-      <span class="nav"><a href="nflam.html" title="nflam">&#8810;</a> | <a href="../index.html#cbvlamh">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3350-L3354">src</a> | <a href="cbvlam.html" title="cbvlam">&#8811;</a></span>
+      <span class="nav"><a href="nflam.html" title="nflam">&#8810;</a> | <a href="../index.html#cbvlamh">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3618-L3622">src</a> | <a href="cbvlam.html" title="cbvlam">&#8811;</a></span>
     </h1>
     <pre>theorem cbvlamh {x y: nat} (a b: nat x y):
   $ FN/ y a $ >
@@ -27,137 +27,142 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#lam">lam</a></td>
-          <td><pre>\ x, a == \ y, b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="cbvab.html">cbvab</a></td>
-          <td><pre>{p1 | E. x p1 = x &lt;&gt; a} == {p2 | E. y p2 = y &lt;&gt; b}</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a>, <a href="#17">17</a></td>
-          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
-          <td><pre>p1 = p2 -&gt; (E. x p1 = x &lt;&gt; a &lt;-&gt; E. y p2 = y &lt;&gt; b)</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a>, <a href="#9">9</a>, <a href="#13">13</a></td>
-          <td><a class="thm" href="cbvexh.html">cbvexh</a></td>
-          <td><pre>E. x p1 = x &lt;&gt; a &lt;-&gt; E. y p1 = y &lt;&gt; b</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a></td>
-          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
-          <td><pre>F/ y p1 = x &lt;&gt; a</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a class="thm" href="nfpr.html">nfpr</a></td>
-          <td><pre>FN/ y x &lt;&gt; a</pre></td>
-        </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
           <td></td>
           <td><a class="thm" href="nfnv.html">nfnv</a></td>
           <td><pre>FN/ y x</pre></td>
         </tr>
-        <tr id="8" class="step-hyp">
-          <td>8</td>
+        <tr id="2" class="step-hyp">
+          <td>2</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>FN/ y a</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
-          <td><a href="#10">10</a></td>
-          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
-          <td><pre>F/ x p1 = y &lt;&gt; b</pre></td>
-        </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
           <td><a class="thm" href="nfpr.html">nfpr</a></td>
-          <td><pre>FN/ x y &lt;&gt; b</pre></td>
+          <td><pre>FN/ y x, a</pre></td>
         </tr>
-        <tr id="11" class="step-thm">
-          <td>11</td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
+          <td><pre>F/ y p1 = x, a</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
           <td></td>
           <td><a class="thm" href="nfnv.html">nfnv</a></td>
           <td><pre>FN/ x y</pre></td>
         </tr>
-        <tr id="12" class="step-hyp">
-          <td>12</td>
+        <tr id="6" class="step-hyp">
+          <td>6</td>
           <td></td>
           <td><i>hyp h2</i></td>
           <td><pre>FN/ x b</pre></td>
         </tr>
-        <tr id="13" class="step-thm">
-          <td>13</td>
-          <td><a href="#14">14</a></td>
-          <td><a class="thm" href="eqeq2d.html">eqeq2d</a></td>
-          <td><pre>x = y -&gt; (p1 = x &lt;&gt; a &lt;-&gt; p1 = y &lt;&gt; b)</pre></td>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="nfpr.html">nfpr</a></td>
+          <td><pre>FN/ x y, b</pre></td>
         </tr>
-        <tr id="14" class="step-thm">
-          <td>14</td>
-          <td><a href="#15">15</a>, <a href="#16">16</a></td>
-          <td><a class="thm" href="preqd.html">preqd</a></td>
-          <td><pre>x = y -&gt; x &lt;&gt; a = y &lt;&gt; b</pre></td>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
+          <td><pre>F/ x p1 = y, b</pre></td>
         </tr>
-        <tr id="15" class="step-thm">
-          <td>15</td>
+        <tr id="9" class="step-thm">
+          <td>9</td>
           <td></td>
           <td><a class="thm" href="id.html">id</a></td>
           <td><pre>x = y -&gt; x = y</pre></td>
         </tr>
-        <tr id="16" class="step-hyp">
-          <td>16</td>
+        <tr id="10" class="step-hyp">
+          <td>10</td>
           <td></td>
           <td><i>hyp e</i></td>
           <td><pre>x = y -&gt; a = b</pre></td>
         </tr>
-        <tr id="17" class="step-thm">
-          <td>17</td>
-          <td><a href="#18">18</a></td>
-          <td><a class="thm" href="exeqd.html">exeqd</a></td>
-          <td><pre>p1 = p2 -&gt; (E. y p1 = y &lt;&gt; b &lt;-&gt; E. y p2 = y &lt;&gt; b)</pre></td>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="preqd.html">preqd</a></td>
+          <td><pre>x = y -&gt; x, a = y, b</pre></td>
         </tr>
-        <tr id="18" class="step-thm">
-          <td>18</td>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a class="thm" href="eqeq2d.html">eqeq2d</a></td>
+          <td><pre>x = y -&gt; (p1 = x, a &lt;-&gt; p1 = y, b)</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#4">4</a>, <a href="#8">8</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="cbvexh.html">cbvexh</a></td>
+          <td><pre>E. x p1 = x, a &lt;-&gt; E. y p1 = y, b</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
           <td></td>
           <td><a class="thm" href="eqeq1.html">eqeq1</a></td>
-          <td><pre>p1 = p2 -&gt; (p1 = y &lt;&gt; b &lt;-&gt; p2 = y &lt;&gt; b)</pre></td>
+          <td><pre>p1 = p2 -&gt; (p1 = y, b &lt;-&gt; p2 = y, b)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a class="thm" href="exeqd.html">exeqd</a></td>
+          <td><pre>p1 = p2 -&gt; (E. y p1 = y, b &lt;-&gt; E. y p2 = y, b)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#13">13</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
+          <td><pre>p1 = p2 -&gt; (E. x p1 = x, a &lt;-&gt; E. y p2 = y, b)</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="cbvab.html">cbvab</a></td>
+          <td><pre>{p1 | E. x p1 = x, a} == {p2 | E. y p2 = y, b}</pre></td>
+        </tr>
+        <tr id="18" class="step-conv">
+          <td>18</td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#lam">lam</a></td>
+          <td><pre>\ x, a == \ y, b</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>)</span>
   </div>
 </body>
 </html>

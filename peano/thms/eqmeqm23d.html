@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">eqmeqm23d</a>
-      <span class="nav"><a href="eqmeq23d.html" title="eqmeq23d">&#8810;</a> | <a href="../index.html#eqmeqm23d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2657-L2661">src</a> | <a href="eqmmod.html" title="eqmmod">&#8811;</a></span>
+      <span class="nav"><a href="eqmeq23d.html" title="eqmeq23d">&#8810;</a> | <a href="../index.html#eqmeqm23d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2904-L2908">src</a> | <a href="eqmmod.html" title="eqmmod">&#8811;</a></span>
     </h1>
     <pre>theorem eqmeqm23d (G: wff) (a b c d n: nat):
   $ G -> mod(n): a = b $ >
@@ -28,69 +28,69 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#11">11</a></td>
-          <td><a class="thm" href="ibida.html">ibida</a></td>
-          <td><pre>G -&gt; (mod(n): a = c &lt;-&gt; mod(n): b = d)</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="sylc.html">sylc</a></td>
-          <td><pre>G /\ mod(n): a = c -&gt; mod(n): b = d</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="eqmtr.html">eqmtr</a></td>
           <td><pre>mod(n): b = a -&gt; mod(n): a = d -&gt; mod(n): b = d</pre></td>
         </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a>, <a href="#6">6</a></td>
-          <td><a class="thm" href="syl.html">syl</a></td>
-          <td><pre>G /\ mod(n): a = c -&gt; mod(n): b = a</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="thm" href="eqmcom.html">eqmcom</a></td>
           <td><pre>mod(n): a = b -&gt; mod(n): b = a</pre></td>
         </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#14">14</a></td>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
+          <td></td>
+          <td><i>hyp h1</i></td>
+          <td><pre>G -&gt; mod(n): a = b</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
           <td><a class="thm" href="anwl.html">anwl</a></td>
           <td><pre>G /\ mod(n): a = c -&gt; mod(n): a = b</pre></td>
         </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a>, <a href="#10">10</a></td>
-          <td><a class="thm" href="sylc.html">sylc</a></td>
-          <td><pre>G /\ mod(n): a = c -&gt; mod(n): a = d</pre></td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>G /\ mod(n): a = c -&gt; mod(n): b = a</pre></td>
         </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
+        <tr id="6" class="step-thm">
+          <td>6</td>
           <td></td>
           <td><a class="thm" href="eqmtr.html">eqmtr</a></td>
           <td><pre>mod(n): a = c -&gt; mod(n): c = d -&gt; mod(n): a = d</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="7" class="step-thm">
+          <td>7</td>
           <td></td>
           <td><a class="thm" href="anr.html">anr</a></td>
           <td><pre>G /\ mod(n): a = c -&gt; mod(n): a = c</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td><a href="#21">21</a></td>
+        <tr id="8" class="step-hyp">
+          <td>8</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>G -&gt; mod(n): c = d</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#8">8</a></td>
           <td><a class="thm" href="anwl.html">anwl</a></td>
           <td><pre>G /\ mod(n): a = c -&gt; mod(n): c = d</pre></td>
         </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a>, <a href="#9">9</a></td>
+          <td><a class="thm" href="sylc.html">sylc</a></td>
+          <td><pre>G /\ mod(n): a = c -&gt; mod(n): a = d</pre></td>
+        </tr>
         <tr id="11" class="step-thm">
           <td>11</td>
-          <td><a href="#12">12</a>, <a href="#13">13</a>, <a href="#15">15</a></td>
+          <td><a href="#1">1</a>, <a href="#5">5</a>, <a href="#10">10</a></td>
           <td><a class="thm" href="sylc.html">sylc</a></td>
-          <td><pre>G /\ mod(n): b = d -&gt; mod(n): a = c</pre></td>
+          <td><pre>G /\ mod(n): a = c -&gt; mod(n): b = d</pre></td>
         </tr>
         <tr id="12" class="step-thm">
           <td>12</td>
@@ -100,70 +100,72 @@
         </tr>
         <tr id="13" class="step-thm">
           <td>13</td>
-          <td><a href="#14">14</a></td>
+          <td><a href="#3">3</a></td>
           <td><a class="thm" href="anwl.html">anwl</a></td>
           <td><pre>G /\ mod(n): b = d -&gt; mod(n): a = b</pre></td>
         </tr>
-        <tr id="14" class="step-hyp">
+        <tr id="14" class="step-thm">
           <td>14</td>
-          <td></td>
-          <td><i>hyp h1</i></td>
-          <td><pre>G -&gt; mod(n): a = b</pre></td>
-        </tr>
-        <tr id="15" class="step-thm">
-          <td>15</td>
-          <td><a href="#16">16</a>, <a href="#17">17</a>, <a href="#18">18</a></td>
-          <td><a class="thm" href="sylc.html">sylc</a></td>
-          <td><pre>G /\ mod(n): b = d -&gt; mod(n): b = c</pre></td>
-        </tr>
-        <tr id="16" class="step-thm">
-          <td>16</td>
           <td></td>
           <td><a class="thm" href="eqmtr.html">eqmtr</a></td>
           <td><pre>mod(n): b = d -&gt; mod(n): d = c -&gt; mod(n): b = c</pre></td>
         </tr>
-        <tr id="17" class="step-thm">
-          <td>17</td>
+        <tr id="15" class="step-thm">
+          <td>15</td>
           <td></td>
           <td><a class="thm" href="anr.html">anr</a></td>
           <td><pre>G /\ mod(n): b = d -&gt; mod(n): b = d</pre></td>
         </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td></td>
+          <td><a class="thm" href="eqmcom.html">eqmcom</a></td>
+          <td><pre>mod(n): c = d -&gt; mod(n): d = c</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#8">8</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>G /\ mod(n): b = d -&gt; mod(n): c = d</pre></td>
+        </tr>
         <tr id="18" class="step-thm">
           <td>18</td>
-          <td><a href="#19">19</a>, <a href="#20">20</a></td>
+          <td><a href="#16">16</a>, <a href="#17">17</a></td>
           <td><a class="thm" href="syl.html">syl</a></td>
           <td><pre>G /\ mod(n): b = d -&gt; mod(n): d = c</pre></td>
         </tr>
         <tr id="19" class="step-thm">
           <td>19</td>
-          <td></td>
-          <td><a class="thm" href="eqmcom.html">eqmcom</a></td>
-          <td><pre>mod(n): c = d -&gt; mod(n): d = c</pre></td>
+          <td><a href="#14">14</a>, <a href="#15">15</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="sylc.html">sylc</a></td>
+          <td><pre>G /\ mod(n): b = d -&gt; mod(n): b = c</pre></td>
         </tr>
         <tr id="20" class="step-thm">
           <td>20</td>
-          <td><a href="#21">21</a></td>
-          <td><a class="thm" href="anwl.html">anwl</a></td>
-          <td><pre>G /\ mod(n): b = d -&gt; mod(n): c = d</pre></td>
+          <td><a href="#12">12</a>, <a href="#13">13</a>, <a href="#19">19</a></td>
+          <td><a class="thm" href="sylc.html">sylc</a></td>
+          <td><pre>G /\ mod(n): b = d -&gt; mod(n): a = c</pre></td>
         </tr>
-        <tr id="21" class="step-hyp">
+        <tr id="21" class="step-thm">
           <td>21</td>
-          <td></td>
-          <td><i>hyp h2</i></td>
-          <td><pre>G -&gt; mod(n): c = d</pre></td>
+          <td><a href="#11">11</a>, <a href="#20">20</a></td>
+          <td><a class="thm" href="ibida.html">ibida</a></td>
+          <td><pre>G -&gt; (mod(n): a = c &lt;-&gt; mod(n): b = d)</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>)</span>
   </div>
 </body>
 </html>

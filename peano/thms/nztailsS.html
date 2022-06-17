@@ -17,121 +17,126 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">nztailsS</a>
-      <span class="nav"><a href="nztails0.html" title="nztails0">&#8810;</a> | <a href="../index.html#nztailsS">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6016-L6018">src</a> | <a href="lfnauxeqd.html" title="lfnauxeqd">&#8811;</a></span>
+      <span class="nav"><a href="nztails0.html" title="nztails0">&#8810;</a> | <a href="../index.html#nztailsS">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6371-L6373">src</a> | <a href="lfnauxeqd.html" title="lfnauxeqd">&#8811;</a></span>
     </h1>
-    <pre>theorem nztailsS (l L: nat): $ nztails (l : L) = (l <> L) : nztails L $;</pre>
+    <pre>theorem nztailsS (l L: nat): $ nztails (l : L) = (l, L) : nztails L $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#6">6</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>nztails (l : L) = (l &lt;&gt; L) : nztails L</pre></td>
+          <td></td>
+          <td><a class="thm" href="eqtr.html">eqtr</a></td>
+          <td><pre>nztails (l : L) = (\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, nztails L) -&gt;
+  (\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, nztails L) = (l, L) : nztails L -&gt;
+  nztails (l : L) = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; nztails L) = (l &lt;&gt; L) : nztails L -&gt; nztails (l : L) = (l &lt;&gt; L) : nztails L</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
-          <td><a class="thm" href="eqtr.html">eqtr</a></td>
-          <td><pre>nztails (l : L) = (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; nztails L) -&gt;
-  (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; nztails L) = (l &lt;&gt; L) : nztails L -&gt;
-  nztails (l : L) = (l &lt;&gt; L) : nztails L</pre></td>
+          <td><a class="thm" href="lrecS.html">lrecS</a></td>
+          <td><pre>lrec 0 (\\ a1, \\ a2, \ a3, (a1, a2) : a3) (l : L) = (\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, lrec 0 (\\ a1, \\ a2, \ a3, (a1, a2) : a3) L)</pre></td>
         </tr>
-        <tr id="4" class="step-conv">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
+        <tr id="3" class="step-conv">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#nztails">nztails</a></td>
-          <td><pre>nztails (l : L) = (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; nztails L)</pre></td>
+          <td><pre>nztails (l : L) = (\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, nztails L)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, nztails L) = (l, L) : nztails L -&gt; nztails (l : L) = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
           <td></td>
-          <td><a class="thm" href="lrecS.html">lrecS</a></td>
-          <td><pre>lrec 0 (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) (l : L) = (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; lrec 0 (\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) L)</pre></td>
+          <td><a class="thm" href="anll.html">anll</a></td>
+          <td><pre>a1 = l /\ a2 = L /\ a3 = nztails L -&gt; a1 = l</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td><a href="#7">7</a></td>
-          <td><a class="thm" href="appslame.html">appslame</a></td>
-          <td><pre>(\\ x1, \\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (l &lt;&gt; L &lt;&gt; nztails L) = (l &lt;&gt; L) : nztails L</pre></td>
+          <td></td>
+          <td><a class="thm" href="anlr.html">anlr</a></td>
+          <td><pre>a1 = l /\ a2 = L /\ a3 = nztails L -&gt; a2 = L</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a></td>
-          <td><a class="thm" href="appslamed.html">appslamed</a></td>
-          <td><pre>x1 = l -&gt; (\\ x2, \ x3, (x1 &lt;&gt; x2) : x3) @ (L &lt;&gt; nztails L) = (l &lt;&gt; L) : nztails L</pre></td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="preqd.html">preqd</a></td>
+          <td><pre>a1 = l /\ a2 = L /\ a3 = nztails L -&gt; a1, a2 = l, L</pre></td>
         </tr>
         <tr id="8" class="step-thm">
           <td>8</td>
-          <td><a href="#9">9</a></td>
-          <td><a class="thm" href="applamed.html">applamed</a></td>
-          <td><pre>x1 = l /\ x2 = L -&gt; (\ x3, (x1 &lt;&gt; x2) : x3) @ nztails L = (l &lt;&gt; L) : nztails L</pre></td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>a1 = l /\ a2 = L /\ a3 = nztails L -&gt; a3 = nztails L</pre></td>
         </tr>
         <tr id="9" class="step-thm">
           <td>9</td>
-          <td><a href="#10">10</a>, <a href="#13">13</a></td>
+          <td><a href="#7">7</a>, <a href="#8">8</a></td>
           <td><a class="thm" href="conseqd.html">conseqd</a></td>
-          <td><pre>x1 = l /\ x2 = L /\ x3 = nztails L -&gt; (x1 &lt;&gt; x2) : x3 = (l &lt;&gt; L) : nztails L</pre></td>
+          <td><pre>a1 = l /\ a2 = L /\ a3 = nztails L -&gt; (a1, a2) : a3 = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="10" class="step-thm">
           <td>10</td>
-          <td><a href="#11">11</a>, <a href="#12">12</a></td>
-          <td><a class="thm" href="preqd.html">preqd</a></td>
-          <td><pre>x1 = l /\ x2 = L /\ x3 = nztails L -&gt; x1 &lt;&gt; x2 = l &lt;&gt; L</pre></td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="applamed.html">applamed</a></td>
+          <td><pre>a1 = l /\ a2 = L -&gt; (\ a3, (a1, a2) : a3) @ nztails L = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="11" class="step-thm">
           <td>11</td>
-          <td></td>
-          <td><a class="thm" href="anll.html">anll</a></td>
-          <td><pre>x1 = l /\ x2 = L /\ x3 = nztails L -&gt; x1 = l</pre></td>
+          <td><a href="#10">10</a></td>
+          <td><a class="thm" href="appslamed.html">appslamed</a></td>
+          <td><pre>a1 = l -&gt; (\\ a2, \ a3, (a1, a2) : a3) @ (L, nztails L) = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="12" class="step-thm">
           <td>12</td>
-          <td></td>
-          <td><a class="thm" href="anlr.html">anlr</a></td>
-          <td><pre>x1 = l /\ x2 = L /\ x3 = nztails L -&gt; x2 = L</pre></td>
+          <td><a href="#11">11</a></td>
+          <td><a class="thm" href="appslame.html">appslame</a></td>
+          <td><pre>(\\ a1, \\ a2, \ a3, (a1, a2) : a3) @ (l, L, nztails L) = (l, L) : nztails L</pre></td>
         </tr>
         <tr id="13" class="step-thm">
           <td>13</td>
-          <td></td>
-          <td><a class="thm" href="anr.html">anr</a></td>
-          <td><pre>x1 = l /\ x2 = L /\ x3 = nztails L -&gt; x3 = nztails L</pre></td>
+          <td><a href="#4">4</a>, <a href="#12">12</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>nztails (l : L) = (l, L) : nztails L</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

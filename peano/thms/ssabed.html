@@ -17,9 +17,9 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">ssabed</a>
-      <span class="nav"><a href="elabed.html" title="elabed">&#8810;</a> | <a href="../index.html#ssabed">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1360-L1362">src</a> | <a href="eelabd.html" title="eelabd">&#8811;</a></span>
+      <span class="nav"><a href="elabed.html" title="elabed">&#8810;</a> | <a href="../index.html#ssabed">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1538-L1540">src</a> | <a href="eelabd.html" title="eelabd">&#8811;</a></span>
     </h1>
-    <pre>theorem ssabed (G: wff) {x: nat} (a: nat) (p: wff G) (q: wff):
+    <pre>theorem ssabed (G: wff) {x: nat} (a: nat) (p: wff x) (q: wff):
   $ G /\ x = a -> p -> q $ >
   $ G -> a e. {x | p} -> q $;</pre>
     <table class="proof">
@@ -27,112 +27,115 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="syl5bi.html">syl5bi</a></td>
-          <td><pre>G -&gt; a e. {x | p} -&gt; q</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="elab2.html">elab2</a></td>
           <td><pre>a e. {x | p} &lt;-&gt; [a / x] p</pre></td>
         </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a>, <a href="#5">5</a></td>
-          <td><a class="thm" href="mpi.html">mpi</a></td>
-          <td><pre>G -&gt; [a / x] p -&gt; q</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="ax" href="ax_6.html">ax_6</a></td>
           <td><pre>E. x x = a</pre></td>
         </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a>, <a href="#7">7</a>, <a href="#10">10</a></td>
-          <td><a class="thm" href="eexdh.html">eexdh</a></td>
-          <td><pre>G -&gt; E. x x = a -&gt; [a / x] p -&gt; q</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
           <td></td>
           <td><a class="thm" href="nfv.html">nfv</a></td>
           <td><pre>F/ x G</pre></td>
         </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="nfim.html">nfim</a></td>
-          <td><pre>F/ x [a / x] p -&gt; q</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
           <td></td>
           <td><a class="thm" href="nfsb1.html">nfsb1</a></td>
           <td><pre>F/ x [a / x] p</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
           <td></td>
           <td><a class="thm" href="nfv.html">nfv</a></td>
           <td><pre>F/ x q</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="nfim.html">nfim</a></td>
+          <td><pre>F/ x [a / x] p -&gt; q</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="sbq.html">sbq</a></td>
+          <td><pre>x = a -&gt; (p &lt;-&gt; [a / x] p)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>G /\ x = a -&gt; (p &lt;-&gt; [a / x] p)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#8">8</a></td>
+          <td><a class="thm" href="bi2d.html">bi2d</a></td>
+          <td><pre>G /\ x = a -&gt; [a / x] p -&gt; p</pre></td>
+        </tr>
+        <tr id="10" class="step-hyp">
           <td>10</td>
-          <td><a href="#11">11</a></td>
-          <td><a class="thm" href="exp.html">exp</a></td>
-          <td><pre>G -&gt; x = a -&gt; [a / x] p -&gt; q</pre></td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>G /\ x = a -&gt; p -&gt; q</pre></td>
         </tr>
         <tr id="11" class="step-thm">
           <td>11</td>
-          <td><a href="#12">12</a>, <a href="#15">15</a></td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
           <td><a class="thm" href="syld.html">syld</a></td>
           <td><pre>G /\ x = a -&gt; [a / x] p -&gt; q</pre></td>
         </tr>
         <tr id="12" class="step-thm">
           <td>12</td>
-          <td><a href="#13">13</a></td>
-          <td><a class="thm" href="bi2d.html">bi2d</a></td>
-          <td><pre>G /\ x = a -&gt; [a / x] p -&gt; p</pre></td>
+          <td><a href="#11">11</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>G -&gt; x = a -&gt; [a / x] p -&gt; q</pre></td>
         </tr>
         <tr id="13" class="step-thm">
           <td>13</td>
-          <td><a href="#14">14</a></td>
-          <td><a class="thm" href="anwr.html">anwr</a></td>
-          <td><pre>G /\ x = a -&gt; (p &lt;-&gt; [a / x] p)</pre></td>
+          <td><a href="#3">3</a>, <a href="#6">6</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="eexdh.html">eexdh</a></td>
+          <td><pre>G -&gt; E. x x = a -&gt; [a / x] p -&gt; q</pre></td>
         </tr>
         <tr id="14" class="step-thm">
           <td>14</td>
-          <td></td>
-          <td><a class="thm" href="sbq.html">sbq</a></td>
-          <td><pre>x = a -&gt; (p &lt;-&gt; [a / x] p)</pre></td>
+          <td><a href="#2">2</a>, <a href="#13">13</a></td>
+          <td><a class="thm" href="mpi.html">mpi</a></td>
+          <td><pre>G -&gt; [a / x] p -&gt; q</pre></td>
         </tr>
-        <tr id="15" class="step-hyp">
+        <tr id="15" class="step-thm">
           <td>15</td>
-          <td></td>
-          <td><i>hyp h</i></td>
-          <td><pre>G /\ x = a -&gt; p -&gt; q</pre></td>
+          <td><a href="#1">1</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="syl5bi.html">syl5bi</a></td>
+          <td><pre>G -&gt; a e. {x | p} -&gt; q</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>
   </div>
 </body>
 </html>

@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">znsubeqd</a>
-      <span class="nav"><a href="sappslame.html" title="sappslame">&#8810;</a> | <a href="../index.html#znsubeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3645">src</a> | <a href="znsubeq.html" title="znsubeq">&#8811;</a></span>
+      <span class="nav"><a href="sappslame.html" title="sappslame">&#8810;</a> | <a href="../index.html#znsubeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L398">src</a> | <a href="znsubeq.html" title="znsubeq">&#8811;</a></span>
     </h1>
     <pre>theorem znsubeqd (_G: wff) (_m1 _m2 _n1 _n2: nat):
   $ _G -> _m1 = _m2 $ >
@@ -26,88 +26,93 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#znsub">znsub</a></td>
-          <td><pre>_G -&gt; _m1 -ZN _n1 = _m2 -ZN _n2</pre></td>
+          <td></td>
+          <td><i>hyp _mh</i></td>
+          <td><pre>_G -&gt; _m1 = _m2</pre></td>
         </tr>
-        <tr id="2" class="step-thm">
+        <tr id="2" class="step-hyp">
           <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="ifeqd.html">ifeqd</a></td>
-          <td><pre>_G -&gt; if (_m1 &lt; _n1) (b1 (_n1 - suc _m1)) (b0 (_m1 - _n1)) = if (_m2 &lt; _n2) (b1 (_n2 - suc _m2)) (b0 (_m2 - _n2))</pre></td>
+          <td></td>
+          <td><i>hyp _nh</i></td>
+          <td><pre>_G -&gt; _n1 = _n2</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
           <td><a class="thm" href="lteqd.html">lteqd</a></td>
           <td><pre>_G -&gt; (_m1 &lt; _n1 &lt;-&gt; _m2 &lt; _n2)</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="b1eqd.html">b1eqd</a></td>
-          <td><pre>_G -&gt; b1 (_n1 - suc _m1) = b1 (_n2 - suc _m2)</pre></td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="suceqd.html">suceqd</a></td>
+          <td><pre>_G -&gt; suc _m1 = suc _m2</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
-          <td><a href="#10">10</a>, <a href="#6">6</a></td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
           <td><a class="thm" href="subeqd.html">subeqd</a></td>
           <td><pre>_G -&gt; _n1 - suc _m1 = _n2 - suc _m2</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td><a href="#9">9</a></td>
-          <td><a class="thm" href="suceqd.html">suceqd</a></td>
-          <td><pre>_G -&gt; suc _m1 = suc _m2</pre></td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="b1eqd.html">b1eqd</a></td>
+          <td><pre>_G -&gt; b1 (_n1 - suc _m1) = b1 (_n2 - suc _m2)</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a></td>
-          <td><a class="thm" href="b0eqd.html">b0eqd</a></td>
-          <td><pre>_G -&gt; b0 (_m1 - _n1) = b0 (_m2 - _n2)</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
           <td><a class="thm" href="subeqd.html">subeqd</a></td>
           <td><pre>_G -&gt; _m1 - _n1 = _m2 - _n2</pre></td>
         </tr>
-        <tr id="9" class="step-hyp">
-          <td>9</td>
-          <td></td>
-          <td><i>hyp _mh</i></td>
-          <td><pre>_G -&gt; _m1 = _m2</pre></td>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="b0eqd.html">b0eqd</a></td>
+          <td><pre>_G -&gt; b0 (_m1 - _n1) = b0 (_m2 - _n2)</pre></td>
         </tr>
-        <tr id="10" class="step-hyp">
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#3">3</a>, <a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="ifeqd.1.html">ifeqd</a></td>
+          <td><pre>_G -&gt; if (_m1 &lt; _n1) (b1 (_n1 - suc _m1)) (b0 (_m1 - _n1)) = if (_m2 &lt; _n2) (b1 (_n2 - suc _m2)) (b0 (_m2 - _n2))</pre></td>
+        </tr>
+        <tr id="10" class="step-conv">
           <td>10</td>
-          <td></td>
-          <td><i>hyp _nh</i></td>
-          <td><pre>_G -&gt; _n1 = _n2</pre></td>
+          <td><a href="#9">9</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#znsub">znsub</a></td>
+          <td><pre>_G -&gt; _m1 -ZN _n1 = _m2 -ZN _n2</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>)</span>
   </div>
 </body>
 </html>

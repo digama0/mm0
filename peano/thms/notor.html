@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">notor</a>
-      <span class="nav"><a href="notan.html" title="notan">&#8810;</a> | <a href="../index.html#notor">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L659">src</a> | <a href="iman.html" title="iman">&#8811;</a></span>
+      <span class="nav"><a href="notan.html" title="notan">&#8810;</a> | <a href="../index.html#notor">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L720">src</a> | <a href="iman.html" title="iman">&#8811;</a></span>
     </h1>
     <pre>theorem notor (a b: wff): $ ~(a \/ b) <-> ~a /\ ~b $;</pre>
     <table class="proof">
@@ -25,65 +25,66 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>~(a \/ b) &lt;-&gt; ~a /\ ~b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="con1b.html">con1b</a></td>
           <td><pre>(~(~a /\ ~b) &lt;-&gt; a \/ b) -&gt; (~(a \/ b) &lt;-&gt; ~a /\ ~b)</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><pre>(~(~a /\ ~b) &lt;-&gt; ~~a \/ ~~b) -&gt; (a \/ b &lt;-&gt; ~~a \/ ~~b) -&gt; (~(~a /\ ~b) &lt;-&gt; a \/ b)</pre></td>
+        </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#4">4</a>, <a href="#7">7</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>~(~a /\ ~b) &lt;-&gt; a \/ b</pre></td>
+          <td></td>
+          <td><a class="thm" href="notan.html">notan</a></td>
+          <td><pre>~(~a /\ ~b) &lt;-&gt; ~~a \/ ~~b</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>(a \/ b &lt;-&gt; ~~a \/ ~~b) -&gt; (~(~a /\ ~b) &lt;-&gt; a \/ b)</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
           <td></td>
-          <td><a class="thm" href="bitr4.html">bitr4</a></td>
-          <td><pre>(~(~a /\ ~b) &lt;-&gt; ~~a \/ ~~b) -&gt; (a \/ b &lt;-&gt; ~~a \/ ~~b) -&gt; (~(~a /\ ~b) &lt;-&gt; a \/ b)</pre></td>
+          <td><a class="thm" href="notnot.html">notnot</a></td>
+          <td><pre>a &lt;-&gt; ~~a</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
           <td></td>
-          <td><a class="thm" href="notan.html">notan</a></td>
-          <td><pre>~(~a /\ ~b) &lt;-&gt; ~~a \/ ~~b</pre></td>
+          <td><a class="thm" href="notnot.html">notnot</a></td>
+          <td><pre>b &lt;-&gt; ~~b</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
           <td><a class="thm" href="oreqi.html">oreqi</a></td>
           <td><pre>a \/ b &lt;-&gt; ~~a \/ ~~b</pre></td>
         </tr>
         <tr id="8" class="step-thm">
           <td>8</td>
-          <td></td>
-          <td><a class="thm" href="notnot.html">notnot</a></td>
-          <td><pre>a &lt;-&gt; ~~a</pre></td>
+          <td><a href="#4">4</a>, <a href="#7">7</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>~(~a /\ ~b) &lt;-&gt; a \/ b</pre></td>
         </tr>
         <tr id="9" class="step-thm">
           <td>9</td>
-          <td></td>
-          <td><a class="thm" href="notnot.html">notnot</a></td>
-          <td><pre>b &lt;-&gt; ~~b</pre></td>
+          <td><a href="#1">1</a>, <a href="#8">8</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>~(a \/ b) &lt;-&gt; ~a /\ ~b</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

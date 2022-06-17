@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">coeqd</a>
-      <span class="nav"><a href="cnvopab.html" title="cnvopab">&#8810;</a> | <a href="../index.html#coeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3299">src</a> | <a href="coeq.html" title="coeq">&#8811;</a></span>
+      <span class="nav"><a href="cnvopab.html" title="cnvopab">&#8810;</a> | <a href="../index.html#coeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L398">src</a> | <a href="coeq.html" title="coeq">&#8811;</a></span>
     </h1>
     <pre>theorem coeqd (_G: wff) (_F1 _F2 _G1 _G2: set):
   $ _G -> _F1 == _F2 $ >
@@ -26,90 +26,93 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#comp">comp</a></td>
-          <td><pre>_G -&gt; _F1 o&gt; _G1 == _F2 o&gt; _G2</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="sabeqd.html">sabeqd</a></td>
-          <td><pre>_G -&gt; S\ x, {z | E. y (x &lt;&gt; y e. _F1 /\ y &lt;&gt; z e. _G1)} == S\ x, {z | E. y (x &lt;&gt; y e. _F2 /\ y &lt;&gt; z e. _G2)}</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="abeqd.html">abeqd</a></td>
-          <td><pre>_G -&gt; {z | E. y (x &lt;&gt; y e. _F1 /\ y &lt;&gt; z e. _G1)} == {z | E. y (x &lt;&gt; y e. _F2 /\ y &lt;&gt; z e. _G2)}</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="exeqd.html">exeqd</a></td>
-          <td><pre>_G -&gt; (E. y (x &lt;&gt; y e. _F1 /\ y &lt;&gt; z e. _G1) &lt;-&gt; E. y (x &lt;&gt; y e. _F2 /\ y &lt;&gt; z e. _G2))</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="aneqd.html">aneqd</a></td>
-          <td><pre>_G -&gt; (x &lt;&gt; y e. _F1 /\ y &lt;&gt; z e. _G1 &lt;-&gt; x &lt;&gt; y e. _F2 /\ y &lt;&gt; z e. _G2)</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a class="thm" href="eleqd.html">eleqd</a></td>
-          <td><pre>_G -&gt; (x &lt;&gt; y e. _F1 &lt;-&gt; x &lt;&gt; y e. _F2)</pre></td>
-        </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
           <td></td>
           <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; x &lt;&gt; y = x &lt;&gt; y</pre></td>
+          <td><pre>_G -&gt; x, y = x, y</pre></td>
         </tr>
-        <tr id="8" class="step-hyp">
-          <td>8</td>
+        <tr id="2" class="step-hyp">
+          <td>2</td>
           <td></td>
           <td><i>hyp _Fh</i></td>
           <td><pre>_G -&gt; _F1 == _F2</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
-          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
           <td><a class="thm" href="eleqd.html">eleqd</a></td>
-          <td><pre>_G -&gt; (y &lt;&gt; z e. _G1 &lt;-&gt; y &lt;&gt; z e. _G2)</pre></td>
+          <td><pre>_G -&gt; (x, y e. _F1 &lt;-&gt; x, y e. _F2)</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
           <td></td>
           <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; y &lt;&gt; z = y &lt;&gt; z</pre></td>
+          <td><pre>_G -&gt; y, z = y, z</pre></td>
         </tr>
-        <tr id="11" class="step-hyp">
-          <td>11</td>
+        <tr id="5" class="step-hyp">
+          <td>5</td>
           <td></td>
           <td><i>hyp _Gh</i></td>
           <td><pre>_G -&gt; _G1 == _G2</pre></td>
         </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -&gt; (y, z e. _G1 &lt;-&gt; y, z e. _G2)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#3">3</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -&gt; (x, y e. _F1 /\ y, z e. _G1 &lt;-&gt; x, y e. _F2 /\ y, z e. _G2)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="exeqd.html">exeqd</a></td>
+          <td><pre>_G -&gt; (E. y (x, y e. _F1 /\ y, z e. _G1) &lt;-&gt; E. y (x, y e. _F2 /\ y, z e. _G2))</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#8">8</a></td>
+          <td><a class="thm" href="abeqd.html">abeqd</a></td>
+          <td><pre>_G -&gt; {z | E. y (x, y e. _F1 /\ y, z e. _G1)} == {z | E. y (x, y e. _F2 /\ y, z e. _G2)}</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="sabeqd.html">sabeqd</a></td>
+          <td><pre>_G -&gt; S\ x, {z | E. y (x, y e. _F1 /\ y, z e. _G1)} == S\ x, {z | E. y (x, y e. _F2 /\ y, z e. _G2)}</pre></td>
+        </tr>
+        <tr id="11" class="step-conv">
+          <td>11</td>
+          <td><a href="#10">10</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#comp">comp</a></td>
+          <td><pre>_G -&gt; _F1 o&gt; _G1 == _F2 o&gt; _G2</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>
   </div>
 </body>
 </html>

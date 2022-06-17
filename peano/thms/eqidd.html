@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">eqidd</a>
-      <span class="nav"><a href="eqtr3d.html" title="eqtr3d">&#8810;</a> | <a href="../index.html#eqidd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L817">src</a> | <a href="eqcomi.html" title="eqcomi">&#8811;</a></span>
+      <span class="nav"><a href="eqtr3d.html" title="eqtr3d">&#8810;</a> | <a href="../index.html#eqidd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L886">src</a> | <a href="eqcomi.html" title="eqcomi">&#8811;</a></span>
     </h1>
     <pre>theorem eqidd (G: wff) (a: nat): $ G -> a = a $;</pre>
     <table class="proof">
@@ -25,28 +25,30 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><a class="thm" href="a1i.html">a1i</a></td>
-          <td><pre>G -&gt; a = a</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="eqid.html">eqid</a></td>
           <td><pre>a = a</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>G -&gt; a = a</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>)</span>
   </div>
 </body>
 </html>

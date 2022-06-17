@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">eqscomb</a>
-      <span class="nav"><a href="eqscom.html" title="eqscom">&#8810;</a> | <a href="../index.html#eqscomb">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1310">src</a> | <a href="eqstr.html" title="eqstr">&#8811;</a></span>
+      <span class="nav"><a href="eqscom.html" title="eqscom">&#8810;</a> | <a href="../index.html#eqscomb">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1488">src</a> | <a href="eqstr.html" title="eqstr">&#8811;</a></span>
     </h1>
     <pre>theorem eqscomb (A B: set): $ A == B <-> B == A $;</pre>
     <table class="proof">
@@ -25,31 +25,33 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="ibii.html">ibii</a></td>
-          <td><pre>A == B &lt;-&gt; B == A</pre></td>
+          <td></td>
+          <td><a class="thm" href="eqscom.html">eqscom</a></td>
+          <td><pre>A == B -&gt; B == A</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
           <td></td>
           <td><a class="thm" href="eqscom.html">eqscom</a></td>
-          <td><pre>A == B -&gt; B == A</pre></td>
+          <td><pre>B == A -&gt; A == B</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td></td>
-          <td><a class="thm" href="eqscom.html">eqscom</a></td>
-          <td><pre>B == A -&gt; A == B</pre></td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>A == B &lt;-&gt; B == A</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>)</span>
   </div>
 </body>
 </html>

@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">srecauxS</a>
-      <span class="nav"><a href="srecaux0.html" title="srecaux0">&#8810;</a> | <a href="../index.html#srecauxS">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5364-L5368">src</a> | <a href="dmsrecaux.html" title="dmsrecaux">&#8811;</a></span>
+      <span class="nav"><a href="srecaux0.html" title="srecaux0">&#8810;</a> | <a href="../index.html#srecauxS">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5719-L5723">src</a> | <a href="dmsrecaux.html" title="dmsrecaux">&#8811;</a></span>
     </h1>
     <pre>theorem srecauxS (S: set) (n: nat):
   $ srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n) $;</pre>
@@ -26,157 +26,162 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="mpbir.html">mpbir</a></td>
-          <td><pre>srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n)</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n) &lt;-&gt; srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="eqlower2.html">eqlower2</a></td>
           <td><pre>finite (write (srecaux S n) n (S @ srecaux S n)) -&gt;
   (srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n) &lt;-&gt; srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n)))</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="writefin.html">writefin</a></td>
+          <td><pre>finite (srecaux S n) -&gt; finite (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="finns.html">finns</a></td>
+          <td><pre>finite (srecaux S n)</pre></td>
+        </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>finite (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
-          <td></td>
-          <td><a class="thm" href="writefin.html">writefin</a></td>
-          <td><pre>finite (srecaux S n) -&gt; finite (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td><a href="#1">1</a>, <a href="#4">4</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n) &lt;-&gt; srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
           <td></td>
-          <td><a class="thm" href="finns.html">finns</a></td>
-          <td><pre>finite (srecaux S n)</pre></td>
+          <td><a class="thm" href="eqtr.html">eqtr</a></td>
+          <td><pre>srecaux S (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) -&gt;
+  (\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n)) -&gt;
+  srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a>, <a href="#12">12</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td></td>
+          <td><a class="thm" href="recnS.html">recnS</a></td>
+          <td><pre>recn 0 (\\ a, \ b, lower (write b a (S @ b))) (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n)</pre></td>
         </tr>
-        <tr id="8" class="step-thm">
+        <tr id="8" class="step-conv">
           <td>8</td>
-          <td><a href="#9">9</a>, <a href="#10">10</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n)) -&gt;
-  srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#srecaux">srecaux</a></td>
+          <td><pre>srecaux S (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n)</pre></td>
         </tr>
         <tr id="9" class="step-thm">
           <td>9</td>
-          <td></td>
-          <td><a class="thm" href="eqtr.html">eqtr</a></td>
-          <td><pre>srecaux S (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) -&gt;
-  (\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n)) -&gt;
+          <td><a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n)) -&gt;
   srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
-        <tr id="10" class="step-conv">
+        <tr id="10" class="step-thm">
           <td>10</td>
-          <td><a href="#11">11</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#srecaux">srecaux</a></td>
-          <td><pre>srecaux S (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n)</pre></td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>a = n /\ b = srecaux S n -&gt; b = srecaux S n</pre></td>
         </tr>
         <tr id="11" class="step-thm">
           <td>11</td>
-          <td></td>
-          <td><a class="thm" href="recnS.html">recnS</a></td>
-          <td><pre>recn 0 (\\ a, \ b, lower (write b a (S @ b))) (suc n) = (\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n)</pre></td>
+          <td><a href="#10">10</a></td>
+          <td><a class="thm" href="nseqd.html">nseqd</a></td>
+          <td><pre>a = n /\ b = srecaux S n -&gt; b == srecaux S n</pre></td>
         </tr>
-        <tr id="12" class="step-conv">
+        <tr id="12" class="step-thm">
           <td>12</td>
-          <td><a href="#13">13</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#srecaux">srecaux</a></td>
-          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td></td>
+          <td><a class="thm" href="anl.html">anl</a></td>
+          <td><pre>a = n /\ b = srecaux S n -&gt; a = n</pre></td>
         </tr>
         <tr id="13" class="step-thm">
           <td>13</td>
-          <td><a href="#14">14</a></td>
-          <td><a class="thm" href="appslame.html">appslame</a></td>
-          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n &lt;&gt; srecaux S n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td><a href="#10">10</a></td>
+          <td><a class="thm" href="appeq2d.html">appeq2d</a></td>
+          <td><pre>a = n /\ b = srecaux S n -&gt; S @ b = S @ srecaux S n</pre></td>
         </tr>
         <tr id="14" class="step-thm">
           <td>14</td>
-          <td><a href="#15">15</a></td>
-          <td><a class="thm" href="applamed.html">applamed</a></td>
-          <td><pre>a = n -&gt; (\ b, lower (write b a (S @ b))) @ srecaux S n = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
+          <td><a href="#11">11</a>, <a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a class="thm" href="writeeqd.html">writeeqd</a></td>
+          <td><pre>a = n /\ b = srecaux S n -&gt; write b a (S @ b) == write (srecaux S n) n (S @ srecaux S n)</pre></td>
         </tr>
         <tr id="15" class="step-thm">
           <td>15</td>
-          <td><a href="#16">16</a></td>
+          <td><a href="#14">14</a></td>
           <td><a class="thm" href="lowereqd.html">lowereqd</a></td>
           <td><pre>a = n /\ b = srecaux S n -&gt; lower (write b a (S @ b)) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="16" class="step-thm">
           <td>16</td>
-          <td><a href="#17">17</a>, <a href="#18">18</a>, <a href="#19">19</a></td>
-          <td><a class="thm" href="writeeqd.html">writeeqd</a></td>
-          <td><pre>a = n /\ b = srecaux S n -&gt; write b a (S @ b) == write (srecaux S n) n (S @ srecaux S n)</pre></td>
+          <td><a href="#15">15</a></td>
+          <td><a class="thm" href="applamed.html">applamed</a></td>
+          <td><pre>a = n -&gt; (\ b, lower (write b a (S @ b))) @ srecaux S n = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="17" class="step-thm">
           <td>17</td>
-          <td><a href="#20">20</a></td>
-          <td><a class="thm" href="nseqd.html">nseqd</a></td>
-          <td><pre>a = n /\ b = srecaux S n -&gt; b == srecaux S n</pre></td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="appslame.html">appslame</a></td>
+          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n, srecaux S n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
-        <tr id="18" class="step-thm">
+        <tr id="18" class="step-conv">
           <td>18</td>
-          <td></td>
-          <td><a class="thm" href="anl.html">anl</a></td>
-          <td><pre>a = n /\ b = srecaux S n -&gt; a = n</pre></td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#srecaux">srecaux</a></td>
+          <td><pre>(\\ a, \ b, lower (write b a (S @ b))) @ (n, recn 0 (\\ a, \ b, lower (write b a (S @ b))) n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="19" class="step-thm">
           <td>19</td>
-          <td><a href="#20">20</a></td>
-          <td><a class="thm" href="appeq2d.html">appeq2d</a></td>
-          <td><pre>a = n /\ b = srecaux S n -&gt; S @ b = S @ srecaux S n</pre></td>
+          <td><a href="#9">9</a>, <a href="#18">18</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>srecaux S (suc n) = lower (write (srecaux S n) n (S @ srecaux S n))</pre></td>
         </tr>
         <tr id="20" class="step-thm">
           <td>20</td>
-          <td></td>
-          <td><a class="thm" href="anr.html">anr</a></td>
-          <td><pre>a = n /\ b = srecaux S n -&gt; b = srecaux S n</pre></td>
+          <td><a href="#5">5</a>, <a href="#19">19</a></td>
+          <td><a class="thm" href="mpbir.html">mpbir</a></td>
+          <td><pre>srecaux S (suc n) == write (srecaux S n) n (S @ srecaux S n)</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

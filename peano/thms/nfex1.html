@@ -17,41 +17,42 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">nfex1</a>
-      <span class="nav"><a href="nfbi.html" title="nfbi">&#8810;</a> | <a href="../index.html#nfex1">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L896">src</a> | <a href="nfex.html" title="nfex">&#8811;</a></span>
+      <span class="nav"><a href="nfbi.html" title="nfbi">&#8810;</a> | <a href="../index.html#nfex1">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L971">src</a> | <a href="nfex.html" title="nfex">&#8811;</a></span>
     </h1>
     <pre>theorem nfex1 {x: nat} (a: wff x): $ F/ x E. x a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#nf">nf</a></td>
-          <td><pre>F/ x E. x a</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
-          <td><pre>A. x (E. x a -&gt; A. x E. x a)</pre></td>
-        </tr>
-        <tr id="3" class="step-conv">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#ex">ex</a></td>
-          <td><pre>E. x a -&gt; A. x E. x a</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
           <td></td>
           <td><a class="ax" href="ax_10.html">ax_10</a></td>
           <td><pre>~A. x ~a -&gt; A. x ~A. x ~a</pre></td>
         </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ex">ex</a></td>
+          <td><pre>E. x a -&gt; A. x E. x a</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
+          <td><pre>A. x (E. x a -&gt; A. x E. x a)</pre></td>
+        </tr>
+        <tr id="4" class="step-conv">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#nf">nf</a></td>
+          <td><pre>F/ x E. x a</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>)</span>
   </div>
 </body>
 </html>

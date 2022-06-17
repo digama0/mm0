@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `Ifeqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>Ifeqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">Ifeqd</a>
+      <span class="nav"><a href="nfslem.html" title="nfslem">&#8810;</a> | <a href="../index.html#Ifeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L398">src</a> | <a href="Ifeq.html" title="Ifeq">&#8811;</a></span>
+    </h1>
+    <pre>theorem Ifeqd (_G _p1 _p2: wff) (_A1 _A2 _B1 _B2: set):
+  $ _G -> (_p1 <-> _p2) $ >
+  $ _G -> _A1 == _A2 $ >
+  $ _G -> _B1 == _B2 $ >
+  $ _G -> If _p1 _A1 _B1 == If _p2 _A2 _B2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-hyp">
+          <td>1</td>
+          <td></td>
+          <td><i>hyp _ph</i></td>
+          <td><pre>_G -&gt; (_p1 &lt;-&gt; _p2)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; n = n</pre></td>
+        </tr>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
+          <td></td>
+          <td><i>hyp _Ah</i></td>
+          <td><pre>_G -&gt; _A1 == _A2</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -&gt; (n e. _A1 &lt;-&gt; n e. _A2)</pre></td>
+        </tr>
+        <tr id="5" class="step-hyp">
+          <td>5</td>
+          <td></td>
+          <td><i>hyp _Bh</i></td>
+          <td><pre>_G -&gt; _B1 == _B2</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#2">2</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -&gt; (n e. _B1 &lt;-&gt; n e. _B2)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="ifpeqd.html">ifpeqd</a></td>
+          <td><pre>_G -&gt; (ifp _p1 (n e. _A1) (n e. _B1) &lt;-&gt; ifp _p2 (n e. _A2) (n e. _B2))</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="abeqd.html">abeqd</a></td>
+          <td><pre>_G -&gt; {n | ifp _p1 (n e. _A1) (n e. _B1)} == {n | ifp _p2 (n e. _A2) (n e. _B2)}</pre></td>
+        </tr>
+        <tr id="9" class="step-conv">
+          <td>9</td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#If">If</a></td>
+          <td><pre>_G -&gt; If _p1 _A1 _B1 == If _p2 _A2 _B2</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>
+  </div>
+</body>
+</html>

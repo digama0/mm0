@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">dvdle</a>
-      <span class="nav"><a href="dvdid.html" title="dvdid">&#8810;</a> | <a href="../index.html#dvdle">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2605-L2608">src</a> | <a href="dvdasymd.html" title="dvdasymd">&#8811;</a></span>
+      <span class="nav"><a href="dvdid.html" title="dvdid">&#8810;</a> | <a href="../index.html#dvdle">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2851-L2854">src</a> | <a href="dvdasymd.html" title="dvdasymd">&#8811;</a></span>
     </h1>
     <pre>theorem dvdle (G: wff) (a b: nat):
   $ G -> b != 0 $ >
@@ -26,181 +26,184 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-thm">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="mpd.html">mpd</a></td>
-          <td><pre>G -&gt; a &lt;= b</pre></td>
-        </tr>
-        <tr id="2" class="step-hyp">
-          <td>2</td>
           <td></td>
           <td><i>hyp h2</i></td>
           <td><pre>G -&gt; a || b</pre></td>
         </tr>
-        <tr id="3" class="step-conv">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#dvd">dvd</a></td>
-          <td><pre>G -&gt; a || b -&gt; a &lt;= b</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="eexda.html">eexda</a></td>
-          <td><pre>G -&gt; E. x x * a = b -&gt; a &lt;= b</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a>, <a href="#10">10</a></td>
-          <td><a class="thm" href="mpbid.html">mpbid</a></td>
-          <td><pre>G /\ x * a = b -&gt; a &lt;= b</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#7">7</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="leeqd.html">leeqd</a></td>
-          <td><pre>G /\ x * a = b -&gt; (1 * a &lt;= x * a &lt;-&gt; a &lt;= b)</pre></td>
-        </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a></td>
-          <td><a class="thm" href="a1i.html">a1i</a></td>
-          <td><pre>G /\ x * a = b -&gt; 1 * a = a</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="thm" href="mul11.html">mul11</a></td>
           <td><pre>1 * a = a</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>G /\ x * a = b -&gt; 1 * a = a</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
           <td></td>
           <td><a class="thm" href="anr.html">anr</a></td>
           <td><pre>G /\ x * a = b -&gt; x * a = b</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td><a href="#11">11</a>, <a href="#12">12</a></td>
-          <td><a class="thm" href="syl.html">syl</a></td>
-          <td><pre>G /\ x * a = b -&gt; 1 * a &lt;= x * a</pre></td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="leeqd.html">leeqd</a></td>
+          <td><pre>G /\ x * a = b -&gt; (1 * a &lt;= x * a &lt;-&gt; a &lt;= b)</pre></td>
         </tr>
-        <tr id="11" class="step-thm">
-          <td>11</td>
+        <tr id="6" class="step-thm">
+          <td>6</td>
           <td></td>
           <td><a class="thm" href="lemul1a.html">lemul1a</a></td>
           <td><pre>1 &lt;= x -&gt; 1 * a &lt;= x * a</pre></td>
         </tr>
-        <tr id="12" class="step-thm">
-          <td>12</td>
-          <td><a href="#13">13</a>, <a href="#15">15</a></td>
-          <td><a class="thm" href="sylibr.html">sylibr</a></td>
-          <td><pre>G /\ x * a = b -&gt; 1 &lt;= x</pre></td>
-        </tr>
-        <tr id="13" class="step-conv">
-          <td>13</td>
-          <td><a href="#14">14</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#d1">d1</a>, <a class="def" href="../index.html#lt">lt</a></td>
-          <td><pre>1 &lt;= x &lt;-&gt; x != 0</pre></td>
-        </tr>
-        <tr id="14" class="step-thm">
-          <td>14</td>
+        <tr id="7" class="step-thm">
+          <td>7</td>
           <td></td>
           <td><a class="thm" href="lt01.html">lt01</a></td>
           <td><pre>0 &lt; x &lt;-&gt; x != 0</pre></td>
         </tr>
-        <tr id="15" class="step-conv">
-          <td>15</td>
-          <td><a href="#16">16</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
-          <td><pre>G /\ x * a = b -&gt; x != 0</pre></td>
+        <tr id="8" class="step-conv">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#d1">d1</a>, <a class="def" href="../index.html#lt">lt</a></td>
+          <td><pre>1 &lt;= x &lt;-&gt; x != 0</pre></td>
         </tr>
-        <tr id="16" class="step-thm">
-          <td>16</td>
-          <td><a href="#17">17</a>, <a href="#20">20</a></td>
-          <td><a class="thm" href="mtand.html">mtand</a></td>
-          <td><pre>G /\ x * a = b -&gt; ~x = 0</pre></td>
-        </tr>
-        <tr id="17" class="step-thm">
-          <td>17</td>
-          <td><a href="#18">18</a></td>
-          <td><a class="thm" href="anwl.html">anwl</a></td>
-          <td><pre>G /\ x * a = b -&gt; ~b = 0</pre></td>
-        </tr>
-        <tr id="18" class="step-conv">
-          <td>18</td>
-          <td><a href="#19">19</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
-          <td><pre>G -&gt; ~b = 0</pre></td>
-        </tr>
-        <tr id="19" class="step-hyp">
-          <td>19</td>
+        <tr id="9" class="step-hyp">
+          <td>9</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>G -&gt; b != 0</pre></td>
         </tr>
-        <tr id="20" class="step-thm">
-          <td>20</td>
-          <td><a href="#21">21</a>, <a href="#22">22</a></td>
-          <td><a class="thm" href="eqtr3d.html">eqtr3d</a></td>
-          <td><pre>G /\ x * a = b /\ x = 0 -&gt; b = 0</pre></td>
+        <tr id="10" class="step-conv">
+          <td>10</td>
+          <td><a href="#9">9</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>G -&gt; ~b = 0</pre></td>
         </tr>
-        <tr id="21" class="step-thm">
-          <td>21</td>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>G /\ x * a = b -&gt; ~b = 0</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
           <td></td>
           <td><a class="thm" href="anlr.html">anlr</a></td>
           <td><pre>G /\ x * a = b /\ x = 0 -&gt; x * a = b</pre></td>
         </tr>
-        <tr id="22" class="step-thm">
-          <td>22</td>
-          <td><a href="#23">23</a>, <a href="#24">24</a></td>
-          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
-          <td><pre>G /\ x * a = b /\ x = 0 -&gt; x * a = 0</pre></td>
-        </tr>
-        <tr id="23" class="step-thm">
-          <td>23</td>
+        <tr id="13" class="step-thm">
+          <td>13</td>
           <td></td>
           <td><a class="thm" href="mul01.html">mul01</a></td>
           <td><pre>0 * a = 0</pre></td>
         </tr>
-        <tr id="24" class="step-thm">
-          <td>24</td>
-          <td><a href="#25">25</a></td>
-          <td><a class="thm" href="anwr.html">anwr</a></td>
-          <td><pre>G /\ x * a = b /\ x = 0 -&gt; x * a = 0 * a</pre></td>
-        </tr>
-        <tr id="25" class="step-thm">
-          <td>25</td>
+        <tr id="14" class="step-thm">
+          <td>14</td>
           <td></td>
           <td><a class="thm" href="muleq1.html">muleq1</a></td>
           <td><pre>x = 0 -&gt; x * a = 0 * a</pre></td>
         </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>G /\ x * a = b /\ x = 0 -&gt; x * a = 0 * a</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#13">13</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>G /\ x * a = b /\ x = 0 -&gt; x * a = 0</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#12">12</a>, <a href="#16">16</a></td>
+          <td><a class="thm" href="eqtr3d.html">eqtr3d</a></td>
+          <td><pre>G /\ x * a = b /\ x = 0 -&gt; b = 0</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#11">11</a>, <a href="#17">17</a></td>
+          <td><a class="thm" href="mtand.html">mtand</a></td>
+          <td><pre>G /\ x * a = b -&gt; ~x = 0</pre></td>
+        </tr>
+        <tr id="19" class="step-conv">
+          <td>19</td>
+          <td><a href="#18">18</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>G /\ x * a = b -&gt; x != 0</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#8">8</a>, <a href="#19">19</a></td>
+          <td><a class="thm" href="sylibr.html">sylibr</a></td>
+          <td><pre>G /\ x * a = b -&gt; 1 &lt;= x</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td><a href="#6">6</a>, <a href="#20">20</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>G /\ x * a = b -&gt; 1 * a &lt;= x * a</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td><a href="#5">5</a>, <a href="#21">21</a></td>
+          <td><a class="thm" href="mpbid.html">mpbid</a></td>
+          <td><pre>G /\ x * a = b -&gt; a &lt;= b</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td><a href="#22">22</a></td>
+          <td><a class="thm" href="eexda.html">eexda</a></td>
+          <td><pre>G -&gt; E. x x * a = b -&gt; a &lt;= b</pre></td>
+        </tr>
+        <tr id="24" class="step-conv">
+          <td>24</td>
+          <td><a href="#23">23</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#dvd">dvd</a></td>
+          <td><pre>G -&gt; a || b -&gt; a &lt;= b</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#1">1</a>, <a href="#24">24</a></td>
+          <td><a class="thm" href="mpd.html">mpd</a></td>
+          <td><pre>G -&gt; a &lt;= b</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

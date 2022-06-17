@@ -17,43 +17,44 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">mpand</a>
-      <span class="nav"><a href="inotda.html" title="inotda">&#8810;</a> | <a href="../index.html#mpand">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L466">src</a> | <a href="mtand.html" title="mtand">&#8811;</a></span>
+      <span class="nav"><a href="inotda.html" title="inotda">&#8810;</a> | <a href="../index.html#mpand">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L519">src</a> | <a href="mtand.html" title="mtand">&#8811;</a></span>
     </h1>
     <pre>theorem mpand (a b c: wff): $ a -> b $ > $ a /\ b -> c $ > $ a -> c $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-thm">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="mpd.html">mpd</a></td>
-          <td><pre>a -&gt; c</pre></td>
-        </tr>
-        <tr id="2" class="step-hyp">
-          <td>2</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>a -&gt; b</pre></td>
         </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="exp.html">exp</a></td>
-          <td><pre>a -&gt; b -&gt; c</pre></td>
-        </tr>
-        <tr id="4" class="step-hyp">
-          <td>4</td>
+        <tr id="2" class="step-hyp">
+          <td>2</td>
           <td></td>
           <td><i>hyp h2</i></td>
           <td><pre>a /\ b -&gt; c</pre></td>
         </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>a -&gt; b -&gt; c</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="mpd.html">mpd</a></td>
+          <td><pre>a -&gt; c</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

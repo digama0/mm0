@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">poweqd</a>
-      <span class="nav"><a href="obindeqS.html" title="obindeqS">&#8810;</a> | <a href="../index.html#poweqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4576">src</a> | <a href="poweq.html" title="poweq">&#8811;</a></span>
+      <span class="nav"><a href="obindeqS.html" title="obindeqS">&#8810;</a> | <a href="../index.html#poweqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L398">src</a> | <a href="poweq.html" title="poweq">&#8811;</a></span>
     </h1>
     <pre>theorem poweqd (_G: wff) (_a1 _a2 _b1 _b2: nat):
   $ _G -> _a1 = _a2 $ >
@@ -26,77 +26,82 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#pow">pow</a></td>
-          <td><pre>_G -&gt; _a1 ^ _b1 = _a2 ^ _b2</pre></td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; 1 = 1</pre></td>
         </tr>
-        <tr id="2" class="step-thm">
+        <tr id="2" class="step-hyp">
           <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a>, <a href="#8">8</a></td>
-          <td><a class="thm" href="receqd.html">receqd</a></td>
-          <td><pre>_G -&gt; rec 1 (\ n, _a1 * n) _b1 = rec 1 (\ n, _a2 * n) _b2</pre></td>
+          <td></td>
+          <td><i>hyp _ah</i></td>
+          <td><pre>_G -&gt; _a1 = _a2</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
           <td></td>
           <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; 1 = 1</pre></td>
+          <td><pre>_G -&gt; n = n</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="lameqd.html">lameqd</a></td>
-          <td><pre>_G -&gt; \ n, _a1 * n == \ n, _a2 * n</pre></td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="muleqd.html">muleqd</a></td>
+          <td><pre>_G -&gt; _a1 * n = _a2 * n</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
-          <td><a href="#6">6</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="muleqd.html">muleqd</a></td>
-          <td><pre>_G -&gt; _a1 * n = _a2 * n</pre></td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="lameqd.html">lameqd</a></td>
+          <td><pre>_G -&gt; \ n, _a1 * n == \ n, _a2 * n</pre></td>
         </tr>
         <tr id="6" class="step-hyp">
           <td>6</td>
           <td></td>
-          <td><i>hyp _ah</i></td>
-          <td><pre>_G -&gt; _a1 = _a2</pre></td>
+          <td><i>hyp _bh</i></td>
+          <td><pre>_G -&gt; _b1 = _b2</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td></td>
-          <td><a class="thm" href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -&gt; n = n</pre></td>
+          <td><a href="#1">1</a>, <a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="receqd.html">receqd</a></td>
+          <td><pre>_G -&gt; rec 1 (\ n, _a1 * n) _b1 = rec 1 (\ n, _a2 * n) _b2</pre></td>
         </tr>
-        <tr id="8" class="step-hyp">
+        <tr id="8" class="step-conv">
           <td>8</td>
-          <td></td>
-          <td><i>hyp _bh</i></td>
-          <td><pre>_G -&gt; _b1 = _b2</pre></td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#pow">pow</a></td>
+          <td><pre>_G -&gt; _a1 ^ _b1 = _a2 ^ _b2</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>)</span>
   </div>
 </body>
 </html>

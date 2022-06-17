@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">an4lr</a>
-      <span class="nav"><a href="an4l.html" title="an4l">&#8810;</a> | <a href="../index.html#an4lr">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L436">src</a> | <a href="an5l.html" title="an5l">&#8811;</a></span>
+      <span class="nav"><a href="an4l.html" title="an4l">&#8810;</a> | <a href="../index.html#an4lr">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L489">src</a> | <a href="an5l.html" title="an5l">&#8811;</a></span>
     </h1>
     <pre>theorem an4lr (a b c d e f: wff): $ a /\ b /\ c /\ d /\ e /\ f -> b $;</pre>
     <table class="proof">
@@ -25,23 +25,24 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><a class="thm" href="anwl.html">anwl</a></td>
-          <td><pre>a /\ b /\ c /\ d /\ e /\ f -&gt; b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="thm" href="an3lr.html">an3lr</a></td>
           <td><pre>a /\ b /\ c /\ d /\ e -&gt; b</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>a /\ b /\ c /\ d /\ e /\ f -&gt; b</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

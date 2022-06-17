@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">nthne0</a>
-      <span class="nav"><a href="nthS.html" title="nthS">&#8810;</a> | <a href="../index.html#nthne0">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5805-L5806">src</a> | <a href="ntheq0.html" title="ntheq0">&#8811;</a></span>
+      <span class="nav"><a href="nthS.html" title="nthS">&#8810;</a> | <a href="../index.html#nthne0">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6160-L6161">src</a> | <a href="ntheq0.html" title="ntheq0">&#8811;</a></span>
     </h1>
     <pre>theorem nthne0 (l n: nat): $ nth n l != 0 <-> n < len l $;</pre>
     <table class="proof">
@@ -25,84 +25,89 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="ibii.html">ibii</a></td>
-          <td><pre>nth n l != 0 &lt;-&gt; n &lt; len l</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#5">5</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>nth n l != 0 -&gt; n &lt; len l</pre></td>
-        </tr>
-        <tr id="3" class="step-conv">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
-          <td><pre>(~n &lt; len l -&gt; nth n l = 0) -&gt; nth n l != 0 -&gt; n &lt; len l</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
           <td></td>
           <td><a class="thm" href="con1.html">con1</a></td>
           <td><pre>(~n &lt; len l -&gt; nth n l = 0) -&gt; ~nth n l = 0 -&gt; n &lt; len l</pre></td>
         </tr>
-        <tr id="5" class="step-conv">
-          <td>5</td>
-          <td><a href="#6">6</a></td>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>(~n &lt; len l -&gt; nth n l = 0) -&gt; nth n l != 0 -&gt; n &lt; len l</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="ifneg.1.html">ifneg</a></td>
+          <td><pre>~n &lt; len l -&gt; if (n &lt; len l) (suc (listfn l @ n)) 0 = 0</pre></td>
+        </tr>
+        <tr id="4" class="step-conv">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#nth">nth</a></td>
           <td><pre>~n &lt; len l -&gt; nth n l = 0</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>nth n l != 0 -&gt; n &lt; len l</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
           <td></td>
-          <td><a class="thm" href="ifneg.html">ifneg</a></td>
-          <td><pre>~n &lt; len l -&gt; if (n &lt; len l) (suc (listfn l @ n)) 0 = 0</pre></td>
-        </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="syl.html">syl</a></td>
-          <td><pre>n &lt; len l -&gt; nth n l != 0</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td></td>
           <td><a class="thm" href="sucne0.html">sucne0</a></td>
           <td><pre>nth n l = suc (listfn l @ n) -&gt; nth n l != 0</pre></td>
         </tr>
-        <tr id="9" class="step-conv">
-          <td>9</td>
-          <td><a href="#10">10</a></td>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="ifpos.1.html">ifpos</a></td>
+          <td><pre>n &lt; len l -&gt; if (n &lt; len l) (suc (listfn l @ n)) 0 = suc (listfn l @ n)</pre></td>
+        </tr>
+        <tr id="8" class="step-conv">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#nth">nth</a></td>
           <td><pre>n &lt; len l -&gt; nth n l = suc (listfn l @ n)</pre></td>
         </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>n &lt; len l -&gt; nth n l != 0</pre></td>
+        </tr>
         <tr id="10" class="step-thm">
           <td>10</td>
-          <td></td>
-          <td><a class="thm" href="ifpos.html">ifpos</a></td>
-          <td><pre>n &lt; len l -&gt; if (n &lt; len l) (suc (listfn l @ n)) 0 = suc (listfn l @ n)</pre></td>
+          <td><a href="#5">5</a>, <a href="#9">9</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>nth n l != 0 &lt;-&gt; n &lt; len l</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="theid.html">theid</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>)</span>
   </div>
 </body>
 </html>

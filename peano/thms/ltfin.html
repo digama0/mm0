@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">ltfin</a>
-      <span class="nav"><a href="finss.html" title="finss">&#8810;</a> | <a href="../index.html#ltfin">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2208-L2209">src</a> | <a href="lefin.html" title="lefin">&#8811;</a></span>
+      <span class="nav"><a href="finss.html" title="finss">&#8810;</a> | <a href="../index.html#ltfin">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2428-L2429">src</a> | <a href="lefin.html" title="lefin">&#8811;</a></span>
     </h1>
     <pre>theorem ltfin (n: nat) {x: nat}: $ finite {x | x < n} $;</pre>
     <table class="proof">
@@ -25,84 +25,88 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#7">7</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>finite {x | x &lt; n}</pre></td>
-        </tr>
-        <tr id="2" class="step-conv">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#finite">finite</a></td>
-          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n) -&gt; finite {x | x &lt; n}</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="iexe.html">iexe</a></td>
-          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n) -&gt; E. m A. y (y e. {x | x &lt; n} -&gt; y &lt; m)</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="aleqd.html">aleqd</a></td>
-          <td><pre>m = n -&gt; (A. y (y e. {x | x &lt; n} -&gt; y &lt; m) &lt;-&gt; A. y (y e. {x | x &lt; n} -&gt; y &lt; n))</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a></td>
-          <td><a class="thm" href="imeq2d.html">imeq2d</a></td>
-          <td><pre>m = n -&gt; (y e. {x | x &lt; n} -&gt; y &lt; m &lt;-&gt; y e. {x | x &lt; n} -&gt; y &lt; n)</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
           <td></td>
           <td><a class="thm" href="lteq2.html">lteq2</a></td>
           <td><pre>m = n -&gt; (y &lt; m &lt;-&gt; y &lt; n)</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="imeq2d.html">imeq2d</a></td>
+          <td><pre>m = n -&gt; (y e. {x | x &lt; n} -&gt; y &lt; m &lt;-&gt; y e. {x | x &lt; n} -&gt; y &lt; n)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="aleqd.html">aleqd</a></td>
+          <td><pre>m = n -&gt; (A. y (y e. {x | x &lt; n} -&gt; y &lt; m) &lt;-&gt; A. y (y e. {x | x &lt; n} -&gt; y &lt; n))</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="iexe.html">iexe</a></td>
+          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n) -&gt; E. m A. y (y e. {x | x &lt; n} -&gt; y &lt; m)</pre></td>
+        </tr>
+        <tr id="5" class="step-conv">
+          <td>5</td>
+          <td><a href="#4">4</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#finite">finite</a></td>
+          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n) -&gt; finite {x | x &lt; n}</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td></td>
+          <td><a class="thm" href="lteq1.html">lteq1</a></td>
+          <td><pre>x = y -&gt; (x &lt; n &lt;-&gt; y &lt; n)</pre></td>
+        </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a></td>
-          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
-          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n)</pre></td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="elabe.html">elabe</a></td>
+          <td><pre>y e. {x | x &lt; n} &lt;-&gt; y &lt; n</pre></td>
         </tr>
         <tr id="8" class="step-thm">
           <td>8</td>
-          <td><a href="#9">9</a></td>
+          <td><a href="#7">7</a></td>
           <td><a class="thm" href="bi1i.html">bi1i</a></td>
           <td><pre>y e. {x | x &lt; n} -&gt; y &lt; n</pre></td>
         </tr>
         <tr id="9" class="step-thm">
           <td>9</td>
-          <td><a href="#10">10</a></td>
-          <td><a class="thm" href="elabe.html">elabe</a></td>
-          <td><pre>y e. {x | x &lt; n} &lt;-&gt; y &lt; n</pre></td>
+          <td><a href="#8">8</a></td>
+          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
+          <td><pre>A. y (y e. {x | x &lt; n} -&gt; y &lt; n)</pre></td>
         </tr>
         <tr id="10" class="step-thm">
           <td>10</td>
-          <td></td>
-          <td><a class="thm" href="lteq1.html">lteq1</a></td>
-          <td><pre>x = y -&gt; (x &lt; n &lt;-&gt; y &lt; n)</pre></td>
+          <td><a href="#5">5</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>finite {x | x &lt; n}</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="addeq.html">addeq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>)</span>
   </div>
 </body>
 </html>

@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">sbseq2d</a>
-      <span class="nav"><a href="sbseq1d.html" title="sbseq1d">&#8810;</a> | <a href="../index.html#sbseq2d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1543-L1545">src</a> | <a href="sbseqd.html" title="sbseqd">&#8811;</a></span>
+      <span class="nav"><a href="sbseq1d.html" title="sbseq1d">&#8810;</a> | <a href="../index.html#sbseq2d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1725-L1727">src</a> | <a href="sbseqd.html" title="sbseqd">&#8811;</a></span>
     </h1>
     <pre>theorem sbseq2d {x: nat} (G: wff) (a: nat x) (A B: set x):
   $ G -> A == B $ >
@@ -25,54 +25,57 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#sbs">sbs</a></td>
-          <td><pre>G -&gt; S[a / x] A == S[a / x] B</pre></td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>G -&gt; A == B</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="abeqd.html">abeqd</a></td>
-          <td><pre>G -&gt; {y | [a / x] y e. A} == {y | [a / x] y e. B}</pre></td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="eleq2d.html">eleq2d</a></td>
+          <td><pre>G -&gt; (y e. A &lt;-&gt; y e. B)</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#4">4</a></td>
+          <td><a href="#2">2</a></td>
           <td><a class="thm" href="sbeq2d.html">sbeq2d</a></td>
           <td><pre>G -&gt; ([a / x] y e. A &lt;-&gt; [a / x] y e. B)</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="eleq2d.html">eleq2d</a></td>
-          <td><pre>G -&gt; (y e. A &lt;-&gt; y e. B)</pre></td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="abeqd.html">abeqd</a></td>
+          <td><pre>G -&gt; {y | [a / x] y e. A} == {y | [a / x] y e. B}</pre></td>
         </tr>
-        <tr id="5" class="step-hyp">
+        <tr id="5" class="step-conv">
           <td>5</td>
-          <td></td>
-          <td><i>hyp h</i></td>
-          <td><pre>G -&gt; A == B</pre></td>
+          <td><a href="#4">4</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#sbs">sbs</a></td>
+          <td><pre>G -&gt; S[a / x] A == S[a / x] B</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>
   </div>
 </body>
 </html>

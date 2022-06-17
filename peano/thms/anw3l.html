@@ -17,37 +17,38 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">anw3l</a>
-      <span class="nav"><a href="anwll.html" title="anwll">&#8810;</a> | <a href="../index.html#anw3l">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L429">src</a> | <a href="anw4l.html" title="anw4l">&#8811;</a></span>
+      <span class="nav"><a href="anwll.html" title="anwll">&#8810;</a> | <a href="../index.html#anw3l">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L480">src</a> | <a href="anw4l.html" title="anw4l">&#8811;</a></span>
     </h1>
     <pre>theorem anw3l (a b c d e: wff): $ a -> e $ > $ a /\ b /\ c /\ d -> e $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-thm">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><a class="thm" href="anwll.html">anwll</a></td>
-          <td><pre>a /\ b /\ c /\ d -&gt; e</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="anwl.html">anwl</a></td>
-          <td><pre>a /\ b -&gt; e</pre></td>
-        </tr>
-        <tr id="3" class="step-hyp">
-          <td>3</td>
           <td></td>
           <td><i>hyp h</i></td>
           <td><pre>a -&gt; e</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>a /\ b -&gt; e</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="anwll.html">anwll</a></td>
+          <td><pre>a /\ b /\ c /\ d -&gt; e</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

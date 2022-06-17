@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `exbi` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>exbi - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">exbi</a>
+      <span class="nav"><a href="albi.html" title="albi">&#8810;</a> | <a href="../index.html#exbi">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L939">src</a> | <a href="alan1.html" title="alan1">&#8811;</a></span>
+    </h1>
+    <pre>theorem exbi (a: wff) {x: nat}: $ E. x a <-> a $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td></td>
+          <td><a class="thm" href="con1b.html">con1b</a></td>
+          <td><pre>(~a &lt;-&gt; A. x ~a) -&gt; (~A. x ~a &lt;-&gt; a)</pre></td>
+        </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ex">ex</a></td>
+          <td><pre>(~a &lt;-&gt; A. x ~a) -&gt; (E. x a &lt;-&gt; a)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="bicom.html">bicom</a></td>
+          <td><pre>(A. x ~a &lt;-&gt; ~a) -&gt; (~a &lt;-&gt; A. x ~a)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="albi.html">albi</a></td>
+          <td><pre>A. x ~a &lt;-&gt; ~a</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>~a &lt;-&gt; A. x ~a</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#2">2</a>, <a href="#5">5</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>E. x a &lt;-&gt; a</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>
+  </div>
+</body>
+</html>

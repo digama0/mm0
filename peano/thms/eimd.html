@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">eimd</a>
-      <span class="nav"><a href="mt2d.html" title="mt2d">&#8810;</a> | <a href="../index.html#eimd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L406-L407">src</a> | <a href="anl.html" title="anl">&#8811;</a></span>
+      <span class="nav"><a href="com23.html" title="com23">&#8810;</a> | <a href="../index.html#eimd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L429">src</a> | <a href="absurdr.html" title="absurdr">&#8811;</a></span>
     </h1>
     <pre>theorem eimd (a b c d: wff):
   $ a -> b $ >
@@ -26,48 +26,43 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-thm">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#6">6</a></td>
-          <td><a class="thm" href="syld.html">syld</a></td>
-          <td><pre>a -&gt; (b -&gt; c) -&gt; d</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="thm" href="rsyl.html">rsyl</a></td>
-          <td><pre>a -&gt; (b -&gt; c) -&gt; c</pre></td>
-        </tr>
-        <tr id="3" class="step-hyp">
-          <td>3</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>a -&gt; b</pre></td>
         </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="com12.html">com12</a></td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="mpcom.html">mpcom</a></td>
           <td><pre>b -&gt; (b -&gt; c) -&gt; c</pre></td>
         </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td></td>
-          <td><a class="thm" href="id.html">id</a></td>
-          <td><pre>(b -&gt; c) -&gt; b -&gt; c</pre></td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a class="thm" href="rsyl.html">rsyl</a></td>
+          <td><pre>a -&gt; (b -&gt; c) -&gt; c</pre></td>
         </tr>
-        <tr id="6" class="step-hyp">
-          <td>6</td>
+        <tr id="4" class="step-hyp">
+          <td>4</td>
           <td></td>
           <td><i>hyp h2</i></td>
           <td><pre>a -&gt; c -&gt; d</pre></td>
         </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="syld.html">syld</a></td>
+          <td><pre>a -&gt; (b -&gt; c) -&gt; d</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>

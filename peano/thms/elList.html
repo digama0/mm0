@@ -17,53 +17,58 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">elList</a>
-      <span class="nav"><a href="Listeq.html" title="Listeq">&#8810;</a> | <a href="../index.html#elList">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5588">src</a> | <a href="elList0.html" title="elList0">&#8811;</a></span>
+      <span class="nav"><a href="Listeq.html" title="Listeq">&#8810;</a> | <a href="../index.html#elList">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5943">src</a> | <a href="elList0.html" title="elList0">&#8811;</a></span>
     </h1>
     <pre>theorem elList (A: set) (l: nat): $ l e. List A <-> all A l $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#List">List</a></td>
-          <td><pre>l e. List A &lt;-&gt; all A l</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="elabe.html">elabe</a></td>
-          <td><pre>l e. {n | all A n} &lt;-&gt; all A l</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="alleq2.html">alleq2</a></td>
           <td><pre>n = l -&gt; (all A n &lt;-&gt; all A l)</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="elabe.html">elabe</a></td>
+          <td><pre>l e. {n | all A n} &lt;-&gt; all A l</pre></td>
+        </tr>
+        <tr id="3" class="step-conv">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#List">List</a></td>
+          <td><pre>l e. List A &lt;-&gt; all A l</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>)</span>
   </div>
 </body>
 </html>

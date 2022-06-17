@@ -17,69 +17,72 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">subsnss</a>
-      <span class="nav"><a href="subsni.html" title="subsni">&#8810;</a> | <a href="../index.html#subsnss">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1725-L1726">src</a> | <a href="subsnsn2.html" title="subsnsn2">&#8811;</a></span>
+      <span class="nav"><a href="subsni.html" title="subsni">&#8810;</a> | <a href="../index.html#subsnss">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1921-L1922">src</a> | <a href="subsnsn2.html" title="subsnsn2">&#8811;</a></span>
     </h1>
     <pre>theorem subsnss (A B: set): $ A C_ B -> subsn B -> subsn A $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#subsn">subsn</a></td>
-          <td><pre>A C_ B -&gt; subsn B -&gt; subsn A</pre></td>
+          <td></td>
+          <td><a class="thm" href="ssel.html">ssel</a></td>
+          <td><pre>A C_ B -&gt; x e. A -&gt; x e. B</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="alimd.html">alimd</a></td>
-          <td><pre>A C_ B -&gt; A. x A. y (x e. B -&gt; y e. B -&gt; x = y) -&gt; A. x A. y (x e. A -&gt; y e. A -&gt; x = y)</pre></td>
+          <td></td>
+          <td><a class="thm" href="ssel.html">ssel</a></td>
+          <td><pre>A C_ B -&gt; y e. A -&gt; y e. B</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="alimd.html">alimd</a></td>
-          <td><pre>A C_ B -&gt; A. y (x e. B -&gt; y e. B -&gt; x = y) -&gt; A. y (x e. A -&gt; y e. A -&gt; x = y)</pre></td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="imim1d.html">imim1d</a></td>
+          <td><pre>A C_ B -&gt; (y e. B -&gt; x = y) -&gt; y e. A -&gt; x = y</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
           <td><a class="thm" href="imimd.html">imimd</a></td>
           <td><pre>A C_ B -&gt; (x e. B -&gt; y e. B -&gt; x = y) -&gt; x e. A -&gt; y e. A -&gt; x = y</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
-          <td></td>
-          <td><a class="thm" href="ssel.html">ssel</a></td>
-          <td><pre>A C_ B -&gt; x e. A -&gt; x e. B</pre></td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="alimd.html">alimd</a></td>
+          <td><pre>A C_ B -&gt; A. y (x e. B -&gt; y e. B -&gt; x = y) -&gt; A. y (x e. A -&gt; y e. A -&gt; x = y)</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td><a href="#7">7</a></td>
-          <td><a class="thm" href="imim1d.html">imim1d</a></td>
-          <td><pre>A C_ B -&gt; (y e. B -&gt; x = y) -&gt; y e. A -&gt; x = y</pre></td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="alimd.html">alimd</a></td>
+          <td><pre>A C_ B -&gt; A. x A. y (x e. B -&gt; y e. B -&gt; x = y) -&gt; A. x A. y (x e. A -&gt; y e. A -&gt; x = y)</pre></td>
         </tr>
-        <tr id="7" class="step-thm">
+        <tr id="7" class="step-conv">
           <td>7</td>
-          <td></td>
-          <td><a class="thm" href="ssel.html">ssel</a></td>
-          <td><pre>A C_ B -&gt; y e. A -&gt; y e. B</pre></td>
+          <td><a href="#6">6</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#subsn">subsn</a></td>
+          <td><pre>A C_ B -&gt; subsn B -&gt; subsn A</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="ax_8.html">ax_8</a>)</span>
   </div>
 </body>
 </html>

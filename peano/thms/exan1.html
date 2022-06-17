@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">exan1</a>
-      <span class="nav"><a href="ealie.html" title="ealie">&#8810;</a> | <a href="../index.html#exan1">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L956-L957">src</a> | <a href="exan2.html" title="exan2">&#8811;</a></span>
+      <span class="nav"><a href="ealie.html" title="ealie">&#8810;</a> | <a href="../index.html#exan1">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1041-L1042">src</a> | <a href="exan2.html" title="exan2">&#8811;</a></span>
     </h1>
     <pre>theorem exan1 {x: nat} (a: wff) (b: wff x): $ E. x (a /\ b) <-> a /\ E. x b $;</pre>
     <table class="proof">
@@ -25,68 +25,70 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#7">7</a></td>
-          <td><a class="thm" href="ibii.html">ibii</a></td>
-          <td><pre>E. x (a /\ b) &lt;-&gt; a /\ E. x b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#5">5</a></td>
-          <td><a class="thm" href="iand.html">iand</a></td>
-          <td><pre>E. x (a /\ b) -&gt; a /\ E. x b</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a></td>
-          <td><a class="thm" href="eex.html">eex</a></td>
-          <td><pre>E. x (a /\ b) -&gt; a</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
           <td></td>
           <td><a class="thm" href="anl.html">anl</a></td>
           <td><pre>a /\ b -&gt; a</pre></td>
         </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a></td>
-          <td><a class="thm" href="eximi.html">eximi</a></td>
-          <td><pre>E. x (a /\ b) -&gt; E. x b</pre></td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. x (a /\ b) -&gt; a</pre></td>
         </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
           <td></td>
           <td><a class="thm" href="anr.html">anr</a></td>
           <td><pre>a /\ b -&gt; b</pre></td>
         </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a></td>
-          <td><a class="thm" href="imp.html">imp</a></td>
-          <td><pre>a /\ E. x b -&gt; E. x (a /\ b)</pre></td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="eximi.html">eximi</a></td>
+          <td><pre>E. x (a /\ b) -&gt; E. x b</pre></td>
         </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td><a href="#9">9</a></td>
-          <td><a class="thm" href="eximd.html">eximd</a></td>
-          <td><pre>a -&gt; E. x b -&gt; E. x (a /\ b)</pre></td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><pre>E. x (a /\ b) -&gt; a /\ E. x b</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="6" class="step-thm">
+          <td>6</td>
           <td></td>
           <td><a class="thm" href="ian.html">ian</a></td>
           <td><pre>a -&gt; b -&gt; a /\ b</pre></td>
         </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="eximd.html">eximd</a></td>
+          <td><pre>a -&gt; E. x b -&gt; E. x (a /\ b)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="imp.html">imp</a></td>
+          <td><pre>a /\ E. x b -&gt; E. x (a /\ b)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#5">5</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>E. x (a /\ b) &lt;-&gt; a /\ E. x b</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>)</span>
   </div>
 </body>
 </html>

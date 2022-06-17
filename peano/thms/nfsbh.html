@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">nfsbh</a>
-      <span class="nav"><a href="nfsb1h.html" title="nfsb1h">&#8810;</a> | <a href="../index.html#nfsbh">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1489-L1490">src</a> | <a href="nfel.html" title="nfel">&#8811;</a></span>
+      <span class="nav"><a href="nfsb1h.html" title="nfsb1h">&#8810;</a> | <a href="../index.html#nfsbh">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1670-L1671">src</a> | <a href="nfel.html" title="nfel">&#8811;</a></span>
     </h1>
     <pre>theorem nfsbh {x y: nat} (a: nat x y) (b: wff x y):
   $ FN/ x a $ >
@@ -26,76 +26,78 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#sb">sb</a></td>
-          <td><pre>F/ x [a / y] b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="thm" href="nfal.html">nfal</a></td>
-          <td><pre>F/ x A. z (z = a -&gt; A. y (y = z -&gt; b))</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a>, <a href="#6">6</a></td>
-          <td><a class="thm" href="nfim.html">nfim</a></td>
-          <td><pre>F/ x z = a -&gt; A. y (y = z -&gt; b)</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a></td>
-          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
-          <td><pre>F/ x z = a</pre></td>
-        </tr>
-        <tr id="5" class="step-hyp">
-          <td>5</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>FN/ x a</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="nfeq2.html">nfeq2</a></td>
+          <td><pre>F/ x z = a</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="nfv.html">nfv</a></td>
+          <td><pre>F/ x y = z</pre></td>
+        </tr>
+        <tr id="4" class="step-hyp">
+          <td>4</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>F/ x b</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="nfim.html">nfim</a></td>
+          <td><pre>F/ x y = z -&gt; b</pre></td>
+        </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td><a href="#7">7</a></td>
+          <td><a href="#5">5</a></td>
           <td><a class="thm" href="nfal.html">nfal</a></td>
           <td><pre>F/ x A. y (y = z -&gt; b)</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="#2">2</a>, <a href="#6">6</a></td>
           <td><a class="thm" href="nfim.html">nfim</a></td>
-          <td><pre>F/ x y = z -&gt; b</pre></td>
+          <td><pre>F/ x z = a -&gt; A. y (y = z -&gt; b)</pre></td>
         </tr>
         <tr id="8" class="step-thm">
           <td>8</td>
-          <td></td>
-          <td><a class="thm" href="nfv.html">nfv</a></td>
-          <td><pre>F/ x y = z</pre></td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="nfal.html">nfal</a></td>
+          <td><pre>F/ x A. z (z = a -&gt; A. y (y = z -&gt; b))</pre></td>
         </tr>
-        <tr id="9" class="step-hyp">
+        <tr id="9" class="step-conv">
           <td>9</td>
-          <td></td>
-          <td><i>hyp h2</i></td>
-          <td><pre>F/ x b</pre></td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#sb">sb</a></td>
+          <td><pre>F/ x [a / y] b</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>
   </div>
 </body>
 </html>

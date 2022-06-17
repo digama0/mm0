@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">snocinj</a>
-      <span class="nav"><a href="exsnoc.html" title="exsnoc">&#8810;</a> | <a href="../index.html#snocinj">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5951-L5953">src</a> | <a href="appendcan2.html" title="appendcan2">&#8811;</a></span>
+      <span class="nav"><a href="exsnoc.html" title="exsnoc">&#8810;</a> | <a href="../index.html#snocinj">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6306-L6308">src</a> | <a href="appendcan2.html" title="appendcan2">&#8811;</a></span>
     </h1>
     <pre>theorem snocinj (a b l1 l2: nat): $ l1 |> a = l2 |> b <-> l1 = l2 /\ a = b $;</pre>
     <table class="proof">
@@ -25,135 +25,137 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#21">21</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>l1 |&gt; a = l2 |&gt; b &lt;-&gt; l1 = l2 /\ a = b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b) -&gt; (l1 |&gt; a = l2 |&gt; b &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="bitr3.html">bitr3</a></td>
           <td><pre>(rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b) -&gt;
   (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b) -&gt;
   (l1 |&gt; a = l2 |&gt; b &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a>, <a href="#14">14</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
-          <td><a href="#6">6</a>, <a href="#7">7</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (b : rev l2) = l2 |&gt; b -&gt; (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b)</pre></td>
-        </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="thm" href="eqeq.html">eqeq</a></td>
           <td><pre>rev (a : rev l1) = l1 |&gt; a -&gt; rev (b : rev l2) = l2 |&gt; b -&gt; (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b)</pre></td>
         </tr>
-        <tr id="7" class="step-thm">
-          <td>7</td>
-          <td><a href="#8">8</a>, <a href="#11">11</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (a : rev l1) = l1 |&gt; a</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td><a href="#9">9</a>, <a href="#10">10</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (rev l1) |&gt; a = l1 |&gt; a -&gt; rev (a : rev l1) = l1 |&gt; a</pre></td>
-        </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="3" class="step-thm">
+          <td>3</td>
           <td></td>
           <td><a class="thm" href="eqtr.html">eqtr</a></td>
           <td><pre>rev (a : rev l1) = rev (rev l1) |&gt; a -&gt; rev (rev l1) |&gt; a = l1 |&gt; a -&gt; rev (a : rev l1) = l1 |&gt; a</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
           <td></td>
           <td><a class="thm" href="revS.html">revS</a></td>
           <td><pre>rev (a : rev l1) = rev (rev l1) |&gt; a</pre></td>
         </tr>
-        <tr id="11" class="step-thm">
-          <td>11</td>
-          <td><a href="#12">12</a>, <a href="#13">13</a></td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (rev l1) |&gt; a = l1 |&gt; a</pre></td>
+          <td><pre>rev (rev l1) |&gt; a = l1 |&gt; a -&gt; rev (a : rev l1) = l1 |&gt; a</pre></td>
         </tr>
-        <tr id="12" class="step-thm">
-          <td>12</td>
+        <tr id="6" class="step-thm">
+          <td>6</td>
           <td></td>
           <td><a class="thm" href="snoceq1.html">snoceq1</a></td>
           <td><pre>rev (rev l1) = l1 -&gt; rev (rev l1) |&gt; a = l1 |&gt; a</pre></td>
         </tr>
-        <tr id="13" class="step-thm">
-          <td>13</td>
+        <tr id="7" class="step-thm">
+          <td>7</td>
           <td></td>
           <td><a class="thm" href="revrev.html">revrev</a></td>
           <td><pre>rev (rev l1) = l1</pre></td>
         </tr>
-        <tr id="14" class="step-thm">
-          <td>14</td>
-          <td><a href="#15">15</a>, <a href="#18">18</a></td>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (b : rev l2) = l2 |&gt; b</pre></td>
+          <td><pre>rev (rev l1) |&gt; a = l1 |&gt; a</pre></td>
         </tr>
-        <tr id="15" class="step-thm">
-          <td>15</td>
-          <td><a href="#16">16</a>, <a href="#17">17</a></td>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#5">5</a>, <a href="#8">8</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (rev l2) |&gt; b = l2 |&gt; b -&gt; rev (b : rev l2) = l2 |&gt; b</pre></td>
+          <td><pre>rev (a : rev l1) = l1 |&gt; a</pre></td>
         </tr>
-        <tr id="16" class="step-thm">
-          <td>16</td>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#2">2</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>rev (b : rev l2) = l2 |&gt; b -&gt; (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
           <td></td>
           <td><a class="thm" href="eqtr.html">eqtr</a></td>
           <td><pre>rev (b : rev l2) = rev (rev l2) |&gt; b -&gt; rev (rev l2) |&gt; b = l2 |&gt; b -&gt; rev (b : rev l2) = l2 |&gt; b</pre></td>
         </tr>
-        <tr id="17" class="step-thm">
-          <td>17</td>
+        <tr id="12" class="step-thm">
+          <td>12</td>
           <td></td>
           <td><a class="thm" href="revS.html">revS</a></td>
           <td><pre>rev (b : rev l2) = rev (rev l2) |&gt; b</pre></td>
         </tr>
-        <tr id="18" class="step-thm">
-          <td>18</td>
-          <td><a href="#19">19</a>, <a href="#20">20</a></td>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (rev l2) |&gt; b = l2 |&gt; b</pre></td>
+          <td><pre>rev (rev l2) |&gt; b = l2 |&gt; b -&gt; rev (b : rev l2) = l2 |&gt; b</pre></td>
         </tr>
-        <tr id="19" class="step-thm">
-          <td>19</td>
+        <tr id="14" class="step-thm">
+          <td>14</td>
           <td></td>
           <td><a class="thm" href="snoceq1.html">snoceq1</a></td>
           <td><pre>rev (rev l2) = l2 -&gt; rev (rev l2) |&gt; b = l2 |&gt; b</pre></td>
         </tr>
-        <tr id="20" class="step-thm">
-          <td>20</td>
+        <tr id="15" class="step-thm">
+          <td>15</td>
           <td></td>
           <td><a class="thm" href="revrev.html">revrev</a></td>
           <td><pre>rev (rev l2) = l2</pre></td>
         </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#14">14</a>, <a href="#15">15</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>rev (rev l2) |&gt; b = l2 |&gt; b</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#13">13</a>, <a href="#16">16</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>rev (b : rev l2) = l2 |&gt; b</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#10">10</a>, <a href="#17">17</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 |&gt; a = l2 |&gt; b</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#1">1</a>, <a href="#18">18</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b) -&gt; (l1 |&gt; a = l2 |&gt; b &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td></td>
+          <td><a class="thm" href="bitr.html">bitr</a></td>
+          <td><pre>(rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; a : rev l1 = b : rev l2) -&gt;
+  (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt;
+  (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
+        </tr>
         <tr id="21" class="step-thm">
           <td>21</td>
-          <td><a href="#22">22</a>, <a href="#25">25</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+          <td></td>
+          <td><a class="thm" href="revinj.html">revinj</a></td>
+          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; a : rev l1 = b : rev l2</pre></td>
         </tr>
         <tr id="22" class="step-thm">
           <td>22</td>
-          <td><a href="#23">23</a>, <a href="#24">24</a></td>
+          <td><a href="#20">20</a>, <a href="#21">21</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>(a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt; (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
@@ -161,105 +163,108 @@
           <td>23</td>
           <td></td>
           <td><a class="thm" href="bitr.html">bitr</a></td>
-          <td><pre>(rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; a : rev l1 = b : rev l2) -&gt;
-  (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt;
-  (rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
+          <td><pre>(a : rev l1 = b : rev l2 &lt;-&gt; a = b /\ rev l1 = rev l2) -&gt; (a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
         <tr id="24" class="step-thm">
           <td>24</td>
           <td></td>
-          <td><a class="thm" href="revinj.html">revinj</a></td>
-          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; a : rev l1 = b : rev l2</pre></td>
-        </tr>
-        <tr id="25" class="step-thm">
-          <td>25</td>
-          <td><a href="#26">26</a>, <a href="#29">29</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b</pre></td>
-        </tr>
-        <tr id="26" class="step-thm">
-          <td>26</td>
-          <td><a href="#27">27</a>, <a href="#28">28</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
-        </tr>
-        <tr id="27" class="step-thm">
-          <td>27</td>
-          <td></td>
-          <td><a class="thm" href="bitr.html">bitr</a></td>
-          <td><pre>(a : rev l1 = b : rev l2 &lt;-&gt; a = b /\ rev l1 = rev l2) -&gt; (a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
-        </tr>
-        <tr id="28" class="step-thm">
-          <td>28</td>
-          <td></td>
           <td><a class="thm" href="consinj.html">consinj</a></td>
           <td><pre>a : rev l1 = b : rev l2 &lt;-&gt; a = b /\ rev l1 = rev l2</pre></td>
         </tr>
-        <tr id="29" class="step-thm">
-          <td>29</td>
-          <td><a href="#30">30</a>, <a href="#33">33</a></td>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#23">23</a>, <a href="#24">24</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+          <td><pre>(a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
-        <tr id="30" class="step-thm">
-          <td>30</td>
-          <td><a href="#31">31</a>, <a href="#32">32</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(rev l1 = rev l2 /\ a = b &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
-        </tr>
-        <tr id="31" class="step-thm">
-          <td>31</td>
+        <tr id="26" class="step-thm">
+          <td>26</td>
           <td></td>
           <td><a class="thm" href="bitr.html">bitr</a></td>
           <td><pre>(a = b /\ rev l1 = rev l2 &lt;-&gt; rev l1 = rev l2 /\ a = b) -&gt; (rev l1 = rev l2 /\ a = b &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
-        <tr id="32" class="step-thm">
-          <td>32</td>
+        <tr id="27" class="step-thm">
+          <td>27</td>
           <td></td>
           <td><a class="thm" href="ancomb.html">ancomb</a></td>
           <td><pre>a = b /\ rev l1 = rev l2 &lt;-&gt; rev l1 = rev l2 /\ a = b</pre></td>
         </tr>
-        <tr id="33" class="step-thm">
-          <td>33</td>
-          <td><a href="#34">34</a></td>
-          <td><a class="thm" href="aneq1i.html">aneq1i</a></td>
-          <td><pre>rev l1 = rev l2 /\ a = b &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td><a href="#26">26</a>, <a href="#27">27</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(rev l1 = rev l2 /\ a = b &lt;-&gt; l1 = l2 /\ a = b) -&gt; (a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b)</pre></td>
         </tr>
-        <tr id="34" class="step-thm">
-          <td>34</td>
+        <tr id="29" class="step-thm">
+          <td>29</td>
           <td></td>
           <td><a class="thm" href="revinj.html">revinj</a></td>
           <td><pre>rev l1 = rev l2 &lt;-&gt; l1 = l2</pre></td>
         </tr>
+        <tr id="30" class="step-thm">
+          <td>30</td>
+          <td><a href="#29">29</a></td>
+          <td><a class="thm" href="aneq1i.html">aneq1i</a></td>
+          <td><pre>rev l1 = rev l2 /\ a = b &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        </tr>
+        <tr id="31" class="step-thm">
+          <td>31</td>
+          <td><a href="#28">28</a>, <a href="#30">30</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a = b /\ rev l1 = rev l2 &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        </tr>
+        <tr id="32" class="step-thm">
+          <td>32</td>
+          <td><a href="#25">25</a>, <a href="#31">31</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a : rev l1 = b : rev l2 &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        </tr>
+        <tr id="33" class="step-thm">
+          <td>33</td>
+          <td><a href="#22">22</a>, <a href="#32">32</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>rev (a : rev l1) = rev (b : rev l2) &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        </tr>
+        <tr id="34" class="step-thm">
+          <td>34</td>
+          <td><a href="#19">19</a>, <a href="#33">33</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>l1 |&gt; a = l2 |&gt; b &lt;-&gt; l1 = l2 /\ a = b</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

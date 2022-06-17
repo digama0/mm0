@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">maxle</a>
-      <span class="nav"><a href="lemax2.html" title="lemax2">&#8810;</a> | <a href="../index.html#maxle">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2341-L2344">src</a> | <a href="ltmax.html" title="ltmax">&#8811;</a></span>
+      <span class="nav"><a href="lemax2.html" title="lemax2">&#8810;</a> | <a href="../index.html#maxle">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2570-L2573">src</a> | <a href="ltmax.html" title="ltmax">&#8811;</a></span>
     </h1>
     <pre>theorem maxle (a b c: nat): $ max a b <= c <-> a <= c /\ b <= c $;</pre>
     <table class="proof">
@@ -25,19 +25,19 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#9">9</a></td>
-          <td><a class="thm" href="ibii.html">ibii</a></td>
-          <td><pre>max a b &lt;= c &lt;-&gt; a &lt;= c /\ b &lt;= c</pre></td>
+          <td></td>
+          <td><a class="thm" href="letr.html">letr</a></td>
+          <td><pre>a &lt;= max a b -&gt; max a b &lt;= c -&gt; a &lt;= c</pre></td>
         </tr>
         <tr id="2" class="step-thm">
           <td>2</td>
-          <td><a href="#3">3</a>, <a href="#6">6</a></td>
-          <td><a class="thm" href="iand.html">iand</a></td>
-          <td><pre>max a b &lt;= c -&gt; a &lt;= c /\ b &lt;= c</pre></td>
+          <td></td>
+          <td><a class="thm" href="lemax1.html">lemax1</a></td>
+          <td><pre>a &lt;= max a b</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
-          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>max a b &lt;= c -&gt; a &lt;= c</pre></td>
         </tr>
@@ -45,136 +45,141 @@
           <td>4</td>
           <td></td>
           <td><a class="thm" href="letr.html">letr</a></td>
-          <td><pre>a &lt;= max a b -&gt; max a b &lt;= c -&gt; a &lt;= c</pre></td>
+          <td><pre>b &lt;= max a b -&gt; max a b &lt;= c -&gt; b &lt;= c</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
           <td></td>
-          <td><a class="thm" href="lemax1.html">lemax1</a></td>
-          <td><pre>a &lt;= max a b</pre></td>
+          <td><a class="thm" href="lemax2.html">lemax2</a></td>
+          <td><pre>b &lt;= max a b</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td><a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>max a b &lt;= c -&gt; b &lt;= c</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
-          <td></td>
-          <td><a class="thm" href="letr.html">letr</a></td>
-          <td><pre>b &lt;= max a b -&gt; max a b &lt;= c -&gt; b &lt;= c</pre></td>
+          <td><a href="#3">3</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><pre>max a b &lt;= c -&gt; a &lt;= c /\ b &lt;= c</pre></td>
         </tr>
         <tr id="8" class="step-thm">
           <td>8</td>
           <td></td>
-          <td><a class="thm" href="lemax2.html">lemax2</a></td>
-          <td><pre>b &lt;= max a b</pre></td>
+          <td><a class="thm" href="ifpos.1.html">ifpos</a></td>
+          <td><pre>a &lt; b -&gt; if (a &lt; b) b a = b</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
+        <tr id="9" class="step-conv">
           <td>9</td>
-          <td><a href="#10">10</a>, <a href="#16">16</a></td>
-          <td><a class="thm" href="casesda.html">casesda</a></td>
-          <td><pre>a &lt;= c /\ b &lt;= c -&gt; max a b &lt;= c</pre></td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#max">max</a></td>
+          <td><pre>a &lt; b -&gt; max a b = b</pre></td>
         </tr>
         <tr id="10" class="step-thm">
           <td>10</td>
-          <td><a href="#11">11</a>, <a href="#15">15</a></td>
-          <td><a class="thm" href="mpbird.html">mpbird</a></td>
-          <td><pre>a &lt;= c /\ b &lt;= c /\ a &lt; b -&gt; max a b &lt;= c</pre></td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="leeq1d.html">leeq1d</a></td>
+          <td><pre>a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; b &lt;= c)</pre></td>
         </tr>
         <tr id="11" class="step-thm">
           <td>11</td>
-          <td><a href="#12">12</a></td>
+          <td><a href="#10">10</a></td>
           <td><a class="thm" href="anwr.html">anwr</a></td>
           <td><pre>a &lt;= c /\ b &lt;= c /\ a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; b &lt;= c)</pre></td>
         </tr>
         <tr id="12" class="step-thm">
           <td>12</td>
-          <td><a href="#13">13</a></td>
-          <td><a class="thm" href="leeq1d.html">leeq1d</a></td>
-          <td><pre>a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; b &lt;= c)</pre></td>
-        </tr>
-        <tr id="13" class="step-conv">
-          <td>13</td>
-          <td><a href="#14">14</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#max">max</a></td>
-          <td><pre>a &lt; b -&gt; max a b = b</pre></td>
-        </tr>
-        <tr id="14" class="step-thm">
-          <td>14</td>
-          <td></td>
-          <td><a class="thm" href="ifpos.html">ifpos</a></td>
-          <td><pre>a &lt; b -&gt; if (a &lt; b) b a = b</pre></td>
-        </tr>
-        <tr id="15" class="step-thm">
-          <td>15</td>
           <td></td>
           <td><a class="thm" href="anlr.html">anlr</a></td>
           <td><pre>a &lt;= c /\ b &lt;= c /\ a &lt; b -&gt; b &lt;= c</pre></td>
         </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><pre>a &lt;= c /\ b &lt;= c /\ a &lt; b -&gt; max a b &lt;= c</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="ifneg.1.html">ifneg</a></td>
+          <td><pre>~a &lt; b -&gt; if (a &lt; b) b a = a</pre></td>
+        </tr>
+        <tr id="15" class="step-conv">
+          <td>15</td>
+          <td><a href="#14">14</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#max">max</a></td>
+          <td><pre>~a &lt; b -&gt; max a b = a</pre></td>
+        </tr>
         <tr id="16" class="step-thm">
           <td>16</td>
-          <td><a href="#17">17</a>, <a href="#21">21</a></td>
-          <td><a class="thm" href="mpbird.html">mpbird</a></td>
-          <td><pre>a &lt;= c /\ b &lt;= c /\ ~a &lt; b -&gt; max a b &lt;= c</pre></td>
+          <td><a href="#15">15</a></td>
+          <td><a class="thm" href="leeq1d.html">leeq1d</a></td>
+          <td><pre>~a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; a &lt;= c)</pre></td>
         </tr>
         <tr id="17" class="step-thm">
           <td>17</td>
-          <td><a href="#18">18</a></td>
+          <td><a href="#16">16</a></td>
           <td><a class="thm" href="anwr.html">anwr</a></td>
           <td><pre>a &lt;= c /\ b &lt;= c /\ ~a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; a &lt;= c)</pre></td>
         </tr>
         <tr id="18" class="step-thm">
           <td>18</td>
-          <td><a href="#19">19</a></td>
-          <td><a class="thm" href="leeq1d.html">leeq1d</a></td>
-          <td><pre>~a &lt; b -&gt; (max a b &lt;= c &lt;-&gt; a &lt;= c)</pre></td>
-        </tr>
-        <tr id="19" class="step-conv">
-          <td>19</td>
-          <td><a href="#20">20</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#max">max</a></td>
-          <td><pre>~a &lt; b -&gt; max a b = a</pre></td>
-        </tr>
-        <tr id="20" class="step-thm">
-          <td>20</td>
-          <td></td>
-          <td><a class="thm" href="ifneg.html">ifneg</a></td>
-          <td><pre>~a &lt; b -&gt; if (a &lt; b) b a = a</pre></td>
-        </tr>
-        <tr id="21" class="step-thm">
-          <td>21</td>
           <td></td>
           <td><a class="thm" href="anll.html">anll</a></td>
           <td><pre>a &lt;= c /\ b &lt;= c /\ ~a &lt; b -&gt; a &lt;= c</pre></td>
         </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#17">17</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><pre>a &lt;= c /\ b &lt;= c /\ ~a &lt; b -&gt; max a b &lt;= c</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#13">13</a>, <a href="#19">19</a></td>
+          <td><a class="thm" href="casesda.html">casesda</a></td>
+          <td><pre>a &lt;= c /\ b &lt;= c -&gt; max a b &lt;= c</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td><a href="#7">7</a>, <a href="#20">20</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>max a b &lt;= c &lt;-&gt; a &lt;= c /\ b &lt;= c</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>)</span>
   </div>
 </body>
 </html>

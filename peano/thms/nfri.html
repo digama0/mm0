@@ -17,34 +17,35 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">nfri</a>
-      <span class="nav"><a href="nfi.html" title="nfi">&#8810;</a> | <a href="../index.html#nfri">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L882">src</a> | <a href="nfeqi.html" title="nfeqi">&#8811;</a></span>
+      <span class="nav"><a href="nfi.html" title="nfi">&#8810;</a> | <a href="../index.html#nfri">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L957">src</a> | <a href="nfeqi.html" title="nfeqi">&#8811;</a></span>
     </h1>
     <pre>theorem nfri {x: nat} (a: wff x): $ a -> A. x a $ > $ F/ x a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#nf">nf</a></td>
-          <td><pre>F/ x a</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a></td>
-          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
-          <td><pre>A. x (a -&gt; A. x a)</pre></td>
-        </tr>
-        <tr id="3" class="step-hyp">
-          <td>3</td>
           <td></td>
           <td><i>hyp h</i></td>
           <td><pre>a -&gt; A. x a</pre></td>
         </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
+          <td><pre>A. x (a -&gt; A. x a)</pre></td>
+        </tr>
+        <tr id="3" class="step-conv">
+          <td>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#nf">nf</a></td>
+          <td><pre>F/ x a</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_gen.html">ax_gen</a>
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>)</span>
   </div>
 </body>
 </html>

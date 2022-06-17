@@ -17,28 +17,29 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">b00</a>
-      <span class="nav"><a href="oddeq.html" title="oddeq">&#8810;</a> | <a href="../index.html#b00">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2738">src</a> | <a href="b10.html" title="b10">&#8811;</a></span>
+      <span class="nav"><a href="oddeq.html" title="oddeq">&#8810;</a> | <a href="../index.html#b00">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2988">src</a> | <a href="b10.html" title="b10">&#8811;</a></span>
     </h1>
     <pre>theorem b00: $ b0 0 = 0 $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#b0">b0</a></td>
-          <td><pre>b0 0 = 0</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="ax" href="add0.html">add0</a></td>
           <td><pre>0 + 0 = 0</pre></td>
         </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#b0">b0</a></td>
+          <td><pre>b0 0 = 0</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="add0.html">add0</a>
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="add0.html">add0</a>)</span>
   </div>
 </body>
 </html>

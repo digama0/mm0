@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `rexal` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>rexal - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">rexal</a>
+      <span class="nav"><a href="exral.html" title="exral">&#8810;</a> | <a href="../index.html#rexal">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1012-L1013">src</a> | <a href="rexim1.html" title="rexim1">&#8811;</a></span>
+    </h1>
+    <pre>theorem rexal {x y: nat} (a: wff x) (b: wff x y):
+  $ E. x (a /\ A. y b) -> A. y E. x (a /\ b) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td></td>
+          <td><a class="thm" href="alan1.html">alan1</a></td>
+          <td><pre>A. y (a /\ b) &lt;-&gt; a /\ A. y b</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a class="thm" href="exeqi.html">exeqi</a></td>
+          <td><pre>E. x A. y (a /\ b) &lt;-&gt; E. x (a /\ A. y b)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="exal.html">exal</a></td>
+          <td><pre>E. x A. y (a /\ b) -&gt; A. y E. x (a /\ b)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="sylbir.html">sylbir</a></td>
+          <td><pre>E. x (a /\ A. y b) -&gt; A. y E. x (a /\ b)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>
+  </div>
+</body>
+</html>

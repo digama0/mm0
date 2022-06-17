@@ -17,28 +17,29 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">consne0</a>
-      <span class="nav"><a href="conseq2.html" title="conseq2">&#8810;</a> | <a href="../index.html#consne0">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5108">src</a> | <a href="ltconsid1.html" title="ltconsid1">&#8811;</a></span>
+      <span class="nav"><a href="conseq2.html" title="conseq2">&#8810;</a> | <a href="../index.html#consne0">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5463">src</a> | <a href="ltconsid1.html" title="ltconsid1">&#8811;</a></span>
     </h1>
     <pre>theorem consne0 (a b: nat): $ a : b != 0 $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-conv">
+        <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a></td>
-          <td><i>conv</i> <a class="def" href="../index.html#cons">cons</a></td>
-          <td><pre>a : b != 0</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
           <td></td>
           <td><a class="ax" href="peano1.html">peano1</a></td>
-          <td><pre>suc (a &lt;&gt; b) != 0</pre></td>
+          <td><pre>suc (a, b) != 0</pre></td>
+        </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#cons">cons</a></td>
+          <td><pre>a : b != 0</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="peano1.html">peano1</a>
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>)</span>
   </div>
 </body>
 </html>

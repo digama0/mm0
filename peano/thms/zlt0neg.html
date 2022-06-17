@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">zlt0neg</a>
-      <span class="nav"><a href="zltsubadd.html" title="zltsubadd">&#8810;</a> | <a href="../index.html#zlt0neg">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3831">src</a> | <a href="zltneg0.html" title="zltneg0">&#8811;</a></span>
+      <span class="nav"><a href="zltsubadd.html" title="zltsubadd">&#8810;</a> | <a href="../index.html#zlt0neg">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4152">src</a> | <a href="zltneg0.html" title="zltneg0">&#8811;</a></span>
     </h1>
     <pre>theorem zlt0neg (a: nat): $ 0 <Z -uZ a <-> a <Z 0 $;</pre>
     <table class="proof">
@@ -25,31 +25,31 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>0 &lt;Z -uZ a &lt;-&gt; a &lt;Z 0</pre></td>
+          <td></td>
+          <td><a class="thm" href="oddeq.html">oddeq</a></td>
+          <td><pre>0 -Z -uZ a = a -Z 0 -&gt; (odd (0 -Z -uZ a) &lt;-&gt; odd (a -Z 0))</pre></td>
         </tr>
         <tr id="2" class="step-conv">
           <td>2</td>
-          <td><a href="#3">3</a></td>
+          <td><a href="#1">1</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#zlt">zlt</a></td>
           <td><pre>0 -Z -uZ a = a -Z 0 -&gt; (0 &lt;Z -uZ a &lt;-&gt; a &lt;Z 0)</pre></td>
         </tr>
         <tr id="3" class="step-thm">
           <td>3</td>
           <td></td>
-          <td><a class="thm" href="oddeq.html">oddeq</a></td>
-          <td><pre>0 -Z -uZ a = a -Z 0 -&gt; (odd (0 -Z -uZ a) &lt;-&gt; odd (a -Z 0))</pre></td>
+          <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
+          <td><pre>0 -Z -uZ a = -uZ -uZ a -&gt; a -Z 0 = -uZ -uZ a -&gt; 0 -Z -uZ a = a -Z 0</pre></td>
         </tr>
         <tr id="4" class="step-thm">
           <td>4</td>
-          <td><a href="#5">5</a>, <a href="#8">8</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>0 -Z -uZ a = a -Z 0</pre></td>
+          <td></td>
+          <td><a class="thm" href="zsub01.html">zsub01</a></td>
+          <td><pre>0 -Z -uZ a = -uZ -uZ a</pre></td>
         </tr>
         <tr id="5" class="step-thm">
           <td>5</td>
-          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
           <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
           <td><pre>a -Z 0 = -uZ -uZ a -&gt; 0 -Z -uZ a = a -Z 0</pre></td>
         </tr>
@@ -57,73 +57,78 @@
           <td>6</td>
           <td></td>
           <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
-          <td><pre>0 -Z -uZ a = -uZ -uZ a -&gt; a -Z 0 = -uZ -uZ a -&gt; 0 -Z -uZ a = a -Z 0</pre></td>
+          <td><pre>a -Z 0 = a -&gt; -uZ -uZ a = a -&gt; a -Z 0 = -uZ -uZ a</pre></td>
         </tr>
         <tr id="7" class="step-thm">
           <td>7</td>
           <td></td>
-          <td><a class="thm" href="zsub01.html">zsub01</a></td>
-          <td><pre>0 -Z -uZ a = -uZ -uZ a</pre></td>
-        </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td><a href="#9">9</a>, <a href="#12">12</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a -Z 0 = -uZ -uZ a</pre></td>
-        </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
-          <td><a href="#10">10</a>, <a href="#11">11</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>-uZ -uZ a = a -&gt; a -Z 0 = -uZ -uZ a</pre></td>
-        </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td></td>
-          <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
-          <td><pre>a -Z 0 = a -&gt; -uZ -uZ a = a -&gt; a -Z 0 = -uZ -uZ a</pre></td>
-        </tr>
-        <tr id="11" class="step-thm">
-          <td>11</td>
-          <td></td>
           <td><a class="thm" href="zsub02.html">zsub02</a></td>
           <td><pre>a -Z 0 = a</pre></td>
         </tr>
-        <tr id="12" class="step-thm">
-          <td>12</td>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>-uZ -uZ a = a -&gt; a -Z 0 = -uZ -uZ a</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
           <td></td>
           <td><a class="thm" href="znegneg.html">znegneg</a></td>
           <td><pre>-uZ -uZ a = a</pre></td>
         </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a -Z 0 = -uZ -uZ a</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#5">5</a>, <a href="#10">10</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 -Z -uZ a = a -Z 0</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#2">2</a>, <a href="#11">11</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 &lt;Z -uZ a &lt;-&gt; a &lt;Z 0</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="elab.html">elab</a>,
-    <a class="ax" href="ax_8.html">ax_8</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="theid.html">theid</a>,
-    <a class="ax" href="the0.html">the0</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Sets and elements">axs_set</span><span class="axm">
+     (<a class="ax" href="elab.html">elab</a>,
+      <a class="ax" href="ax_8.html">ax_8</a>)</span>,
+    <span class="axs" title="Definite description">axs_the</span><span class="axm">
+     (<a class="ax" href="theid.html">theid</a>,
+      <a class="ax" href="the0.html">the0</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

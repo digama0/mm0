@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">b1le</a>
-      <span class="nav"><a href="b0le.html" title="b0le">&#8810;</a> | <a href="../index.html#b1le">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2782">src</a> | <a href="b0lt.html" title="b0lt">&#8811;</a></span>
+      <span class="nav"><a href="b0le.html" title="b0le">&#8810;</a> | <a href="../index.html#b1le">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3034">src</a> | <a href="b0lt.html" title="b0lt">&#8811;</a></span>
     </h1>
     <pre>theorem b1le (a b: nat): $ a <= b <-> b1 a <= b1 b $;</pre>
     <table class="proof">
@@ -25,65 +25,68 @@
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr id="1" class="step-thm">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#5">5</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a &lt;= b &lt;-&gt; b1 a &lt;= b1 b</pre></td>
-        </tr>
-        <tr id="2" class="step-thm">
-          <td>2</td>
-          <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(b0 a &lt;= b0 b &lt;-&gt; b1 a &lt;= b1 b) -&gt; (a &lt;= b &lt;-&gt; b1 a &lt;= b1 b)</pre></td>
-        </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
           <td></td>
           <td><a class="thm" href="bitr.html">bitr</a></td>
           <td><pre>(a &lt;= b &lt;-&gt; b0 a &lt;= b0 b) -&gt; (b0 a &lt;= b0 b &lt;-&gt; b1 a &lt;= b1 b) -&gt; (a &lt;= b &lt;-&gt; b1 a &lt;= b1 b)</pre></td>
         </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
           <td><a class="thm" href="b0le.html">b0le</a></td>
           <td><pre>a &lt;= b &lt;-&gt; b0 a &lt;= b0 b</pre></td>
         </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(b0 a &lt;= b0 b &lt;-&gt; b1 a &lt;= b1 b) -&gt; (a &lt;= b &lt;-&gt; b1 a &lt;= b1 b)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="lesuc.html">lesuc</a></td>
+          <td><pre>b0 a &lt;= b0 b &lt;-&gt; suc (b0 a) &lt;= suc (b0 b)</pre></td>
+        </tr>
         <tr id="5" class="step-conv">
           <td>5</td>
-          <td><a href="#6">6</a></td>
+          <td><a href="#4">4</a></td>
           <td><i>conv</i> <a class="def" href="../index.html#b1">b1</a></td>
           <td><pre>b0 a &lt;= b0 b &lt;-&gt; b1 a &lt;= b1 b</pre></td>
         </tr>
         <tr id="6" class="step-thm">
           <td>6</td>
-          <td></td>
-          <td><a class="thm" href="lesuc.html">lesuc</a></td>
-          <td><pre>b0 a &lt;= b0 b &lt;-&gt; suc (b0 a) &lt;= suc (b0 b)</pre></td>
+          <td><a href="#3">3</a>, <a href="#5">5</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a &lt;= b &lt;-&gt; b1 a &lt;= b1 b</pre></td>
         </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>,
-    <a class="ax" href="itru.html">itru</a>,
-    <a class="ax" href="ax_gen.html">ax_gen</a>,
-    <a class="ax" href="ax_4.html">ax_4</a>,
-    <a class="ax" href="ax_5.html">ax_5</a>,
-    <a class="ax" href="ax_6.html">ax_6</a>,
-    <a class="ax" href="ax_7.html">ax_7</a>,
-    <a class="ax" href="ax_10.html">ax_10</a>,
-    <a class="ax" href="ax_11.html">ax_11</a>,
-    <a class="ax" href="ax_12.html">ax_12</a>,
-    <a class="ax" href="peano1.html">peano1</a>,
-    <a class="ax" href="peano2.html">peano2</a>,
-    <a class="ax" href="peano5.html">peano5</a>,
-    <a class="ax" href="addeq.html">addeq</a>,
-    <a class="ax" href="muleq.html">muleq</a>,
-    <a class="ax" href="add0.html">add0</a>,
-    <a class="ax" href="addS.html">addS</a>,
-    <a class="ax" href="mul0.html">mul0</a>,
-    <a class="ax" href="mulS.html">mulS</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>,
+      <a class="ax" href="itru.html">itru</a>)</span>,
+    <span class="axs" title="Predicate calculus">axs_pred_calc</span><span class="axm">
+     (<a class="ax" href="ax_gen.html">ax_gen</a>,
+      <a class="ax" href="ax_4.html">ax_4</a>,
+      <a class="ax" href="ax_5.html">ax_5</a>,
+      <a class="ax" href="ax_6.html">ax_6</a>,
+      <a class="ax" href="ax_7.html">ax_7</a>,
+      <a class="ax" href="ax_10.html">ax_10</a>,
+      <a class="ax" href="ax_11.html">ax_11</a>,
+      <a class="ax" href="ax_12.html">ax_12</a>)</span>,
+    <span class="axs" title="Peano arithmetic">axs_peano</span><span class="axm">
+     (<a class="ax" href="peano1.html">peano1</a>,
+      <a class="ax" href="peano2.html">peano2</a>,
+      <a class="ax" href="peano5.html">peano5</a>,
+      <a class="ax" href="addeq.html">addeq</a>,
+      <a class="ax" href="muleq.html">muleq</a>,
+      <a class="ax" href="add0.html">add0</a>,
+      <a class="ax" href="addS.html">addS</a>,
+      <a class="ax" href="mul0.html">mul0</a>,
+      <a class="ax" href="mulS.html">mulS</a>)</span>
   </div>
 </body>
 </html>

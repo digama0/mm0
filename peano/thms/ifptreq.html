@@ -17,7 +17,7 @@
   <div class="body">
     <h1 class="title">
       Theorem <a class="thm" href="">ifptreq</a>
-      <span class="nav"><a href="ifpeq2a.html" title="ifpeq2a">&#8810;</a> | <a href="../index.html#ifptreq">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L707-L710">src</a> | <a href="ifppos2.html" title="ifppos2">&#8811;</a></span>
+      <span class="nav"><a href="ifpeq3a.html" title="ifpeq3a">&#8810;</a> | <a href="../index.html#ifptreq">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L769-L772">src</a> | <a href="ifppos2.html" title="ifppos2">&#8811;</a></span>
     </h1>
     <pre>theorem ifptreq (G a p p0 p1 q0 q1: wff):
   $ G -> (p <-> ifp a p0 p1) $ >
@@ -27,79 +27,80 @@
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
-        <tr id="1" class="step-thm">
+        <tr id="1" class="step-hyp">
           <td>1</td>
-          <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a class="thm" href="bitrd.html">bitrd</a></td>
-          <td><pre>G -&gt; (p &lt;-&gt; ifp a q0 q1)</pre></td>
-        </tr>
-        <tr id="2" class="step-hyp">
-          <td>2</td>
           <td></td>
           <td><i>hyp h</i></td>
           <td><pre>G -&gt; (p &lt;-&gt; ifp a p0 p1)</pre></td>
         </tr>
-        <tr id="3" class="step-thm">
-          <td>3</td>
-          <td><a href="#4">4</a>, <a href="#8">8</a></td>
-          <td><a class="thm" href="bitrd.html">bitrd</a></td>
-          <td><pre>G -&gt; (ifp a p0 p1 &lt;-&gt; ifp a q0 q1)</pre></td>
-        </tr>
-        <tr id="4" class="step-thm">
-          <td>4</td>
-          <td><a href="#5">5</a>, <a href="#6">6</a></td>
-          <td><a class="thm" href="syl.html">syl</a></td>
-          <td><pre>G -&gt; (ifp a p0 p1 &lt;-&gt; ifp a q0 p1)</pre></td>
-        </tr>
-        <tr id="5" class="step-thm">
-          <td>5</td>
+        <tr id="2" class="step-thm">
+          <td>2</td>
           <td></td>
-          <td><a class="thm" href="ifpeq1a.html">ifpeq1a</a></td>
+          <td><a class="thm" href="ifpeq2a.html">ifpeq2a</a></td>
           <td><pre>(a -&gt; (p0 &lt;-&gt; q0)) -&gt; (ifp a p0 p1 &lt;-&gt; ifp a q0 p1)</pre></td>
         </tr>
-        <tr id="6" class="step-thm">
-          <td>6</td>
-          <td><a href="#7">7</a></td>
-          <td><a class="thm" href="exp.html">exp</a></td>
-          <td><pre>G -&gt; a -&gt; (p0 &lt;-&gt; q0)</pre></td>
-        </tr>
-        <tr id="7" class="step-hyp">
-          <td>7</td>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
           <td></td>
           <td><i>hyp h0</i></td>
           <td><pre>G /\ a -&gt; (p0 &lt;-&gt; q0)</pre></td>
         </tr>
-        <tr id="8" class="step-thm">
-          <td>8</td>
-          <td><a href="#9">9</a>, <a href="#10">10</a></td>
-          <td><a class="thm" href="syl.html">syl</a></td>
-          <td><pre>G -&gt; (ifp a q0 p1 &lt;-&gt; ifp a q0 q1)</pre></td>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>G -&gt; a -&gt; (p0 &lt;-&gt; q0)</pre></td>
         </tr>
-        <tr id="9" class="step-thm">
-          <td>9</td>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>G -&gt; (ifp a p0 p1 &lt;-&gt; ifp a q0 p1)</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
           <td></td>
-          <td><a class="thm" href="ifpeq2a.html">ifpeq2a</a></td>
+          <td><a class="thm" href="ifpeq3a.html">ifpeq3a</a></td>
           <td><pre>(~a -&gt; (p1 &lt;-&gt; q1)) -&gt; (ifp a q0 p1 &lt;-&gt; ifp a q0 q1)</pre></td>
         </tr>
-        <tr id="10" class="step-thm">
-          <td>10</td>
-          <td><a href="#11">11</a></td>
-          <td><a class="thm" href="exp.html">exp</a></td>
-          <td><pre>G -&gt; ~a -&gt; (p1 &lt;-&gt; q1)</pre></td>
-        </tr>
-        <tr id="11" class="step-hyp">
-          <td>11</td>
+        <tr id="7" class="step-hyp">
+          <td>7</td>
           <td></td>
           <td><i>hyp h1</i></td>
           <td><pre>G /\ ~a -&gt; (p1 &lt;-&gt; q1)</pre></td>
         </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>G -&gt; ~a -&gt; (p1 &lt;-&gt; q1)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>G -&gt; (ifp a q0 p1 &lt;-&gt; ifp a q0 q1)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#5">5</a>, <a href="#9">9</a></td>
+          <td><a class="thm" href="bitrd.html">bitrd</a></td>
+          <td><pre>G -&gt; (ifp a p0 p1 &lt;-&gt; ifp a q0 q1)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#1">1</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="bitrd.html">bitrd</a></td>
+          <td><pre>G -&gt; (p &lt;-&gt; ifp a q0 q1)</pre></td>
+        </tr>
       </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a class="ax" href="ax_1.html">ax_1</a>,
-    <a class="ax" href="ax_2.html">ax_2</a>,
-    <a class="ax" href="ax_3.html">ax_3</a>,
-    <a class="ax" href="ax_mp.html">ax_mp</a>
+    <span class="axs" title="Propositional calculus">axs_prop_calc</span><span class="axm">
+     (<a class="ax" href="ax_1.html">ax_1</a>,
+      <a class="ax" href="ax_2.html">ax_2</a>,
+      <a class="ax" href="ax_3.html">ax_3</a>,
+      <a class="ax" href="ax_mp.html">ax_mp</a>)</span>
   </div>
 </body>
 </html>
