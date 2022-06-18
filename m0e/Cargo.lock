@@ -485,7 +485,6 @@ dependencies = [
  "console_error_panic_hook",
  "crossbeam",
  "debug_derive",
- "either",
  "futures",
  "if_chain",
  "itertools",
