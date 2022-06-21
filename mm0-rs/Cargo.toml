@@ -22,7 +22,7 @@ doc = ["lsp-types", "pulldown-cmark", "webbrowser"]
 memory = [
   "mm0_deepsize", "mm0_deepsize_derive/nodummy",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
-wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
+wasm = ["console_error_panic_hook", "web-sys"]
 mmc = ["mmcc", "im"]
 
 [profile.release]
@@ -74,9 +74,9 @@ webbrowser = { version = "0.7", optional = true }
 
 # For "wasm" feature
 console_error_panic_hook = { version = "0.1", optional = true }
-wasm-bindgen = { version = "0.2", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
   "console", "Window", "Document", "HtmlElement"] }
+instant = { version = "0.1", features = ["stdweb", "wasm-bindgen"] }
 
 # For "mmc" feature
 mmcc = { path = "components/mmcc", optional = true }
@@ -88,6 +88,9 @@ procinfo = "0.4"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 memmap = "0.7"
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = ["memmap"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [[bin]]
 name = "mm0-rs"

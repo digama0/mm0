@@ -8,6 +8,7 @@ const examples = path.resolve(dist, "examples");
 
 module.exports = {
   mode: "production",
+  // mode: "development",
   entry: {
     index: "./src/index.js"
   },
@@ -16,7 +17,7 @@ module.exports = {
     filename: "[name].js"
   },
   devServer: {
-    contentBase: dist,
+    static: dist,
   },
   module: {
     rules: [{
@@ -32,6 +33,11 @@ module.exports = {
       test: /\.wasm$/,
       type: 'webassembly/sync',
     }]
+  },
+  performance: {
+    hints: false,
+    maxEntrypointSize: 5000000,
+    maxAssetSize: 5000000
   },
   experiments: {
     syncWebAssembly: true

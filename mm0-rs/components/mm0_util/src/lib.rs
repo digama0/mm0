@@ -218,10 +218,12 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
 /// Extension trait for [`Condvar`](std::sync::Condvar).
 pub trait CondvarExt {
   /// Like `wait`, but propagates instead of catches panics.
+  #[cfg(not(target_arch = "wasm32"))]
   fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T>;
 }
 
 impl CondvarExt for std::sync::Condvar {
+  #[cfg(not(target_arch = "wasm32"))]
   fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T> {
     self.wait(g).expect("propagating poisoned mutex")
   }
@@ -495,7 +497,11 @@ pub struct Range {
 /// A [`PathBuf`] lazily initialized to a canonicalized "."
 static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> =
   once_cell::sync::Lazy::new(|| {
-    std::fs::canonicalize(".").expect("failed to find current directory")
+    #[cfg(target_arch = "wasm32")]
+    let buf = PathBuf::from(".");
+    #[cfg(not(target_arch = "wasm32"))]
+    let buf = std::fs::canonicalize(".").expect("failed to find current directory");
+    buf
   });
 
 /// Given a [`PathBuf`] 'buf', constructs a relative path from [`CURRENT_DIR`]
@@ -505,7 +511,7 @@ static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> =
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
-#[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
+#[cfg(feature = "lined_string")]
 fn make_relative(buf: &std::path::Path) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR)
     .as_deref()
@@ -536,15 +542,14 @@ pub struct FileRef(Arc<FileRefInner>);
 
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
-  #[cfg(target_arch = "wasm32")]
-  fn from(_: PathBuf) -> FileRef { todo!() }
-
-  #[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
   fn from(path: PathBuf) -> FileRef {
+    let rel = make_relative(&path);
     FileRef(Arc::new(FileRefInner {
-      rel: make_relative(&path),
-      #[cfg(feature = "server")]
+      #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
       url: lsp_types::Url::from_file_path(&path).ok(),
+      #[cfg(all(target_arch = "wasm32", feature = "server"))]
+      url: lsp_types::Url::parse(&format!("wasm:/{rel}")).ok(),
+      rel,
       path,
     }))
   }
@@ -552,12 +557,11 @@ impl From<PathBuf> for FileRef {
 
 #[cfg(feature = "server")]
 impl From<lsp_types::Url> for FileRef {
-  #[cfg(target_arch = "wasm32")]
-  fn from(_: lsp_types::Url) -> FileRef { todo!() }
-
-  #[cfg(not(target_arch = "wasm32"))]
   fn from(url: lsp_types::Url) -> FileRef {
+    #[cfg(not(target_arch = "wasm32"))]
     let path = url.to_file_path().expect("bad URL");
+    #[cfg(target_arch = "wasm32")]
+    let path = PathBuf::from(url.path());
     let rel = make_relative(&path);
     FileRef(Arc::new(FileRefInner { path, rel, url: Some(url) }))
   }
@@ -572,7 +576,7 @@ impl FileRef {
   #[must_use]
   pub fn rel(&self) -> &str { &self.0.rel }
 
-  /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
+  /// Convert this [`FileRef`] to a `file://` URL, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use]
   pub fn url(&self) -> &lsp_types::Url { self.0.url.as_ref().expect("bad file location") }

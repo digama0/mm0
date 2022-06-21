@@ -8,7 +8,8 @@ use std::collections::{hash_map::Entry, HashMap};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use instant::Instant;
 use num::{BigInt, Signed, ToPrimitive, Zero};
 use crate::{ast::SExpr, ArcString, AtomData, AtomId, BoxError, DeclKey, ElabError,
   Elaborator, Environment, ErrorLevel, FileRef, FileSpan, LispData,

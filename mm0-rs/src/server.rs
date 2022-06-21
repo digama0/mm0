@@ -5,10 +5,9 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{VecDeque, HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
 use std::thread::{ThreadId, self};
-use std::time::Instant;
+use instant::Instant;
 use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
-use futures::executor::ThreadPool;
 use futures::lock::Mutex as FMutex;
 use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
   Request, RequestId, Response, ResponseError};
@@ -32,8 +31,9 @@ use crate::elab::{ElabResult, ElaborateBuilder, GoalListener,
   lisp::{print::FormatEnv, pretty::Pretty, Syntax, LispKind, Proc, BuiltinProc},
   spans::Spans};
 
+/// The error type returned by server functions.
 #[derive(Debug)]
-struct ServerError(BoxError);
+pub struct ServerError(BoxError);
 
 type Result<T, E = ServerError> = std::result::Result<T, E>;
 
@@ -101,7 +101,9 @@ impl std::fmt::Display for MemoryData {
 type LogMessage = (Instant, ThreadId, MemoryData, String);
 
 static LOGGER: Lazy<(Mutex<Vec<LogMessage>>, Condvar)> = Lazy::new(Default::default);
-static SERVER: Lazy<Server> = Lazy::new(|| Server::new().expect("Initialization failed"));
+
+/// The global server singleton.
+pub static SERVER: Lazy<Server> = Lazy::new(|| Server::new().expect("Initialization failed"));
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
@@ -113,6 +115,7 @@ pub(crate) fn log(s: String) {
 struct Logger(std::thread::JoinHandle<()>, Arc<AtomicBool>);
 
 impl Logger {
+  #[cfg(not(target_arch = "wasm32"))]
   fn start() -> Self {
     let cancel: Arc<AtomicBool> = Arc::default();
     let cancel2 = cancel.clone();
@@ -378,14 +381,22 @@ enum FileCache {
   }
 }
 
+/// A virtual file represents a (possibly) open editor containing (possibly)
+/// edited text associated to a file in a virtual file hierarchy.
+/// `import` statements are relative paths in this hierarchy, and it may
+/// map to the actual file system, to URLs, or to relative paths in memory.
 #[derive(DeepSizeOf)]
-struct VirtualFile {
+pub struct VirtualFile {
   /// File data, saved (true) or unsaved (false)
   text: Mutex<(Option<i32>, FileContents)>,
   /// File parse
   parsed: FMutex<Option<FileCache>>,
   /// Files that depend on this one
   downstream: Mutex<HashSet<FileRef>>,
+}
+
+impl std::fmt::Debug for VirtualFile {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "VirtualFile".fmt(f) }
 }
 
 impl VirtualFile {
@@ -398,8 +409,14 @@ impl VirtualFile {
   }
 }
 
+/// The VFS or "virtual file system" manages the currently open MM1 files and
+/// their relations to other files.
 #[derive(DeepSizeOf)]
-struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
+pub struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
+
+impl std::fmt::Debug for Vfs {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "Vfs".fmt(f) }
+}
 
 impl Vfs {
   fn get(&self, path: &FileRef) -> Option<Arc<VirtualFile>> {
@@ -428,7 +445,8 @@ impl Vfs {
     self.0.ulock()[file].text.ulock().1.ascii().clone()
   }
 
-  fn open_virt(&self, path: FileRef, version: i32, text: String) -> Arc<VirtualFile> {
+  /// Open a new file at `path`, with initial `version` and `text` contents.
+  pub fn open_virt(&self, path: FileRef, version: i32, text: String) -> Arc<VirtualFile> {
     let file = Arc::new(VirtualFile::new(Some(version), FileContents::new(text)));
     let out;
     let mut vfs = self.0.ulock();
@@ -452,7 +470,27 @@ impl Vfs {
     out
   }
 
-  fn close(&self, path: &FileRef) -> Result<()> {
+  /// Change the contents of the file `path` according to `f`.
+  /// Note that the file is locked for reading or editing while `f` runs.
+  pub fn update(&self,
+    path: FileRef, version: i32, f: impl FnOnce(&LinedString) -> (Position, LinedString)
+  ) -> Result<()> {
+    let start = {
+      let file = self.get(&path).ok_or("changed nonexistent file")?;
+      let (version_ref, text) = &mut *file.text.ulock();
+      *version_ref = Some(version);
+      let (start, s) = f(text.ascii());
+      *text = FileContents::Ascii(Arc::new(s));
+      start
+    };
+    if SERVER.options.ulock().elab_on.unwrap_or_default() == ElabOn::Change {
+      Job::Elaborate(path, ElabReason::Change(start)).spawn();
+    }
+    Ok(())
+  }
+
+  /// Close the file `path`.
+  pub fn close(&self, path: &FileRef) -> Result<()> {
     let mut g = self.0.ulock();
     if let Entry::Occupied(e) = g.entry(path.clone()) {
       if e.get().downstream.ulock().is_empty() {
@@ -1432,18 +1470,41 @@ async fn semantic_tokens(
   Ok(Some(SemanticTokens { result_id: None, data }))
 }
 
-struct Server {
-  conn: Connection,
+#[cfg(not(target_arch = "wasm32"))]
+use futures::executor::ThreadPool;
+
+#[cfg(target_arch = "wasm32")]
+struct ThreadPool;
+
+#[cfg(target_arch = "wasm32")]
+impl ThreadPool {
+  fn new() -> Result<Self> { Ok(Self) }
+  fn spawn_ok(&self, future: impl std::future::Future<Output = ()> + Send + 'static) {
+    futures::executor::block_on(future)
+  }
+}
+
+/// The main server state, accessible through the `SERVER` singleton.
+pub struct Server {
+  /// The connection, which contains a receiver end for messages from the client
+  /// which is polled in `run`, and a sender end for sending responses.
+  /// In WASM mode, the receiver end is actually the "client's" side of the sender end,
+  /// because we do not use channels for sending requests from the client to server.
+  pub conn: Connection,
   #[allow(unused)]
   caps: Mutex<ClientCapabilities>,
   reqs: OpenRequests,
-  vfs: Vfs,
+  /// The virtual file system.
+  pub vfs: Vfs,
   pool: ThreadPool,
   #[allow(clippy::type_complexity)]
   threads: Arc<(Mutex<VecDeque<(Job, Arc<AtomicBool>)>>, Condvar)>,
   options: Mutex<ServerOptions>,
 }
 
+impl std::fmt::Debug for Server {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { "Server".fmt(f) }
+}
 
 /// Options for [`Server`]; for example, whether to apply changes and
 /// elaborate on change or save.
@@ -1666,8 +1727,9 @@ fn send_config_request() -> Result<()> {
 }
 
 impl Server {
-  fn new() -> Result<Server> {
-    let (conn, _iot) = Connection::stdio();
+  #[cfg(not(target_arch = "wasm32"))]
+  fn initialize() -> Result<(Connection, ClientCapabilities)> {
+    let conn = Connection::stdio().0;
     let params = from_value(conn.initialize(
       to_value(ServerCapabilities {
         text_document_sync: Some(
@@ -1697,8 +1759,27 @@ impl Server {
         ..Default::default()
       })?
     )?)?;
+    Ok((conn, ClientCapabilities::new(params)))
+  }
+
+  #[cfg(target_arch = "wasm32")]
+  fn initialize() -> Result<(Connection, ClientCapabilities)> {
+    let (cli, serv) = Connection::memory();
+    // in wasm mode we only use the channel for serv -> cli messages
+    let conn = Connection { sender: serv.sender, receiver: cli.receiver };
+    // skip the initial handshake
+    let caps = ClientCapabilities {
+      reg_id: None,
+      definition_location_links: true,
+      goal_view: false,
+    };
+    Ok((conn, caps))
+  }
+
+  fn new() -> Result<Server> {
+    let (conn, caps) = Self::initialize()?;
     Ok(Server {
-      caps: Mutex::new(ClientCapabilities::new(params)),
+      caps: Mutex::new(caps),
       conn,
       reqs: Mutex::new(HashMap::new()),
       vfs: Vfs(Mutex::new(HashMap::new())),
@@ -1712,6 +1793,7 @@ impl Server {
     self.options.ulock().elab_on
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   fn run(&self) {
     let logger = Logger::start();
     drop(self.caps.ulock().register());
@@ -1772,17 +1854,7 @@ impl Server {
                 if !content_changes.is_empty() {
                   let path = doc.uri.into();
                   log!("change {:?}", path);
-                  let start = {
-                    let file = vfs.get(&path).ok_or("changed nonexistent file")?;
-                    let (version, text) = &mut *file.text.ulock();
-                    *version = Some(doc.version);
-                    let (start, s) = text.ascii().apply_changes(content_changes.into_iter());
-                    *text = FileContents::Ascii(Arc::new(s));
-                    start
-                  };
-                  if options.ulock().elab_on.unwrap_or_default() == ElabOn::Change {
-                    Job::Elaborate(path, ElabReason::Change(start)).spawn();
-                  }
+                  vfs.update(path, doc.version, |s| s.apply_changes(content_changes.into_iter()))?;
                 }
               }
               DidCloseTextDocument::METHOD => {
@@ -1861,6 +1933,7 @@ impl Args {
   ///
   /// [LSP]: https://microsoft.github.io/language-server-protocol/
   /// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
+  #[cfg(not(target_arch = "wasm32"))]
   pub fn main(self) {
     if self.debug {
       use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};

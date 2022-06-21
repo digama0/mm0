@@ -203,6 +203,7 @@ pub enum Ir {
 }
 
 // make sure that `Ir` doesn't get too big
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
 const _: [(); 40] = [(); std::mem::size_of::<Ir>()];
 
 impl Ir {
