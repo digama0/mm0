@@ -1201,7 +1201,6 @@ impl<'a> ProcProver<'a> {
     clob: ProofId,
     rel: bool,
   ) -> ProofId {
-    app_match!(self.thm, let (mkArgs args mctx_a) = args);
     if !abi.args.is_empty() || !abi.rets.is_empty() { todo!() }
     let l1 = tctx.1;
     let l2 = tctx.1;
