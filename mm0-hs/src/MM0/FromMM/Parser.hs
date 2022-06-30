@@ -341,8 +341,10 @@ parseJ (t : ss) = case T.unpack t of
     parseJString (c : s') f ss' = parseJString s' (f . (c :)) ss'
   s -> case P.readP_to_S L.lex s of -- TODO: better parser
     [(L.EOF, _)] -> parseJ ss
-    [(L.Ident x, s')] -> JKeyword (T.pack x) (parseJ (T.pack s' : ss))
     [(L.Punc ";", s')] -> JSemi (parseJ (T.pack s' : ss))
+    [(L.Ident x, s')] -> JKeyword (T.pack x) (parseJ (T.pack s' : ss))
+    [(L.Punc x, s')] -> JKeyword (T.pack x) (parseJ (T.pack s' : ss))
+    [(L.Symbol x, s')] -> JKeyword (T.pack x) (parseJ (T.pack s' : ss))
     _ -> JError ("parse failed \"" ++ s ++ "\"" ++ T.unpack (head ss))
 
 getManyJ :: String -> JComment -> ([T.Text] -> FromMMM ()) -> FromMMM ()
