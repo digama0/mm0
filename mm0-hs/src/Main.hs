@@ -15,6 +15,7 @@ main = getArgs >>= \case
   "show-bundled" : rest -> showBundled rest
   "from-mm" : rest -> fromMM rest
   "to-hol" : rest -> toHolIO rest
+  "to-lisp" : rest -> toLispIO rest
   "to-othy" : rest -> toOpenTheory rest
   "to-lean" : rest -> toLean rest
   "server" : rest -> server rest
@@ -25,6 +26,7 @@ main = getArgs >>= \case
     "  mm0-hs show-bundled MM-FILE\n" ++
     "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU/MMB-FILE]\n" ++
     "  mm0-hs to-hol MMU-FILE [-o HOL-FILE]\n" ++
+    "  mm0-hs to-lisp MMU-FILE [-o LISP-FILE]\n" ++
     "  mm0-hs to-othy MMU-FILE [-o ART-FILE]\n" ++
     "  mm0-hs to-lean MMU-FILE [-o LEAN-FILE]\n" ++
     "  mm0-hs server [--debug]\n" ++

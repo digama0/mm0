@@ -102,7 +102,7 @@ data HProof =
   -- In MM0 xs and ys are the same. The saved value is accessible via HHyp
   | HForget Term HProofLam
   -- ^ Given a proof of !xs. |- ph, where ph does not depend on xs,
-  -- produce a proof of |- ph.
+  -- produce a proof of |- ph. The provided term is ph.
   -- Requires that the sort not be free (i.e. is inhabited)
   | HConv HConv HProof
   -- ^ Proof by conversion (definitional equality).
