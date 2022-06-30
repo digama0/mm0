@@ -32,7 +32,7 @@ instance ToLisp SLam where
 instance ToLisp Term where
   toLisp (LVar v) = toLisp v
   toLisp (RVar v []) = toLisp v
-  toLisp (RVar v xs) = ('(' :) . toLisp v . flip (foldr (\x -> (' ' :) . toLisp x)) xs . ("))" ++)
+  toLisp (RVar v xs) = ('(' :) . toLisp v . flip (foldr (\x -> (' ' :) . toLisp x)) xs . (')' :)
   toLisp (HApp t [] []) = toLisp t
   toLisp (HApp t es xs) = ('(' :) . toLisp t .
     flip (foldr (\e -> (' ' :) . toLisp e)) es .
