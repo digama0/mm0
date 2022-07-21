@@ -235,11 +235,11 @@ impl CondvarExt for std::sync::Condvar {
 pub struct ArcString(pub Arc<[u8]>);
 
 impl Borrow<[u8]> for ArcString {
-  fn borrow(&self) -> &[u8] { &*self.0 }
+  fn borrow(&self) -> &[u8] { &self.0 }
 }
 impl Deref for ArcString {
   type Target = [u8];
-  fn deref(&self) -> &[u8] { &*self.0 }
+  fn deref(&self) -> &[u8] { &self.0 }
 }
 impl ArcString {
   /// Constructs a new [`ArcString`].

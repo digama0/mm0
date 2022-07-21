@@ -3841,7 +3841,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           labels: Box::new([(&[], variant)]),
           value: AgreeExpr::Set(Err(span)),
           has_jump: false,
-          ret: has_break.then(|| self.common.t_unit),
+          ret: has_break.then_some(self.common.t_unit),
           dcs: vec![],
         });
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);

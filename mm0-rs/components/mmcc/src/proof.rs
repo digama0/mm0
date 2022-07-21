@@ -416,7 +416,7 @@ impl<'a> VBlock<'a> {
   pub fn visit(&self, v: &mut impl classify::Visitor<'a>) {
     let funcs = &self.ctx.code.func_abi;
     let (abi_args, abi_rets) = match self.ctx.id.map(|id| &funcs[id]) {
-      Some(func) => (&*func.args, func.reach.then(|| &*func.rets)),
+      Some(func) => (&*func.args, func.reach.then_some(&*func.rets)),
       None => (&[][..], None)
     };
     let (mut iter, term) = self.ctx.proc.trace.iter(self.id, self.insts());
@@ -672,7 +672,7 @@ impl<'a> BlockProof<'a> {
     } else {
       let funcs = &self.ctx.code.func_abi;
       let abi_rets = self.ctx.id.map(|id| &funcs[id])
-        .and_then(|func| func.reach.then(|| &*func.rets));
+        .and_then(|func| func.reach.then_some(&*func.rets));
       let mut iter = classify::TraceIter::GHOST;
       let bl = self.block();
       for stmt in &bl.stmts {
