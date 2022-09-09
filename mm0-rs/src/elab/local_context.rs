@@ -419,7 +419,8 @@ impl<'a> ElabTermMut<'a> {
     self.spans_insert(&t, || ObjectKind::Term(false, tid));
     let mut tdata = &self.env.terms[tid];
     if self.check_vis && tdata.vis.contains(Modifiers::LOCAL) {
-      let msg = format!("using private definition '{}' in a public context", self.env.data[a].name);
+      let msg = format!("{}: using private definition '{}' in a public context",
+        self.env.data[self.spans.decl()].name, self.env.data[a].name);
       self.report(ElabError::warn(sp1, msg));
       tdata = &self.env.terms[tid];
     }
@@ -581,6 +582,11 @@ impl Elaborator {
         match self.lc.var(y, sp) {
           (_, InferSort::Unknown {dummy, must_bound, ..}) =>
             {*dummy = false; *must_bound = true}
+          (_, InferSort::Reg {..}) => {
+            self.report(ElabError::new_e(sp,
+              "regular variables cannot depend on other regular variables"));
+            *error = true;
+          }
           (true, InferSort::Bound {..}) => {
             self.report(ElabError::new_e(sp,
               "regular variables cannot depend on dummy variables"));
