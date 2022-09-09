@@ -330,7 +330,7 @@ impl VCode {
         block_map: self.block_map,
         blocks: IdxVec::from(vec![]),
         block_addr: IdxVec::from(vec![0]),
-        block_params: [[]].into_iter().collect(),
+        block_params: std::iter::once([]).collect(),
         trace: self.trace,
         stack_size: stack_size_no_ret,
         saved_regs: vec![],

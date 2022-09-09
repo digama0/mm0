@@ -1514,8 +1514,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       Some((JoinBlock(self.dominated_block(base_ctx), (gen, muts.clone())), None))
     } else { None };
 
-    self.cur_block().stmts.push(Statement::LabelGroup([base_bl].into_iter().collect(), base_ctx));
-    self.tree.push_group([base_bl].into_iter().collect());
+    self.cur_block().stmts.push(
+      Statement::LabelGroup(std::iter::once(base_bl).collect(), base_ctx));
+    self.tree.push_group(std::iter::once(base_bl).collect());
     self.tree.push(base_bl);
     self.cur_block().terminate(Terminator::Jump(base_bl, Box::new([]), None));
     self.cur_block = base_bl;

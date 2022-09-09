@@ -462,7 +462,7 @@ impl<'a> ElabTermMut<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) if self.lc.vars.contains_key(&a) => self.atom(e, a, tgt),
       &LispKind::Atom(a) if self.env.term(a).is_some() =>
-        self.list(e, Some(e.clone()).into_iter(), tgt),
+        self.list(e, std::iter::once(e.clone()), tgt),
       &LispKind::Atom(a) => self.atom(e, a, tgt),
       LispKind::List(_) | LispKind::DottedList(_, _) if e.is_list() => match e.len() {
         0 => self.other(e, tgt),
@@ -625,7 +625,7 @@ impl Elaborator {
         let dummy = lk == LocalKind::Dummy;
         InferBinder::Var(x, (dummy, InferSort::Unknown {
           src, must_bound: lk.is_bound(), dummy,
-          sorts: Box::new(Some((VarContext::Unknown, mv)).into_iter().collect())
+          sorts: Box::new(std::iter::once((VarContext::Unknown, mv)).collect())
         }))
       },
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
@@ -1303,7 +1303,7 @@ impl Elaborator {
           Some(de.add(ProofKind::Proof, p, ProofHash::Hyp(i, j)))
         }).collect();
         if proof.is_proc() {
-          lc.set_goals(Some(LispVal::goal(fsp, e_ret)).into_iter());
+          lc.set_goals(std::iter::once(LispVal::goal(fsp, e_ret)));
           let lc = Box::new(mem::replace(&mut self.lc, lc));
           return Ok(Err((Box::new(AwaitingProof {thm, de, var_map, lc, is}), proof)))
         }

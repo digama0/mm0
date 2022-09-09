@@ -875,8 +875,8 @@ impl PartialEq<LispKind> for LispKind {
           match (it1.next(), it2.next()) {
             (None, None) => break r1 == r2,
             (Some(e1), Some(e2)) => if e1 != e2 {break false},
-            (Some(e), None) => break r2.eq_list(Some(e).into_iter().chain(it1)),
-            (None, Some(e)) => break r1.eq_list(Some(e).into_iter().chain(it2)),
+            (Some(e), None) => break r2.eq_list(std::iter::once(e).chain(it1)),
+            (None, Some(e)) => break r1.eq_list(std::iter::once(e).chain(it2)),
           }
         }
       }

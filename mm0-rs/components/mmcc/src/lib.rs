@@ -338,7 +338,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]);
+    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]).unwrap();
     println!("code = {:#?}", code);
     // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
     let mut out = Vec::new();
@@ -370,27 +370,27 @@ mod test {
     let [x1, x2] = [(); 2].map(|_| {
       let x = fresh_var.fresh();
       cfg[bl1].stmts.push(Statement::Let(
-        LetKind::Let(x, None), true,
+        LetKind::Let(Spanned::dummy(x), None), true,
         Rc::new(TyKind::Int(u8)),
         Constant::int(u8, 2.into()).into()));
       x
     });
     let sum = fresh_var.fresh();
     cfg[bl1].stmts.push(Statement::Let(
-      LetKind::Let(sum, None), true,
+      LetKind::Let(Spanned::dummy(sum), None), true,
       Rc::new(TyKind::Int(u8)),
       RValue::Binop(Binop::Add(u8),
         Operand::Copy(Place::local(x1)),
         Operand::Copy(Place::local(x2)))));
     let eq = fresh_var.fresh();
     cfg[bl1].stmts.push(Statement::Let(
-      LetKind::Let(eq, None), true,
+      LetKind::Let(Spanned::dummy(eq), None), true,
       Rc::new(TyKind::Bool),
       RValue::Binop(Binop::Eq(u8),
         Operand::Copy(Place::local(sum)),
         Constant::int(u8, 4.into()).into())));
     let y = fresh_var.fresh();
-    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, y, true, (None,
+    let bl2ctx = cfg.ctxs.extend(CtxId::ROOT, Spanned::dummy(y), true, (None,
       Rc::new(TyKind::Pure(Rc::new(ExprKind::Var(eq))))));
     let bl2 = cfg.new_block(bl2ctx, 0);
     cfg[bl1].terminate(Terminator::Assert(eq.into(), y, bl2));
@@ -401,7 +401,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]);
+    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]).unwrap();
     // println!("code = {:#?}", code);
     // code.write_elf(&mut File::create("two_plus_two_ir").unwrap());
     let mut out = Vec::new();
@@ -448,7 +448,7 @@ mod test {
       },
     });
     compiler.add(&main, Default::default(), ()).unwrap();
-    let code = compiler.finish();
+    let code = compiler.finish().unwrap();
     // println!("code = {:#?}", code);
     // code.write_elf(&mut File::create("two_plus_two").unwrap());
     let mut out = Vec::new();
@@ -573,7 +573,7 @@ mod test {
         },
       }),
       Default::default(), ()).unwrap();
-    let code = compiler.finish();
+    let code = compiler.finish().unwrap();
     // println!("code = {:#?}", code);
     // code.write_elf(&mut File::create("hello_world").unwrap());
     let mut out = Vec::new();

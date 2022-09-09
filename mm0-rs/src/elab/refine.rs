@@ -635,26 +635,26 @@ impl Elaborator {
     LispVal::apply_conv(self.unify(sp, &tgt, e), tgt, p)
   }
 
-  /// Return true if `e` contains an occurrence of the metavariable `mv`.
-  /// We use this before assigning `mv := e` to ensure acyclicity.
-  fn occurs(&mut self, mv: &LispVal, e: &LispVal) -> bool {
-    match &**e {
-      LispKind::Annot(_, e) => self.occurs(mv, e),
-      LispKind::Ref(m) => mv.ptr_eq(e) || m.get(|e2| self.occurs(mv, e2)),
-      LispKind::List(es) => es.iter().any(|e| self.occurs(mv, e)),
-      LispKind::DottedList(es, r) =>
-        es.iter().any(|e| self.occurs(mv, e)) && self.occurs(mv, r),
-      _ => false,
-    }
-  }
-
   /// Assign metavariable `mv` to `e` (or fail). `m` is the underlying reference of `mv`.
   /// If `sym` is false then this is the result of `mv =?= e`, otherwise it
   /// is `e =?= mv`; currently we don't use this information.
   fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> Result<(), AssignError> {
+    /// Return true if `e` contains an occurrence of the metavariable `mv`.
+    /// We use this before assigning `mv := e` to ensure acyclicity.
+    fn occurs(mv: &LispVal, e: &LispVal) -> bool {
+      match &**e {
+        LispKind::Annot(_, e) => occurs(mv, e),
+        LispKind::Ref(m) => mv.ptr_eq(e) || m.get(|e2| occurs(mv, e2)),
+        LispKind::List(es) => es.iter().any(|e| occurs(mv, e)),
+        LispKind::DottedList(es, r) =>
+          es.iter().any(|e| occurs(mv, e)) && occurs(mv, r),
+        _ => false,
+      }
+    }
+
     let e = &e.as_mvar(|e2, _| e2.clone()).unwrap_or_else(|| e.clone());
     if mv.ptr_eq(e) {return Ok(())}
-    if self.occurs(mv, e) {
+    if occurs(mv, e) {
       Err(AssignError::Cyclic)
     } else {
       if let Some(InferTarget::Bound(_)) = mv.mvar_target() {
