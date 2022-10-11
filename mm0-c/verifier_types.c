@@ -194,6 +194,7 @@ typedef struct {
 typedef struct {
   u32 termid;
   u8 rassoc;
+  u8 pad[3];
 } infix_info;
 
 typedef struct {
@@ -201,6 +202,7 @@ typedef struct {
   u32 infix;
   u16 prec;
   u8 prec_set;
+  u8 pad;
 } token_info;
 
 // For simplicity, we rely on paging for the input,

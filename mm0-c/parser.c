@@ -12,7 +12,7 @@ void debug_print_input() {}
 #else
 
 #define PARSER_ALLOC(val, size) ({ \
-  ENSURE("parser store overflow", g_parser_arena_size + (size) <= PARSER_ARENA_SIZE); \
+  ENSURE("parser store overflow", g_parser_arena_size + (size)/4 <= PARSER_ARENA_SIZE); \
   u32 p = g_parser_arena_size; \
   *(typeof(val)*)&g_parser_arena[p] = val; \
   g_parser_arena_size += (size)/4; \
