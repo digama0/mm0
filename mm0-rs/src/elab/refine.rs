@@ -204,8 +204,8 @@ impl EnvDisplay for RStack {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       RStack::Goals { g, gs, es, ret_val } => write!(f,
-        "Goals {{g: {}, gs: {}, es: {}, ret_val: {}}}",
-        fe.to(g), fe.to(gs.as_slice()), fe.to(es.as_slice()), ret_val),
+        "Goals {{g: {}, gs: {}, es: {}, ret_val: {ret_val}}}",
+        fe.to(g), fe.to(gs.as_slice()), fe.to(es.as_slice())),
       RStack::DeferGoals(es) => write!(f,
         "DeferGoals {{es: {}}}", fe.to(es.as_slice())),
       RStack::Coerce { tgt, u } => write!(f,
@@ -219,8 +219,8 @@ impl EnvDisplay for RStack {
         "RefineApp {{\n  tgt: {},\n  {} {} -> {}}}",
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
       RStack::RefineBis { tgt, im, t, u, args, .. } => write!(f,
-        "RefineBis {{\n  tgt: {},\n  im: {:?},\n  {} {} -> {}}}",
-        fe.to(tgt), im, fe.to(t), fe.to(u), fe.to(args)),
+        "RefineBis {{\n  tgt: {},\n  im: {im:?},\n  {} {} -> {}}}",
+        fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
       RStack::RefineHyps { tgt, t, u, args, hyps, res, .. } => write!(f,
         "RefineHyps {{\n  tgt: {},\n  {} {} -> {},\n  hyps: {},\n  res: {}}}",
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args), fe.to(hyps.as_slice()), fe.to(res)),
@@ -393,8 +393,8 @@ impl EnvDisplay for RState {
         "RefineArgs {{\n  tgt: {},\n  ty: {},\n  p: {},\n  u: {}}}",
         fe.to(tgt), fe.to(ty), fe.to(p), fe.to(u)),
       RState::RefineBis {tgt, im, t, u, args, ..} => write!(f,
-        "RefineBis {{\n  tgt: {},\n  im: {:?},\n  {} {} -> {}}}",
-        fe.to(tgt), im, fe.to(t), fe.to(u), fe.to(args)),
+        "RefineBis {{\n  tgt: {},\n  im: {im:?},\n  {} {} -> {}}}",
+        fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
       RState::RefineHyps {tgt, t, u, args, hyps, res, ..} => write!(f,
         "RefineHyps {{\n  tgt: {},\n  {} {} -> {},\n  hyps: {},\n  res: {}}}",
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args), fe.to(hyps.as_slice()), fe.to(res)),
@@ -686,7 +686,7 @@ impl Elaborator {
   /// `u: e1 = e2`, with `#undef` meaning that `e1` and `e2` are equal after unification.
   fn unify1(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {
     self.unify_core(e1, e2).map_err(|e| self.format_env().pretty(|p|
-      format!("{}\n{}", p.unify_err(e1, e2).pretty(80), e)))
+      format!("{}\n{e}", p.unify_err(e1, e2).pretty(80))))
   }
 
   /// Unify expressions `e1` and `e2`. Returns a conversion proof
@@ -754,9 +754,12 @@ impl Elaborator {
           }}
 
           match (&tdata1.kind, &tdata2.kind) {
-            (_, TermKind::Def(_)) if t1 < t2 => self.unfold(true, t2, &u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
-            (TermKind::Def(_), _) => self.unfold(false, t1, &u1, e2).map_err(|e| format!("{}\n{}", s!(), e)),
-            (_, TermKind::Def(_)) => self.unfold(true, t2, &u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
+            (_, TermKind::Def(_)) if t1 < t2 =>
+              self.unfold(true, t2, &u2, e1).map_err(|e| format!("{}\n{e}", s!())),
+            (TermKind::Def(_), _) =>
+              self.unfold(false, t1, &u1, e2).map_err(|e| format!("{}\n{e}", s!())),
+            (_, TermKind::Def(_)) =>
+              self.unfold(true, t2, &u2, e1).map_err(|e| format!("{}\n{e}", s!())),
             _ => Err(s!())
           }
         }

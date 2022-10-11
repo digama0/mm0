@@ -126,7 +126,7 @@ impl Logger {
         std::mem::swap(messages, &mut LOGGER.1.uwait(LOGGER.0.ulock()));
         for (i, id, mem, s) in messages.drain(..) {
           let d = i.saturating_duration_since(now).as_millis();
-          let msg = format!("[{:?}: {:?}ms{}] {}", id, d, mem, s);
+          let msg = format!("[{id:?}: {d:?}ms{mem}] {s}");
           log_message(msg).expect("send failed");
           now = i;
         }
@@ -251,7 +251,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         .map(|pos| {
           GoalListener::new(move |elab: &crate::elab::Elaborator, stat| {
             if elab.spans.stmt().contains(&pos) {
-              log(format!("\n{}", stat));
+              log(format!("\n{stat}"));
             }
           })
         }),
@@ -297,10 +297,10 @@ async fn elaborate(path: FileRef, start: Option<Position>,
 
       send_diagnostics(path.url().clone(), version, errs)?;
 
-      let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-      if n_warns != 0 { write!(log_msg, ", {} warnings", n_warns).expect("impossible") }
-      if n_infos != 0 { write!(log_msg, ", {} infos", n_infos).expect("impossible") }
-      if n_hints != 0 { write!(log_msg, ", {} hints", n_hints).expect("impossible") }
+      let mut log_msg = format!("diagged {path:?}, {n_errs} errors");
+      if n_warns != 0 { write!(log_msg, ", {n_warns} warnings").expect("impossible") }
+      if n_infos != 0 { write!(log_msg, ", {n_infos} infos").expect("impossible") }
+      if n_hints != 0 { write!(log_msg, ", {n_hints} hints").expect("impossible") }
       if SERVER.options.ulock().log_errors.unwrap_or(true) {
         for e in &errors {
           let Position {line, character: col} = source.ascii().to_pos(e.pos.start);
@@ -344,7 +344,7 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
     std::panic::AssertUnwindSafe(elaborate(path, start, cancel, Default::default()))
       .catch_unwind().await
       .unwrap_or_else(|_| Err("server panic".into())) {
-    log_message(format!("{:?}", e)).expect("failed to send");
+    log_message(format!("{e:?}")).expect("failed to send");
   }
 }
 
@@ -748,7 +748,7 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
   let text = file.text.ulock().1.ascii().clone();
   let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
   let env = or!(Ok(None), env.into_response_error()?).1;
   // Safety: This is actually unsafe, but the issue is unlikely to come up in practice.
   // We are promising here to not Rc::clone the data, but we do below,
@@ -762,7 +762,7 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
     if let Some((r, doc)) = (|| Some(match k {
       &ObjectKind::Sort(_, s) => {
         let sd = &env.sorts[s];
-        ((sp, mk_mm0(format!("{}", sd))), sd.doc.clone())
+        ((sp, mk_mm0(format!("{sd}"))), sd.doc.clone())
       }
       &ObjectKind::Term(_, t) => {
         let td = &env.terms[t];
@@ -916,7 +916,7 @@ async fn definition<T>(path: FileRef, pos: Position,
   };
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
   let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(env.find(idx));
   let mut res = vec![];
@@ -994,7 +994,7 @@ async fn document_symbol(path: FileRef) -> Result<Option<DocumentSymbolResponse>
     (contents.ascii().clone(), frozen)
   } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
     match env.into_response_error()? {
       None => return Ok(None),
       Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
@@ -1022,7 +1022,7 @@ async fn document_symbol(path: FileRef) -> Result<Option<DocumentSymbolResponse>
         let ad = &env.data()[a];
         let s = ad.sort().expect("env well formed");
         let sd = env.sort(s);
-        push!(sd.span, ad.name(), format!("{}", sd), sd.full, SymbolKind::CLASS)
+        push!(sd.span, ad.name(), format!("{sd}"), sd.full, SymbolKind::CLASS)
       }
       StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
@@ -1095,7 +1095,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   match tk {
     TraceKind::Sort => ad.sort().map(|s| {
       let sd = &fe.sorts[s];
-      done!(format!("{}", sd), CompletionItemKind::CLASS, sd.doc)
+      done!(format!("{sd}"), CompletionItemKind::CLASS, sd.doc)
     }),
     TraceKind::Decl => ad.decl().map(|dk| match dk {
       DeclKey::Term(t) => {
@@ -1141,7 +1141,7 @@ async fn completion(path: FileRef, _pos: Position) -> Result<Option<CompletionRe
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let (text, env) = if let Some(old) = try_old(&file) { old } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
     match env.into_response_error()? {
       None => return Ok(None),
       Some((_, env)) => (file.text.ulock().1.clone(), env)
@@ -1182,7 +1182,7 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
     })
   };
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
-    response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
+    response_err(ErrorCode::InvalidRequest, format!("bad JSON {e:?}")))?;
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
@@ -1193,7 +1193,7 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
   } else {
     let text = file.text.ulock().1.ascii().clone();
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?
       .into_response_error()?
       .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
     (text, env)
@@ -1232,7 +1232,7 @@ async fn references<T>(
   };
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
   let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(env.find(idx));
 
@@ -1308,7 +1308,7 @@ async fn prepare_rename(path: FileRef, pos: Position) -> Result<Option<PrepareRe
   let text = file.text.ulock().1.ascii().clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
   let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(Spans::find(env.spans(), idx));
   for &(sp, ref k) in spans.find_pos(idx) {
@@ -1379,7 +1379,7 @@ async fn semantic_tokens(
     (contents.ascii().clone(), frozen)
   } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
     match env.into_response_error()? {
       None => return Ok(None),
       Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
@@ -1610,12 +1610,12 @@ enum Job {
 impl std::fmt::Display for Job {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Job::RequestHandler(id, _) => write!(f, "handle request {}", id),
-      Job::Elaborate(path, ElabReason::Open) => write!(f, "elaborate {} on open", path),
-      Job::Elaborate(path, ElabReason::Save) => write!(f, "elaborate {} on save", path),
-      Job::Elaborate(path, ElabReason::Change(_)) => write!(f, "elaborate {} on change", path),
-      Job::ElaborateDep(from, to, _) => write!(f, "elaborate {} needed for {}", from, to),
-      Job::DepChange(from, to, reason) => write!(f, "elaborate {} for {} {}", to, from, reason),
+      Job::RequestHandler(id, _) => write!(f, "handle request {id}"),
+      Job::Elaborate(path, ElabReason::Open) => write!(f, "elaborate {path} on open"),
+      Job::Elaborate(path, ElabReason::Save) => write!(f, "elaborate {path} on save"),
+      Job::Elaborate(path, ElabReason::Change(_)) => write!(f, "elaborate {path} on change"),
+      Job::ElaborateDep(from, to, _) => write!(f, "elaborate {from} needed for {to}"),
+      Job::DepChange(from, to, reason) => write!(f, "elaborate {to} for {from} {reason}"),
     }
   }
 }
@@ -1645,7 +1645,7 @@ impl Job {
         let id = id.clone();
         self.spawn_core(cancel.clone(), async {
           RequestHandler {id, cancel}.handle(*req).await
-            .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
+            .unwrap_or_else(|e| eprintln!("Request failed: {e:?}"))
         });
       }
       Job::Elaborate(path, reason) => {
@@ -1803,7 +1803,7 @@ impl Server {
     let get_config_id = lsp_server::RequestId::from(String::from("get_config"));
     // Request the user's initial configuration on startup.
     if let Err(e) = send_config_request() {
-      eprintln!("Server panicked: {:?}", e);
+      eprintln!("Server panicked: {e:?}");
     }
 
     loop {
@@ -1880,7 +1880,7 @@ impl Server {
       })() {
         Ok(true) => break,
         Ok(false) => {},
-        Err(e) => eprintln!("Server panicked: {:?}", e)
+        Err(e) => eprintln!("Server panicked: {e:?}")
       }
     }
     logger.stop();

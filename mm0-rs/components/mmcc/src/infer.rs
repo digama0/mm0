@@ -94,9 +94,9 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TypeError<'a> {
       TypeError::ExpectedType => write!(f, "Can't infer type, try inserting a type ascription"),
       TypeError::UninferredType => write!(f, "Can't infer type"),
       TypeError::UninferredExpr => write!(f, "Can't infer expression"),
-      TypeError::FieldMissing(t, name) => write!(f, "Struct\n  {}\ndoes not have field '{}'",
-        p!(t), name),
-      TypeError::NumArgs(want, got) => write!(f, "expected {} arguments, got {}", want, got),
+      TypeError::FieldMissing(t, name) => write!(f, "Struct\n  {}\ndoes not have field '{name}'",
+        p!(t)),
+      TypeError::NumArgs(want, got) => write!(f, "expected {want} arguments, got {got}"),
       TypeError::UnsupportedAs(t1, t2) => write!(f,
         "{} as {} conversion not supported", p!(t1), p!(t2)),
       TypeError::UnsupportedAssign => write!(f, "Cannot assign to this lvalue"),
@@ -1132,9 +1132,9 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
     if name == Symbol::UNDER {
       write!(f, "_{}", n+1)
     } else if n == 0 {
-      write!(f, "{}", name)
+      write!(f, "{name}")
     } else {
-      write!(f, "{}_{}", name, n)
+      write!(f, "{name}_{n}")
     }
   }
 
@@ -1167,7 +1167,7 @@ impl<'a, C: Config, I: ItemContext<C>> DisplayCtx<'a> for PrintCtx<'a, '_, '_, C
     }
     let mut s = alphanumber(inner.ty_mvars.get(v));
     s.make_ascii_uppercase();
-    write!(f, "?{}", s)
+    write!(f, "?{s}")
   }
 
   fn fmt_lambda(&self, v: LambdaId, subst: &[Expr<'a>], f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -4485,7 +4485,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             Entry::Occupied(mut e) => {
               assert!(
                 matches!(e.get(), Entity::Global(Spanned {k: GlobalTc::ForwardDeclared, ..})),
-                "global {} declared twice", name);
+                "global {name} declared twice");
               e.insert(item);
             }
             Entry::Vacant(e) => { e.insert(item); }
@@ -4518,7 +4518,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             Entry::Occupied(mut e) => {
               assert!(
                 matches!(e.get(), Entity::Const(Spanned {k: ConstTc::ForwardDeclared, ..})),
-                "const {} declared twice", name);
+                "const {name} declared twice");
               e.insert(item);
             }
             Entry::Vacant(e) => { e.insert(item); }

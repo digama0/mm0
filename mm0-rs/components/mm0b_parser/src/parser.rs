@@ -497,49 +497,44 @@ const HEADER_CAVEAT: &str = "\
 
 impl std::fmt::Display for ParseError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use crate::cmd::{MM0B_MAGIC, MM0B_VERSION};
     match self {
       ParseError::BadProofLen(start) =>
-        write!(f, "proof starting at byte {} has an incorrect length", start),
+        write!(f, "proof starting at byte {start} has an incorrect length"),
       ParseError::StmtCmdConv(cmd) =>
-        write!(f, "bad StmtCmd conversion (`TryFrom`); cmd was {}", cmd),
+        write!(f, "bad StmtCmd conversion (`TryFrom`); cmd was {cmd}"),
       ParseError::ProofCmdConv(cmd, data) =>
-        write!(f, "bad ProofCmd conversion (`TryFrom`). data: ({}, {})", cmd, data),
+        write!(f, "bad ProofCmd conversion (`TryFrom`). data: ({cmd}, {data})"),
       ParseError::UnifyCmdConv(cmd, data) =>
-        write!(f, "bad UnifyCmd conversion (`TryFrom`). data: ({}, {})", cmd, data),
+        write!(f, "bad UnifyCmd conversion (`TryFrom`). data: ({cmd}, {data})"),
 
-      ParseError::Trace(file, line, inner) => write!(f, "trace {} : {} -> {}", file, line, inner),
+      ParseError::Trace(file, line, inner) => write!(f, "trace {file} : {line} -> {inner}"),
       ParseError::Exhausted(file, line) =>
-        write!(f, "mmb parser was prematurely exhausted at {} : {}", file, line),
+        write!(f, "mmb parser was prematurely exhausted at {file} : {line}"),
       ParseError::BadSorts(range) => write!(
         f,
         "Failed to parse list of sorts in MMB file. \
-        According to the header, `sorts` should inhabit {:?}. {}",
-        range, HEADER_CAVEAT
+        According to the header, `sorts` should inhabit {range:?}. {HEADER_CAVEAT}"
       ),
       ParseError::BadTerms(range) => write!(
         f,
         "Failed to parse list of terms in MMB file. \
-        According to the header, `terms` should inhabit {:?}. {}",
-        range, HEADER_CAVEAT
+        According to the header, `terms` should inhabit {range:?}. {HEADER_CAVEAT}"
       ),
       ParseError::BadThms(range) => write!(
         f,
         "Failed to parse list of thms in MMB file. \
-        According to the header, `thms` should inhabit {:?}. {}",
-        range, HEADER_CAVEAT
+        According to the header, `thms` should inhabit {range:?}. {HEADER_CAVEAT}"
       ),
       ParseError::BadProofs(range) => write!(
         f,
         "Failed to parse list of proofs in MMB file. \
-        According to the header, `proofs` should inhabit {:?}. {}",
-        range, HEADER_CAVEAT
+        According to the header, `proofs` should inhabit {range:?}. {HEADER_CAVEAT}"
       ),
       ParseError::BadMagic { parsed_magic } => write!(
         f,
         "Bad header; unable to find MMB magic number at expected location \
-        (MMB magic number is {:?} ('MM0B' in bytes), found {:?})",
-        crate::cmd::MM0B_MAGIC,
-        parsed_magic
+        (MMB magic number is {MM0B_MAGIC:?} ('MM0B' in bytes), found {parsed_magic:?})"
       ),
       ParseError::Unaligned => write!(f, "The MMB file is not 8-byte aligned."),
       // This should be broken up into more specific errors.
@@ -550,28 +545,26 @@ impl std::fmt::Display for ParseError {
       ),
       ParseError::IncompleteHeader { file_len } => write!(
         f,
-        "Received an mmb file with length {} bytes. \
-        This is too short to contain a header, and cannot be well-formed",
-        file_len
+        "Received an mmb file with length {file_len} bytes. \
+        This is too short to contain a header, and cannot be well-formed"
       ),
       ParseError::BadVersion { parsed_version } => write!(
         f,
-        "MMB version mismatch: File header specifies version {}, but verifier version is {}",
-        parsed_version,
-        crate::cmd::MM0B_VERSION
+        "MMB version mismatch: File header specifies version {parsed_version}, \
+        but verifier version is {MM0B_VERSION}"
       ),
       ParseError::BadIndexParse { p_index } => write!(
         f,
-        "MMB index is malformed. According to the header, it begins at byte {}. {}",
-        p_index, HEADER_CAVEAT
+        "MMB index is malformed. According to the header, it begins at byte {p_index}. \
+        {HEADER_CAVEAT}",
       ),
       ParseError::DuplicateIndexTable { p_index, id } => {
-        write!(f, "MMB index at {} contains a duplicate index entry for key = ", p_index)?;
+        write!(f, "MMB index at {p_index} contains a duplicate index entry for key = ")?;
         match std::str::from_utf8(id) {
-          Ok(s) => write!(f, "'{}'", s)?,
-          Err(_) => write!(f, "{:?}", id)?,
+          Ok(s) => write!(f, "'{s}'")?,
+          Err(_) => write!(f, "{id:?}")?,
         }
-        write!(f, ". {}", HEADER_CAVEAT)
+        write!(f, ". {HEADER_CAVEAT}")
       }
       ParseError::BadIndexLookup { p_index: None } => write!(
         f,
@@ -580,12 +573,11 @@ impl std::fmt::Display for ParseError {
       ),
       ParseError::BadIndexLookup { p_index: Some(b) } => write!(
         f,
-        "MMB index is malformed. According to the header, it begins at byte {}. {}",
-        b, HEADER_CAVEAT
+        "MMB index is malformed. According to the header, it begins at byte {b}. {HEADER_CAVEAT}"
       ),
       ParseError::SorryError => write!(f, "Proof uses 'sorry'."),
-      ParseError::StrError(s, _) => write!(f, "{}", s),
-      ParseError::IoError(e) => write!(f, "{}", e),
+      ParseError::StrError(s, _) => write!(f, "{s}"),
+      ParseError::IoError(e) => write!(f, "{e}"),
     }
   }
 }

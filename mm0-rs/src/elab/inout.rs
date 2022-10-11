@@ -155,7 +155,7 @@ impl Environment {
   #[allow(clippy::unnecessary_lazy_evaluations)] // see rust-clippy#6343
   fn check_sort(&self, s: &str) -> Result<SortId, String> {
     self.atoms.get(s.as_bytes()).and_then(|&a| self.data[a].sort)
-      .ok_or_else(|| format!("sort '{}' not found", s))
+      .ok_or_else(|| format!("sort '{s}' not found"))
   }
   fn new_sorts(&self) -> Result<Sorts, String> {
     Ok(Sorts {
@@ -169,11 +169,11 @@ impl Environment {
       args: &[SortId], ret: SortId, def: bool) -> Result<TermId, String> {
     let t = self.atoms.get(s.as_bytes())
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
-      .ok_or_else(|| format!("term '{}' not found", s))?;
+      .ok_or_else(|| format!("term '{s}' not found"))?;
     let td = &self.terms[t];
     match (def, &td.kind) {
-      (false, TermKind::Def(_)) => return Err(format!("def '{}' should be a term", s)),
-      (true, TermKind::Term) => return Err(format!("term '{}' should be a def", s)),
+      (false, TermKind::Def(_)) => return Err(format!("def '{s}' should be a term")),
+      (true, TermKind::Term) => return Err(format!("term '{s}' should be a def")),
       _ => {}
     }
     let ok = td.ret == (ret, 0) &&
@@ -181,7 +181,7 @@ impl Environment {
       td.args.iter().zip(args).all(|(&(_, ty), &arg)| ty == Type::Reg(arg, 0));
     if !ok {
       use std::fmt::Write;
-      let mut s = format!("term '{}' has incorrect type, expected: ", s);
+      let mut s = format!("term '{s}' has incorrect type, expected: ");
       for &i in args {
         write!(s, "{} > ", self.data[self.sorts[i].atom].name).unwrap();
       }
@@ -296,7 +296,7 @@ impl Environment {
       StringSegBuilder::make(|out|
         self.process_node(terms, &td.args, &expr.store, expr.head(), &refs, out))
     } else {
-      Err(format!("term '{}' should be a def", name))
+      Err(format!("term '{name}' should be a def"))
     }
   }
 
@@ -309,7 +309,7 @@ impl Environment {
     map.insert(self.check_term("sadd", &[s.str, s.str], s.str, false)?, SAdd);
     map.insert(self.check_term("ch", &[s.hex, s.hex], s.chr, false)?, Ch);
     for i in 0..16 {
-      map.insert(self.check_term(&format!("x{:x}", i), &[], s.hex, false)?, Hex(i));
+      map.insert(self.check_term(&format!("x{i:x}"), &[], s.hex, false)?, Hex(i));
     }
     if let Ok(t) = self.check_term("scons", &[s.chr, s.str], s.str, true) {
       if let Ok(ss) = self.process_def(&map, t, "scons") {

@@ -243,9 +243,9 @@ pub struct TuplePatternS<'a> {
 impl std::fmt::Debug for TuplePatternS<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.k {
-      TuplePatternKind::Name(name) => write!(f, "{:?}{{{}}}: {:?}", self.var, name, self.ty),
+      TuplePatternKind::Name(name) => write!(f, "{:?}{{{name}}}: {:?}", self.var, self.ty),
       TuplePatternKind::Tuple(..) => write!(f, "{:?}", self.k),
-      TuplePatternKind::Error(pat) => write!(f, "{:?} ??as {:?}", pat, self.ty),
+      TuplePatternKind::Error(pat) => write!(f, "{pat:?} ??as {:?}", self.ty),
     }
   }
 }
@@ -267,7 +267,7 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
-      TuplePatternKind::Name(name) => write!(f, "{}", name),
+      TuplePatternKind::Name(name) => write!(f, "{name}"),
       TuplePatternKind::Tuple(args, mk) => match mk {
         TupleMatchKind::Unit => write!(f, "()"),
         TupleMatchKind::True => write!(f, "itrue"),
@@ -279,7 +279,7 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
         TupleMatchKind::Array => write!(f, "[{:?}]", args.iter().format(", ")),
         TupleMatchKind::And => write!(f, "<{:?}>", args.iter().format(", ")),
       }
-      TuplePatternKind::Error(pat) => write!(f, "{:?} ??", pat),
+      TuplePatternKind::Error(pat) => write!(f, "{pat:?} ??"),
     }
   }
 }
@@ -732,7 +732,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for TyKind<'a> {
       TyKind::Uninit(ty) => write!(f, "(? {})", p!(ty)),
       TyKind::Pure(e) => e.fmt(ctx, f),
       TyKind::User(name, tys, es) => {
-        write!(f, "({}", name)?;
+        write!(f, "({name}")?;
         for &ty in tys { " ".fmt(f)?; ty.fmt(ctx, f)? }
         for &e in es { " ".fmt(f)?; e.fmt(ctx, f)? }
         ")".fmt(f)
@@ -752,41 +752,41 @@ impl std::fmt::Debug for TyKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
-      TyKind::Var(v) => write!(f, "{:?}", v),
+      TyKind::Var(v) => write!(f, "{v:?}"),
       TyKind::Unit => write!(f, "()"),
       TyKind::True => write!(f, "true"),
       TyKind::False => write!(f, "false"),
       TyKind::Bool => write!(f, "bool"),
-      TyKind::Int(ity) => write!(f, "{}", ity),
-      TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
-      TyKind::Own(ty) => write!(f, "own {:?}", ty),
-      TyKind::Shr(lft, ty) => write!(f, "&'{:?} {:?}", &lft, ty),
-      TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
-      TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
+      TyKind::Int(ity) => write!(f, "{ity}"),
+      TyKind::Array(ty, n) => write!(f, "[{ty:?}; {n:?}]"),
+      TyKind::Own(ty) => write!(f, "own {ty:?}"),
+      TyKind::Shr(lft, ty) => write!(f, "&'{lft:?} {ty:?}"),
+      TyKind::Ref(lft, ty) => write!(f, "ref '{lft:?} {ty:?})"),
+      TyKind::RefSn(x) => write!(f, "&sn {x:?}"),
       TyKind::List(tys) => write!(f, "[{:?}]", tys.iter().format(", ")),
-      TyKind::Sn(e, ty) => write!(f, "sn({:?}: {:?})", e, ty),
+      TyKind::Sn(e, ty) => write!(f, "sn({e:?}: {ty:?})"),
       TyKind::Struct(args) => write!(f, "[{:?}]", args.iter().format(", ")),
-      TyKind::All(a, pr) => write!(f, "A. {:?} {:?}", a, pr),
-      TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
-      TyKind::Wand(p, q) => write!(f, "({:?} -* {:?})", p, q),
-      TyKind::Not(pr) => write!(f, "~{:?}", pr),
+      TyKind::All(a, pr) => write!(f, "A. {a:?} {pr:?}"),
+      TyKind::Imp(p, q) => write!(f, "({p:?} -> {q:?})"),
+      TyKind::Wand(p, q) => write!(f, "({p:?} -* {q:?})"),
+      TyKind::Not(pr) => write!(f, "~{pr:?}"),
       TyKind::And(tys) => write!(f, "({:?})", tys.iter().format(" /\\ ")),
       TyKind::Or(tys) => write!(f, "({:?})", tys.iter().format(" \\/ ")),
       TyKind::If(cond, then, els) =>
-        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
-      TyKind::Ghost(ty) => write!(f, "ghost({:?})", ty),
-      TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
-      TyKind::Pure(e) => write!(f, "{:?}", e),
+        write!(f, "if {cond:?} {{ {then:?} }} else {{ {els:?} }}"),
+      TyKind::Ghost(ty) => write!(f, "ghost({ty:?})"),
+      TyKind::Uninit(ty) => write!(f, "Uninit({ty:?})"),
+      TyKind::Pure(e) => write!(f, "{e:?}"),
       TyKind::User(name, tys, es) => {
-        write!(f, "{}", name)?;
+        write!(f, "{name}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", es.iter().format(", "))
       }
-      TyKind::Heap(x, v, t) => write!(f, "({:?} => {:?}: {:?})", x, v, t),
-      TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
+      TyKind::Heap(x, v, t) => write!(f, "({x:?} => {v:?}: {t:?})"),
+      TyKind::HasTy(v, t) => write!(f, "[{v:?}: {t:?}]"),
       TyKind::Input => write!(f, "Input"),
       TyKind::Output => write!(f, "Output"),
-      TyKind::Moved(ty) => write!(f, "|{:?}|", ty),
+      TyKind::Moved(ty) => write!(f, "|{ty:?}|"),
       TyKind::Infer(v) => write!(f, "?T{:?}", v.0),
       TyKind::Error => write!(f, "??"),
     }
@@ -852,10 +852,10 @@ pub enum PlaceKind<'a> {
 impl std::fmt::Debug for PlaceKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      PlaceKind::Var(v) => write!(f, "{}", v),
-      PlaceKind::Index(arr, _, idx) => write!(f, "{:?}[{:?}]", arr, idx),
-      PlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
-      PlaceKind::Proj(e, _, j) => write!(f, "{:?}.{}", e, j),
+      PlaceKind::Var(v) => write!(f, "{v}"),
+      PlaceKind::Index(arr, _, idx) => write!(f, "{arr:?}[{idx:?}]"),
+      PlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{arr:?}[{idx:?}..+{len:?}]"),
+      PlaceKind::Proj(e, _, j) => write!(f, "{e:?}.{j}"),
       PlaceKind::Error => write!(f, "??"),
     }
   }
@@ -896,7 +896,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for PlaceKind<'a> {
       PlaceKind::Var(v) => ctx.fmt_var(v, f),
       PlaceKind::Index(a, _, i) => write!(f, "(index {} {})", p!(a), p!(i)),
       PlaceKind::Slice(a, _, [i, n]) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
-      PlaceKind::Proj(a, _, i) => write!(f, "({} . {})", p!(a), i),
+      PlaceKind::Proj(a, _, i) => write!(f, "({} . {i})", p!(a)),
       PlaceKind::Error => "??".fmt(f),
     }
   }
@@ -1089,25 +1089,25 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for ExprKind<'a> {
       // ExprKind::Global(v) => v.fmt(fe, f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),
-      ExprKind::Unop(Unop::As(ity), e) => write!(f, "{{{} as {}}}", p!(e), ity),
-      ExprKind::Unop(op, e) => write!(f, "({} {})", op, p!(e)),
-      ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", p!(e1), op, p!(e2)),
+      ExprKind::Unop(Unop::As(ity), e) => write!(f, "{{{} as {ity}}}", p!(e)),
+      ExprKind::Unop(op, e) => write!(f, "({op} {})", p!(e)),
+      ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {op} {}}}", p!(e1), p!(e2)),
       ExprKind::List(es) |
       ExprKind::Array(es) => write!(f, "(list {})", es.iter().map(|&e| p!(e)).format(" ")),
       ExprKind::Index(a, i) => write!(f, "(index {} {})", p!(a), p!(i)),
       ExprKind::Slice([a, i, n]) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
-      ExprKind::Proj(a, i) => write!(f, "({} . {})", p!(a), i),
+      ExprKind::Proj(a, i) => write!(f, "({} . {i})", p!(a)),
       ExprKind::UpdateIndex([a, i, val]) => write!(f,
         "(update-index {} {} {})", p!(a), p!(i), p!(val)),
       ExprKind::UpdateSlice([a, i, l, val]) => write!(f,
         "(update-slice {} {} {} {})", p!(a), p!(i), p!(l), p!(val)),
       ExprKind::UpdateProj(a, n, val) => write!(f,
-        "(update-proj {} {} {})", p!(a), n, p!(val)),
+        "(update-proj {} {n} {})", p!(a), p!(val)),
       ExprKind::Ref(e) => write!(f, "(& {})", p!(e)),
       ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", p!(ty)),
       ExprKind::Mm0(ref e) => e.fmt(ctx, f),
       ExprKind::Call {f: x, tys, args} => {
-        write!(f, "({}", x)?;
+        write!(f, "({x}")?;
         for &ty in tys { write!(f, " {}", p!(ty))? }
         for &arg in args { write!(f, " {}", p!(arg))? }
         ")".fmt(f)
@@ -1123,19 +1123,19 @@ impl std::fmt::Debug for ExprKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ExprKind::Unit => write!(f, "()"),
-      ExprKind::Var(v) => write!(f, "{:?}", v),
-      ExprKind::Const(c) => write!(f, "{}", c),
-      ExprKind::Bool(b) => write!(f, "{}", b),
-      ExprKind::Int(n) => write!(f, "{}", n),
-      ExprKind::Unop(op, e) => write!(f, "{} {:?}", op, e),
-      ExprKind::Binop(op, e1, e2) => write!(f, "({:?} {} {:?})", e1, op, e2),
-      ExprKind::Index(arr, idx) => write!(f, "{:?}[{:?}]", arr, idx),
-      ExprKind::Slice([arr, idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
-      ExprKind::Proj(e, j) => write!(f, "{:?}.{}", e, j),
-      ExprKind::UpdateIndex([a, i, val]) => write!(f, "({:?}[{:?}] .= {:?})", a, i, val),
+      ExprKind::Var(v) => write!(f, "{v:?}"),
+      ExprKind::Const(c) => write!(f, "{c}"),
+      ExprKind::Bool(b) => write!(f, "{b}"),
+      ExprKind::Int(n) => write!(f, "{n}"),
+      ExprKind::Unop(op, e) => write!(f, "{op} {e:?}"),
+      ExprKind::Binop(op, e1, e2) => write!(f, "({e1:?} {op} {e2:?})"),
+      ExprKind::Index(arr, idx) => write!(f, "{arr:?}[{idx:?}]"),
+      ExprKind::Slice([arr, idx, len]) => write!(f, "{arr:?}[{idx:?}..+{len:?}]"),
+      ExprKind::Proj(e, j) => write!(f, "{e:?}.{j}"),
+      ExprKind::UpdateIndex([a, i, val]) => write!(f, "({a:?}[{i:?}] .= {val:?})"),
       ExprKind::UpdateSlice([a, i, l, val]) =>
-        write!(f, "({:?}[{:?}..+{:?}] .= {:?})", a, i, l, val),
-      ExprKind::UpdateProj(a, n, val) => write!(f, "({:?}.{:?} .= {:?})", a, n, val),
+        write!(f, "({a:?}[{i:?}..+{l:?}] .= {val:?})"),
+      ExprKind::UpdateProj(a, n, val) => write!(f, "({a:?}.{n:?} .= {val:?})"),
       ExprKind::List(es) => {
         use itertools::Itertools;
         writeln!(f, "({:?})", es.iter().format(", "))
@@ -1144,30 +1144,30 @@ impl std::fmt::Debug for ExprKind<'_> {
         use itertools::Itertools;
         writeln!(f, "[{:?}]", es.iter().format(", "))
       }
-      ExprKind::Ref(e) => write!(f, "ref {:?}", e),
+      ExprKind::Ref(e) => write!(f, "ref {e:?}"),
       ExprKind::Mm0(e) => {
         write!(f, "{:?}", e.expr)?;
         if !e.subst.is_empty() {
           write!(f, "[")?;
           for e in e.subst {
-            write!(f, "{:?},", e)?;
+            write!(f, "{e:?},")?;
           }
           writeln!(f, "]")?;
         }
         Ok(())
       }
       ExprKind::Sizeof(ty) => {
-        write!(f, "sizeof({:?})", ty)
+        write!(f, "sizeof({ty:?})")
       }
       ExprKind::Call {f: func, tys, args} => {
         use itertools::Itertools;
-        write!(f, "{}", func)?;
+        write!(f, "{func}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", args.iter().format(", "))
       }
       ExprKind::If { cond, then, els } =>
-        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
-      ExprKind::Infer(v) => write!(f, "{:?}", v),
+        write!(f, "if {cond:?} {{ {then:?} }} else {{ {els:?} }}"),
+      ExprKind::Infer(v) => write!(f, "{v:?}"),
       ExprKind::Error => write!(f, "??"),
     }
   }

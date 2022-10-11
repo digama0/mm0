@@ -358,7 +358,7 @@ impl<'a, C> Parser<'a, C> {
 
   fn get_var(&mut self, sp: &FileSpan, name: Symbol) -> Result<VarId> {
     self.ba.get_var(name).ok_or_else(||
-      ElabError::new_e(sp, format!("unknown variable '{}'", name)))
+      ElabError::new_e(sp, format!("unknown variable '{name}'")))
   }
 
   fn parse_variant(&mut self, base: &FileSpan, e: &LispVal) -> Result<Option<Box<Variant>>> {
@@ -659,7 +659,7 @@ impl<'a, C> Parser<'a, C> {
         let name = self.as_symbol(a);
         if let Some(v) = self.ba.get_var(name) { ExprKind::Var(v) } else {
           return self.parse_call(span.clone(), span.clone(), name, vec![], None).map_err(|_|
-            ElabError::new_e(&span, format!("unknown variable '{}'", name))).map(ExprOrStmt::Expr)
+            ElabError::new_e(&span, format!("unknown variable '{name}'"))).map(ExprOrStmt::Expr)
         }
       }
       &LispKind::Bool(b) => ExprKind::Bool(b),
@@ -1326,9 +1326,9 @@ impl<'a, C> Parser<'a, C> {
         },
         Some(_) => return Err(ElabError::new_e(try_get_span(base, &head), "expected a type")),
         None if args.is_empty() => TypeKind::Var(self.ba.get_tyvar(name).ok_or_else(||
-          ElabError::new_e(&span, format!("unknown type variable '{}'", name)))?),
+          ElabError::new_e(&span, format!("unknown type variable '{name}'")))?),
         None => return Err(ElabError::new_e(try_get_span(base, &head),
-          format!("unknown type constructor '{}'", name))),
+          format!("unknown type constructor '{name}'"))),
       }
     } else {
       match self.as_keyword(&head) {
@@ -1370,9 +1370,9 @@ impl<'a, C> Parser<'a, C> {
       None => err!("unknown function '{}'", f),
       Some(Entity::Const(_)) => ExprKind::Const(f),
       Some(Entity::Global(_)) => return Err(ElabError::new_e(&span, format!(
-        "variable '{}' not found. \
-        A global with this name exists but must be imported into scope with\n  (global {0})\
-        \nin the function signature.", f))),
+        "variable '{f}' not found. \
+        A global with this name exists but must be imported into scope with\n  (global {f})\
+        \nin the function signature."))),
       Some(Entity::Prim(Prim {op: Some(prim), ..})) => match (prim, &*args) {
         (PrimOp::Add, _) => {let args = exprs!(args); return Ok(self.ba.mk_add(&span, args))}
         (PrimOp::And, _) => {let args = exprs!(args); return Ok(self.ba.mk_and(&span, args))}

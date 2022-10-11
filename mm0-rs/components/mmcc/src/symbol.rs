@@ -75,7 +75,7 @@ impl Display for Symbol {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.as_str().fmt(f) }
 }
 impl std::fmt::Debug for Symbol {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self) }
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{self}") }
 }
 
 /// Initialize a map from symbols to values of type `T`. Note that this will create an array the

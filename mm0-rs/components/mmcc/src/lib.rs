@@ -173,7 +173,7 @@ impl<C: Config> ItemContext<C> for () {
     for err in errs {
       writeln!(out, "at {:?}: {}", err.span, CtxPrint(pr, &err.k)).expect("impossible");
     }
-    panic!("type errors:\n{}", out)
+    panic!("type errors:\n{out}")
   }
 }
 
@@ -310,20 +310,20 @@ mod test {
       fn write_file(name: &str, data: &[u8]) -> io::Result<()> {
         File::create(name)?.write_all(data)
       }
-      drop(write_file(&format!("{}.expected", test_name), &hex::decode(result).unwrap()));
-      drop(write_file(&format!("{}.produced", test_name), data));
+      drop(write_file(&format!("{test_name}.expected"), &hex::decode(result).unwrap()));
+      drop(write_file(&format!("{test_name}.produced"), data));
       let mut msg = String::new();
       for (i, &c) in data.iter().enumerate() {
         use std::fmt::Write;
         if i % 16 == 0 { msg += "\\\n     " }
         if i % 2 == 0 { msg += " " }
-        write!(msg, "{:02x}", c).unwrap();
+        write!(msg, "{c:02x}").unwrap();
       }
       if data.len() % 16 == 0 { msg += "\\\n    " }
       panic!("Binary comparison failed.\n\
-        Outputs produced at {0}.expected and {0}.produced\n\
+        Outputs produced at {test_name}.expected and {test_name}.produced\n\
         To bless new test:\n\n    \
-        assert_eq_hex(\"{0}\", &out, \"{1}\");\n\n", test_name, msg);
+        assert_eq_hex(\"{test_name}\", &out, \"{msg}\");\n\n");
     }
   }
 
@@ -339,7 +339,7 @@ mod test {
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
     let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]).unwrap();
-    println!("code = {:#?}", code);
+    println!("code = {code:#?}");
     // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
     let mut out = Vec::new();
     code.write_elf(&mut out).unwrap();

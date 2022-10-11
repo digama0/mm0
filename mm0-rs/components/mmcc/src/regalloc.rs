@@ -125,10 +125,10 @@ impl std::fmt::Debug for PCode {
       let mut first = true;
       for (v, m) in &self.block_params[bl] {
         if !std::mem::take(&mut first) { write!(f, ", ")? }
-        write!(f, "{:?} @ {:?}", v, m)?;
+        write!(f, "{v:?} @ {m:?}")?;
       }
       writeln!(f, "):")?;
-      for inst in &self.insts[start..end] { writeln!(f, "    {:?};", inst)? }
+      for inst in &self.insts[start..end] { writeln!(f, "    {inst:?};")? }
     }
     Ok(())
   }

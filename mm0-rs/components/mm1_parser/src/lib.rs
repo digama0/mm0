@@ -148,7 +148,7 @@ type Result<T> = std::result::Result<T, ParseError>;
 impl Clone for ParseError {
   fn clone(&self) -> Self {
     let &ParseError { pos, level, ref msg } = self;
-    ParseError { pos, level, msg: format!("{}", msg).into() }
+    ParseError { pos, level, msg: format!("{msg}").into() }
   }
 }
 

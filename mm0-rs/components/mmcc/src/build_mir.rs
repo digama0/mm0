@@ -85,9 +85,9 @@ impl<'a> TranslateBase<'a> for ty::TyKind<'a> {
       ty::TyKind::Moved(ty) => TyKind::Moved(ty.tr(tr)),
       ty::TyKind::Infer(v) => match tr.mvars.as_mut().expect("no inference context").ty.lookup(v) {
         Some(ty) => return ty.tr(tr),
-        None => panic!("uninferred type variable {:?}", v),
+        None => panic!("uninferred type variable {v:?}"),
       }
-      ty::TyKind::Error => panic!("unreachable: {:?}", self),
+      ty::TyKind::Error => panic!("unreachable: {self:?}"),
     })
   }
 }
@@ -148,7 +148,7 @@ impl<'a> TranslateBase<'a> for ty::ExprKind<'a> {
         ExprKind::If {cond: cond.tr(tr), then: then.tr(tr), els: els.tr(tr)},
       ty::ExprKind::Infer(v) => match tr.mvars.as_mut().expect("no inference context").expr.lookup(v) {
         Some(e) => return e.tr(tr),
-        None => panic!("uninferred expr variable {:?}", v),
+        None => panic!("uninferred expr variable {v:?}"),
       }
       ty::ExprKind::Error => unreachable!(),
     })

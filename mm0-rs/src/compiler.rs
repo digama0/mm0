@@ -202,9 +202,9 @@ impl ElabErrorKind {
           id: None,
           label: Some(arena.alloc({
             if let Some(Range {start, ..}) = to_range(fs) {
-              format!("{}:{}:{}: {}", fs.file.rel(), start.line + 1, start.character + 1, e)
+              format!("{}:{}:{}: {e}", fs.file.rel(), start.line + 1, start.character + 1)
             } else {
-              format!("{}:{:#x}: {}", fs.file.rel(), fs.span.start, e)
+              format!("{}:{:#x}: {e}", fs.file.rel(), fs.span.start)
             }
           })),
           annotation_type: AnnotationType::Note,
@@ -310,9 +310,9 @@ impl ElabError {
   fn to_snippet_no_source<T>(&self, path: &FileRef, span: Span,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     let s = if span.end == span.start {
-      format!("{}:{:#x}: {}", path, span.start, self.kind.msg())
+      format!("{path}:{:#x}: {}", span.start, self.kind.msg())
     } else {
-      format!("{}:{:#x}-{:#x}: {}", path, span.start, span.end, self.kind.msg())
+      format!("{path}:{:#x}-{:#x}: {}", span.start, span.end, self.kind.msg())
     };
     f(make_snippet_no_source(&s, self.level))
   }
@@ -334,7 +334,7 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
       write!(s, ", memory = {}M", n >> 20).expect("writing to a string");
     }
   }
-  println!("{}", s)
+  println!("{s}")
 }
 
 /// Elaborate a file for an [`Environment`](crate::elab::Environment) result.
@@ -390,7 +390,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
-    if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {}", path)) }
+    if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {path}")) }
     let rd = rd.push(path.clone());
     let fut =
       ElaborateBuilder {
@@ -417,7 +417,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let (cyc, _, errors, env) = fut.await;
     (cyc, errors, env)
   };
-  if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {}", path)) }
+  if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {path}")) }
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s)) }
     let mut to_range = mk_to_range();

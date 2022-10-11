@@ -323,19 +323,19 @@ impl Display for Name {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
       Name::ProcContent(None) => write!(f, "_start_content"),
-      Name::ProcContent(Some(proc)) => write!(f, "{}_content", proc),
+      Name::ProcContent(Some(proc)) => write!(f, "{proc}_content"),
       Name::ProcAsm(None) => write!(f, "_start_asm"),
-      Name::ProcAsm(Some(proc)) => write!(f, "{}_asm", proc),
+      Name::ProcAsm(Some(proc)) => write!(f, "{proc}_asm"),
       Name::ProcAsmThm(None) => write!(f, "_start_asms"),
-      Name::ProcAsmThm(Some(proc)) => write!(f, "{}_asms", proc),
+      Name::ProcAsmThm(Some(proc)) => write!(f, "{proc}_asms"),
       Name::ProcAsmdThm(None) => write!(f, "_start_asmd"),
-      Name::ProcAsmdThm(Some(proc)) => write!(f, "{}_asmd", proc),
-      Name::ProcOkThm(proc) => write!(f, "{}_ok", proc),
+      Name::ProcAsmdThm(Some(proc)) => write!(f, "{proc}_asmd"),
+      Name::ProcOkThm(proc) => write!(f, "{proc}_ok"),
       Name::StartOkThm => write!(f, "_start_ok"),
       Name::Content => write!(f, "content"),
       Name::GCtx => write!(f, "gctx"),
       Name::AsmdThm => write!(f, "asmd"),
-      Name::AsmdThmLemma(n) => write!(f, "asmd_lem{}", n),
+      Name::AsmdThmLemma(n) => write!(f, "asmd_lem{n}"),
     }
   }
 }
@@ -365,7 +365,7 @@ impl Mangler {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
           None => write!(f, "the start procedure"),
-          Some(proc) => write!(f, "the procedure `{}`", proc)
+          Some(proc) => write!(f, "the procedure `{proc}`")
         }
       }
     }

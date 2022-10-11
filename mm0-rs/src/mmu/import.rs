@@ -276,7 +276,7 @@ impl<'a> Importer<'a> {
       if self.close().is_some() {
         if next_bv >= 1 << MAX_BOUND_VARS {
           return Err(ElabError::new_e(ysp,
-            format!("too many bound variables (max {})", MAX_BOUND_VARS)))
+            format!("too many bound variables (max {MAX_BOUND_VARS})")))
         }
         if y != AtomId::UNDER {bvs.insert(y, next_bv);}
         next_bv *= 2;

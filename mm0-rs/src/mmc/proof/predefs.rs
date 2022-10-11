@@ -139,9 +139,9 @@ make_predefs! {
   /// `s1: char > string`
   s1: TermId => "s1";
   /// `d[0..=f]: nat`
-  dn[i: 17]: TermId => format!("d{}", i);
+  dn[i: 17]: TermId => format!("d{i}");
   /// `x[0..=f]: hex`
-  xn[i: 16]: TermId => format!("x{:x}", i);
+  xn[i: 16]: TermId => format!("x{i:x}");
   /// `h2n: hex > nat`
   h2n: TermId => "h2n";
   /// `hex: nat > hex > nat`
@@ -153,15 +153,15 @@ make_predefs! {
   /// `s2n: string > nat`
   s2n: TermId => "s2n";
   /// `h2n[0..=f]: x[i] = d[i]`
-  h2nn[i: 16]: ThmId => format!("h2n{:x}", i);
+  h2nn[i: 16]: ThmId => format!("h2n{i:x}");
   /// `decsucxf (a b c): suc a = b > suc (hex a xf) (hex b x0)`
   decsucxf: ThmId => "decsucxf";
   /// `decsucx (a b c): suc b = c > suc (hex a b) (hex a c)`
   decsucx: ThmId => "decsucx";
   /// `decsuc[0..f]: suc x[a] = hex(a+1)`
-  decsucn[i: 16]: ThmId => format!("decsuc{:x}", i);
+  decsucn[i: 16]: ThmId => format!("decsuc{i:x}");
   /// `declt[0..f][0..=f]: x[a] < x[b]` for `a < b`
-  decltn[a: 15][b: 16]: ThmId if a < b => format!("declt{:x}{:x}", a, b);
+  decltn[a: 15][b: 16]: ThmId if a < b => format!("declt{a:x}{b:x}");
   /// `decltx1 (h: $ a < c $): $ a :x b < c :x d $`
   decltx1: ThmId => "decltx1";
   /// `decltx2 (h: $ b < c $): $ a :x b < a :x c $`
@@ -169,9 +169,9 @@ make_predefs! {
   /// `declt0x (h: $ x0 < b $): $ h2n a < b :x c $`
   declt0x: ThmId => "declt0x";
   /// `decadd[0..=f][0..=f]: x[a] + x[b] = hex(a+b)`
-  decaddn[a: 16][b: 16]: ThmId => format!("decadd{:x}{:x}", a, b);
+  decaddn[a: 16][b: 16]: ThmId => format!("decadd{a:x}{b:x}");
   /// `decadc[0..=f][0..=f]: suc (x[a] + x[b]) = hex(a+b+1)`
-  decadcn[a: 16][b: 16]: ThmId => format!("decadc{:x}{:x}", a, b);
+  decadcn[a: 16][b: 16]: ThmId => format!("decadc{a:x}{b:x}");
 
   // Theorems to compute `a + b = c` and `suc (a + b) = c`
   add_xx0: ThmId => "add_xx0";
@@ -189,7 +189,7 @@ make_predefs! {
 
   /// `bit: nat > nat > nat`
   bit: TermId => "bit";
-  xbit[n: 16][i: 4]: ThmId => format!("xbit{:x}{:x}", n, i);
+  xbit[n: 16][i: 4]: ThmId => format!("xbit{n:x}{i:x}");
 
   /// `wSz8 (have_rex: wff): nat`
   wSz8: TermId => "wSz8";
@@ -219,7 +219,7 @@ make_predefs! {
   unopNot: TermId => "unopNot";
   unopNeg: TermId => "unopNeg";
 
-  padn[i: 16]: TermId => format!("_x00x{:x}", i);
+  padn[i: 16]: TermId => format!("_x00x{i:x}");
 
   /// `assemble (s: string) (x y: nat) (P: set): wff`
   assemble: TermId => "assemble";
@@ -269,8 +269,8 @@ make_predefs! {
 
   /// `strlen (s: string) (n: nat): wff`
   strlen: TermId => "strlen";
-  strlenn[i: 16]: ThmId => format!("strlen{:x}", i);
-  strlen_padn[i: 16]: ThmId if i != 0 => format!("strlen_x00x{:x}", i);
+  strlenn[i: 16]: ThmId => format!("strlen{i:x}");
+  strlen_padn[i: 16]: ThmId if i != 0 => format!("strlen_x00x{i:x}");
 
   /// `parseInst (p ip: nat) (s: string) (I: set): wff`
   parseInst: TermId => "parseInst";
@@ -291,7 +291,7 @@ make_predefs! {
 
   /// `isU64 (n: nat): wff`
   isU64: TermId => "isU64";
-  isU64n[i: 16]: ThmId => format!("isU64_{:x}", i);
+  isU64n[i: 16]: ThmId => format!("isU64_{i:x}");
 
   /// `parseUBytes (k n: nat) (s: string): wff`
   parseUBytes: TermId => "parseUBytes";
@@ -350,7 +350,7 @@ make_predefs! {
   parseImm_64: ThmId => "parseImm_64";
 
   splitBits[i: 5]: TermId => format!("splitBits{}", SPLIT_BITS_NAMES[i]);
-  splitBitsn[i: 5][n: 16]: ThmId => format!("splitBits{}_{:x}", SPLIT_BITS_NAMES[i], n);
+  splitBitsn[i: 5][n: 16]: ThmId => format!("splitBits{}_{n:x}", SPLIT_BITS_NAMES[i]);
 
   /// `consStr (c: char) (l l2: nat): wff`
   consStr: TermId => "consStr";
@@ -368,17 +368,17 @@ make_predefs! {
 
   /// `parseSI (sc: nat) (ix: hex) (osi: nat): wff`
   parseSI: TermId => "parseSI";
-  parseSI_n[n: 16]: ThmId => format!("parseSI_{:x}", n);
+  parseSI_n[n: 16]: ThmId => format!("parseSI_{n:x}");
 
   /// `sibSideCond (base: hex) (md: nat): wff`
   sibSideCond: TermId => "sibSideCond";
-  sibSideCond_M[m: 3]: ThmId if m != 0 => format!("sibSideCond_M{}", m);
-  sibSideCond_B[b: 16]: ThmId if b != 5 => format!("sibSideCond_B{:x}", b);
+  sibSideCond_M[m: 3]: ThmId if m != 0 => format!("sibSideCond_M{m}");
+  sibSideCond_B[b: 16]: ThmId if b != 5 => format!("sibSideCond_B{b:x}");
 
   /// `modrmSideCond (base md: nat): wff`
   modrmSideCond: TermId => "modrmSideCond";
-  modrmSideCond_m[m: 3]: ThmId if m != 0 => format!("modrmSideCond_5{}", m);
-  modrmSideCond_n[n: 8]: ThmId if n != 4 && n != 5 => format!("modrmSideCond_{:x}", n);
+  modrmSideCond_m[m: 3]: ThmId if m != 0 => format!("modrmSideCond_5{m}");
+  modrmSideCond_n[n: 8]: ThmId if n != 4 && n != 5 => format!("modrmSideCond_{n:x}");
 
   /// `parseModRM2 (rex rm rm2 mod: nat) (l l2: string): wff`
   parseModRM2: TermId => "parseModRM2";

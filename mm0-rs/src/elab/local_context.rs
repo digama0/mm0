@@ -68,7 +68,7 @@ pub enum InferSort {
 
 impl InferSort {
   fn new(src: Span) -> InferSort {
-    InferSort::Unknown { src, must_bound: false, dummy: true, sorts: Box::new(HashMap::new()) }
+    InferSort::Unknown { src, must_bound: false, dummy: true, sorts: Default::default() }
   }
   /// The sort of this variable. For an unknown variable, it returns a sort iff
   /// this variable has inferred exactly one sort, not counting `Unknown` or `Provable`.
@@ -359,7 +359,7 @@ impl<'a> ElabTermMut<'a> {
     let a = if a == AtomId::UNDER {
       let mut n = 1;
       loop {
-        let a = self.env.get_atom(format!("_{}", n).as_bytes());
+        let a = self.env.get_atom(format!("_{n}").as_bytes());
         if !self.lc.vars.contains_key(&a) {break a}
         n += 1;
       }
@@ -432,7 +432,7 @@ impl<'a> ElabTermMut<'a> {
     while let Some(arg) = it.next() {
       let tgt = match next_ty!() {
         None => return Err(ElabError::new_e(sp1,
-          format!("expected {} arguments, got {}", nargs, args.len() + it.count()))),
+          format!("expected {nargs} arguments, got {}", args.len() + it.count()))),
         Some(&(_, EType::Bound(s))) => InferTarget::Bound(self.env.sorts[s].atom),
         Some(&(_, EType::Reg(s, _))) => InferTarget::Reg(self.env.sorts[s].atom),
       };
@@ -440,7 +440,7 @@ impl<'a> ElabTermMut<'a> {
     }
     if next_ty!().is_some() {
       return Err(ElabError::new_e(sp1,
-        format!("expected {} arguments, got {}", nargs, args.len() - 1)))
+        format!("expected {nargs} arguments, got {}", args.len() - 1)))
     }
     self.as_ref().coerce(e, ret, LispVal::list(args), tgt)
   }
@@ -832,7 +832,7 @@ impl Elaborator {
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
-            ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+            ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
               return Err(ElabError::new_e(sp,
@@ -850,7 +850,7 @@ impl Elaborator {
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
             if ba.push_dummies(&self.lc.vars).is_none() {
-              return Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))
+              return Err(ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))
             }
             let deps = ba.expr_deps(&self.env, &val);
             let val = {
@@ -944,7 +944,7 @@ impl Elaborator {
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
-            ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+            ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
               return Err(ElabError::new_e(sp,
@@ -1133,7 +1133,7 @@ impl Elaborator {
             if let Some(a) = a {
               if *next_bv >= 1 << MAX_BOUND_VARS {
                 return Err(ElabError::new_e(fsp.span,
-                  format!("too many bound variables (max {})", MAX_BOUND_VARS)))
+                  format!("too many bound variables (max {MAX_BOUND_VARS})")))
               }
               varmap.insert(a, *next_bv);
               *next_bv *= 2;

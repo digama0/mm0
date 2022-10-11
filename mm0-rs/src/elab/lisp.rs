@@ -1003,8 +1003,8 @@ impl ProcSpec {
 
   fn arity_error(self) -> String {
     match self {
-      ProcSpec::Exact(n) => format!("expected {} argument(s)", n),
-      ProcSpec::AtLeast(n) => format!("expected at least {} argument(s)", n),
+      ProcSpec::Exact(n) => format!("expected {n} argument(s)"),
+      ProcSpec::AtLeast(n) => format!("expected at least {n} argument(s)"),
     }
   }
 }

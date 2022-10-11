@@ -366,11 +366,11 @@ impl FrozenEnv {
                     let mut c = self.write_proof_node(
                       &mut dummies, &td.hyps, &pf.heap, &pf.store, &strs, e, 0)?;
                     if is_nonatomic_proof(e) {
-                      write!(lets_start, "(:let H{} ", idx)?;
+                      write!(lets_start, "(:let H{idx} ")?;
                       write_lines(&mut lets_start, c)?;
                       lets_start.push(b'\n');
                       lets_end.push(b')');
-                      c = (vec![], (0, format!("H{}", idx).into_bytes()));
+                      c = (vec![], (0, format!("H{idx}").into_bytes()));
                       idx += 1
                     }
                     strs.push(c);

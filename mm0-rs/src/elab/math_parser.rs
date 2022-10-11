@@ -177,9 +177,9 @@ impl<'a> MathParser<'a> {
           res.set(i, e);
         },
         Literal::Const(ref c) => {
-          let tk = self.token().ok_or_else(|| self.err(format!("expecting '{}'", c).into()))?;
+          let tk = self.token().ok_or_else(|| self.err(format!("expecting '{c}'").into()))?;
           if *self.span(tk) != **c {
-            return Err(ParseError::new(tk, format!("expecting '{}'", c).into()))
+            return Err(ParseError::new(tk, format!("expecting '{c}'").into()))
           }
           consts.push(tk);
           end = tk.end;
@@ -242,7 +242,7 @@ impl<'a> MathParser<'a> {
       let e = QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())};
       return Ok((e, actual, None))
     } else {}
-    Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))
+    Err(ParseError::new(sp, format!("expecting prefix expression >= {p}").into()))
   }
 
   fn check_paren(&mut self, e: &mut (QExpr, Prec, Option<Prec>), p: Prec) {

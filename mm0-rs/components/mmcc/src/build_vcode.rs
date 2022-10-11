@@ -870,7 +870,7 @@ impl<'a> LowerCtx<'a> {
         ]);
         (SysCall::MMap, ret)
       }
-      e => panic!("intrinsic has the wrong number of arguments: {:?}", e)
+      e => panic!("intrinsic has the wrong number of arguments: {e:?}")
     };
     let vreg = self.code.fresh_vreg();
     self.build_syscall(f, &rmis, vreg);

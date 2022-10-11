@@ -149,7 +149,7 @@ impl EnvDisplay for LispKind {
             b'\r' => write!(f, "\\r")?,
             b'\"' => write!(f, "\\\"")?,
             0x20..=0x7e => write!(f, "{}", c as char)?,
-            _ => write!(f, "\\x{:02x}", c)?,
+            _ => write!(f, "\\x{c:02x}")?,
           }
         }
         write!(f, "\"")
@@ -162,13 +162,13 @@ impl EnvDisplay for LispKind {
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
-        write!(f, "#<fn at {} {}:{}>", fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn at {fname} {}:{}>", r.line + 1, r.character + 1)
       }
       &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, _, a), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
         let x = &fe.data[a].name;
-        write!(f, "#<fn {} at {} {}:{}>", x, fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn {x} at {fname} {}:{}>", r.line + 1, r.character + 1)
       }
       LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#<match cont>"),
       LispKind::Proc(Proc::RefineCallback) => write!(f, "#<refine>"),
@@ -280,7 +280,7 @@ impl EnvDisplay for SExpr {
         write!(f, ". {})", fe.to(r))
       }
       SExprKind::Number(n) => n.fmt(f),
-      SExprKind::String(s) => write!(f, "{:?}", s),
+      SExprKind::String(s) => write!(f, "{s:?}"),
       SExprKind::Bool(true) => "#t".fmt(f),
       SExprKind::Bool(false) => "#f".fmt(f),
       SExprKind::DocComment(_, e) => e.fmt(fe, f),

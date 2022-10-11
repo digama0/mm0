@@ -260,40 +260,40 @@ impl std::fmt::Debug for TyKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match self {
-      TyKind::Var(v) => write!(f, "{:?}", v),
+      TyKind::Var(v) => write!(f, "{v:?}"),
       TyKind::Unit => write!(f, "()"),
       TyKind::True => write!(f, "true"),
       TyKind::False => write!(f, "false"),
       TyKind::Bool => write!(f, "bool"),
-      TyKind::Int(ity) => write!(f, "{}", ity),
-      TyKind::Array(ty, n) => write!(f, "[{:?}; {:?}]", ty, n),
-      TyKind::Own(ty) => write!(f, "own {:?}", ty),
-      TyKind::Shr(lft, ty) => write!(f, "&'{:?} {:?}", lft, ty),
-      TyKind::Ref(lft, ty) => write!(f, "ref '{:?} {:?})", &lft, ty),
-      TyKind::RefSn(x) => write!(f, "&sn {:?}", x),
-      TyKind::Sn(e, ty) => write!(f, "sn({:?}: {:?})", e, ty),
+      TyKind::Int(ity) => write!(f, "{ity}"),
+      TyKind::Array(ty, n) => write!(f, "[{ty:?}; {n:?}]"),
+      TyKind::Own(ty) => write!(f, "own {ty:?}"),
+      TyKind::Shr(lft, ty) => write!(f, "&'{lft:?} {ty:?}"),
+      TyKind::Ref(lft, ty) => write!(f, "ref '{lft:?} {ty:?})"),
+      TyKind::RefSn(x) => write!(f, "&sn {x:?}"),
+      TyKind::Sn(e, ty) => write!(f, "sn({e:?}: {ty:?})"),
       TyKind::Struct(args) => write!(f, "({:?})", args.iter().format(", ")),
-      TyKind::All(a, p, q) => write!(f, "A. {:?}: {:?}, {:?}", a, p, q),
-      TyKind::Imp(p, q) => write!(f, "({:?} -> {:?})", p, q),
-      TyKind::Wand(p, q) => write!(f, "({:?} -* {:?})", p, q),
-      TyKind::Not(pr) => write!(f, "~{:?}", pr),
+      TyKind::All(a, p, q) => write!(f, "A. {a:?}: {p:?}, {q:?}"),
+      TyKind::Imp(p, q) => write!(f, "({p:?} -> {q:?})"),
+      TyKind::Wand(p, q) => write!(f, "({p:?} -* {q:?})"),
+      TyKind::Not(pr) => write!(f, "~{pr:?}"),
       TyKind::And(tys) => write!(f, "({:?})", tys.iter().format(" /\\ ")),
       TyKind::Or(tys) => write!(f, "({:?})", tys.iter().format(" \\/ ")),
       TyKind::If(cond, then, els) =>
-        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
-      TyKind::Ghost(ty) => write!(f, "ghost({:?})", ty),
-      TyKind::Uninit(ty) => write!(f, "Uninit({:?})", ty),
-      TyKind::Pure(e) => write!(f, "{:?}", e),
+        write!(f, "if {cond:?} {{ {then:?} }} else {{ {els:?} }}"),
+      TyKind::Ghost(ty) => write!(f, "ghost({ty:?})"),
+      TyKind::Uninit(ty) => write!(f, "Uninit({ty:?})"),
+      TyKind::Pure(e) => write!(f, "{e:?}"),
       TyKind::User(name, tys, es) => {
-        write!(f, "{}", name)?;
+        write!(f, "{name}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", es.iter().format(", "))
       }
-      TyKind::Heap(x, v, t) => write!(f, "({:?} => {:?}: {:?})", x, v, t),
-      TyKind::HasTy(v, t) => write!(f, "[{:?}: {:?}]", v, t),
+      TyKind::Heap(x, v, t) => write!(f, "({x:?} => {v:?}: {t:?})"),
+      TyKind::HasTy(v, t) => write!(f, "[{v:?}: {t:?}]"),
       TyKind::Input => write!(f, "Input"),
       TyKind::Output => write!(f, "Output"),
-      TyKind::Moved(ty) => write!(f, "|{:?}|", ty),
+      TyKind::Moved(ty) => write!(f, "|{ty:?}|"),
     }
   }
 }
@@ -452,10 +452,10 @@ pub enum EPlaceKind {
 impl std::fmt::Debug for EPlaceKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      EPlaceKind::Var(v) => write!(f, "{:?}", v),
-      EPlaceKind::Index(arr, _, idx) => write!(f, "{:?}[{:?}]", arr, idx),
-      EPlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{:?}[{:?}..+{:?}]", arr, idx, len),
-      EPlaceKind::Proj(e, _, j) => write!(f, "{:?}.{}", e, j),
+      EPlaceKind::Var(v) => write!(f, "{v:?}"),
+      EPlaceKind::Index(arr, _, idx) => write!(f, "{arr:?}[{idx:?}]"),
+      EPlaceKind::Slice(arr, _, [idx, len]) => write!(f, "{arr:?}[{idx:?}..+{len:?}]"),
+      EPlaceKind::Proj(e, _, j) => write!(f, "{e:?}.{j}"),
     }
   }
 }
@@ -601,31 +601,31 @@ impl std::fmt::Debug for ExprKind {
     use itertools::Itertools;
     match self {
       ExprKind::Unit => write!(f, "()"),
-      ExprKind::Var(v) => write!(f, "{:?}", v),
-      ExprKind::Const(c) => write!(f, "{}", c),
-      ExprKind::Bool(b) => write!(f, "{}", b),
-      ExprKind::Int(n) => write!(f, "{}", n),
-      ExprKind::Unop(op, e) => write!(f, "{} {:?}", op, e),
-      ExprKind::Binop(op, e1, e2) => write!(f, "({:?} {} {:?})", e1, op, e2),
+      ExprKind::Var(v) => write!(f, "{v:?}"),
+      ExprKind::Const(c) => write!(f, "{c}"),
+      ExprKind::Bool(b) => write!(f, "{b}"),
+      ExprKind::Int(n) => write!(f, "{n}"),
+      ExprKind::Unop(op, e) => write!(f, "{op} {e:?}"),
+      ExprKind::Binop(op, e1, e2) => write!(f, "({e1:?} {op} {e2:?})"),
       ExprKind::List(es) |
-      ExprKind::Array(es) => write!(f, "{:?}", es),
-      ExprKind::Index(a, i) => write!(f, "{:?}[{:?}]", a, i),
-      ExprKind::Slice(a, i, n) => write!(f, "{:?}[{:?}..+{:?}]", a, i, n),
-      ExprKind::Proj(a, i) => write!(f, "{:?}.{}", a, i),
-      ExprKind::UpdateIndex(a, i, val) => write!(f, "({:?}[{:?}] .= {:?})", a, i, val),
+      ExprKind::Array(es) => write!(f, "{es:?}"),
+      ExprKind::Index(a, i) => write!(f, "{a:?}[{i:?}]"),
+      ExprKind::Slice(a, i, n) => write!(f, "{a:?}[{i:?}..+{n:?}]"),
+      ExprKind::Proj(a, i) => write!(f, "{a:?}.{i}"),
+      ExprKind::UpdateIndex(a, i, val) => write!(f, "({a:?}[{i:?}] .= {val:?})"),
       ExprKind::UpdateSlice(a, i, l, val) =>
-        write!(f, "({:?}[{:?}..+{:?}] .= {:?})", a, i, l, val),
-      ExprKind::UpdateProj(a, n, val) => write!(f, "({:?}.{:?} .= {:?})", a, n, val),
-      ExprKind::Ref(e) => write!(f, "&{:?}", e),
-      ExprKind::Sizeof(ty) => write!(f, "sizeof({:?})", ty),
-      ExprKind::Mm0(e) => write!(f, "{:?}", e),
+        write!(f, "({a:?}[{i:?}..+{l:?}] .= {val:?})"),
+      ExprKind::UpdateProj(a, n, val) => write!(f, "({a:?}.{n:?} .= {val:?})"),
+      ExprKind::Ref(e) => write!(f, "&{e:?}"),
+      ExprKind::Sizeof(ty) => write!(f, "sizeof({ty:?})"),
+      ExprKind::Mm0(e) => write!(f, "{e:?}"),
       ExprKind::Call {f: func, tys, args} => {
-        write!(f, "{}", func)?;
+        write!(f, "{func}")?;
         if !tys.is_empty() { write!(f, "<{:?}>", tys.iter().format(", "))? }
         write!(f, "({:?})", args.iter().format(", "))
       }
       ExprKind::If {cond, then, els} =>
-        write!(f, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, then, els),
+        write!(f, "if {cond:?} {{ {then:?} }} else {{ {els:?} }}"),
     }
   }
 }
@@ -1188,9 +1188,9 @@ pub enum Projection {
 impl std::fmt::Debug for Projection {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Proj(_, i) => write!(f, ".{}", i),
-      Self::Index(i, h) => write!(f, "[{:?}, {:?}]", i, h),
-      Self::Slice(i, l, h) => write!(f, "[{:?}..+{:?}, {:?}]", i, l, h),
+      Self::Proj(_, i) => write!(f, ".{i}"),
+      Self::Index(i, h) => write!(f, "[{i:?}, {h:?}]"),
+      Self::Slice(i, l, h) => write!(f, "[{i:?}..+{l:?}, {h:?}]"),
       Self::Deref => write!(f, ".*"),
     }
   }
@@ -1210,7 +1210,7 @@ pub struct Place {
 impl std::fmt::Debug for Place {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{:?}", self.local)?;
-    for (_, p) in &self.proj { write!(f, "{:?}", p)? }
+    for (_, p) in &self.proj { write!(f, "{p:?}")? }
     Ok(())
   }
 }
@@ -1364,7 +1364,7 @@ impl std::fmt::Debug for Constant {
       ConstKind::Bool |
       ConstKind::Int => self.ety.0.as_ref().expect("illformed").fmt(f),
       ConstKind::Uninit => write!(f, "uninit"),
-      ConstKind::Const(s) => write!(f, "({}: {:?})", s, self.ety.1),
+      ConstKind::Const(s) => write!(f, "({s}: {:?})", self.ety.1),
       ConstKind::Sizeof => write!(f, "sizeof {:?}", self.ety.1),
       ConstKind::Mm0Proof(p) => p.fmt(f),
       ConstKind::Contra(_, _) => write!(f, "(contra: {:?})", self.ety.1),
@@ -1392,8 +1392,8 @@ impl std::fmt::Debug for Operand {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Copy(p) => p.fmt(f),
-      Self::Move(p) => write!(f, "move {:?}", p),
-      Self::Ref(p) => write!(f, "ref {:?}", p),
+      Self::Move(p) => write!(f, "move {p:?}"),
+      Self::Ref(p) => write!(f, "ref {p:?}"),
       Self::Const(c) => c.fmt(f),
     }
   }
@@ -1525,19 +1525,19 @@ impl std::fmt::Debug for RValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Use(o) => o.fmt(f),
-      Self::Unop(Unop::As(_, ity), o) => write!(f, "{:?} as {:?}", o, ity),
-      Self::Unop(op, o) => write!(f, "{:?} {:?}", op, o),
-      Self::Binop(op, o1, o2) => write!(f, "{:?} {:?} {:?}", o1, op, o2),
-      Self::Eq(_, false, o1, o2) => write!(f, "{:?} == {:?}", o1, o2),
-      Self::Eq(_, true, o1, o2) => write!(f, "{:?} != {:?}", o1, o2),
-      Self::Pun(_, p) => write!(f, "pun {:?}", p),
-      Self::Cast(_, o, ty) => write!(f, "cast ({:?}: {:?})", o, ty),
+      Self::Unop(Unop::As(_, ity), o) => write!(f, "{o:?} as {ity:?}"),
+      Self::Unop(op, o) => write!(f, "{op:?} {o:?}"),
+      Self::Binop(op, o1, o2) => write!(f, "{o1:?} {op:?} {o2:?}"),
+      Self::Eq(_, false, o1, o2) => write!(f, "{o1:?} == {o2:?}"),
+      Self::Eq(_, true, o1, o2) => write!(f, "{o1:?} != {o2:?}"),
+      Self::Pun(_, p) => write!(f, "pun {p:?}"),
+      Self::Cast(_, o, ty) => write!(f, "cast ({o:?}: {ty:?})"),
       Self::List(os) |
-      Self::Array(os) => write!(f, "{:?}", os),
-      Self::Ghost(o) => write!(f, "ghost {:?}", o),
-      Self::Borrow(p) => write!(f, "&{:?}", p),
-      Self::Mm0(l, os) => write!(f, "pure {:?}{:?}", l, os),
-      Self::Typeof(e) => write!(f, "typeof {:?}", e),
+      Self::Array(os) => write!(f, "{os:?}"),
+      Self::Ghost(o) => write!(f, "ghost {o:?}"),
+      Self::Borrow(p) => write!(f, "&{p:?}"),
+      Self::Mm0(l, os) => write!(f, "pure {l:?}{os:?}"),
+      Self::Typeof(e) => write!(f, "typeof {e:?}"),
     }
   }
 }
@@ -1578,7 +1578,7 @@ impl LetKind {
     match self {
       Self::Let(v, e) => {
         write!(f, "{}{:?}", if r {""} else {"ghost "}, v.k)?;
-        if let Some(e) = e { write!(f, " => {:?}", e)? }
+        if let Some(e) = e { write!(f, " => {e:?}")? }
         Ok(())
       },
       Self::Ptr([(v1, _), (v2, _)]) =>
@@ -1643,10 +1643,10 @@ impl std::fmt::Debug for Statement {
       Self::Let(lk, r, ty, rv) => {
         write!(f, "let ")?;
         lk.fmt_rel(*r, f)?;
-        write!(f, ": {:?} := {:?}", ty, rv)
+        write!(f, ": {ty:?} := {rv:?}")
       }
       Self::Assign(lhs, ty, rhs, renames) =>
-        write!(f, "{:?}: {:?} <- {:?}, with {:?}", lhs, ty, rhs, renames),
+        write!(f, "{lhs:?}: {ty:?} <- {rhs:?}, with {renames:?}"),
       Self::LabelGroup(bls, ctx) => write!(f, "{ctx:?} := label_group({:?})", bls.iter().format(", ")),
       Self::PopLabelGroup => write!(f, "pop_label_group"),
       Self::DominatedBlock(bl, ctx) => write!(f, "{ctx:?} := dominated_block({bl:?})"),
@@ -1774,27 +1774,27 @@ impl std::fmt::Debug for Terminator {
     impl std::fmt::Debug for DebugArg<'_> {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (v, b, ref o) = *self.0;
-        write!(f, "{}{:?} := {:?}", if b {""} else {"ghost "}, v, o)
+        write!(f, "{}{v:?} := {o:?}", if b {""} else {"ghost "})
       }
     }
     use itertools::Itertools;
     match self {
       Self::Jump(bl, args, variant) => {
-        write!(f, "jump {:?}({:?})", bl, args.iter().map(DebugArg).format(", "))?;
-        if let Some(var) = variant { write!(f, " variant {:?}", var)? }
+        write!(f, "jump {bl:?}({:?})", args.iter().map(DebugArg).format(", "))?;
+        if let Some(var) = variant { write!(f, " variant {var:?}")? }
         Ok(())
       },
-      Self::Jump1(bl, ctx) => write!(f, "{ctx:?} := jump {:?}", bl),
+      Self::Jump1(bl, ctx) => write!(f, "{ctx:?} := jump {bl:?}"),
       Self::Return(outs, args) => {
         write!(f, "return")?;
-        for &v in &**outs { write!(f, " out {:?},", v)? }
+        for &v in &**outs { write!(f, " out {v:?},")? }
         if !args.is_empty() { write!(f, " {:?}", args.iter().map(DebugArg).format(", "))? }
         Ok(())
       }
-      Self::Unreachable(o) => write!(f, "unreachable {:?}", o),
+      Self::Unreachable(o) => write!(f, "unreachable {o:?}"),
       Self::If(ctx, cond, [(v1, bl1), (v2, bl2)]) => write!(f,
-        "{ctx:?} := if {:?} then {:?}. {:?} else {:?}. {:?}", cond, v1, bl1, v2, bl2),
-      Self::Assert(cond, v, bl) => write!(f, "assert {:?} -> {:?}. {:?}", cond, v, bl),
+        "{ctx:?} := if {cond:?} then {v1:?}. {bl1:?} else {v2:?}. {bl2:?}"),
+      Self::Assert(cond, v, bl) => write!(f, "assert {cond:?} -> {v:?}. {bl:?}"),
       Self::Fail => write!(f, "fail -> !"),
       Self::Call { f: func, tys, args, reach, ctx, tgt, rets, .. } => {
         write!(f, "{ctx:?} := call {func}")?;
@@ -1803,17 +1803,17 @@ impl std::fmt::Debug for Terminator {
         let mut first = true;
         for &(r, ref o) in &**args {
           if first { first = false } else { write!(f, ", ")? }
-          write!(f, "{}{:?}", if r {""} else {"ghost "}, o)?
+          write!(f, "{}{o:?}", if r {""} else {"ghost "})?
         }
         write!(f, ") -> ")?;
         if *reach {
-          for &(r, v) in &**rets { write!(f, "{}{:?}. ", if r {""} else {"ghost "}, v)? }
-          write!(f, "{:?}", tgt)
+          for &(r, v) in &**rets { write!(f, "{}{v:?}. ", if r {""} else {"ghost "})? }
+          write!(f, "{tgt:?}")
         } else {
           write!(f, "!")
         }
       }
-      Self::Exit(o) => write!(f, "exit {:?}", o),
+      Self::Exit(o) => write!(f, "exit {o:?}"),
       Self::Dead => write!(f, "dead")
     }
   }
@@ -1999,14 +1999,14 @@ impl BasicBlock {
     f: &mut std::fmt::Formatter<'_>
   ) -> std::fmt::Result {
     if !self.reachable { write!(f, "ghost ")? }
-    if let Some(n) = name { write!(f, "{:?}", n)? } else { write!(f, "bb?")? }
+    if let Some(n) = name { write!(f, "{n:?}")? } else { write!(f, "bb?")? }
     if let Some(ctxs) = ctxs {
       write!(f, "(")?;
       let (base_ctx, base);
       if use_base {
         base = self.base as usize;
         base_ctx = ctxs.truncate(self.ctx, self.base);
-        write!(f, "{:?};", base_ctx)?
+        write!(f, "{base_ctx:?};")?
       } else {
         base = 0;
         base_ctx = CtxId::ROOT
@@ -2017,9 +2017,9 @@ impl BasicBlock {
       let mut write = |v, r, e: &Option<_>, ty| {
         if long_layout { write!(f, "   ")? }
         else if !std::mem::take(&mut first) { write!(f, ",")? }
-        write!(f, " {}{:?}", if r {""} else {"ghost "}, v)?;
-        if let Some(e) = e { write!(f, " => {:?}", e)? }
-        write!(f, ": {:?}", ty)?;
+        write!(f, " {}{v:?}", if r {""} else {"ghost "})?;
+        if let Some(e) = e { write!(f, " => {e:?}")? }
+        write!(f, ": {ty:?}")?;
         if long_layout { writeln!(f, ",")? }
         Ok(())
       };
@@ -2033,10 +2033,10 @@ impl BasicBlock {
       write!(f, "({:?})", self.ctx)?
     }
     writeln!(f, ":")?;
-    for s in &self.stmts { writeln!(f, "    {:?};", s)? }
+    for s in &self.stmts { writeln!(f, "    {s:?};")? }
     match &self.term {
       None => writeln!(f, "    ..."),
-      Some(t) => writeln!(f, "    {:?};", t),
+      Some(t) => writeln!(f, "    {t:?};"),
     }
   }
 }

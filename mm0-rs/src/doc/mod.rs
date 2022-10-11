@@ -70,7 +70,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
           crate::elab::environment::TermKind::Term => "term",
           crate::elab::environment::TermKind::Def(_) => "def"
         };
-        write!(self.w.0, "<a class=\"{}\" href=\"{}index.html#", kind, self.rel)?;
+        write!(self.w.0, "<a class=\"{kind}\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.terms[tid].atom];
         disambiguated_anchor(&mut self.w.0, ad, false)?;
         write!(self.w.0, "\">")?;
@@ -84,7 +84,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
           ThmKind::Thm(_) => "thm"
         };
         self.mangler.mangle(self.env, tid, |_, mangled|
-          write!(w, r#"<a class="{}" href="{}thms/{}.html">"#, kind, rel, mangled))?;
+          write!(w, r#"<a class="{kind}" href="{rel}thms/{mangled}.html">"#))?;
         self.stack.push("a");
       }
     }
@@ -123,7 +123,7 @@ impl AxiomUse {
           let mut axiom_set = BitSet::new();
           let mut it = Uncons::New(u.clone()).peekable();
           let doc = it.peek().and_then(|s| s.unwrapped(|s| match s {
-            LispKind::String(s) => Some(format!("{}", s)),
+            LispKind::String(s) => Some(format!("{s}")),
             _ => None
           }));
           if doc.is_some() { it.next(); }
@@ -341,7 +341,7 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
   let mut first = true;
   for hyp in hyps {
     if !mem::take(&mut first) { write!(w, ", ")? }
-    write!(w, r##"<a href="#{id}">{id}</a>"##, id = hyp)?
+    write!(w, r##"<a href="#{hyp}">{hyp}</a>"##)?
   }
   write!(w, "</td>\n          <td>")?;
   match kind {
@@ -486,7 +486,7 @@ impl Mangler {
     let s = env.data[env.thms[tid].atom].name.as_str();
     match self.get(env, tid) {
       0 => f(s, s),
-      n => f(s, &format!("{}.{}", s, n))
+      n => f(s, &format!("{s}.{n}"))
     }
   }
 }
@@ -510,7 +510,7 @@ fn header(w: &mut impl Write,
     \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">",
     rel = rel, desc = desc, title = title)?;
   for s in script {
-    writeln!(w, r#"  <script src="{}"></script>"#, s)?
+    writeln!(w, r#"  <script src="{s}"></script>"#)?
   }
   writeln!(w, "  \
         <!-- <link rel=\"shortcut icon\" href=\"{rel}favicon.ico\"> -->\
@@ -554,7 +554,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     // because LayoutProof::layout calls Environment::get_atom which mutates the env.data field.
     // This is disjoint from the reference to env.thms that we retain here, so it's okay.
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
-    self.mangler.mangle(&self.env, tid, |_, s| path.push(&format!("{}.html", s)));
+    self.mangler.mangle(&self.env, tid, |_, s| path.push(&format!("{s}.html")));
     let mut file = BufWriter::new(File::create(&path)?);
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
@@ -563,7 +563,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(prev) = prev {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, prev, |thm, mangled|
-        write!(nav, r#"<a href="{}.html" title="{}">&#8810;</a> | "#, mangled, thm)
+        write!(nav, r#"<a href="{mangled}.html" title="{thm}">&#8810;</a> | "#)
           .expect("writing to a string"));
     }
     nav.push_str("<a href=\"../index.html#");
@@ -574,7 +574,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(base) = &self.base_url {
       use std::fmt::Write;
       let url = base.join(filename).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-      write!(nav, " | <a href=\"{}", url).expect("writing to a string");
+      write!(nav, " | <a href=\"{url}").expect("writing to a string");
       let range = self.source.to_range(td.full);
       if range.start.line == range.end.line {
         write!(nav, "#L{}\">src</a>", range.start.line + 1)
@@ -585,14 +585,14 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(next) = next {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, next, |thm, mangled|
-        write!(nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
+        write!(nav, r#" | <a href="{mangled}.html" title="{thm}">&#8811;</a>"#)
           .expect("writing to a string"));
     }
     let (kind, kindclass) = if let ThmKind::Axiom = td.kind {("Axiom", "ax")} else {("Theorem", "thm")};
     header(&mut file, "../",
-      &format!("Documentation for theorem `{}` in `{}`.", thmname, filename),
-      &format!("{} - {}", thmname, filename),
-      &format!(r#"{} <a class="{}" href="">{}</a>"#, kind, kindclass, thmname),
+      &format!("Documentation for theorem `{thmname}` in `{filename}`."),
+      &format!("{thmname} - {filename}"),
+      &format!(r#"{kind} <a class="{kindclass}" href="">{thmname}</a>"#),
       &nav, &["../proof.js"])?;
     render_doc(&mut file, &td.doc)?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
@@ -632,7 +632,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
             if axioms.remove(i) {
               if !mem::take(&mut first) { write!(file, ",\n      ")? }
               self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-                write!(file, r#"<a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
+                write!(file, r#"<a class="ax" href="{mangled}.html">{thm}</a>"#))?
             }
           }
           write!(file, ")</span>")?;
@@ -641,11 +641,11 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       for i in &axioms {
         if !mem::take(&mut first) { writeln!(file, ",")? }
         self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-          write!(file, r#"    <a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
+          write!(file, r#"    <a class="ax" href="{mangled}.html">{thm}</a>"#))?
       }
       writeln!(file)?
     }
-    writeln!(file, "{}", FOOTER)?;
+    writeln!(file, "{FOOTER}")?;
     Ok(path)
   }
 
@@ -656,7 +656,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     let nav: String;
     let nav = if let Some(base) = &self.base_url {
       let url = base.join(path.rel()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-      nav = format!("<a href=\"{}\">src</a>", url);
+      nav = format!("<a href=\"{url}\">src</a>");
       &nav
     } else {""};
     header(file, "",
@@ -716,7 +716,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       }
     }
     let file = self.index.as_mut().expect("index file missing");
-    writeln!(file, "{}", FOOTER)?;
+    writeln!(file, "{FOOTER}")?;
     Ok(open_path)
   }
 }
@@ -797,8 +797,8 @@ impl Args {
     let mut get_thm = |thm: &str| {
       let a = bd.env.get_atom(thm.as_bytes());
       match bd.env.data[a].decl {
-        None => eprintln!("warning: unknown theorem '{}'", thm),
-        Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
+        None => eprintln!("warning: unknown theorem '{thm}'"),
+        Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{thm}'"),
         Some(DeclKey::Thm(tid)) => return Some(tid),
       }
       None

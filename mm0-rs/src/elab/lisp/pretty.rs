@@ -547,17 +547,17 @@ impl<'a> Pretty<'a> {
     let doc = self.append_annot(doc, Annot::TermName(tid),
       self.text(format!("{}", self.fe.to(&t.atom))));
     let doc = self.append_doc(doc, s!(": $"));
-    let doc = self.append_annot(doc, Annot::TermName(tid), self.text(format!("{}", tk)));
+    let doc = self.append_annot(doc, Annot::TermName(tid), self.text(format!("{tk}")));
     let doc = self.append_doc(doc, s!("$ "));
     let doc = self.append_annot(doc, Annot::Keyword, s!("prec"));
     let doc = self.append_doc(doc, Self::space());
-    let doc = self.append_annot(doc, Annot::Prec, self.text(format!("{}", prec)));
+    let doc = self.append_annot(doc, Annot::Prec, self.text(format!("{prec}")));
     self.append_doc(doc, s!(";"))
   }
 
   /// Print a constant notation literal like `($e.$:23)`.
   fn const_lit(&'a self, tk: &ArcString) -> RefDoc<'a> {
-    let doc = self.text(format!("${}$:", tk));
+    let doc = self.text(format!("${tk}$:"));
     let doc = self.append_annot(doc, Annot::Prec,
       self.text(format!("{}", self.fe.env.pe.consts[tk].1)));
     self.append_doc(self.append_doc(self.lparen, doc), self.rparen)

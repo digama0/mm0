@@ -381,10 +381,10 @@ impl<N: Zero + Debug> Debug for Offset<N> {
     match self {
       Self::Real(n) => n.fmt(f),
       Self::Spill(i, n) if n.is_zero() => i.fmt(f),
-      Self::Spill(i, n) => write!(f, "{:?} + {:?}", i, n),
+      Self::Spill(i, n) => write!(f, "{i:?} + {n:?}"),
       Self::Global(i, n) if n.is_zero() => i.fmt(f),
-      Self::Global(i, n) => write!(f, "{:?} + {:?}", i, n),
-      Self::Const(n) => write!(f, "const[{:?}]", n),
+      Self::Global(i, n) => write!(f, "{i:?} + {n:?}"),
+      Self::Const(n) => write!(f, "const[{n:?}]"),
     }
   }
 }
@@ -985,8 +985,8 @@ impl Debug for Inst {
           OperandKind::Use => {}
         }
         match self.0.constraint() {
-          OperandConstraint::FixedReg(r) => write!(f, "{} @ {}", vreg, PReg(r)),
-          OperandConstraint::Reg => write!(f, "{}", vreg),
+          OperandConstraint::FixedReg(r) => write!(f, "{vreg} @ {}", PReg(r)),
+          OperandConstraint::Reg => write!(f, "{vreg}"),
           _ => unreachable!(),
         }
       }
@@ -995,42 +995,42 @@ impl Debug for Inst {
       Self::Fallthrough { dst } => write!(f, "fallthrough -> bb{}", dst.0),
       // Self::LetStart { size } => write!(f, "let_start[{}]", size),
       // Self::LetEnd { dst } => write!(f, "let_end {:?}", dst),
-      Self::BlockParam { var, val } => write!(f, "param {:?} @ {}", var, val),
+      Self::BlockParam { var, val } => write!(f, "param {var:?} @ {val}"),
       Self::Binop { op, sz, dst, src1, src2 } =>
-        write!(f, "{} <- {:?}.{} {}, {}", dst, op, sz.bits0(), src1, src2),
+        write!(f, "{dst} <- {op:?}.{} {src1}, {src2}", sz.bits0()),
       Self::Unop { op, sz, dst, src } =>
-        write!(f, "{} <- {:?}.{} {}", dst, op, sz.bits0(), src),
+        write!(f, "{dst} <- {op:?}.{} {src}", sz.bits0()),
       Self::Mul { sz, dst_lo, dst_hi, src1, src2 } =>
-        write!(f, "{}:{} <- mul.{} {}, {}", dst_hi, dst_lo, sz.bits0(), src1, src2),
-      Self::Imm { sz, dst, src } => write!(f, "{} <- imm.{} {}", dst, sz.bits0(), src),
-      Self::MovRR { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
-      Self::MovPR { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
+        write!(f, "{dst_hi}:{dst_lo} <- mul.{} {src1}, {src2}", sz.bits0()),
+      Self::Imm { sz, dst, src } => write!(f, "{dst} <- imm.{} {src}", sz.bits0()),
+      Self::MovRR { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
+      Self::MovPR { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
       Self::MovzxRmR { ext_mode, dst, src } =>
-        write!(f, "{}.{} <- movz {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
-      Self::Load64 { dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
-      Self::Lea { sz, dst, addr } => write!(f, "{} <- lea.{} {}", dst, sz.bits0(), addr),
+        write!(f, "{dst}.{} <- movz {src}.{}", ext_mode.dst().bits0(), ext_mode.src().bits0()),
+      Self::Load64 { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
+      Self::Lea { sz, dst, addr } => write!(f, "{dst} <- lea.{} {addr}", sz.bits0()),
       Self::MovsxRmR { ext_mode, dst, src } =>
-        write!(f, "{}.{} <- movs {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
-      Self::Store { sz, dst, src } => write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+        write!(f, "{dst}.{} <- movs {src}.{}", ext_mode.dst().bits0(), ext_mode.src().bits0()),
+      Self::Store { sz, dst, src } => write!(f, "{dst} <- mov.{} {src}", sz.bits0()),
       Self::ShiftImm { sz, kind, num_bits, dst, src } =>
-        write!(f, "{} <- {:?}.{} {}, {}", dst, kind, sz.bits0(), src, num_bits),
+        write!(f, "{dst} <- {kind:?}.{} {src}, {num_bits}", sz.bits0()),
       Self::ShiftRR { sz, kind, dst, src, src2 } =>
-        write!(f, "{} <- {:?}.{} {}, {}", dst, kind, sz.bits0(), src, src2),
-      Self::Cmp { sz, op, src1, src2 } => write!(f, "{}.{} {}, {}", op, sz.bits0(), src1, src2),
-      Self::SetCC { cc, dst } => write!(f, "{} <- set{}", dst, cc),
+        write!(f, "{dst} <- {kind:?}.{} {src}, {src2}", sz.bits0()),
+      Self::Cmp { sz, op, src1, src2 } => write!(f, "{op}.{} {src1}, {src2}", sz.bits0()),
+      Self::SetCC { cc, dst } => write!(f, "{dst} <- set{cc}"),
       Self::CMov { sz, cc, dst, src1, src2 } =>
-        write!(f, "{} <- cmov{}.{} {}, {}", dst, cc, sz.bits0(), src1, src2),
+        write!(f, "{dst} <- cmov{cc}.{} {src1}, {src2}", sz.bits0()),
       Self::CallKnown { f: func, operands, .. } =>
-        write!(f, "call {:?}({})", func, operands.iter().map(|&x| PrintOperand(x)).format(", ")),
+        write!(f, "call {func:?}({})", operands.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::SysCall { f: func, operands } =>
-        write!(f, "syscall {:?}({})", func, operands.iter().map(|&x| PrintOperand(x)).format(", ")),
+        write!(f, "syscall {func:?}({})", operands.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::Epilogue { params } =>
         write!(f, "epilogue({})", params.iter().map(|&x| PrintOperand(x)).format(", ")),
       Self::JmpKnown { dst, params } =>
         write!(f, "jump -> bb{}({})", dst.0, params.iter().format(", ")),
       Self::JmpCond { cc, taken, not_taken } =>
-        write!(f, "j{} -> bb{} else bb{}", cc, taken.0, not_taken.0),
-      Self::Assert { cc, dst } => write!(f, "assert{} -> bb{}", cc, dst.0),
+        write!(f, "j{cc} -> bb{} else bb{}", taken.0, not_taken.0),
+      Self::Assert { cc, dst } => write!(f, "assert{cc} -> bb{}", dst.0),
       Self::Ud2 => write!(f, "ud2"),
     }
   }
@@ -1485,43 +1485,43 @@ impl Debug for PInst {
       // Self::LetStart { size, dst } => write!(f, "let_start[{}] {:?}", size, dst),
       Self::MovId => write!(f, "mov_id"),
       Self::Binop { op, sz, dst, src } =>
-        write!(f, "{} <- {:?}.{} {0}, {}", dst, op, sz.bits0(), src),
+        write!(f, "{dst} <- {op:?}.{} {dst}, {src}", sz.bits0()),
       Self::Unop { op, sz, dst } =>
-        write!(f, "{} <- {:?}.{} {0}", dst, op, sz.bits0()),
-      Self::Mul { sz, src } => write!(f, "rdx:rax <- mul.{} rax, {}", sz.bits0(), src),
+        write!(f, "{dst} <- {op:?}.{} {dst}", sz.bits0()),
+      Self::Mul { sz, src } => write!(f, "rdx:rax <- mul.{} rax, {src}", sz.bits0()),
       Self::Cdx { sz } => write!(f, "rdx:rax <- cdx.{} rax", sz.bits0()),
-      Self::DivRem { sz, src } => write!(f, "rax,rdx <- divrem.{} rdx:rax, {}", sz.bits0(), src),
-      Self::Imm { sz, dst, src } => write!(f, "{} <- imm.{} {}", dst, sz.bits0(), src),
-      Self::MovRR { sz, dst, src } => write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+      Self::DivRem { sz, src } => write!(f, "rax,rdx <- divrem.{} rdx:rax, {src}", sz.bits0()),
+      Self::Imm { sz, dst, src } => write!(f, "{dst} <- imm.{} {src}", sz.bits0()),
+      Self::MovRR { sz, dst, src } => write!(f, "{dst} <- mov.{} {src}", sz.bits0()),
       Self::MovzxRmR { ext_mode, dst, src } =>
-        write!(f, "{}.{} <- movz {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
-      Self::Load64 { spill: false, dst, src } => write!(f, "{} <- mov.64 {}", dst, src),
-      Self::Load64 { spill: true, dst, src } => write!(f, "{} <- mov.64 {} (spill)", dst, src),
-      Self::Lea { sz, dst, addr } => write!(f, "{} <- lea.{} {}", dst, sz.bits0(), addr),
+        write!(f, "{dst}.{} <- movz {src}.{}", ext_mode.dst().bits0(), ext_mode.src().bits0()),
+      Self::Load64 { spill: false, dst, src } => write!(f, "{dst} <- mov.64 {src}"),
+      Self::Load64 { spill: true, dst, src } => write!(f, "{dst} <- mov.64 {src} (spill)"),
+      Self::Lea { sz, dst, addr } => write!(f, "{dst} <- lea.{} {addr}", sz.bits0()),
       Self::MovsxRmR { ext_mode, dst, src } =>
-        write!(f, "{}.{} <- movs {}.{}", dst, ext_mode.dst().bits0(), src, ext_mode.src().bits0()),
+        write!(f, "{dst}.{} <- movs {src}.{}", ext_mode.dst().bits0(), ext_mode.src().bits0()),
       Self::Store { spill: false, sz, dst, src } =>
-        write!(f, "{} <- mov.{} {}", dst, sz.bits0(), src),
+        write!(f, "{dst} <- mov.{} {src}", sz.bits0()),
       Self::Store { spill: true, sz, dst, src } =>
-        write!(f, "{} <- mov.{} {} (spill)", dst, sz.bits0(), src),
+        write!(f, "{dst} <- mov.{} {src} (spill)", sz.bits0()),
       Self::Shift { sz, kind, num_bits: Some(num_bits), dst } =>
-        write!(f, "{} <- {:?}.{} {0}, {}", dst, kind, sz.bits0(), num_bits),
+        write!(f, "{dst} <- {kind:?}.{} {dst}, {num_bits}", sz.bits0()),
       Self::Shift { sz, kind, num_bits: None, dst } =>
-        write!(f, "{} <- {:?}.{} {0}, cl", dst, kind, sz.bits0()),
-      Self::Cmp { sz, op, src1, src2 } => write!(f, "{}.{} {}, {}", op, sz.bits0(), src1, src2),
-      Self::SetCC { cc, dst } => write!(f, "{} <- set{}", dst, cc),
+        write!(f, "{dst} <- {kind:?}.{} {dst}, cl", sz.bits0()),
+      Self::Cmp { sz, op, src1, src2 } => write!(f, "{op}.{} {src1}, {src2}", sz.bits0()),
+      Self::SetCC { cc, dst } => write!(f, "{dst} <- set{cc}"),
       Self::CMov { sz, cc, dst, src } =>
-        write!(f, "{} <- cmov{}.{} {0}, {}", dst, cc, sz.bits0(), src),
-      Self::Push64 { src } => write!(f, "push {}", src),
-      Self::Pop64 { dst } => write!(f, "pop {}", dst),
-      Self::CallKnown { f: func } => write!(f, "call {:?}", func),
+        write!(f, "{dst} <- cmov{cc}.{} {dst}, {src}", sz.bits0()),
+      Self::Push64 { src } => write!(f, "push {src}"),
+      Self::Pop64 { dst } => write!(f, "pop {dst}"),
+      Self::CallKnown { f: func } => write!(f, "call {func:?}"),
       Self::SysCall => write!(f, "syscall"),
       Self::Ret => write!(f, "ret"),
       Self::JmpKnown { dst, short: true } => write!(f, "jump -> vb{}", dst.0),
       Self::JmpKnown { dst, short: false } => write!(f, "jump -> far vb{}", dst.0),
-      Self::JmpCond { cc, dst, short: true } => write!(f, "j{} -> vb{}", cc, dst.0),
-      Self::JmpCond { cc, dst, short: false } => write!(f, "j{} -> far vb{}", cc, dst.0),
-      Self::Assert { cc, dst } => write!(f, "assert{} -> vb{}", cc, dst.0),
+      Self::JmpCond { cc, dst, short: true } => write!(f, "j{cc} -> vb{}", dst.0),
+      Self::JmpCond { cc, dst, short: false } => write!(f, "j{cc} -> far vb{}", dst.0),
+      Self::Assert { cc, dst } => write!(f, "assert{cc} -> vb{}", dst.0),
       Self::Ud2 => write!(f, "ud2"),
     }
   }

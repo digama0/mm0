@@ -214,7 +214,7 @@ impl Ir {
   fn fmt_list(code: &[Ir], depth: usize, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     for (i, ir) in code.iter().enumerate() {
       for _ in 0..depth { f.write_str("  ")? }
-      write!(f, "{}: ", i)?;
+      write!(f, "{i}: ")?;
       ir.fmt1(depth, fe, f)?;
       writeln!(f, ";")?;
     }
@@ -223,45 +223,45 @@ impl Ir {
 
   fn fmt1(&self, depth: usize, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
-      Ir::Drop(n) => write!(f, "drop {}", n),
-      Ir::DropAbove(n) => write!(f, "drop-above {}", n),
+      Ir::Drop(n) => write!(f, "drop {n}"),
+      Ir::DropAbove(n) => write!(f, "drop-above {n}"),
       Ir::Undef => write!(f, "undef"),
       Ir::Dup => write!(f, "dup"),
-      Ir::AssertScope(n) => write!(f, "assert-scope {}", n),
-      Ir::EndScope(n) => write!(f, "end-scope {}", n),
-      Ir::Local(n) => write!(f, "local x{}", n),
+      Ir::AssertScope(n) => write!(f, "assert-scope {n}"),
+      Ir::EndScope(n) => write!(f, "end-scope {n}"),
+      Ir::Local(n) => write!(f, "local x{n}"),
       Ir::Global(_, a) => write!(f, "global {}", fe.to(&a)),
       Ir::Const(ref e) => write!(f, "const {}", fe.to(e)),
-      Ir::List(_, n) => write!(f, "list {}", n),
-      Ir::DottedList(n) => write!(f, "dotted-list {}", n),
-      Ir::App(false, _, n) => write!(f, "app {}", n),
-      Ir::App(true, _, n) => write!(f, "tail-app {}", n),
-      Ir::BuiltinApp(false, p, _, n) => write!(f, "app {} {}", p, n),
-      Ir::BuiltinApp(true, p, _, n) => write!(f, "tail-app {} {}", p, n),
+      Ir::List(_, n) => write!(f, "list {n}"),
+      Ir::DottedList(n) => write!(f, "dotted-list {n}"),
+      Ir::App(false, _, n) => write!(f, "app {n}"),
+      Ir::App(true, _, n) => write!(f, "tail-app {n}"),
+      Ir::BuiltinApp(false, p, _, n) => write!(f, "app {p} {n}"),
+      Ir::BuiltinApp(true, p, _, n) => write!(f, "tail-app {p} {n}"),
       Ir::ArityError(_, spec) => write!(f, "error {:?}", spec.arity_error()),
       Ir::AppHead(_) => write!(f, "app-head"),
-      Ir::JumpUnless(ip) => write!(f, "jump-unless -> {}", ip),
-      Ir::Jump(ip) => write!(f, "jump -> {}", ip),
+      Ir::JumpUnless(ip) => write!(f, "jump-unless -> {ip}"),
+      Ir::Jump(ip) => write!(f, "jump -> {ip}"),
       Ir::FocusStart(_) => write!(f, "focus-start"),
       Ir::RefineGoal(false) => write!(f, "refine-goal"),
       Ir::RefineGoal(true) => write!(f, "refine"),
       Ir::FocusFinish => write!(f, "focus-finish"),
       Ir::SetMergeStrategy(_, a) => write!(f, "set-merge-strategy {}", fe.to(&a)),
-      Ir::LocalDef(n) => write!(f, "def x{}", n),
+      Ir::LocalDef(n) => write!(f, "def x{n}"),
       Ir::GlobalDef(_, _, a) => write!(f, "def {}", fe.to(&a)),
       Ir::SetDoc(_, a) => write!(f, "set-doc _ {}", fe.to(&a)),
       Ir::Lambda(n, ref args) => {
         write!(f, "lambda{} ", if n == u8::MAX {""} else {"-global"})?;
         match args.1 {
-          ProcSpec::Exact(n) => writeln!(f, "{} [", n)?,
-          ProcSpec::AtLeast(n) => writeln!(f, "{}+ [", n)?,
+          ProcSpec::Exact(n) => writeln!(f, "{n} [")?,
+          ProcSpec::AtLeast(n) => writeln!(f, "{n}+ [")?,
         }
         Self::fmt_list(&args.2, depth + 1, fe, f)?;
         for _ in 0..depth { f.write_str("  ")? }
         write!(f, "]")
       }
-      Ir::Branch(n, ip, None) => write!(f, "branch {} -> {}", n, ip),
-      Ir::Branch(n, ip, Some(_)) => write!(f, "branch-cont {} -> {}", n, ip),
+      Ir::Branch(n, ip, None) => write!(f, "branch {n} -> {ip}"),
+      Ir::Branch(n, ip, Some(_)) => write!(f, "branch-cont {n} -> {ip}"),
       Ir::TestPatternResume => write!(f, "test-resume"),
       Ir::BranchFail(_) => write!(f, "branch-fail"),
       Ir::Map => write!(f, "map"),
@@ -271,20 +271,20 @@ impl Ir {
       Ir::MergeMap => write!(f, "merge-map"),
       Ir::PatternResult(false) => write!(f, "> fail"),
       Ir::PatternResult(true) => write!(f, "> skip"),
-      Ir::PatternAtom(n) => write!(f, "> var {}", n),
+      Ir::PatternAtom(n) => write!(f, "> var {n}"),
       Ir::PatternQuoteAtom(a) => write!(f, "> '{}", fe.to(&a)),
-      Ir::PatternString(ref s) => write!(f, "> \"{}\"", s),
-      Ir::PatternBool(b) => write!(f, "> #{}", b),
+      Ir::PatternString(ref s) => write!(f, "> \"{s}\""),
+      Ir::PatternBool(b) => write!(f, "> #{b}"),
       Ir::PatternUndef => write!(f, "> #undef"),
-      Ir::PatternNumber(ref n) => write!(f, "> {}", n),
+      Ir::PatternNumber(ref n) => write!(f, "> {n}"),
       Ir::PatternMVar(MVarPattern::Unknown) => write!(f, "> (mvar)"),
       Ir::PatternMVar(MVarPattern::Any) => write!(f, "> (mvar ..)"),
       Ir::PatternMVar(MVarPattern::Simple) => write!(f, "> (mvar _ _)"),
       Ir::PatternGoal => write!(f, "> (goal _)"),
-      Ir::PatternDottedList(n) => write!(f, "> (cons {} _)", n),
-      Ir::PatternList(n, None) => write!(f, "> (list {})", n),
-      Ir::PatternList(n, Some(k)) => write!(f, "> (list {} __ {})", n, k),
-      Ir::PatternTry(ip1, ip2) => write!(f, "> try(ok -> {}, err -> {})", ip1, ip2),
+      Ir::PatternDottedList(n) => write!(f, "> (cons {n} _)"),
+      Ir::PatternList(n, None) => write!(f, "> (list {n})"),
+      Ir::PatternList(n, Some(k)) => write!(f, "> (list {n} __ {k})"),
+      Ir::PatternTry(ip1, ip2) => write!(f, "> try(ok -> {ip1}, err -> {ip2})"),
       Ir::PatternTestPause => write!(f, "> test-pause"),
       Ir::PatternQExprAtom(a) => write!(f, "> ${}$", fe.to(&a)),
     }

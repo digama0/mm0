@@ -500,7 +500,7 @@ impl NodeHash for ExprHash {
   fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
     match *self {
       Self::None => LispVal::undef(),
-      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{}", i).as_bytes())),
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{i}").as_bytes())),
       Self::Dummy(a, _) => LispVal::atom(a),
       Self::App(t, ref es) => {
         let mut args = vec![LispVal::atom(env.terms[t].atom)];
@@ -917,7 +917,7 @@ impl NodeHash for ProofHash {
   fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
     match *self {
       Self::None => LispVal::undef(),
-      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{}", i).as_bytes())),
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{i}").as_bytes())),
       Self::Dummy(a, _) => LispVal::atom(a),
       Self::Term(t, ref es) => {
         let mut args = vec![LispVal::atom(env.terms[t].atom)];
@@ -926,7 +926,7 @@ impl NodeHash for ProofHash {
       }
       Self::Hyp(i, _) => match builder.hyps.get(i) {
         Some(Some(e)) => e.clone(),
-        _ => LispVal::atom(env.get_atom(format!("h{}", i).as_bytes()))
+        _ => LispVal::atom(env.get_atom(format!("h{i}").as_bytes()))
       },
       Self::Thm(t, ref es, _) => {
         let mut args = vec![LispVal::atom(env.thms[t].atom)];

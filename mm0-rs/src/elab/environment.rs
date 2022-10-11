@@ -1063,25 +1063,25 @@ impl ParserEnv {
     for (tk, &(ref fsp, p)) in &other.consts {
       self.add_const(tk.clone(), fsp.clone(), p).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared with two precedences", tk).into(),
+          format!("constant '{tk}' declared with two precedences").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&p, &(ref fsp, r)) in &other.prec_assoc {
       self.add_prec_assoc(p, fsp.clone(), r).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("precedence level {} has incompatible associativity", p).into(),
+          format!("precedence level {p} has incompatible associativity").into(),
           vec![(r.decl1, "left assoc here".into()), (r.decl2, "right assoc here".into())])))
     }
     for (tk, i) in &other.prefixes {
       self.add_prefix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared twice", tk).into(),
+          format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (tk, i) in &other.infixes {
       self.add_infix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared twice", tk).into(),
+          format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&s1, m) in &other.coes {

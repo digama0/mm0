@@ -1,4 +1,5 @@
 //! Importer for MMB files into the [`Environment`].
+#![allow(clippy::or_fun_call)] // false positive: clippy#9608
 
 use std::rc::Rc;
 use crate::{Environment, Modifiers, AtomId, TermId,

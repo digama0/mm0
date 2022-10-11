@@ -105,15 +105,15 @@ impl crate::EnvDisplay for Stack {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Stack::Undef => write!(f, "[#undef]"),
-      &Stack::Bool(b) => write!(f, "[{}]", b),
+      &Stack::Bool(b) => write!(f, "[{b}]"),
       Stack::Val(e) => e.fmt(fe, f),
       Stack::DefMerge => write!(f, "def-merge"),
-      Stack::Branch(n, e, None) => write!(f, "(branch {} {})", n, fe.to(e)),
-      Stack::Branch(n, e, Some(_)) => write!(f, "(branch-cont {} {})", n, fe.to(e)),
+      Stack::Branch(n, e, None) => write!(f, "(branch {n} {})", fe.to(e)),
+      Stack::Branch(n, e, Some(_)) => write!(f, "(branch-cont {n} {})", fe.to(e)),
       Stack::PatternPause(_) => write!(f, "pattern-pause"),
-      &Stack::PatternTry(ok, err) => write!(f, "(pattern-try {} {})", ok, err),
+      &Stack::PatternTry(ok, err) => write!(f, "(pattern-try {ok} {err})"),
       Stack::Ret => write!(f, "ret"),
-      Stack::MatchCont(start, n, e, _) => write!(f, "(match-cont {} {} {})", start, n, fe.to(e)),
+      Stack::MatchCont(start, n, e, _) => write!(f, "(match-cont {start} {n} {})", fe.to(e)),
       Stack::MapProc1(_, us) => write!(f, "(map-proc-1 {})", fe.to(&**us)),
       Stack::MapProc2(es) => write!(f, "(map-proc-2 {})", fe.to(es)),
       Stack::MergeMap(_) => write!(f, "(merge-map)"),
@@ -555,7 +555,7 @@ impl<'a> Evaluator<'a> {
       let x = match frame.pos {
         ProcPos::Named(_, _, a) => format!("({})", self.data[a].name).into(),
         ProcPos::Unnamed(_) => "[fn]".into(),
-        ProcPos::Builtin(p) => format!("({})", p).into()
+        ProcPos::Builtin(p) => format!("({p})").into()
       };
       if let Some((sp, good, base)) = old.take() {
         let (sp, osp) = if good {(sp, frame.span.clone())} else {(frame.span.clone(), sp)};
@@ -946,20 +946,20 @@ make_builtins! { self, tail, sp1, sp2, args,
   StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()).into(),
   StringNth: Exact(2) => {
     let i: usize = try1!(self.with_int(&args[0],
-      |n| n.try_into().map_err(|_| format!("index out of range: {}", n))));
+      |n| n.try_into().map_err(|_| format!("index out of range: {n}"))));
     let s = try1!(self.as_string(&args[1]));
     let c = *try1!(s.get(i).ok_or_else(||
-      format!("index out of range: index {}, length {}", i, s.len())));
+      format!("index out of range: index {i}, length {}", s.len())));
     LispVal::number(c.into()).into()
   },
   Substr: Exact(3) => {
     let start: usize = try1!(self.with_int(&args[0],
-      |n| n.try_into().map_err(|_| format!("index out of range: start {}", n))));
+      |n| n.try_into().map_err(|_| format!("index out of range: start {n}"))));
     let end: usize = try1!(self.with_int(&args[1],
-      |n| n.try_into().map_err(|_| format!("index out of range: end {}", n))));
-    if start > end { try1!(Err(format!("start {} > end {}", start, end))) }
+      |n| n.try_into().map_err(|_| format!("index out of range: end {n}"))));
+    if start > end { try1!(Err(format!("start {start} > end {end}"))) }
     let s = try1!(self.as_string(&args[2]));
-    if end > s.len() { try1!(Err(format!("index out of range: end {}, length {}", end, s.len()))) }
+    if end > s.len() { try1!(Err(format!("index out of range: end {end}, length {}", s.len()))) }
     LispVal::string(ArcString::new(s[start..end].into())).into()
   },
   StringToList: Exact(1) => {
@@ -973,7 +973,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     let mut out: Vec<u8> = Vec::with_capacity(u.len());
     for e in &mut u {
       out.push(try1!(self.with_int(&e,
-        |n| n.try_into().map_err(|_| format!("character out of range: {}", n)))));
+        |n| n.try_into().map_err(|_| format!("character out of range: {n}")))));
     }
     if !u.is_empty() {
       try1!(Err(format!("list->string: not a list: {}", self.print(&args[0]))))
@@ -1311,7 +1311,7 @@ make_builtins! { self, tail, sp1, sp2, args,
       None => {
         let mut i = 1;
         let x = loop {
-          let a = self.get_atom(format!("_{}", i).as_bytes());
+          let a = self.get_atom(format!("_{i}").as_bytes());
           if !self.lc.vars.contains_key(&a) {break a}
           i += 1;
         };
@@ -1775,7 +1775,7 @@ impl<'a> Evaluator<'a> {
                 self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)));
               self.report(err)
             }
-            throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
+            throw!(sp, format!("focused goal has not been solved\n\n{stat}"))
           }
         }
         self.lc.set_goals(gs);
@@ -1896,7 +1896,7 @@ impl<'a> Evaluator<'a> {
     match &self.data[a] {
       AtomData {name, lisp: None, ..} => match BuiltinProc::from_bytes(name) {
         None => {
-          let err = format!("Reference to unbound variable '{}'", name);
+          let err = format!("Reference to unbound variable '{name}'");
           return Err(self.err(Some((sp, false)), err))
         },
         Some(p) => {

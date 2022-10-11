@@ -58,7 +58,7 @@ impl ElabErrorKind {
   /// Converts the error message to a [`String`].
   #[must_use] pub fn raw_msg(&self) -> String {
     match self {
-      ElabErrorKind::Boxed(e, _) => format!("{}", e),
+      ElabErrorKind::Boxed(e, _) => format!("{e}"),
       ElabErrorKind::Upstream(_, e, _) => e.kind.raw_msg(),
     }
   }
@@ -67,11 +67,11 @@ impl ElabErrorKind {
   #[must_use] pub fn msg(&self) -> String {
     use std::fmt::Write;
     match self {
-      ElabErrorKind::Boxed(e, _) => format!("{}", e),
+      ElabErrorKind::Boxed(e, _) => format!("{e}"),
       &ElabErrorKind::Upstream(ref file, ref e, n) => {
         let mut s = format!("file contains errors:\n{}:{:#x}: {}",
           file, e.pos.start, e.kind.raw_msg());
-        if n != 0 { write!(s, "\n + {} more", n).unwrap() }
+        if n != 0 { write!(s, "\n + {n} more").unwrap() }
         s
       }
     }
@@ -93,7 +93,7 @@ impl ElabErrorKind {
       ElabErrorKind::Boxed(_, Some(info)) =>
         Some(info.iter().map(|(fs, e)| DiagnosticRelatedInformation {
           location: to_loc(fs),
-          message: format!("{}", e),
+          message: format!("{e}"),
         }).collect()),
       _ => None
     }
@@ -173,7 +173,7 @@ impl From<mm1_parser::ParseError> for ElabError {
 }
 
 impl From<mm0b_parser::ParseError> for ElabError {
-  fn from(e: mm0b_parser::ParseError) -> Self { Self::new_e(0, format!("{:?}", e)) }
+  fn from(e: mm0b_parser::ParseError) -> Self { Self::new_e(0, format!("{e:?}")) }
 }
 
 /// Records the current reporting setting. A report that is suppressed by the reporting mode
@@ -388,7 +388,7 @@ impl Elaborator {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
       SimpleNotaKind::Infix {..} => self.pe.add_infix(tk.clone(), info),
     }.map_err(|r| ElabError::with_info(n.id,
-      format!("constant '{}' already declared", tk).into(),
+      format!("constant '{tk}' already declared").into(),
       vec![(r.decl1, "declared here".into())]))
   }
 
@@ -526,7 +526,7 @@ impl Elaborator {
     if infix { self.pe.add_infix(s.clone(), info) }
     else { self.pe.add_prefix(s.clone(), info) }
       .map_err(|r| ElabError::with_info(nota.id,
-        format!("constant '{}' already declared", s).into(),
+        format!("constant '{s}' already declared").into(),
         vec![(r.decl1, "declared here".into())]))
   }
 
@@ -775,7 +775,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                 Ok(ElabResult::ImportCycle(cyc2)) => {
                   use std::fmt::Write;
                   let mut s = format!("import cycle: {}", p.clone());
-                  for p2 in &cyc2 { write!(s, " -> {}", p2).unwrap() }
+                  for p2 in &cyc2 { write!(s, " -> {p2}").unwrap() }
                   elab.report(ElabError::new_e(*sp, s));
                   if cyc.is_none() { *cyc = Some(cyc2) }
                 }

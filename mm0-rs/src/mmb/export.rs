@@ -314,7 +314,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     for (_, ty) in args {
       match *ty {
         Type::Bound(s) => {
-          assert!(bv < (1 << MAX_BOUND_VARS), "more than {} bound variables", MAX_BOUND_VARS);
+          assert!(bv < (1 << MAX_BOUND_VARS), "more than {MAX_BOUND_VARS} bound variables");
           self.write_sort_deps(true, s, bv)?;
           bv *= 2;
         }

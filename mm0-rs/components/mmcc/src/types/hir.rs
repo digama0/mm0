@@ -114,7 +114,7 @@ impl<'a> ArgKind<'a> {
     if attr.contains(ty::ArgAttr::GHOST) { write!(f, "ghost ")? }
     if attr.contains(ty::ArgAttr::MUT) { write!(f, "mut ")? }
     if attr.contains(ty::ArgAttr::GLOBAL) { write!(f, "global ")? }
-    write!(f, "{:?}", self)
+    write!(f, "{self:?}")
   }
 }
 
@@ -122,8 +122,8 @@ impl Debug for ArgKind<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Lam(pat) => pat.fmt(f),
-      Self::Let(pat, _, Some(e)) => write!(f, "{:?} := {:?}", pat, e),
-      Self::Let(pat, e, _) => write!(f, "{:?} := {:?}", pat, e),
+      Self::Let(pat, _, Some(e)) => write!(f, "{pat:?} := {e:?}"),
+      Self::Let(pat, e, _) => write!(f, "{pat:?} := {e:?}"),
     }
   }
 }
@@ -174,7 +174,7 @@ impl Block<'_> {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if !self.muts.is_empty() {
       indent(i, f)?; write!(f, "#![mut")?;
-      for &v in &self.muts { write!(f, " {:?}", v)? }
+      for &v in &self.muts { write!(f, " {v:?}")? }
       writeln!(f, "]")?
     }
     for stmt in &self.stmts { indent(i, f)?; stmt.k.debug_indent(i, f)? }
@@ -216,7 +216,7 @@ impl StmtKind<'_> {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       StmtKind::Let { lhs, rhs } => {
-        write!(f, "let {:?} = ", lhs)?;
+        write!(f, "let {lhs:?} = ")?;
         rhs.k.0.debug_indent(i, f)?;
         writeln!(f, ";")
       }
@@ -228,11 +228,11 @@ impl StmtKind<'_> {
         let mut first = true;
         for (j, lab) in labs.iter().enumerate() {
           if !std::mem::take(&mut first) { indent(i, f)?; }
-          writeln!(f, "{}label {:?}.{}(", if *r {""} else {"ghost "}, a, j)?;
+          writeln!(f, "{}label {a:?}.{j}(", if *r {""} else {"ghost "})?;
           for &(attr, ref arg) in &*lab.args {
             indent(i+1, f)?; arg.debug_with_attr(attr, f)?; writeln!(f, ",")?;
           }
-          if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+          if let Some(var) = &lab.variant { indent(i+1, f)?; writeln!(f, "{var:?},")?; }
           indent(i, f)?; writeln!(f, ") = {{")?;
           lab.body.k.debug_indent(i+1, f)?;
           indent(i, f)?; writeln!(f, "}};")?;
@@ -360,7 +360,7 @@ impl Debug for PlaceKind<'_> {
 impl PlaceKind<'_> {
   fn debug_indent(&self, i: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      PlaceKind::Var(v) => write!(f, "{:?}", v),
+      PlaceKind::Var(v) => write!(f, "{v:?}"),
       PlaceKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }
       PlaceKind::Index(args) => {
         let (_, arr, idx, h) = &**args;
@@ -388,7 +388,7 @@ impl PlaceKind<'_> {
       }
       PlaceKind::Proj(lk, e, j) => {
         e.1.k.0.debug_indent(i, f)?;
-        if let ListKind::Array = lk { write!(f, "[{}]", j) } else { write!(f, ".{}", j) }
+        if let ListKind::Array = lk { write!(f, "[{j}]") } else { write!(f, ".{j}") }
       }
       PlaceKind::Error => write!(f, "??"),
     }
@@ -413,10 +413,10 @@ pub enum Unop {
 impl std::fmt::Debug for Unop {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Unop::Neg(ity) => write!(f, "-[{}]", ity),
+      Unop::Neg(ity) => write!(f, "-[{ity}]"),
       Unop::Not => write!(f, "not"),
-      Unop::BitNot(ity) => write!(f, "bnot[{}]", ity),
-      Unop::As(from, to) => write!(f, "as[{} -> {}]", from, to),
+      Unop::BitNot(ity) => write!(f, "bnot[{ity}]"),
+      Unop::As(from, to) => write!(f, "as[{from} -> {to}]"),
     }
   }
 }
@@ -462,22 +462,22 @@ pub enum Binop {
 impl std::fmt::Debug for Binop {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Binop::Add(ity) => write!(f, "+[{}]", ity),
-      Binop::Mul(ity) => write!(f, "*[{}]", ity),
-      Binop::Sub(ity) => write!(f, "-[{}]", ity),
-      Binop::Max(ity) => write!(f, "max[{}]", ity),
-      Binop::Min(ity) => write!(f, "min[{}]", ity),
+      Binop::Add(ity) => write!(f, "+[{ity}]"),
+      Binop::Mul(ity) => write!(f, "*[{ity}]"),
+      Binop::Sub(ity) => write!(f, "-[{ity}]"),
+      Binop::Max(ity) => write!(f, "max[{ity}]"),
+      Binop::Min(ity) => write!(f, "min[{ity}]"),
       Binop::And => write!(f, "and"),
       Binop::Or => write!(f, "or"),
-      Binop::BitAnd(ity) => write!(f, "band[{}]", ity),
-      Binop::BitOr(ity) => write!(f, "bor[{}]", ity),
-      Binop::BitXor(ity) => write!(f, "bxor[{}]", ity),
-      Binop::Shl(ity) => write!(f, "shl[{}]", ity),
-      Binop::Shr(ity) => write!(f, "shr[{}]", ity),
-      Binop::Lt(ity) => write!(f, "<[{}]", ity),
-      Binop::Le(ity) => write!(f, "<=[{}]", ity),
-      Binop::Eq(ity) => write!(f, "=[{}]", ity),
-      Binop::Ne(ity) => write!(f, "!=[{}]", ity),
+      Binop::BitAnd(ity) => write!(f, "band[{ity}]"),
+      Binop::BitOr(ity) => write!(f, "bor[{ity}]"),
+      Binop::BitXor(ity) => write!(f, "bxor[{ity}]"),
+      Binop::Shl(ity) => write!(f, "shl[{ity}]"),
+      Binop::Shr(ity) => write!(f, "shr[{ity}]"),
+      Binop::Lt(ity) => write!(f, "<[{ity}]"),
+      Binop::Le(ity) => write!(f, "<=[{ity}]"),
+      Binop::Eq(ity) => write!(f, "=[{ity}]"),
+      Binop::Ne(ity) => write!(f, "!=[{ity}]"),
     }
   }
 }
@@ -672,14 +672,14 @@ impl ExprKind<'_> {
     match self {
       ExprKind::Unit => write!(f, "()"),
       ExprKind::ITrue => write!(f, "itrue"),
-      ExprKind::Var(v, _) => write!(f, "{:?}", v),
-      ExprKind::Const(c) => write!(f, "{}", c),
-      ExprKind::Bool(b) => write!(f, "{}", b),
-      ExprKind::Int(n) => write!(f, "{}", n),
-      ExprKind::Unop(op, e) => { write!(f, "{:?} ", op)?; e.k.0.debug_indent(i, f) }
+      ExprKind::Var(v, _) => write!(f, "{v:?}"),
+      ExprKind::Const(c) => write!(f, "{c}"),
+      ExprKind::Bool(b) => write!(f, "{b}"),
+      ExprKind::Int(n) => write!(f, "{n}"),
+      ExprKind::Unop(op, e) => { write!(f, "{op:?} ")?; e.k.0.debug_indent(i, f) }
       ExprKind::Binop(op, e1, e2) => {
         e1.k.0.debug_indent(i, f)?;
-        write!(f, " {:?} ", op)?;
+        write!(f, " {op:?} ")?;
         e2.k.0.debug_indent(i, f)
       }
       ExprKind::Eq(_, false, e1, e2) => {
@@ -730,7 +730,7 @@ impl ExprKind<'_> {
       }
       ExprKind::Proj(lk, e, j) => {
         e.1.k.0.debug_indent(i, f)?;
-        if let ListKind::Array = lk { write!(f, "[{}]", j) } else { write!(f, ".{}", j) }
+        if let ListKind::Array = lk { write!(f, "[{j}]") } else { write!(f, ".{j}") }
       }
       ExprKind::Rval(e) => e.k.0.debug_indent(i, f),
       ExprKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }
@@ -761,11 +761,11 @@ impl ExprKind<'_> {
       ExprKind::Cast(e, ty, _) => {
         write!(f, "cast(")?;
         e.k.0.debug_indent(i, f)?;
-        write!(f, ": {:?})", ty)
+        write!(f, ": {ty:?})")
       }
       ExprKind::Uninit => write!(f, "uninit"),
       ExprKind::Sizeof(ty) => {
-        write!(f, "sizeof({:?})", ty)
+        write!(f, "sizeof({ty:?})")
       }
       ExprKind::Typeof(e) => {
         write!(f, "typeof(")?;
@@ -793,10 +793,10 @@ impl ExprKind<'_> {
         for e in &c.args {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        if let Some(var) = &c.variant { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+        if let Some(var) = &c.variant { indent(i+1, f)?; writeln!(f, "{var:?},")?; }
         indent(i, f)?; write!(f, ")")
       }
-      ExprKind::Mm0Proof(p) => write!(f, "{:?}", p),
+      ExprKind::Mm0Proof(p) => write!(f, "{p:?}"),
       ExprKind::Block(bl) => {
         writeln!(f, "{{")?;
         bl.debug_indent(i+1, f)?;
@@ -805,7 +805,7 @@ impl ExprKind<'_> {
       ExprKind::If { hyp, cond, cases, muts, .. } => {
         if !muts.is_empty() {
           write!(f, "#[muts")?;
-          for &v in muts { write!(f, " {:?}", v)? }
+          for &v in muts { write!(f, " {v:?}")? }
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "if ")?;
@@ -824,7 +824,7 @@ impl ExprKind<'_> {
       ExprKind::While(w) => {
         if !w.muts.is_empty() {
           write!(f, "#[muts")?;
-          for &v in &*w.muts { write!(f, " {:?}", v)? }
+          for &v in &*w.muts { write!(f, " {v:?}")? }
           writeln!(f, "]")?; indent(i, f)?;
         }
         write!(f, "{:?}{}: while ", w.label, if w.has_break {""} else {"[nobreak]"})?;
@@ -832,7 +832,7 @@ impl ExprKind<'_> {
         w.cond.k.0.debug_indent(i+1, f)?;
         if let Some(var) = &w.variant {
           writeln!(f)?;
-          indent(i+1, f)?; writeln!(f, "{:?}", var)?;
+          indent(i+1, f)?; writeln!(f, "{var:?}")?;
           indent(i, f)?; writeln!(f, "{{")?;
         } else {
           writeln!(f, " {{")?;
@@ -845,15 +845,15 @@ impl ExprKind<'_> {
         e.k.0.debug_indent(i, f)
       }
       ExprKind::Jump(lab, j, es, var) => {
-        writeln!(f, "jump {:?}.{}(", lab, j)?;
+        writeln!(f, "jump {lab:?}.{j}(")?;
         for e in es {
           indent(i+1, f)?; e.k.0.debug_indent(i+1, f)?; writeln!(f, ",")?;
         }
-        if let Some(var) = var { indent(i+1, f)?; writeln!(f, "{:?},", var)?; }
+        if let Some(var) = var { indent(i+1, f)?; writeln!(f, "{var:?},")?; }
         indent(i, f)?; write!(f, ")")
       }
       ExprKind::Break(lab, e) => {
-        write!(f, "break {:?} ", lab)?;
+        write!(f, "break {lab:?} ")?;
         e.k.0.debug_indent(i, f)
       }
       ExprKind::Return(es) => {
@@ -952,7 +952,7 @@ impl Debug for ItemKind<'_> {
         })?;
         write!(f, " {}", name.k)?;
         if tyargs != 0 {
-          write!(f, "<{}>", (0..tyargs).map(|n| format!("T{}", n)).format(", "))?
+          write!(f, "<{}>", (0..tyargs).map(|n| format!("T{n}")).format(", "))?
         }
         write!(f, "(")?;
         if !args.is_empty() {
@@ -963,7 +963,7 @@ impl Debug for ItemKind<'_> {
             writeln!(f, ",")?;
           }
         }
-        if let Some(var) = variant { writeln!(f, "  {:?},", var)? }
+        if let Some(var) = variant { writeln!(f, "  {var:?},")? }
         if !rets.is_empty() {
           writeln!(f, ") -> (")?;
           for &(attr, ref arg) in &**rets {
@@ -977,7 +977,7 @@ impl Debug for ItemKind<'_> {
         writeln!(f, "}}")
       }
       Self::Global { lhs, rhs } => {
-        write!(f, "global {:?} = ", lhs)?;
+        write!(f, "global {lhs:?} = ")?;
         rhs.k.0.debug_indent(1, f)
       }
     }
