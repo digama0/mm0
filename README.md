@@ -35,13 +35,13 @@ We embrace the difference between fully explicit *proofs* that are verified by a
 
 The goal of this project is to build a formally verified (in MM0) verifier for MM0, down to the hardware, to build a strong trust base on which to build verifiers for more mainstream languages or other verified programs. This has lead to a number of subprojects that are contained in this repository.
 
-Metamath One and Metamath Zero
----
-Metamath zero is a specification-only language, and it is paired with proofs with a defined theory but an implementation-defined concrete syntax. Currently the lisp-like MMU format and the binary MMB format are supported by `mm0-hs`, and the `mm0-c` verifier supports only MMB. But neither of these is intended for being written by humans. If MM0 is the specification, then these are the compiled program meeting the specification.
+## Metamath One and Metamath Zero
+
+Metamath zero is a specification-only language, and it is paired with proofs with a defined theory but an implementation-defined concrete syntax. Currently the lisp-like MMU format and the binary MMB format are supported by `mm0-rs` and `mm0-hs`, and the `mm0-c` verifier supports only MMB. But neither of these is intended for being written by humans. If MM0 is the specification, then these are the compiled program meeting the specification.
 
 But then what plays the role of the source text in this analogy? Metamath One is a language which extends the syntax of MM0 with the ability to write proofs, including elaboration and unification, and with a metaprogramming environment to allow the writing of tactics. The result of processing an MM1 file is an MM0 specification file and a MMU or MMB proof file (alternatively, an MM0 file can be written separately and matched against the MM1 file). Because the process is proof producing, it need not be trusted.
 
-The MM1 files in the `examples/` directory have been written using the VSCode extension, which uses the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) to communicate to `mm0-hs server` (`mm0-hs` can also communicate to any other LSP-compliant editor), which enables support for syntax highlighting, go-to-definition and hover. Most importantly, it supports live diagnostics (red squiggles on errors), which allows for rapid feedback on proof progress. (The interface is strongly inspired by [`vscode-lean`](https://github.com/leanprover/vscode-lean/).)
+The MM1 files in the `examples/` directory have been written using the VSCode extension, which uses the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) to communicate to `mm0-rs server` (`mm0-rs` can also communicate to any other [LSP-compliant editor](https://microsoft.github.io/language-server-protocol/implementors/tools/)), which enables support for syntax highlighting, go-to-definition and hover. Most importantly, it supports live diagnostics (red squiggles on errors), which allows for rapid feedback on proof progress. (The interface is strongly inspired by [`vscode-lean`](https://github.com/leanprover/vscode-lean/).)
 
 ## What you will find in this repository
 
@@ -55,10 +55,10 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
   * [`mm0.mm0`](examples/mm0.mm0) and its proof [`mm0.mm1`](examples/mm0.mm1) is a complete formal specification of the `.mm0` specification file format and verification, from input strings, through the parser, to the checking of proofs. For the formally minded this may be a better reference than [`mm0.md`](mm0.md).
   * [`x86.mm0`](examples/x86.mm0) and its proof [`x86.mm1`](examples/x86.mm1) is a formalization of the x86 architecture, used as the target for the MMC compiler.
   * [`verifier.mm0`](examples/verifier.mm0) is the main goal theorem of the project, the statement of implementation correctness of an MM0 verifier. Eventually [`verifier.mm1`](examples/verifier.mm1) will be a proof of this statement.
-* `mm0-rs` is an implementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`.
+* `mm0-rs` is a compiler and LSP server for MM1.
   * [`mm1.md`](mm0-hs/mm1.md) is a description of the MM1 language (this is in the `mm0-hs` directory but it is up to date for `mm0-rs`).
-  * `mm0-rs compile` can be used to run a MM1 file to produce an MMB output. If there are errors in the file, it will provide similar information to the server mode.
-  * `mm0-hs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
+  * `mm0-rs compile` can be used to run an MM1 file to produce an MMU or MMB output. If there are errors in the file, it will provide similar information to the server mode.
+  * `mm0-rs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
 * `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
   * [`mmb.md`](mm0-c/mmb.md) is an informal specification of the MMB format.
   * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
