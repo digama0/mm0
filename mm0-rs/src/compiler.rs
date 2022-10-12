@@ -55,7 +55,7 @@ enum FileCache {
 }
 
 #[derive(DeepSizeOf, Clone)]
-pub(crate) enum FileContents {
+pub enum FileContents {
   Ascii(Arc<LinedString>),
   #[cfg(not(target_arch = "wasm32"))]
   MMap(Arc<memmap::Mmap>),
@@ -64,23 +64,23 @@ pub(crate) enum FileContents {
 
 impl FileContents {
   /// Constructs a new [`FileContents`] from source text.
-  pub(crate) fn new(text: String) -> Self {
+  pub fn new(text: String) -> Self {
     Self::Ascii(Arc::new(text.into()))
   }
 
   /// Constructs a new [`FileContents`] from a memory map.
   #[cfg(not(target_arch = "wasm32"))]
-  pub(crate) fn new_mmap(data: memmap::Mmap) -> Self {
+  pub fn new_mmap(data: memmap::Mmap) -> Self {
     Self::MMap(Arc::new(data))
   }
 
   /// Constructs a new [`FileContents`] from a memory map.
   #[allow(unused)]
-  pub(crate) fn new_bin(data: Box<[u8]>) -> Self {
+  pub fn new_bin(data: Box<[u8]>) -> Self {
     Self::Bin(data.into())
   }
 
-  pub(crate) fn new_bin_from_file(path: &std::path::Path) -> io::Result<Self> {
+  pub fn new_bin_from_file(path: &std::path::Path) -> io::Result<Self> {
     #[cfg(not(target_arch = "wasm32"))] {
       let file = fs::File::open(path)?;
       // Safety: Well, memory mapping files is never totally safe, but we're assuming
@@ -94,17 +94,17 @@ impl FileContents {
     }
   }
 
-  pub(crate) fn try_ascii(&self) -> Option<&Arc<LinedString>> {
+  pub fn try_ascii(&self) -> Option<&Arc<LinedString>> {
     if let Self::Ascii(e) = self {Some(e)} else {None}
   }
 
   #[track_caller]
-  pub(crate) fn ascii(&self) -> &Arc<LinedString> {
+  pub fn ascii(&self) -> &Arc<LinedString> {
     self.try_ascii().expect("expected ASCII file")
   }
 
   #[allow(unused)]
-  pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+  pub fn ptr_eq(&self, other: &Self) -> bool {
     match (self, other) {
       (Self::Ascii(e1), Self::Ascii(e2)) => Arc::ptr_eq(e1, e2),
       #[cfg(not(target_arch = "wasm32"))]
@@ -469,7 +469,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 
 /// Elaborate a file, and return the completed [`FrozenEnv`] result, along with the
 /// file contents.
-pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
+pub fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
   let (path, file) = VFS.get_or_insert(path)?;
   let env = match block_on(elaborate(path, Default::default()))? {
     ElabResult::Ok(_, _, env) => Some(env),
