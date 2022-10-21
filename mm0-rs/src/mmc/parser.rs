@@ -113,7 +113,8 @@ make_keywords! {
 
 /// An embedded MM0 expression inside MMC. This representation is designed to make it easy
 /// to produce substitutions of the free variables.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub(crate) enum Mm0ExprNode {
   /// A constant expression, containing no free variables,
@@ -200,7 +201,8 @@ impl From<PArgAttr> for ArgAttr {
 }
 
 /// A parsed label expression `((begin (lab x y)) body)`.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct PLabel {
   /// The name of the label
   name: Symbol,
@@ -210,7 +212,8 @@ struct PLabel {
   body: Uncons,
 }
 
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 enum ItemGroup {
   Item(Item),
@@ -219,7 +222,8 @@ enum ItemGroup {
   Intrinsic(Uncons),
 }
 
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 enum ItemIterInner {
   New,
   Global(Uncons),
@@ -229,7 +233,8 @@ enum ItemIterInner {
 
 /// An iterator over items. This is not a proper iterator in the sense of implementing `Iterator`,
 /// but it can be used with the [`Parser::parse_next_item`] method to extract a stream of items.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct ItemIter {
   group: ItemIterInner,
   u: Uncons,

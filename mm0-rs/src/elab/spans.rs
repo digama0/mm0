@@ -16,7 +16,7 @@ use crate::Span;
 /// We leave `T` generic here because it isn't important in this file, but we
 /// are only going to instantiate it with
 /// `T` = [`ObjectKind`](super::environment::ObjectKind).
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spans<T> {
   /// The span that encloses the entire declaration, from the first command keyword
   /// to the final semicolon. All spans in `data` will be sub-spans of this.

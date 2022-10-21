@@ -16,7 +16,8 @@ use super::print::{FormatEnv, EnvDisplay};
 
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Ir {
   /// Drop `n` elements from the stack. `[a0, ..., an] -> []`
   Drop(usize),
@@ -298,7 +299,8 @@ impl EnvDisplay for Ir {
 }
 
 /// A formatter for [`Ir`] lists.
-#[derive(Clone, Copy, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct IrList<'a>(pub usize, pub &'a [Ir]);
 
 impl EnvDisplay for IrList<'_> {
@@ -308,7 +310,8 @@ impl EnvDisplay for IrList<'_> {
 }
 
 /// The `(mvar)` patterns, which match a metavariable of different kinds.
-#[derive(Clone, Copy, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum MVarPattern {
   /// The `(mvar)` pattern, which matches metavars with unknown type.
   Unknown,

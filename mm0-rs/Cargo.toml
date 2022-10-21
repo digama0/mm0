@@ -20,7 +20,7 @@ server = [
   "mm0_util/server", "mm1_parser/server"]
 doc = ["lsp-types", "pulldown-cmark", "webbrowser"]
 memory = [
-  "mm0_deepsize", "mm0_deepsize_derive/nodummy",
+  "mm0_deepsize", "mm0_deepsize_derive",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
 wasm = ["console_error_panic_hook", "web-sys"]
 mmc = ["mmcc", "im"]
@@ -53,7 +53,7 @@ zerocopy = "0.6"
 memchr = "2.5"
 bit-set = "0.5"
 typed-arena = "2.0"
-mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", default-features = false }
+mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", optional = true }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [
   "num", "typed-arena", "futures", "owning_ref", "bit-set"] }

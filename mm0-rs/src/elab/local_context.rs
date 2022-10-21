@@ -14,7 +14,8 @@ use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
 
 /// The contexts in which an unknown var can appear.
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VarContext {
   /// An unconstrained context
   Unknown,
@@ -29,7 +30,8 @@ pub enum VarContext {
 /// but is known to be bound, `y` is not declared at all but known to be a bound non-dummy,
 /// and `z` is not declared and must be a bound dummy of type `var` (assuming
 /// that `all` has type `var` for its first argument).
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum InferSort {
   /// This is a declared bound variable with the given sort.
   Bound {
@@ -90,7 +92,8 @@ impl InferSort {
 
 /// The local context is the collection of proof-local data. This is manipulated
 /// by lisp tactics in order to keep track of the proof state and eventually produce a proof.
-#[derive(Default, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Default, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct LocalContext {
   /// The collection of local variables. The key is the name of the variable, and the
   /// value is `(dummy, is)` where `dummy` is true if this is a dummy variable

@@ -23,10 +23,6 @@ categories = ["development-tools::profiling", "memory-management"]
 license = "MIT"
 repository = "https://github.com/digama0/mm0/"
 
-[features]
-default = ["nodummy"]
-nodummy = []
-
 [lib]
 proc-macro = true
 [dependencies.proc-macro2]

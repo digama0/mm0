@@ -266,7 +266,8 @@ impl InferTarget {
 /// A lisp value. These are the "values" that are passed around by lisp code.
 /// See [`LispKind`] for the list of different types of lisp object. This is
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
-#[derive(Default, Debug, EnvDebug, Clone, DeepSizeOf)]
+#[derive(Default, Debug, EnvDebug, Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct LispVal(Rc<LispKind>);
 
 /// This macro is used to define the [`LispKind`] type, as well as the
@@ -278,7 +279,8 @@ pub struct LispVal(Rc<LispKind>);
 macro_rules! mk_lisp_kind {
   ($(#[$doc:meta])* $kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
     $(#[$doc])*
-    #[derive(Debug, DeepSizeOf)]
+    #[derive(Debug)]
+    #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
     pub enum $kind {
       /// An atom like `'foo`. Atoms are internally represented as small integers,
       /// so equality comparison on atoms is fast.
@@ -489,7 +491,8 @@ impl PartialEq<LispVal> for LispVal {
 }
 impl Eq for LispVal {}
 
-#[derive(Default, DeepSizeOf)]
+#[derive(Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct LispArena(typed_arena::Arena<Weak<LispKind>>);
 
 thread_local!(static REFS: Cell<Option<*const LispArena>> = Cell::new(None));
@@ -512,7 +515,8 @@ impl std::fmt::Debug for LispArena {
 
 /// The target of a reference can be either a weak reference or a strong reference.
 /// Weak references are used to break cycles.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum LispWeak {
   /// A regular (strong) reference.
   Strong(LispVal),
@@ -565,7 +569,8 @@ impl LispWeak {
   }
 }
 /// A mutable reference to a [`LispVal`], the inner type used by `ref!` and related functions.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct LispRef(RefCell<LispWeak>);
 
 impl LispRef {
@@ -888,7 +893,8 @@ impl Eq for LispKind {}
 
 /// An annotation, which is a tag placed on lisp values that is ignored by all
 /// the basic functions.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Annot {
   /// A span annotation marks an expression with a span from the input file.
   /// The parser will place these on all expressions it produces, and they are
@@ -900,7 +906,8 @@ pub enum Annot {
 }
 
 /// The location information for a procedure.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProcPos {
   /// A named procedure is created by `(def (foo x) ...)` or
   /// `(def foo (fn (x) ...))`. The file span is the definition block
@@ -928,7 +935,8 @@ impl ProcPos {
 /// A callable procedure. There are several sources of procedures,
 /// all of which are interactable only via function calls `(f)` and
 /// printing (which shows only basic information about the procedure).
-#[derive(Debug, EnvDebug, DeepSizeOf)]
+#[derive(Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Proc {
   /// A built-in procedure (see [`BuiltinProc`] for the full list).
   /// Initially, a reference to a lisp global with a builtin procedure's name
@@ -1467,7 +1475,8 @@ impl Remap for Box<dyn LispProc> {
 /// the same as a [`LispVal`], but in order to decrease allocations this allows
 /// holding on to incomplete subparts of the arrays used in [`LispKind::List`]
 /// and [`LispKind::DottedList`].
-#[must_use] #[derive(Debug, DeepSizeOf)]
+#[must_use] #[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Uncons {
   /// The initial state, pointing to a lisp value.
   New(LispVal),

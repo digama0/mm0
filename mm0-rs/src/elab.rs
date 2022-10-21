@@ -44,7 +44,8 @@ use crate::{ArcList, ArcString, AtomId, BoxError, Coe, DeclKey, DocComment, EnvM
 use {crate::LinedString, lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location}};
 
 /// An error payload.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ElabErrorKind {
   /// A boxed error. The main [`BoxError`] is the error message,
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
@@ -107,7 +108,8 @@ impl From<BoxError> for ElabErrorKind {
 /// The main error type for the elaborator. Each error has a location (which must be in
 /// the currently elaborating file), an error level, a message, and an optional list of
 /// related locations (possibly in other files) along with short messages.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ElabError {
   /// The location of the error in the current file.
   pub pos: Span,
@@ -626,7 +628,8 @@ impl Elaborator {
 }
 
 /// The result of elaboration of a dependent file.
-#[derive(Debug, Clone, DeepSizeOf)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ElabResult<T> {
   /// Elaboration was successful; this carries the environment, plus additional user data.
   Ok(T, Option<Arc<[ElabError]>>, FrozenEnv),

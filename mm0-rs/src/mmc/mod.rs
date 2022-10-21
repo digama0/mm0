@@ -51,7 +51,8 @@ impl mmcc::PrintLambda for PrintLambda<'_> {
   }
 }
 
-#[derive(Default, DeepSizeOf)]
+#[derive(Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct Config;
 struct ItemContext<'a> {
   elab: &'a Elaborator,
@@ -89,7 +90,8 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
   }
 }
 
-#[derive(Clone, DeepSizeOf, Default)]
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct CompilerInner {
   inner: mmcc::Compiler<Config>,
   code: Option<Box<mmcc::LinkedCode>>,
@@ -120,7 +122,8 @@ impl CompilerInner {
 
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
-#[derive(Clone, DeepSizeOf)]
+#[derive(Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Compiler {
   inner: Rc<CompilerInner>,
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing

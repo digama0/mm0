@@ -364,7 +364,7 @@ fn dep_change(path: FileRef, cancel: Arc<AtomicBool>) -> BoxFuture<'static, ()> 
   elaborate_and_report(path, None, cancel).boxed()
 }
 
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 enum FileCache {
   InProgress {
     old: Option<(FileContents, FrozenEnv)>,
@@ -385,7 +385,7 @@ enum FileCache {
 /// edited text associated to a file in a virtual file hierarchy.
 /// `import` statements are relative paths in this hierarchy, and it may
 /// map to the actual file system, to URLs, or to relative paths in memory.
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct VirtualFile {
   /// File data, saved (true) or unsaved (false)
   text: Mutex<(Option<i32>, FileContents)>,
@@ -411,7 +411,7 @@ impl VirtualFile {
 
 /// The VFS or "virtual file system" manages the currently open MM1 files and
 /// their relations to other files.
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl std::fmt::Debug for Vfs {

@@ -38,7 +38,7 @@ static MAX_EMITTED_ERROR: AtomicU8 = AtomicU8::new(0);
 
 /// The cached [`Environment`](crate::elab::Environment) representing a
 /// completed parse, or an incomplete parse.
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 enum FileCache {
   /// This file is currently being worked on on another thread. The list
   /// contains tasks that are waiting to be sent the completed [`Environment`];
@@ -54,7 +54,8 @@ enum FileCache {
   Ready(FrozenEnv),
 }
 
-#[derive(DeepSizeOf, Clone)]
+#[derive(Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) enum FileContents {
   Ascii(Arc<LinedString>),
   #[cfg(not(target_arch = "wasm32"))]
@@ -129,7 +130,7 @@ impl std::ops::Deref for FileContents {
 
 /// A file that has been loaded from disk, along with the
 /// parsed representation of the file (which may be in progress on another thread).
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct VirtualFile {
     /// The file's text as a [`LinedString`].
     text: FileContents,
@@ -148,7 +149,7 @@ impl VirtualFile {
 }
 
 /// The virtual file system (a singleton accessed through the global variable [`struct@VFS`]).
-#[derive(DeepSizeOf)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl Vfs {

@@ -45,7 +45,8 @@ use super::{ObjectKind, Remap, Remapper, Spans};
 
 /// A "frozen" environment, which is a thread-safe read only
 /// wrapper around [`Environment`].
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenEnv(Arc<Environment>);
 #[allow(unknown_lints)] #[allow(clippy::non_send_fields_in_send_ty)]
@@ -129,7 +130,8 @@ impl FrozenEnv {
 }
 
 /// A wrapper around an [`AtomData`] that is frozen.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenAtomData(AtomData);
 
@@ -157,7 +159,8 @@ pub struct FrozenMergeStrategyInner(MergeStrategyInner);
 pub struct FrozenMergeStrategy(MergeStrategy);
 
 /// A wrapper around a [`LispData`] that is frozen.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenLispData(LispData);
 
@@ -181,17 +184,20 @@ impl Deref for FrozenLispData {
 }
 
 /// A wrapper around a [`LispVal`] that is frozen.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenLispVal(LispVal);
 
 /// A wrapper around a [`LispRef`] that is frozen.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenLispRef(LispRef);
 
 /// A wrapper around a [`Proc`] that is frozen.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[repr(transparent)]
 pub struct FrozenProc(Proc);
 
