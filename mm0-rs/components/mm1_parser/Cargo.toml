@@ -22,7 +22,7 @@ zerocopy = "0.6"
 
 # optional dependencies
 mm0_deepsize = { path = "../mm0_deepsize", optional = true }
-mm0_deepsize_derive = { path = "../mm0_deepsize_derive", default-features = false, optional = true }
+mm0_deepsize_derive = { path = "../mm0_deepsize_derive", optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.93", optional = true }
 
