@@ -29,7 +29,7 @@ lsp-types = { version = "0.93", optional = true }
 procinfo = { version = "0.4", optional = true }
 
 [features]
-default = ["memory", "lined_string"]
+default = ["lined_string"]
 memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procinfo"]
 server = ["lsp-types"]
 lined_string = ["once_cell", "pathdiff"]
