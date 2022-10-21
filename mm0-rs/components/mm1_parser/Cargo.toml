@@ -28,5 +28,5 @@ lsp-types = { version = "0.93", optional = true }
 
 [features]
 default = []
-memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "mm0_util/memory"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "mm0_util/memory", "mm0_deepsize/num"]
 server = ["lsp-types", "mm0_util/server"]
