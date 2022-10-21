@@ -637,7 +637,7 @@ impl<'a> From<&'a FileSpan> for Span {
 /// Try to get memory usage (resident set size) in bytes using the
 /// [`getrusage()`](libc::getrusage) function from libc.
 #[allow(unused)]
-#[cfg(all(feature = "memory", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "memory", unix))]
 fn get_memory_rusage() -> usize {
   // Safety: getrusage() initializes the passed-in buffer
   let usage = unsafe {
@@ -652,7 +652,7 @@ fn get_memory_rusage() -> usize {
 /// Try to get memory usage (resident set size) in bytes using the
 /// [`getrusage()`](libc::getrusage) function from libc.
 #[allow(unused)]
-#[cfg(all(feature = "memory", target_arch = "wasm32"))]
+#[cfg(all(feature = "memory", not(unix)))]
 fn get_memory_rusage() -> usize { 0 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
