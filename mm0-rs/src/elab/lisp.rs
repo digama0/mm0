@@ -17,7 +17,6 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use num::BigInt;
-use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::{ast::Atom, ArcString, AtomId, FileSpan, MergeStrategy, MergeStrategyInner, Modifiers,
   MutexExt, Remap, Remapper, SliceExt, Span, StackList};
 use parser::Ir;
@@ -479,10 +478,6 @@ impl Deref for LispVal {
   type Target = LispKind;
   fn deref(&self) -> &LispKind { &self.0 }
 }
-// Safety: inherited from Rc
-unsafe impl StableAddress for LispVal {}
-// Safety: inherited from Rc
-unsafe impl CloneStableAddress for LispVal {}
 
 impl PartialEq<LispVal> for LispVal {
   fn eq(&self, other: &LispVal) -> bool {
@@ -1477,58 +1472,62 @@ impl Remap for Box<dyn LispProc> {
 /// and [`LispKind::DottedList`].
 #[must_use] #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-pub enum Uncons {
+pub struct Uncons {
   /// The initial state, pointing to a lisp value.
-  New(LispVal),
-  /// A reference to a sub-slice of a [`LispKind::List`].
-  List(OwningRef<LispVal, [LispVal]>),
-  /// A reference to a sub-slice of a [`LispKind::DottedList`].
-  DottedList(OwningRef<LispVal, [LispVal]>, LispVal),
+  e: LispVal,
+  /// A reference to a sub-slice of a [`LispKind::List`] or [`LispKind::DottedList`].
+  /// (It is an invariant of the type that if `offset` is nonzero then `e` is
+  /// directly a `List(es)` or `DottedList(es, _)`, not a `Ref` or `Annot` thereof,
+  /// and `offset <= es.len()`.)
+  offset: u32,
 }
 
 impl From<LispVal> for Uncons {
-  fn from(e: LispVal) -> Uncons { Uncons::New(e) }
+  fn from(e: LispVal) -> Uncons { Uncons::new(e) }
 }
 
 impl Uncons {
+  /// Create a new [`Uncons`] to destruct a [`LispVal`].
+  pub fn new(e: LispVal) -> Uncons { Uncons { e, offset: 0 } }
+
   /// Create an empty [`Uncons`].
-  pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
+  pub fn nil() -> Uncons { Uncons::new(LispVal::nil()) }
 
   /// Returns true if this is a proper list of length `n`.
   #[must_use] pub fn exactly(&self, n: usize) -> bool {
-    match self {
-      Uncons::New(e) => e.exactly(n),
-      Uncons::List(es) => es.len() == n,
-      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(false, |i| r.exactly(i)),
-    }
+    self.e.exactly(n + self.offset as usize)
   }
 
   /// Reconstruct a file span for an [`Uncons`]. Note that this may not be a well formed
   /// substring, for example in `(a b c)` after the first iteration the span will refer
   /// to `b c)` and at the last iteration the span will cover only `)`.
   #[must_use] pub fn fspan(&self) -> Option<FileSpan> {
-    match self {
-      Uncons::New(e) => e.fspan(),
-      Uncons::DottedList(es, r) if es.is_empty() => r.fspan(),
-      Uncons::List(es) |
-      Uncons::DottedList(es, _) => es.as_owner().fspan().map(|mut fsp| {
-        fsp.span.start = match es.last().and_then(|e| e.fspan()) {
+    if self.offset == 0 { return self.e.fspan() }
+    match &*self.e {
+      LispKind::DottedList(es, r) if es.len() == self.offset as usize => r.fspan(),
+      LispKind::List(es) |
+      LispKind::DottedList(es, _) => self.e.fspan().map(|mut fsp| {
+        fsp.span.start = match es[self.offset as usize..].last().and_then(|e| e.fspan()) {
           Some(fsp2) => fsp2.span.start,
           None => fsp.span.end.saturating_sub(1),
         };
         fsp
-      })
+      }),
+      _ => self.e.fspan(),
     }
   }
 
   /// Convert an [`Uncons`] back into a [`LispVal`].
   #[must_use] pub fn as_lisp(&self) -> LispVal {
-    match self {
-      Uncons::New(e) => e.clone(),
-      Uncons::List(es) => LispKind::List(es.cloned_box()).decorate_span(&self.fspan()),
-      Uncons::DottedList(es, r) if es.is_empty() => r.clone(),
-      Uncons::DottedList(es, r) =>
-        LispKind::DottedList(es.cloned_box(), r.clone()).decorate_span(&self.fspan())
+    if self.offset == 0 { return self.e.clone() }
+    match &*self.e {
+      LispKind::List(es) =>
+        LispKind::List(es[self.offset as usize..].cloned_box()).decorate_span(&self.fspan()),
+      LispKind::DottedList(es, r) if es.len() == self.offset as usize => r.clone(),
+      LispKind::DottedList(es, r) =>
+        LispKind::DottedList(es[self.offset as usize..].cloned_box(), r.clone())
+          .decorate_span(&self.fspan()),
+      _ => self.e.clone(),
     }
   }
 
@@ -1537,29 +1536,31 @@ impl Uncons {
 
   /// Returns true if this is a proper or improper list of length at least `n`.
   #[must_use] pub fn at_least(&self, n: usize) -> bool {
-    n == 0 || match self {
-      Uncons::New(e) => e.at_least(n),
-      Uncons::List(es) => es.len() >= n,
-      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
+    n == 0 || match &*self.e {
+      LispKind::List(es) => es.len() >= n + self.offset as usize,
+      LispKind::DottedList(es, r) =>
+        (n + self.offset as usize).checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
+      _ => self.e.at_least(n),
     }
   }
 
   /// Returns true if this is a proper list of length at least `n`.
   #[must_use] pub fn list_at_least(&self, n: usize) -> bool {
-    n == 0 || match self {
-      Uncons::New(e) => e.list_at_least(n),
-      Uncons::List(es) => es.len() >= n,
-      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.list_at_least(i)),
+    n == 0 || match &*self.e {
+      LispKind::List(es) => es.len() >= n + self.offset as usize,
+      LispKind::DottedList(es, r) =>
+        (n + self.offset as usize).checked_sub(es.len()).map_or(true, |i| r.list_at_least(i)),
+      _ => self.e.list_at_least(n),
     }
   }
 
   /// Gets the length of the list-like prefix of this value,
   /// i.e. the number of cons-cells along the right spine before reaching something else.
   #[must_use] pub fn len(&self) -> usize {
-    match self {
-      Uncons::New(e) => e.len(),
-      Uncons::List(es) => es.len(),
-      Uncons::DottedList(es, r) => es.len() + r.len(),
+    match &*self.e {
+      LispKind::List(es) => es.len() - self.offset as usize,
+      LispKind::DottedList(es, r) => (es.len() - self.offset as usize) + r.len(),
+      _ => self.e.len(),
     }
   }
 
@@ -1567,10 +1568,11 @@ impl Uncons {
   /// (This could almost be a [`Peekable`](std::iter::Peekable) implementation,
   /// but the reference may not be derived from `self`, so it has to clone the value.)
   #[must_use] pub fn head(&self) -> Option<LispVal> {
-    match self {
-      Uncons::New(e) => e.head(),
-      Uncons::List(es) => es.first().cloned(),
-      Uncons::DottedList(es, r) => es.first().cloned().or_else(|| r.head()),
+    match &*self.e {
+      LispKind::List(es) => es[self.offset as usize..].first().cloned(),
+      LispKind::DottedList(es, r) =>
+        es[self.offset as usize..].first().cloned().or_else(|| r.head()),
+      _ => self.e.head(),
     }
   }
 
@@ -1578,15 +1580,15 @@ impl Uncons {
   /// `vec` with the first `n` values in the list and returns true,
   /// otherwise it extends `vec` with as many values as are present and returns false.
   pub fn extend_into(&self, n: usize, vec: &mut Vec<LispVal>) -> bool {
-    match self {
-      Uncons::New(e) => e.clone().extend_into(n, vec),
-      Uncons::List(es) | Uncons::DottedList(es, _) if n <= es.len() =>
-        {vec.extend_from_slice(&es[..n]); true}
-      Uncons::List(es) => {vec.extend_from_slice(es); false}
-      Uncons::DottedList(es, r) => {
-        vec.extend_from_slice(es);
-        r.clone().extend_into(n - es.len(), vec)
+    match &*self.e {
+      LispKind::List(es) | LispKind::DottedList(es, _) if n <= es[self.offset as usize..].len() =>
+        {vec.extend_from_slice(&es[self.offset as usize..][..n]); true}
+      LispKind::List(es) => {vec.extend_from_slice(&es[self.offset as usize..]); false}
+      LispKind::DottedList(es, r) => {
+        vec.extend_from_slice(&es[self.offset as usize..]);
+        r.clone().extend_into(n - es[self.offset as usize..].len(), vec)
       }
+      _ => self.e.clone().extend_into(n, vec),
     }
   }
 }
@@ -1596,55 +1598,38 @@ impl From<Uncons> for LispVal {
 }
 
 impl Clone for Uncons {
-  fn clone(&self) -> Self { Uncons::New(self.as_lisp()) }
+  fn clone(&self) -> Self { Uncons::new(self.as_lisp()) }
 }
 
 impl Iterator for Uncons {
   type Item = LispVal;
   fn next(&mut self) -> Option<LispVal> {
-    'l: loop {
-      match self {
-        Uncons::List(es) if es.is_empty() => return None,
-        Uncons::List(es) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
-        Uncons::DottedList(es, r) if es.is_empty() => *self = Uncons::New(r.clone()),
-        Uncons::DottedList(es, _) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
-        Uncons::New(e) => {
-          let mut temp: LispVal;
-          let mut inner: &LispVal = e;
-          loop {
-            #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
-            match &**inner {
-              LispKind::Ref(m) => {temp = m.unref(); inner = &temp}
-              LispKind::Annot(_, v) => inner = v,
-              LispKind::List(es) => {
-                *self = Uncons::List(OwningRef::from(e.clone()).map(|_| {
-                  // Safety: The lifetime of this value is tied to the original
-                  // `e` (or clones made via `temp`), while the provided value
-                  // `_` is a clone of it, which has the same lifetime.
-                  unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
-                }));
-                continue 'l
-              }
-              LispKind::DottedList(es, r) => {
-                *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_| {
-                  // Safety: same as above
-                  unsafe { std::mem::transmute::<&[LispVal], &[LispVal]>(&**es) }
-                }), r.clone());
-                continue 'l
-              }
-              _ => return None
-            }
-          }
+    loop {
+      match &*self.e {
+        LispKind::List(es) => {
+          let e = es.get(self.offset as usize)?;
+          self.offset += 1;
+          return Some(e.clone())
         }
+        LispKind::DottedList(es, r) => {
+          if let Some(e) = es.get(self.offset as usize) {
+            self.offset += 1;
+            return Some(e.clone())
+          }
+          *self = Uncons::new(r.clone())
+        }
+        LispKind::Ref(m) => self.e = m.unref(),
+        LispKind::Annot(_, v) => self.e = v.clone(),
+        _ => return None,
       }
     }
   }
 
   fn size_hint(&self) -> (usize, Option<usize>) {
-    match self {
-      Uncons::New(_) => (0, None),
-      Uncons::List(es) => {let n = es.len(); (n, Some(n))}
-      Uncons::DottedList(es, _) => (es.len(), None)
+    match &*self.e {
+      LispKind::List(es) => {let n = es.len() - self.offset as usize; (n, Some(n))}
+      LispKind::DottedList(es, _) => (es.len() - self.offset as usize, None),
+      _ => (0, None),
     }
   }
 

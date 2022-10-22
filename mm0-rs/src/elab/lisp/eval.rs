@@ -969,7 +969,7 @@ make_builtins! { self, tail, sp1, sp2, args,
       .collect::<Vec<_>>()).into()
   },
   ListToString: Exact(1) => {
-    let mut u = Uncons::New(args[0].clone());
+    let mut u = Uncons::new(args[0].clone());
     let mut out: Vec<u8> = Vec::with_capacity(u.len());
     for e in &mut u {
       out.push(try1!(self.with_int(&e,

@@ -244,7 +244,7 @@ pub(crate) struct ItemIter {
 impl ItemIter {
   /// Construct a new iterator from an `I: Iterator<Item=LispVal>`.
   #[must_use] pub(crate) fn new(e: LispVal) -> Self {
-    Self { group: ItemIterInner::New, u: Uncons::New(e), intrinsic: false }
+    Self { group: ItemIterInner::New, u: Uncons::new(e), intrinsic: false }
   }
 }
 
@@ -690,7 +690,7 @@ impl<'a, C> Parser<'a, C> {
           let mut with = Renames::default();
           for e in u {
             if !self.parse_rename(base, &e, &mut with)? {
-              for e in Uncons::New(e) {
+              for e in Uncons::new(e) {
                 if !self.parse_rename(base, &e, &mut with)? {
                   return Err(ElabError::new_e(&span,
                     "with: expected {old -> old'} or {new' <- new}"))
@@ -1247,7 +1247,7 @@ impl<'a, C> Parser<'a, C> {
   /// Parse a type.
   fn parse_ty(&mut self, base: &FileSpan, e: &LispVal) -> Result<Type> {
     let span = try_get_fspan(base, e);
-    let mut u = Uncons::New(e.clone());
+    let mut u = Uncons::new(e.clone());
     let (head, mut args) = match u.next() {
       None if u.is_empty() => return Ok(Spanned {span, k: TypeKind::Unit}),
       None => (u.into(), vec![]),

@@ -27,7 +27,6 @@ use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use std::time::Duration;
 use instant::Instant;
 use futures::channel::oneshot::Receiver;
-use owning_ref::{ArcRef, OwningRef};
 use spans::Spans;
 use crate::ast::{self, Ast, DeclKind, Delimiter, GenNota, Literal as ALiteral,
   LocalKind, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind};
@@ -51,16 +50,24 @@ pub enum ElabErrorKind {
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
   /// related to the error, along with short descriptions.
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
-  /// This is an error from a file upstream. The `usize` is the number of
-  /// number of upstream errors after the first one.
-  Upstream(FileRef, ArcRef<[ElabError], ElabError>, usize)
+  /// This is an error from a file upstream.
+  Upstream {
+    /// The file that produced the error.
+    file: FileRef,
+    /// A reference to the file's error list, for drop purposes.
+    owner: Arc<[ElabError]>,
+    /// The actual error is `owner[idx]`.
+    idx: usize,
+    /// The `usize` is the number of number of upstream errors after the first one.
+    n: usize,
+  }
 }
 impl ElabErrorKind {
   /// Converts the error message to a [`String`].
   #[must_use] pub fn raw_msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{e}"),
-      ElabErrorKind::Upstream(_, e, _) => e.kind.raw_msg(),
+      &ElabErrorKind::Upstream { ref owner, idx, .. } => owner[idx].kind.raw_msg(),
     }
   }
 
@@ -69,7 +76,8 @@ impl ElabErrorKind {
     use std::fmt::Write;
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{e}"),
-      &ElabErrorKind::Upstream(ref file, ref e, n) => {
+      &ElabErrorKind::Upstream { ref file, ref owner, idx, n } => {
+        let e = &owner[idx];
         let mut s = format!("file contains errors:\n{}:{:#x}: {}",
           file, e.pos.start, e.kind.raw_msg());
         if n != 0 { write!(s, "\n + {n} more").unwrap() }
@@ -743,14 +751,16 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                         let mut it = errs.iter().enumerate().filter(|(_, e)| e.level == level);
                         if let Some((i, first)) = it.next() {
                           let mut n = it.count();
-                          let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
+                          let file = if let ElabErrorKind::Upstream { ref file, n: m, .. } = first.kind {
                             n += m;
                             file.clone()
                           } else {
                             p.clone()
                           };
-                          let e = OwningRef::new(errs).map(|errs| &errs[i]);
-                          elab.report(ElabError {pos: *sp, level, kind: ElabErrorKind::Upstream(file, e, n)});
+                          elab.report(ElabError {
+                            pos: *sp, level,
+                            kind: ElabErrorKind::Upstream { file, owner: errs, idx: i, n }
+                          });
                           break
                         }
                       }

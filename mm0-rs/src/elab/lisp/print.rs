@@ -190,10 +190,10 @@ impl EnvDisplay for LispKind {
 
 impl EnvDisplay for Uncons {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Uncons::New(e) => e.fmt(fe, f),
-      Uncons::List(es) => list(es, None, true, fe, f),
-      Uncons::DottedList(es, r) => list(es, Some(r), true, fe, f),
+    match &*self.e {
+      LispKind::List(es) => list(&es[self.offset as usize..], None, true, fe, f),
+      LispKind::DottedList(es, r) => list(&es[self.offset as usize..], Some(r), true, fe, f),
+      _ => self.e.fmt(fe, f),
     }
   }
 }

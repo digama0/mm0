@@ -288,13 +288,6 @@ impl<T: DeepSizeOf> DeepSizeOf for [T] {
     }
 }
 
-#[cfg(feature = "owning_ref")]
-impl<O: DeepSizeOf, T: ?Sized> DeepSizeOf for owning_ref::OwningRef<O, T> {
-    fn deep_size_of_children(&self, context: &mut Context) -> usize {
-        self.as_owner().deep_size_of_children(context)
-    }
-}
-
 
 /// A macro to generate an impl for types with no inner allocation.
 #[macro_export]

@@ -121,7 +121,7 @@ impl AxiomUse {
       data.val.unwrapped(|e| if let LispKind::AtomMap(m) = e {
         for (&a, u) in m {
           let mut axiom_set = BitSet::new();
-          let mut it = Uncons::New(u.clone()).peekable();
+          let mut it = Uncons::new(u.clone()).peekable();
           let doc = it.peek().and_then(|s| s.unwrapped(|s| match s {
             LispKind::String(s) => Some(format!("{s}")),
             _ => None
