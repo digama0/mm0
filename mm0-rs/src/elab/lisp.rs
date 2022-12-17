@@ -538,7 +538,8 @@ impl LispWeak {
           Some(e) => LispVal(e)
         };
         *self = LispWeak::Strong(e);
-        let_unchecked!(LispWeak::Strong(e) = self, f(e))
+        let LispWeak::Strong(e) = self else { unreachable!() };
+        f(e)
       }
     }
   }

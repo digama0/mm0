@@ -776,8 +776,10 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       hir::ExprKind::ITrue |
       hir::ExprKind::Assert { trivial: Some(true), .. } => Constant::itrue().into(),
       hir::ExprKind::Bool(b) => Constant::bool(b).into(),
-      hir::ExprKind::Int(n) => let_unchecked!(ty::TyKind::Int(ity) = e.ty().k,
-        Constant::int(ity, n.clone()).into()),
+      hir::ExprKind::Int(n) => {
+        let ty::TyKind::Int(ity) = e.ty().k else { unreachable!() };
+        Constant::int(ity, n.clone()).into()
+      }
       hir::ExprKind::Const(a) => Constant {ety: self.tr(e.k.1), k: ConstKind::Const(a)}.into(),
       hir::ExprKind::Call(ref call)
       if matches!(call.rk, hir::ReturnKind::Unit | hir::ReturnKind::Unreachable) => {
@@ -860,14 +862,15 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       }
       hir::ExprKind::Call(ref call)
       if matches!(call.rk, hir::ReturnKind::Struct(_)) => {
-        let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
-        let_unchecked!(n as hir::ReturnKind::Struct(n) = call.rk);
+        let hir::ExprKind::Call(call) = e.k.0 else { unreachable!() };
+        let hir::ReturnKind::Struct(n) = call.rk else { unreachable!() };
         let dest = (0..n).map(|_| {
           hir::Spanned { span: e.span, k: PreVar::Ok(self.fresh_var()) }
         }).collect::<Vec<_>>();
         self.expr_call(e.span, call, e.k.1.1, &dest)?;
         RValue::List(dest.into_iter().map(|v| {
-          let_unchecked!(PreVar::Ok(v) = v.k, v.into())
+          let PreVar::Ok(v) = v.k else { unreachable!() };
+          v.into()
         }).collect())
       }
       hir::ExprKind::Mm0Proof(p) => Constant::mm0_proof(self.tr(e.k.1.1), p).into(),
@@ -933,7 +936,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         hir::ExprKind::If { hyp, cond, cases, gen, muts, trivial } =>
           return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, trivial, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
-          let_unchecked!(call as hir::ExprKind::Call(call) = e.k.0);
+          let hir::ExprKind::Call(call) = e.k.0 else { unreachable!() };
           return this.expr_call(e.span, call, e.k.1.1,
             &[dest.unwrap_or(hir::Spanned { span: e.span, k: PreVar::Fresh })])
         }
@@ -1101,19 +1104,20 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           TupleMatchKind::And => ListKind::And,
           TupleMatchKind::Sn => ListKind::Sn,
           TupleMatchKind::Own |
-          TupleMatchKind::Shr => let_unchecked!([vpat, hpat] = *pats, {
+          TupleMatchKind::Shr => {
+            let [v_pat, h_pat] = *pats else { unreachable!() };
             let tgt = self.tr(pat.k.ty);
-            let v = self.tr(vpat.k.var);
-            let h = self.tr(hpat.k.var);
+            let v = self.tr(v_pat.k.var);
+            let h = self.tr(h_pat.k.var);
             let lk = LetKind::Ptr([
-              (Spanned { span: span.clone(), k: v }, self.tr(vpat.k.ty)),
-              (Spanned { span: span.clone(), k: h }, self.tr(hpat.k.ty))
+              (Spanned { span: span.clone(), k: v }, self.tr(v_pat.k.ty)),
+              (Spanned { span: span.clone(), k: h }, self.tr(h_pat.k.ty))
             ]);
             self.push_stmt(Statement::Let(lk, true, tgt, src.clone().into()));
-            self.tup_pat(span, global, vpat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
-            self.tup_pat(span, global, hpat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
+            self.tup_pat(span, global, v_pat, Rc::new(EPlaceKind::Var(v)), &mut v.into());
+            self.tup_pat(span, global, h_pat, Rc::new(EPlaceKind::Var(h)), &mut h.into());
             return
-          }),
+          }
         };
         for (i, &pat) in pats.iter().enumerate() {
           let i = i.try_into().expect("overflow");
@@ -1210,7 +1214,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       if let ty::TuplePatternKind::Tuple(pats, _) = lhs.k.k.k;
       if pats.len() == usize::from(n);
       then {
-        let_unchecked!(call as hir::ExprKind::Call(call) = rhs.k.0);
+        let hir::ExprKind::Call(call) = rhs.k.0 else { unreachable!() };
         let dest = pats.iter()
           .map(|&pat| lhs.map_into(|_| PreVar::Pre(pat.k.var)))
           .collect::<Vec<_>>();
@@ -1256,7 +1260,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             self.tree.push(bl);
             let dest2 = dest.as_ref().map(|v| v.0.map_into(PreVar::Ok));
             let ety = dest.as_ref().map(|v| v.1);
-            if let Ok(()) = self.block(body.span, body.k, ety, dest2) {
+            if self.block(body.span, body.k, ety, dest2).is_ok() {
               let args = match dest {
                 None => vec![],
                 Some((v, _)) => vec![(v.k, true, v.k.into())]

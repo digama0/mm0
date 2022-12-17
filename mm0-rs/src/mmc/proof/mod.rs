@@ -190,7 +190,7 @@ impl ProofDedup<'_> {
   fn get_def0(&mut self, env: &Environment, name: TermId) -> ProofId {
     let td = &env.terms[name];
     assert!(td.args.is_empty());
-    let e = if let TermKind::Def(Some(e)) = &td.kind { e } else { unreachable!("not a def") };
+    let TermKind::Def(Some(e)) = &td.kind else { unreachable!("not a def") };
     self.from_expr(env, e)
   }
 

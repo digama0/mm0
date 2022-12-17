@@ -165,8 +165,7 @@ impl Environment {
     })
   }
 
-  fn check_term<'a>(&'a self, s: &str,
-      args: &[SortId], ret: SortId, def: bool) -> Result<TermId, String> {
+  fn check_term(&self, s: &str, args: &[SortId], ret: SortId, def: bool) -> Result<TermId, String> {
     let t = self.atoms.get(s.as_bytes())
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
       .ok_or_else(|| format!("term '{s}' not found"))?;
@@ -328,7 +327,8 @@ impl Elaborator {
       let (s, map) = self.env.new_string_handler().map_err(|e| ElabError::new_e(sp, e))?;
       self.inout.string = Some((s, map));
     }
-    let_unchecked!(Some((s, map)) = &mut self.inout.string, Ok((*s, map)))
+    let Some((s, map)) = &mut self.inout.string else { unreachable!() };
+    Ok((*s, map))
   }
 
   fn elab_output_string(&mut self, sp: Span, hs: &[SExpr]) -> EResult<()> {
@@ -422,7 +422,8 @@ impl FrozenEnv {
         (|| -> Result<(), OutputError> {
           let terms = {
             handler = Some(env.new_string_handler().map_err(OutputError::String)?);
-            let_unchecked!(Some((_, t)) = &handler, t)
+            let Some((_, t)) = &handler else { unreachable!() };
+            t
           };
           env.write_output_string(terms, &mut w, heap, store, &store[store.len() - exprs..])
         })().map_err(|e| (span.clone(), e))?;

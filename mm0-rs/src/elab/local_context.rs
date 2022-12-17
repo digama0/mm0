@@ -1325,9 +1325,8 @@ impl Elaborator {
       Some(res) => ThmKind::Thm(res.and_then(|ThmVal {mut de, var_map, mut lc, is: is2, proof: e}| {
         (|| -> Result<Option<Proof>> {
           let mut u = Uncons::from(e.clone());
-          let (ds, pf) = match (u.next(), u.next(), u.exactly(0)) {
-            (Some(ds), Some(pf), true) => (ds, pf),
-            _ => return Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))
+          let (Some(ds), Some(pf), true) = (u.next(), u.next(), u.exactly(0)) else {
+            return Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))
           };
           let lc = lc.as_deref_mut().unwrap_or(&mut self.lc);
           let fe = FormatEnv {source: &self.ast.source, env: &self.env};

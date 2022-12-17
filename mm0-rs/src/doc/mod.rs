@@ -108,7 +108,7 @@ impl AxiomUse {
     let mut axiom_use = HashMap::new();
     let mut to_tid = vec![ThmId(u32::MAX)];
     for (tid, td) in env.thms.enum_iter() {
-      if let ThmKind::Axiom = td.kind {
+      if matches!(td.kind, ThmKind::Axiom) {
         let axid = to_tid.len();
         to_tid.push(tid);
         let mut bs = BitSet::new();
@@ -163,7 +163,7 @@ impl AxiomUse {
     }
   }
 
-  fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmId) -> &'a BitSet {
+  fn get<'a>(&'a mut self, env: &Environment, tid: ThmId) -> &'a BitSet {
     if let Some(bs) = self.axiom_use.get(&tid) {
       #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
       // Safety: This is the same issue that comes up in Spans::insert.
@@ -326,7 +326,7 @@ impl<'a> LayoutProof<'a> {
   }
 }
 
-fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Write,
+fn render_line(fe: FormatEnv<'_>, mangler: &mut Mangler, w: &mut impl Write,
   line: u32, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<()> {
   let kind_class = match kind {
     LineKind::Hyp(_) => "step-hyp",
@@ -334,10 +334,9 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Conv(_) => "step-conv"
   };
   write!(w, "        \
-              <tr id=\"{line}\" class=\"{kind}\">\
+              <tr id=\"{line}\" class=\"{kind_class}\">\
     \n          <td>{line}</td>\
-    \n          <td>",
-    kind = kind_class, line = line)?;
+    \n          <td>")?;
   let mut first = true;
   for hyp in hyps {
     if !mem::take(&mut first) { write!(w, ", ")? }
@@ -350,7 +349,7 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Thm(tid) =>
       mangler.mangle(fe.env, tid, |thm, mangled|
         write!(w, r#"<a class="{}" href="{}.html">{}</a>"#,
-          if let ThmKind::Axiom = fe.env.thms[tid].kind {"ax"} else {"thm"},
+          if matches!(fe.env.thms[tid].kind, ThmKind::Axiom) {"ax"} else {"thm"},
           mangled, thm))?,
     LineKind::Conv(defs) => {
       write!(w, "<i>conv</i>")?;
@@ -507,8 +506,7 @@ fn header(w: &mut impl Write,
     \n  <title>{title} - Metamath Zero</title>\
     \n  <link rel=\"stylesheet\" type=\"text/css\" href=\"{rel}stylesheet.css\" />\
     \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin\" type=\"text/css\" media=\"screen\">\
-    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">",
-    rel = rel, desc = desc, title = title)?;
+    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">")?;
   for s in script {
     writeln!(w, r#"  <script src="{s}"></script>"#)?
   }
@@ -520,8 +518,7 @@ fn header(w: &mut impl Write,
     \n    <h1 class=\"title\">\
     \n      {h1}\
     \n      <span class=\"nav\">{nav}</span>\
-    \n    </h1>",
-    rel = rel, h1 = h1, nav = nav)
+    \n    </h1>")
 }
 const FOOTER: &str = "  </div>\n</body>\n</html>";
 
@@ -588,7 +585,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         write!(nav, r#" | <a href="{mangled}.html" title="{thm}">&#8811;</a>"#)
           .expect("writing to a string"));
     }
-    let (kind, kindclass) = if let ThmKind::Axiom = td.kind {("Axiom", "ax")} else {("Theorem", "thm")};
+    let (kind, kindclass) = if matches!(td.kind, ThmKind::Axiom) {("Axiom", "ax")} else {("Theorem", "thm")};
     header(&mut file, "../",
       &format!("Documentation for theorem `{thmname}` in `{filename}`."),
       &format!("{thmname} - {filename}"),

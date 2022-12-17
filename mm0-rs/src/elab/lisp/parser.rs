@@ -537,7 +537,7 @@ impl<'a> LispParser<'a> {
 
 impl<'a> LispParser<'a> {
   fn pop_builtin(&mut self) -> Option<BuiltinProc> {
-    let v = if let Some(Ir::Const(v)) = self.code.last() { v } else { return None };
+    let Some(Ir::Const(v)) = self.code.last() else { return None };
     let p = v.unwrapped(|e|
       if let LispKind::Proc(Proc::Builtin(p)) = *e { Some(p) } else { None })?;
     self.code.pop();
@@ -557,8 +557,10 @@ impl<'a> LispParser<'a> {
 
   fn list(&mut self, fsp: FileSpan, n: usize) {
     if self.code[self.code.len() - n..].iter().all(|ir| matches!(ir, Ir::Const(_))) {
-      let args = self.code.drain(self.code.len() - n..)
-        .map(|ir| let_unchecked!(Ir::Const(e) = ir, e)).collect::<Box<[_]>>();
+      let args = self.code.drain(self.code.len() - n..).map(|ir| {
+        let Ir::Const(e) = ir else { unreachable!() };
+        e
+      }).collect::<Box<[_]>>();
       self.code.push(Ir::Const(LispVal::list(args).span(fsp)));
     } else {
       self.code.push(Ir::List(fsp.span, n));
@@ -568,7 +570,7 @@ impl<'a> LispParser<'a> {
   fn dotted_list(&mut self, sp: Span, n: usize) {
     if n == 0 { return }
     if matches!(self.code.last(), Some(Ir::Const(_))) {
-      let_unchecked!(e as Some(Ir::Const(e)) = self.code.pop());
+      let Some(Ir::Const(e)) = self.code.pop() else { unreachable!() };
       match &*e {
         LispKind::List(es) => {
           self.code.extend(es.iter().map(|e| Ir::Const(e.clone())));
@@ -580,8 +582,10 @@ impl<'a> LispParser<'a> {
           self.code.push(Ir::DottedList(n + es.len()))
         }
         _ => if self.code[self.code.len() - n..].iter().all(|ir| matches!(ir, Ir::Const(_))) {
-          let args = self.code.drain(self.code.len() - n..)
-            .map(|ir| let_unchecked!(Ir::Const(e) = ir, e)).collect::<Box<[_]>>();
+          let args = self.code.drain(self.code.len() - n..).map(|ir| {
+            let Ir::Const(e) = ir else { unreachable!() };
+            e
+          }).collect::<Box<[_]>>();
           self.code.push(Ir::Const(LispVal::dotted_list(args, e)))
         } else {
           self.code.push(Ir::Const(e));
@@ -714,7 +718,7 @@ impl<'a> LispParser<'a> {
       if keep { self.code.push(Ir::Undef) }
       return Ok(())
     }
-    let ls = if let SExprKind::List(ls) = &es[0].k {ls} else {
+    let SExprKind::List(ls) = &es[0].k else {
       return Err(ElabError::new_e(es[0].span, "let: invalid spec"))
     };
     rec &= !ls.is_empty();

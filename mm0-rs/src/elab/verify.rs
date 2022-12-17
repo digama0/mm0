@@ -165,7 +165,7 @@ impl ProofVerifyError<'_> {
       Self::DisjointVariableViolation => write!(w,
         "Disjoint variable violation when applying theorem"),
       Self::UnifyFailure(i, proved) => with_format_env(env, |fe| if let Some(fe) = fe {
-        let_unchecked!((thm, p) as Some(&ProofNode::Thm(thm, p)) = parent);
+        let Some(&ProofNode::Thm(thm, p)) = parent else { unreachable!() };
         let td = &env.thms[thm];
         let lisp_heap = build_heap();
         let (_, args, _) = td.unpack_thm(&store[p..]);

@@ -487,8 +487,7 @@ trait NodeInsert<N: NodeKind> {
             Ordering::Greater => true
           };
           if rotate_right {
-            let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
-              std::mem::take(&mut ns.0.0));
+            let MCtxNode::Node(bal1, _, ns1) = std::mem::take(&mut ns.0.0) else { unreachable!() };
             let nb = std::mem::take(&mut ns.1.0);
             let (al, ar) = *ns1;
             match bal1 {
@@ -505,7 +504,7 @@ trait NodeInsert<N: NodeKind> {
                 (true, th)
               }
               Ordering::Greater => {
-                let_unchecked!((bal2, ns2) as MCtxNode::Node(bal2, _, ns2) = ar.0);
+                let MCtxNode::Node(bal2, _, ns2) = ar.0 else { unreachable!() };
                 let (arl, arr) = *ns2;
                 let (bal_new, bal2_new) = match bal2 {
                   Ordering::Less => (Ordering::Equal, Ordering::Greater),
@@ -532,8 +531,7 @@ trait NodeInsert<N: NodeKind> {
             Ordering::Greater => { *bal = Ordering::Equal; false }
           };
           if rotate_left {
-            let_unchecked!((bal1, ns1) as MCtxNode::Node(bal1, _, ns1) =
-              std::mem::take(&mut ns.1.0));
+            let MCtxNode::Node(bal1, _, ns1) = std::mem::take(&mut ns.1.0) else { unreachable!() };
             let na = std::mem::take(&mut ns.0.0);
             let (bl, br) = *ns1;
             match bal1 {
@@ -550,7 +548,7 @@ trait NodeInsert<N: NodeKind> {
                 (true, th)
               }
               Ordering::Less => {
-                let_unchecked!((bal2, ns2) as MCtxNode::Node(bal2, _, ns2) = bl.0);
+                let MCtxNode::Node(bal2, _, ns2) = bl.0 else { unreachable!() };
                 let (bll, blr) = *ns2;
                 let (bal_new, bal2_new) = match bal2 {
                   Ordering::Less => (Ordering::Equal, Ordering::Greater),
@@ -1130,10 +1128,7 @@ impl<'a> ProcProver<'a> {
       (Ok(edst), Ok(esrc), &PInst::MovRR { dst, src, .. }) => {
         let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
         let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let (v, h1) = match self.read(tctx, &lsrc) {
-          ((Value::Reg, v), h1) => (v, h1),
-          _ => unreachable!(),
-        };
+        let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
         let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
         thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
           ok_movRR(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
@@ -1141,10 +1136,7 @@ impl<'a> ProcProver<'a> {
       (Ok(edst), Err(esrc), &PInst::Load64 { dst, .. }) => {
         let lsrc = Loc::Local(esrc).as_expr(&mut self.thm);
         let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let (v, h1) = match self.read(tctx, &lsrc) {
-          ((Value::SpillSlot(v), _), h1) => (v, h1),
-          _ => unreachable!(),
-        };
+        let ((Value::SpillSlot(v), _), h1) = self.read(tctx, &lsrc) else { unreachable!() };
         let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
         thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
           ok_unspill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
@@ -1152,10 +1144,7 @@ impl<'a> ProcProver<'a> {
       (Err(edst), Ok(esrc), &PInst::Store { src, .. }) => {
         let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
         let ldst = Loc::Local(edst).as_expr(&mut self.thm);
-        let (v, h1) = match self.read(tctx, &lsrc) {
-          ((Value::Reg, v), h1) => (v, h1),
-          _ => unreachable!(),
-        };
+        let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
         let ss = app!(self.thm, (spillslot v));
         let h2 = self.write(tctx, &ldst, &(Value::SpillSlot(v), ss));
         thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>

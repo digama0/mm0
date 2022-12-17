@@ -1082,9 +1082,8 @@ fn try_next_decl(mmb: &[u8], pos: usize) -> Result<Option<(StmtCmd, ProofIter<'_
   // The `data` u32 you get back from try_next_cmd is (in this context)
   // the length of the corresponding proof. `new_start_pos` is just
   // the position after the (u8, u32) pair in the mmb stream.
-  let (stmt_cmd, proof_len, proof_starts_at) = match try_next_cmd(mmb, pos)? {
-    None => return Ok(None),
-    Some((cmd, data, rest)) => (cmd, data, rest),
+  let Some((stmt_cmd, proof_len, proof_starts_at)) = try_next_cmd(mmb, pos)? else {
+    return Ok(None)
   };
 
   let proof_ends_at = pos + proof_len as usize;

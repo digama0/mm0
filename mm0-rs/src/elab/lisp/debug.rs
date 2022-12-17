@@ -19,7 +19,7 @@ use crate::{AtomId, FormatEnv, SortId, TermId, ThmId};
 pub trait EnvDebug {
   /// Get the actual debug representation. It's highly unlikely you'll
   /// need to call this outside of another [`EnvDebug`] implementation.
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
 
@@ -40,7 +40,7 @@ macro_rules! env_debug {
 
 // Generate implementations of EnvDebug for arrays of a type that implements EnvDebug.
 impl<A: EnvDebug, const N: usize> EnvDebug for [A; N] {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.as_ref().env_dbg(fe, f)
   }
 }
@@ -50,7 +50,7 @@ macro_rules! dbg_tuples {
   ($( { $( ($idx:tt) -> $T:ident)+ } )+) => {
     $(
        impl<$($T: EnvDebug),+> EnvDebug for ($($T),+) {
-         fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
            let mut base = f.debug_tuple("");
            $(
              base.field(&fe.to(&(self.$idx)));
@@ -68,7 +68,7 @@ macro_rules! env_debug_id {
   ( $(($x:ident, $loc:ident))+ ) => {
     $(
       impl EnvDebug for $x {
-        fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
           let mut base = f.debug_tuple(stringify!($x));
           match self {
             $x(idx) => { base.field(&fe.to(idx)); }
@@ -86,14 +86,14 @@ macro_rules! env_debug_id {
 
 
 impl<T: EnvDebug> EnvDebug for [T] {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_list().entries(self.iter().map(|x| fe.to(x))).finish()
   }
 }
 
 // Instances for a few common types that require some sort of special behavior to display nicely.
 impl<T: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.try_borrow() {
       Ok(x) => x.env_dbg(fe, f),
       Err(_) => write!(f, "_mutably borrowed RefCell_")
@@ -104,7 +104,7 @@ impl<T: EnvDebug + ?Sized> EnvDebug for std::cell::RefCell<T> {
 // using write directly with the regular debug formatter seems
 // to be the nicest formatting option.
 impl<T: EnvDebug, E: EnvDebug> EnvDebug for Result<T, E> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
       "{:#?}",
@@ -116,7 +116,7 @@ impl<T: EnvDebug, E: EnvDebug> EnvDebug for Result<T, E> {
 // using write directly with the regular debug formatter seems
 // to be the nicest formatting option.
 impl<T: EnvDebug> EnvDebug for Option<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
       "{:#?}",
@@ -126,37 +126,37 @@ impl<T: EnvDebug> EnvDebug for Option<T> {
 }
 
 impl<T: EnvDebug + Copy> EnvDebug for std::cell::Cell<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.get().env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for &T {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for Box<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug> EnvDebug for Vec<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     (**self).env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
       None => write!(f, "_Weak_"),
       Some(arc) => arc.env_dbg(fe, f)
@@ -165,13 +165,13 @@ impl<T: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<T> {
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for std::rc::Rc<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     std::rc::Rc::as_ref(self).env_dbg(fe, f)
   }
 }
 
 impl<T: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<T> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
       None => write!(f, "_Weak_"),
       Some(arc) => arc.env_dbg(fe, f)
@@ -180,7 +180,7 @@ impl<T: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<T> {
 }
 
 impl<K: EnvDebug, V: EnvDebug, S> EnvDebug for std::collections::HashMap<K, V, S> {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_map().entries(
       self.iter().map(|(k, v)| (fe.to(k), fe.to(v)))
     ).finish()
@@ -190,7 +190,7 @@ impl<K: EnvDebug, V: EnvDebug, S> EnvDebug for std::collections::HashMap<K, V, S
 // Needs a separate implementation since it doesn't have
 // an `atom` field, and the others don't have `name` field.
 impl EnvDebug for AtomId {
-  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let mut base = f.debug_tuple("AtomID");
     match self {
       AtomId(idx) => {

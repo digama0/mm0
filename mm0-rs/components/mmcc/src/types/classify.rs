@@ -360,7 +360,7 @@ mk_fold! { <'a>
     if let Some(cl) = cl.decompose() {
       self.do_inst(it);
       self.do_add_scaled(cl, it);
-    } else if let AddScaled::Large = cl {
+    } else if matches!(cl, AddScaled::Large) {
       self.do_insts(2, it);
     }
   }

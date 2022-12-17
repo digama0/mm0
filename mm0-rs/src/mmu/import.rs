@@ -295,7 +295,7 @@ impl<'a> Importer<'a> {
           .ok_or_else(|| self.err("expecting sort".into()))?;
         let deps = self.deps(&bvs)?;
         self.close_err()?;
-        let kind = if let DeclKind::Term = dk {
+        let kind = if matches!(dk, DeclKind::Term) {
           TermKind::Term
         } else {
           self.dummies(&mut vars)?;
@@ -309,7 +309,7 @@ impl<'a> Importer<'a> {
         self.env.add_term(Term {
           atom,
           span: self.fspan(span),
-          vis: if let DeclKind::LocalDef = dk {Modifiers::LOCAL} else {Modifiers::empty()},
+          vis: if matches!(dk, DeclKind::LocalDef) {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(),
@@ -322,7 +322,7 @@ impl<'a> Importer<'a> {
         self.open_err()?;
         let mut is = vec![];
         while self.close().is_none() {
-          if let DeclKind::Axiom = dk {
+          if matches!(dk, DeclKind::Axiom) {
             is.push((None, self.expr(&mut de, &vars)?))
           } else {
             self.open_err()?;
@@ -337,7 +337,7 @@ impl<'a> Importer<'a> {
         let (mut ids, heap, store) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
-        let kind = if let DeclKind::Axiom = dk {
+        let kind = if matches!(dk, DeclKind::Axiom) {
           ThmKind::Axiom
         } else {
           self.dummies(&mut vars)?;
@@ -361,7 +361,7 @@ impl<'a> Importer<'a> {
         self.env.add_thm(Thm {
           atom,
           span: self.fspan(span),
-          vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
+          vis: if matches!(dk, DeclKind::Theorem) {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(), heap, store: store.into(), hyps, ret, kind

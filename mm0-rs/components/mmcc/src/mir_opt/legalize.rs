@@ -59,16 +59,14 @@ impl<'a> Legalizer<'a> {
   }
 
   fn try_legalize(&mut self, v: VarId, pred: Predicate) -> Option<PackedOp> {
-    let i = if let Some(&i) = self.infinite_vars.get(&v) { i } else {
-      return Some(PackedOp::Copy(v))
-    };
+    let Some(&i) = self.infinite_vars.get(&v) else { return Some(PackedOp::Copy(v)) };
     if let Some(res) = self.generated.get(&(v, pred)) { return Some(res.clone()) }
     let res = (|| match &self.stmts[i] {
       Statement::Let(LetKind::Let(lk, e), _, _, rv) => {
         if let RValue::Use(o) | RValue::Cast(_, o, _) = rv {
           return self.try_legalize_operand(o, pred)
         }
-        let ity = if let Predicate::As(ity) = pred { ity } else { return None };
+        let Predicate::As(ity) = pred else { return None };
         match rv {
           RValue::Unop(op, o) => {
             let op = op.as_(ity)?;
@@ -165,10 +163,8 @@ impl<'a> Legalizer<'a> {
             mut op@(Binop::Lt(ity) | Binop::Le(ity) | Binop::Eq(ity) | Binop::Ne(ity)),
             ref o1, ref o2
           ) if ity.size() == Size::Inf => {
-            let ity = match &mut op {
-              Binop::Lt(ity) | Binop::Le(ity) | Binop::Eq(ity) | Binop::Ne(ity) => ity,
-              _ => unreachable!()
-            };
+            let (Binop::Lt(ity) | Binop::Le(ity) | Binop::Eq(ity) | Binop::Ne(ity)) = &mut op
+            else { unreachable!() };
             let (IntTy::UInt(sz) | IntTy::Int(sz)) = ity;
             *sz = Size::S64;
             if_chain! {

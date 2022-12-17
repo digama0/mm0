@@ -769,17 +769,13 @@ impl<'a> Subst<'a> {
       TyKind::Array(t, e) => subst!(TyKind::Array; t; e),
       TyKind::Own(t) => subst!(|t, _| TyKind::Own(t); t;),
       TyKind::Shr(lft, t) => {
-        let lft2 =
-          if let Some(lft2) = self.subst_lft(ctx, sp, lft) { lft2 }
-          else { return ctx.common.t_error };
+        let Some(lft2) = self.subst_lft(ctx, sp, lft) else { return ctx.common.t_error };
         let t2 = self.subst_ty(ctx, sp, t);
         if lft == lft2 && t == t2 { return ty }
         intern!(ctx, TyKind::Shr(lft2, t2))
       }
       TyKind::Ref(lft, t) => {
-        let lft2 =
-          if let Some(lft2) = self.subst_lft(ctx, sp, lft) { lft2 }
-          else { return ctx.common.t_error };
+        let Some(lft2) = self.subst_lft(ctx, sp, lft) else { return ctx.common.t_error };
         let t2 = self.subst_ty(ctx, sp, t);
         if lft == lft2 && t == t2 { return ty }
         intern!(ctx, TyKind::Ref(lft2, t2))
@@ -1502,8 +1498,8 @@ impl<'a> TupleIter<'a> {
       Self::Args(x) => {
         let TupleIterArgs {ref mut subst, span, first, ..} = **x;
         subst.push_tuple_pattern(ctx, span, first, Ok(val));
-        let_unchecked!(Self::Args(args) = mem::take(self),
-          *self = Self::mk_args(ctx, args.span, args.subst, args.rest))
+        let Self::Args(args) = mem::take(self) else { unreachable!() };
+        *self = Self::mk_args(ctx, args.span, args.subst, args.rest)
       }
       Self::Own(_) | Self::Shr(_, _) => *self = Self::Ty(Some(intern!(ctx, TyKind::RefSn({
         if let ExprKind::Var(v) = val.k {
@@ -1864,8 +1860,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         else { e }
       },
       ExprKind::Sizeof(ty) => self.whnf_sizeof(sp, Default::default(), ty),
-      ExprKind::Call {f, tys, args: es} =>
-        match let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k.ty() {
+      ExprKind::Call {f, tys, args: es} => {
+        let Some(Entity::Proc(ty)) = self.names.get(&f) else { unreachable!() };
+        match ty.k.ty() {
           None => self.common.e_error,
           Some(&ProcTy {kind, tyargs, ref args, ref rets, ..}) => {
             assert_eq!(tys.len(), u32_as_usize(tyargs));
@@ -1880,7 +1877,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
               }
             }
           }
-        },
+        }
+      }
       ExprKind::If {cond, then, els} =>
         if let ExprKind::Bool(b) = self.whnf_expr(sp, cond).k {
           self.whnf_expr(sp, if b {then} else {els})
@@ -1921,7 +1919,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       TyKind::Error => return wty,
       TyKind::Ref(_, ty) => return wty.map(ty), // FIXME
       TyKind::User(f, tys, es) => {
-        match let_unchecked!(Some(Entity::Type(tc)) = self.names.get(&f), tc).k {
+        let Some(Entity::Type(tc)) = self.names.get(&f) else { unreachable!() };
+        match tc.k {
           TypeTc::ForwardDeclared => return self.common.t_error.into(),
           TypeTc::Typed(ref tyty) => {
             let TypeTy {tyargs, args, val, ..} = tyty.clone();
@@ -2140,7 +2139,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         return Err(())
       }
       (ExprKind::Const(c), _) => {
-        match let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
+        let Some(Entity::Const(tc)) = self.names.get(&c) else { unreachable!() };
+        match tc.k {
           ConstTc::ForwardDeclared => {}
           ConstTc::Checked {ref whnf, ..} => {
             let a = whnf.clone().import_global(self);
@@ -2452,11 +2452,13 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         _ => return None,
       }
       ExprKind::Unit => self.common.t_unit,
-      ExprKind::Const(c) =>
-        match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
+      ExprKind::Const(c) => {
+        let Some(Entity::Const(tc)) = self.names.get(&c) else { unreachable!() };
+        match &tc.k {
           ConstTc::ForwardDeclared => return None,
           ConstTc::Checked {ty, ..} => ty.clone().import_global(self),
-        },
+        }
+      }
       ExprKind::Bool(_) => self.common.t_bool,
       ExprKind::Int(n) => if n.is_negative() {self.common.int()} else {self.common.nat()},
       ExprKind::Unop(op, _) => op.ret_ty(self),
@@ -2635,7 +2637,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       UnelabTupPatKind::Tuple(pats) => {
         let mut res = self.tuple_pattern_tuple(pat.span, pats.len(), pat.ctx.ty);
-        if let TuplePatternResult::Indeterminate = res {
+        if matches!(res, TuplePatternResult::Indeterminate) {
           let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| pat.ctx.ty));
           res = TuplePatternResult::Tuple(TupleMatchKind::List, TupleIter::List(tys.iter()))
         }
@@ -2797,7 +2799,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::TypeKind::User(f, tys, es) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
-        let args = match &let_unchecked!(Some(Entity::Type(tc)) = self.names.get(f), tc).k {
+        let Some(Entity::Type(tc)) = self.names.get(f) else { unreachable!() };
+        let args = match &tc.k {
           TypeTc::ForwardDeclared => return self.common.t_error,
           TypeTc::Typed(TypeTy {tyargs, args, ..}) => {
             assert_eq!(tys.len(), u32_as_usize(*tyargs));
@@ -2856,8 +2859,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }
       }
       Coercion::Shr(p, ty) => {
-        let_unchecked!(ty as TyKind::Shr(_, ty) = ty.k);
-        let_unchecked!(p as TyKind::RefSn(p) = p.k);
+        let TyKind::Shr(_, ty) = ty.k else { unreachable!() };
+        let TyKind::RefSn(p) = p.k else { unreachable!() };
         let ppe = self.place_to_expr(p);
         let pty = self.place_type(e.span, p).expect("bad place");
         if self.relate_ty(e.span, Some(ppe), pty, ty, Relation::SubtypeEqSize).is_err() {
@@ -3037,7 +3040,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
   ) -> Option<(hir::Call<'a>, RExprTy<'a>)> {
     let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
     let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
-    let ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k.ty()?;
+    let Some(Entity::Proc(ty)) = self.names.get(&f) else { unreachable!() };
+    let ty = ty.k.ty()?;
     let ProcTy {kind, tyargs, args, outs, rets, variant, ..} = ty.clone();
     assert_eq!(tys.len(), u32_as_usize(tyargs));
     let mut gctx = FromGlobalCtx::new(self, tys);
@@ -3050,10 +3054,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       for (&i, ret) in outs.iter().zip(&*rets) {
         let ret = ret.from_global(&mut gctx);
         let ret = subst.subst_arg(gctx.ic, span, ret);
-        let arg = match pes.get(u32_as_usize(i)) {
-          Some(Ok(&WithMeta {k: ExprKind::Ref(p), ..})) => p,
-          _ => unreachable!()
-        };
+        let Some(Ok(&WithMeta {k: ExprKind::Ref(arg), ..})) = pes.get(u32_as_usize(i))
+        else { unreachable!() };
         let w = ret.k.1.var().k.var;
         let (origin, lens) = Self::build_lens(arg)?;
         let (_, _, ty) = gctx.ic.dc.get_var(origin);
@@ -3145,11 +3147,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let opty = op.ty();
     if opty.int_out() {
       let ity = (|| {
-        if !op.preserves_nat() {return IntTy::INT}
-        let sz1 = if let Some(IntTy::UInt(sz1)) = get_ty1(self) {sz1} else {return IntTy::INT};
-        let sz2 = if let Some(IntTy::UInt(sz2)) = get_ty2(self) {sz2} else {return IntTy::INT};
-        if op.preserves_usize() { IntTy::UInt(std::cmp::max(sz1, sz2)) }
-        else { IntTy::NAT }
+        if !op.preserves_nat() { return IntTy::INT }
+        let Some(IntTy::UInt(sz1)) = get_ty1(self) else { return IntTy::INT };
+        let Some(IntTy::UInt(sz2)) = get_ty2(self) else { return IntTy::INT };
+        if op.preserves_usize() { IntTy::UInt(std::cmp::max(sz1, sz2)) } else { IntTy::NAT }
       })();
       (ity, self.common.int_ty(ity))
     } else {
@@ -3217,14 +3218,16 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         ret![Var(v, gen), Ok(val), ty]
       }
 
-      &ast::ExprKind::Const(c) =>
-        match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
+      &ast::ExprKind::Const(c) => {
+        let Some(Entity::Const(tc)) = self.names.get(&c) else { unreachable!() };
+        match &tc.k {
           ConstTc::ForwardDeclared => error!(),
           ConstTc::Checked {ty, ..} => {
             let ty = ty.clone().import_global(self);
             ret![Const(c), Ok(intern!(self, ExprKind::Const(c))), ty]
           }
-        },
+        }
+      }
 
       &ast::ExprKind::Bool(b) =>
         ret![Bool(b), Ok(self.common.e_bool(b)), self.common.t_bool],
@@ -3543,7 +3546,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           TyKind::Shr(_, _) => unimplemented!("&T constructor"),
           TyKind::Sn(_, _) => {
             expect!(2);
-            let_unchecked!((x, h) as [x, h] = &**es);
+            let [x, h] = &**es else { unreachable!() };
             let (ek, pe, ty) = self.lower_expr_sn(span, expect, x, Some(h));
             ret![ek, Ok(pe), ty]
           }
@@ -3711,10 +3714,10 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Assign {lhs, rhs, oldmap} => {
         let (lhs, plhs) = self.lower_place(lhs);
         let plhs = self.as_pure_place(lhs.span, plhs);
-        let (v, lens) = if let Some(x) = Self::build_lens(plhs) { x } else { error!() };
+        let Some((v, lens)) = Self::build_lens(plhs) else { error!() };
         let (rhs, prhs) = self.lower_expr(rhs, ExpectExpr::HasTy(lhs.ty()));
         let (_, _, ty) = self.dc.get_var(v);
-        let old = if let Some((_, old)) = oldmap.iter().find(|p| p.0.k == v) {old} else {
+        let Some((_, old)) = oldmap.iter().find(|p| p.0.k == v) else {
           error!(span, MissingAssignWith(v))
         };
         let e = Some(intern!(self, ExprKind::Var(old.k)));
@@ -3740,7 +3743,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         match self.check_call(f, tys, args, variant.as_deref()) {
           None => error!(),
           Some((call, (pe, mut ret))) => {
-            if let ReturnKind::Unreachable = call.rk {
+            if matches!(call.rk, ReturnKind::Unreachable) {
               self.dc.diverged = true;
               if let Some(ty) = expect.to_ty() { ret = ty }
             }
@@ -3983,15 +3986,17 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ExprKind::Var(v) => {
         let (gen, _, ty) = self.dc.get_var(v);
         (hir::ExprKind::Var(v, gen), ty)
-      },
-      ExprKind::Const(c) =>
-        match &let_unchecked!(Some(Entity::Const(tc)) = self.names.get(&c), tc).k {
+      }
+      ExprKind::Const(c) => {
+        let Some(Entity::Const(tc)) = self.names.get(&c) else { unreachable!() };
+        match &tc.k {
           ConstTc::ForwardDeclared => error!(),
           ConstTc::Checked {ty, ..} => {
             let ty = ty.clone().import_global(self);
             (hir::ExprKind::Const(c), ty)
           }
-        },
+        }
+      }
       ExprKind::Bool(b) => (hir::ExprKind::Bool(b), self.common.t_bool),
       ExprKind::Int(n) => (
         hir::ExprKind::Int(n),

@@ -29,20 +29,20 @@ use syn::{
 // }
 // ```
 fn mk_arm(
-    item_ident : &Ident,
-    fields : &Fields,
-    variant_ident : Option<&Ident>
+    item_ident: &Ident,
+    fields: &Fields,
+    variant_ident: Option<&Ident>
 ) -> syn::Arm {
-    let (item_path, namestring) : (syn::Path, String)  = match variant_ident {
+    let (item_path, namestring): (syn::Path, String) = match variant_ident {
         // if struct
         None => (
             parse_quote!(#item_ident),
-            format!("{}", item_ident)
+            format!("{item_ident}")
         ),
         // if enum
         Some(variant) => (
             parse_quote!(#item_ident::#variant),
-            format!("{}::{}", item_ident, variant)
+            format!("{item_ident}::{variant}")
         )
     };
 
@@ -95,20 +95,20 @@ fn mk_arm(
 // Same as mk_arm, but only tries to match on/print public fields
 #[allow(unused)]
 fn mk_arm_pub(
-    item_ident : &Ident,
-    fields : &Fields,
-    variant_ident : Option<&Ident>
+    item_ident: &Ident,
+    fields: &Fields,
+    variant_ident: Option<&Ident>
 ) -> syn::Arm {
-    let (item_path, namestring) : (syn::Path, String)  = match variant_ident {
+    let (item_path, namestring): (syn::Path, String)  = match variant_ident {
         // if struct
         None => (
             parse_quote!(#item_ident),
-            format!("{}", item_ident)
+            format!("{item_ident}")
         ),
         // if enum
         Some(variant) => (
             parse_quote!(#item_ident::#variant),
-            format!("{}::{}", item_ident, variant)
+            format!("{item_ident}::{variant}")
         )
     };
 
@@ -119,7 +119,7 @@ fn mk_arm_pub(
                     syn::Visibility::Inherited => None,
                     _ => {
                         let f = field.ident.as_ref().unwrap();
-                        let as_pat : syn::Pat = parse_quote!(#f);
+                        let as_pat: syn::Pat = parse_quote!(#f);
                         Some(as_pat)
                     }
                 }
@@ -178,9 +178,9 @@ fn mk_arm_pub(
 }
 
 // Generates the actual token tree.
-fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemImpl {
-    let format_env_path : syn::Path = parse_quote!(crate::elab::lisp::print::FormatEnv);
-    let env_debug_path : syn::Path = parse_quote!(crate::elab::lisp::debug::EnvDebug);
+fn mk_item(derive_input: &mut syn::DeriveInput, pub_only: bool) -> syn::ItemImpl {
+    let format_env_path: syn::Path = parse_quote!(crate::elab::lisp::print::FormatEnv);
+    let env_debug_path: syn::Path = parse_quote!(crate::elab::lisp::debug::EnvDebug);
 
     // For items with type parameters, add a trait bound of `EnvDebug`.
     // As of right now, deriving EnvDebug for some type T requires that all of its type parameters
@@ -188,7 +188,7 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
     for param in &mut derive_input.generics.params {
         match param {
             syn::GenericParam::Type(type_param) => {
-                let bound : syn::TypeParamBound = parse_quote!(EnvDebug);
+                let bound: syn::TypeParamBound = parse_quote!(EnvDebug);
                 type_param.bounds.push(bound);
             },
             _ => continue
@@ -207,7 +207,7 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
             };
             parse_quote! {
                 impl #impl_generics #env_debug_path for #ident #type_generics #where_clause {
-                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, f : &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    fn env_dbg<'__a>(&self, fe: #format_env_path<'__a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                       match self {
                           #fields
                       }
@@ -216,14 +216,14 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
             }
         },
         Data::Enum(inner) => {
-            let arms : Punctuated<syn::Arm, Comma> = if pub_only {
+            let arms: Punctuated<syn::Arm, Comma> = if pub_only {
                 inner.variants.iter().map(|variant| mk_arm_pub(ident, &variant.fields, Some(&variant.ident))).collect()
             } else {
                 inner.variants.iter().map(|variant| mk_arm(ident, &variant.fields, Some(&variant.ident))).collect()
             };
             parse_quote! {
                 impl #impl_generics #env_debug_path for #ident #type_generics #where_clause {
-                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, f : &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    fn env_dbg<'__a>(&self, fe: #format_env_path<'__a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         match self {
                             #arms
                         }
@@ -237,7 +237,7 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
 
 /// Use this one if you only want print all the fields (both public and private) of an item.
 #[proc_macro_derive(EnvDebug)]
-pub fn derive_env_debug(input : TokenStream) -> TokenStream {
+pub fn derive_env_debug(input: TokenStream) -> TokenStream {
     let mut parsed = parse_macro_input!(input as syn::DeriveInput);
     let tt = mk_item(&mut parsed, false);
 
@@ -248,7 +248,7 @@ pub fn derive_env_debug(input : TokenStream) -> TokenStream {
 
 /// Use this one if you only want to print the public fields of an item.
 #[proc_macro_derive(EnvDebugPub)]
-pub fn derive_env_debug_pub(input : TokenStream) -> TokenStream {
+pub fn derive_env_debug_pub(input: TokenStream) -> TokenStream {
     let mut parsed = parse_macro_input!(input as syn::DeriveInput);
     let tt = mk_item(&mut parsed, true);
 

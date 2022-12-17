@@ -249,7 +249,7 @@ impl<'a> LowerCtx<'a> {
         }
         Projection::Proj(ListKind::And | ListKind::Sn, _) => cl::Projection::Ghost,
         Projection::Proj(ListKind::Array, i) => {
-          let ty = if let TyKind::Array(ty, _) = &*proj.0 { ty } else { unreachable!() };
+          let TyKind::Array(ty, _) = &*proj.0 else { unreachable!() };
           let sz = ty.sizeof(self.names)
             .expect("array element size not known at compile time");
           let off = u32::try_from(sz).expect("overflow") * i;
@@ -262,7 +262,7 @@ impl<'a> LowerCtx<'a> {
           cl::Projection::ProjArray
         }
         Projection::Proj(ListKind::Struct, i) => {
-          let args = if let TyKind::Struct(args) = &*proj.0 { args } else { unreachable!() };
+          let TyKind::Struct(args) = &*proj.0 else { unreachable!() };
           let off = args[..i as usize].iter().map(|arg| {
             if arg.attr.contains(ArgAttr::GHOST) { return 0 }
             let sz = arg.ty.sizeof(self.names)
@@ -279,8 +279,8 @@ impl<'a> LowerCtx<'a> {
         }
         Projection::Index(i, _) |
         Projection::Slice(i, _, _) => {
-          let ty = if let TyKind::Array(ty, _) = &*proj.0 { ty } else { unreachable!() };
-          let stride = if let Some(sz) = ty.sizeof(self.names) { sz } else {
+          let TyKind::Array(ty, _) = &*proj.0 else { unreachable!() };
+          let Some(stride) = ty.sizeof(self.names) else {
             panic!("array stride not known at compile time")
           };
           if stride == 0 {
@@ -307,13 +307,14 @@ impl<'a> LowerCtx<'a> {
   fn get_const(&self, c: &Constant) -> (u32, ConstRef) {
     match c.k {
       ConstKind::Bool => {
-        let_unchecked!(e as Some(e) = &c.ety.0);
-        let_unchecked!(ExprKind::Bool(b) = **e, (1, ConstRef::Value(b.into())))
+        let Some(e) = &c.ety.0 else { unreachable!() };
+        let ExprKind::Bool(b) = **e else { unreachable!() };
+        (1, ConstRef::Value(b.into()))
       }
       ConstKind::Int => {
-        let_unchecked!(e as Some(e) = &c.ety.0);
-        let_unchecked!(n as ExprKind::Int(n) = &**e);
-        let_unchecked!(ity as TyKind::Int(ity) = *c.ety.1);
+        let Some(e) = &c.ety.0 else { unreachable!() };
+        let ExprKind::Int(n) = &**e else { unreachable!() };
+        let TyKind::Int(ity) = *c.ety.1 else { unreachable!() };
         let n = ity.zero_extend_as_u64(n).expect("impossible");
         (ity.size().bytes().expect("constant too large to compile").into(), ConstRef::Value(n))
       }
@@ -565,7 +566,7 @@ impl<'a> LowerCtx<'a> {
           unimplemented!("casting between non-integral types: {:?} -> {:?}", tyin, ty)
         },
       RValue::List(os) => {
-        let args = if let TyKind::Struct(args) = ty { args } else { unreachable!() };
+        let TyKind::Struct(args) = ty else { unreachable!() };
         assert_eq!(args.len(), os.len());
         let mut rm = dst;
         let mut last_off = 0;
@@ -595,7 +596,7 @@ impl<'a> LowerCtx<'a> {
       RValue::Array(os) => if let [ref o] = **os {
         cl::RValue::Array1(self.build_move(tysize, sz, dst, o)?)
       } else {
-        let ty = if let TyKind::Array(ty, _) = ty { ty } else { unreachable!() };
+        let TyKind::Array(ty, _) = ty else { unreachable!() };
         let sz64 = ty.sizeof(self.names).expect("impossible");
         if sz64 == 0 {
           cl::RValue::Ghost

@@ -165,9 +165,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           return Ok(recv.await.unwrap_or(ElabResult::Canceled))
         }
         cancel.store(true, Ordering::SeqCst);
-        let_unchecked!(Some(FileCache::InProgress {old, senders, ..}) = g.take(), {
-          (old, (None, None, vec![]), senders)
-        })
+        let Some(FileCache::InProgress {old, senders, ..}) = g.take() else { unreachable!() };
+        (old, (None, None, vec![]), senders)
       }
       &mut Some(FileCache::Ready {hash, ref deps, ref res, ..}) => {
         let hasher = &mut DefaultHasher::new();
@@ -178,23 +177,22 @@ async fn elaborate(path: FileRef, start: Option<Position>,
               if let Some(g) = file.parsed.try_lock() {
                 if let Some(FileCache::Ready {hash, ..}) = *g {
                   hash.hash(hasher);
-                } else {return false}
-              } else {return false}
-            } else {return false}
+                } else { return false }
+              } else { return false }
+            } else { return false }
           }
           hasher.finish() == hash
         })();
         if matches && !matches!(res, ElabResult::Canceled) {
           return Ok(res.clone())
         }
-        let_unchecked!(Some(FileCache::Ready {ast, source, deps, res, ..}) = g.take(), {
-          if let ElabResult::Ok(_, errors, env) = res {
-            (Some((source.clone(), env.clone())),
-              (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
-          } else {
-            (None, (None, None, vec![]), vec![])
-          }
-        })
+        let Some(FileCache::Ready {ast, source, deps, res, ..}) = g.take() else { unreachable!() };
+        if let ElabResult::Ok(_, errors, env) = res {
+          (Some((source.clone(), env.clone())),
+            (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
+        } else {
+          (None, (None, None, vec![]), vec![])
+        }
       }
     };
     *g = Some(FileCache::InProgress {old, version: v, cancel: cancel.clone(), senders});
@@ -211,11 +209,11 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let mut deps = Vec::new();
   let (ast, (cyc, toks, errors, env)) = if path.has_extension("mmb") {
     let (error, env) = mmb_elab(&path, &text);
-    let errors = if let Err(e) = error {vec![e]} else {vec![]};
+    let errors = if let Err(e) = error { vec![e] } else { vec![] };
     (None, (None, vec![], errors, FrozenEnv::new(env)))
   } else if path.has_extension("mmu") {
     let (error, env) = mmu_elab(&path, &text);
-    let errors = if let Err(e) = error {vec![e]} else {vec![]};
+    let errors = if let Err(e) = error { vec![e] } else { vec![] };
     (None, (None, vec![], errors, FrozenEnv::new(env)))
   } else {
     let (idx, ast) = parse(text.ascii().clone(), old_ast);
@@ -1168,7 +1166,7 @@ async fn completion(path: FileRef, _pos: Position) -> Result<Option<CompletionRe
 }
 
 async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, ResponseError> {
-  let data = if let Some(data) = ci.data {data} else {
+  let Some(data) = ci.data else {
     let p = BuiltinProc::from_str(&ci.label)
       .ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
     return Ok(CompletionItem {
@@ -1271,7 +1269,7 @@ async fn references<T>(
 
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
-    let key = match to_key(k) {Some(k) => k, None => continue};
+    let Some(key) = to_key(k) else { continue };
     match key {
       Key::Global(a) if BuiltinProc::from_bytes(env.data()[a].name()).is_some() => continue,
       _ => {}
@@ -1433,7 +1431,7 @@ async fn semantic_tokens(
       &ObjectKind::Hyp(..) => push(token_types::HVAR, 0),
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
-        let a = if let Some(a) = head.as_atom() { a } else { return };
+        let Some(a) = head.as_atom() else { return };
         if let Some(DeclKey::Term(_)) = env.data()[a].decl() { return }
         push(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&a)) {
           Some((_, InferSort::Bound {..})) => token_types::BVAR,

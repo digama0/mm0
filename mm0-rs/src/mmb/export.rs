@@ -619,7 +619,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   }
                   write_expr_proof(self.env, vec, &td.heap, &td.store,
                     &mut reorder, vars, &td.ret, false)?;
-                  if let ThmKind::Axiom = td.kind {
+                  if matches!(td.kind, ThmKind::Axiom) {
                     STMT_AXIOM
                   } else {
                     ProofCmd::Sorry.write_to(vec)?;

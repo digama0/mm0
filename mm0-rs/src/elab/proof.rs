@@ -126,7 +126,7 @@ pub trait NodeHash: Hash + Eq + Sized {
   /// Given a lisp expression `r` representing an element of the type,
   /// parse it into a [`NodeHash`] object. If the object has already been constructed,
   /// it may also return an index to the element in the [`Dedup`].
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
     de: &mut Dedup<Self>) -> Result<Result<Self, usize>>;
 
   /// Calculate the variable dependence of a [`NodeHash`] object, given a function
@@ -452,7 +452,7 @@ impl NodeHash for ExprHash {
   const NONE: Self = Self::None;
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
@@ -759,7 +759,7 @@ impl NodeHash for ProofHash {
   const NONE: Self = Self::None;
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match kind {

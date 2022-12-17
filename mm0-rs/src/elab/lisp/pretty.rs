@@ -267,7 +267,7 @@ impl<'a> Pretty<'a> {
     let env = self.fe.env;
     let a = u.next()?.as_atom()?;
     let ad = &env.data[a];
-    let t = if let Some(DeclKey::Term(t)) = ad.decl { t } else { return None };
+    let Some(DeclKey::Term(t)) = ad.decl else { return None };
     let mut args = vec![];
     let nargs = env.terms[t].args.len();
     if !u.exactly(nargs) { return None }
@@ -415,10 +415,7 @@ impl<'a> Pretty<'a> {
     let mut rest = bis;
     loop {
       let mut it = rest.iter();
-      let ty = match it.next() {
-        None => return doc,
-        Some((_, ty)) => ty,
-      };
+      let Some((_, ty)) = it.next() else { return doc };
       let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).map_or(rest.len(), |x| x + 1));
       let mut buf = Self::nil();
       match *ty {
@@ -527,7 +524,7 @@ impl<'a> Pretty<'a> {
     let doc = self.append_annot(doc, Annot::TermName(tid),
       self.text(format!("{}", self.fe.to(&t.atom))));
     let doc = self.append_doc(doc, s!(": "));
-    let ty = if let [(_, Type::Reg(ty, 0))] = *t.args { ty } else { panic!("not a coercion") };
+    let [(_, Type::Reg(ty, 0))] = *t.args else { panic!("not a coercion") };
     let doc = self.append_annot(doc, Annot::SortName(ty),
       self.text(self.fe.env.sorts[ty].name.to_string()));
     let doc = self.append_doc(doc, s!(" > "));

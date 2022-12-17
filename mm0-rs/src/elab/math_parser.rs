@@ -263,9 +263,9 @@ impl<'a> MathParser<'a> {
     let mut tok_end = self.peek_token();
     while let Some(tk) = tok_end.0 {
       let s = self.span(tk);
-      let p1 = if let Some(&(_, q)) = self.pe.consts.get(s) {q} else {break};
-      if p1 < p {break}
-      let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
+      let Some(&(_, p1)) = self.pe.consts.get(s) else { break };
+      if p1 < p { break }
+      let Some(info) = self.pe.infixes.get(s) else { break };
       self.idx = tok_end.1;
       let mut args = SliceUninit::new(info.nargs);
       let start = lhs.0.span.start;
@@ -283,11 +283,12 @@ impl<'a> MathParser<'a> {
         let mut rhs = self.prefix(q)?;
         loop {
           tok_end = self.peek_token();
-          let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
-          let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
+          let Some(tk) = tok_end.0 else { break };
+          let s = self.span(tk);
+          let Some(info2) = self.pe.infixes.get(s) else { break };
           let q = self.pe.consts[s].1;
           let assoc = info2.rassoc.expect("infix with no associativity");
-          if !(if assoc {q >= p1} else {q > p1}) {break}
+          if !(if assoc {q >= p1} else {q > p1}) { break }
           rhs = self.lhs(q, rhs)?;
         }
         self.check_paren(&mut rhs, q);

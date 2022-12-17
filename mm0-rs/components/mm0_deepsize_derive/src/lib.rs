@@ -97,7 +97,7 @@ fn match_enum_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream
         }
         Fields::Unnamed(ref fields) => {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
-                let i = syn::Ident::new(&format!("_{}", i), proc_macro2::Span::call_site());
+                let i = syn::Ident::new(&format!("_{i}"), proc_macro2::Span::call_site());
                 quote_spanned! {f.span()=>
                     ::mm0_deepsize::DeepSizeOf::deep_size_of_children(#i, #context)
                 }
@@ -119,7 +119,7 @@ fn get_matcher(var: &syn::Variant) -> TokenStream {
         Fields::Unnamed(fields) => {
             let fields: TokenStream = (0..fields.unnamed.len())
                 .map(|n| {
-                    let i = syn::Ident::new(&format!("_{}", n), proc_macro2::Span::call_site());
+                    let i = syn::Ident::new(&format!("_{n}"), proc_macro2::Span::call_site());
                     quote!(#i,)
                 })
                 .collect();

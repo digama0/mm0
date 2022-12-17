@@ -132,37 +132,6 @@ impl<T> RcExt<T> for Rc<T> {
   }
 }
 
-/// * `let_unchecked!(x as p = e)` is the same as
-///   ```ignore
-///   let x = if let p = e {x} else {unreachable_unchecked()};
-///   ```
-///   where `p` is a pattern containing the variable(s) `x` (which may be a tuple)
-/// * `let_unchecked!(p = e, { block })` is the same as
-///   ```ignore
-///   if let p = e { block } else {unreachable_unchecked()}
-///   ```
-///   so the variables `x` don't have to be declared but the variables in `p` are
-///   scoped to the `block`.
-///
-/// # Safety
-/// This invokes undefined behavior when the pattern does not match.
-#[macro_export]
-macro_rules! let_unchecked {
-  ($q:ident as $p:pat = $e:expr) => {
-    let $q = let_unchecked!($p = $e, $q);
-  };
-  (($($q:tt),*) as $p:pat = $e:expr) => {
-    let ($($q),*) = let_unchecked!($p = $e, ($($q),*));
-  };
-  ($p:pat = $e:expr, $bl:expr) => {
-    if let $p = $e { $bl } else if cfg!(debug_assertions) {
-      unreachable!()
-    } else {
-      unsafe { std::hint::unreachable_unchecked() }
-    }
-  };
-}
-
 /// Does the same as `panic!` but works in a `const fn`.
 #[macro_export]
 macro_rules! const_panic {

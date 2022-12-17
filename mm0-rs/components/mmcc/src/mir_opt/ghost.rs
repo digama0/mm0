@@ -117,17 +117,17 @@ impl Cfg {
           &mut Terminator::If(_, _, [(_, tgt1), (_, tgt2)]) => {
             let reach1 = reachable[tgt1].reach();
             if reach1 == reachable[tgt2].reach() { continue }
-            let_unchecked!(Some(Terminator::If(ctx, _, [mut vtgt1, mut vtgt2])) = bl.term.take(), {
-              if reach1 { mem::swap(&mut vtgt1, &mut vtgt2) }
-              let (_, _, (_, ty1)) = &self.ctxs.head(self[vtgt1.1].ctx);
-              let (v2, _, (e2, ty2)) = &self.ctxs.head(self[vtgt2.1].ctx);
-              bl = &mut self.blocks[id];
-              bl.stmts.push(Statement::Let(
-                LetKind::Let(v2.clone().map_into(|_| vtgt2.0), e2.clone()), false, ty2.clone(),
-                Constant::contra(ty1.clone(), tgt1, vtgt1.0).into()
-              ));
-              bl.term = Some(Terminator::Jump1(ctx, tgt2));
-            });
+            let Some(Terminator::If(ctx, _, [mut v_tgt1, mut v_tgt2])) = bl.term.take()
+            else { unreachable!() };
+            if reach1 { mem::swap(&mut v_tgt1, &mut v_tgt2) }
+            let (_, _, (_, ty1)) = &self.ctxs.head(self[v_tgt1.1].ctx);
+            let (v2, _, (e2, ty2)) = &self.ctxs.head(self[v_tgt2.1].ctx);
+            bl = &mut self.blocks[id];
+            bl.stmts.push(Statement::Let(
+              LetKind::Let(v2.clone().map_into(|_| v_tgt2.0), e2.clone()), false, ty2.clone(),
+              Constant::contra(ty1.clone(), tgt1, v_tgt1.0).into()
+            ));
+            bl.term = Some(Terminator::Jump1(ctx, tgt2));
           }
           _ => {}
         }

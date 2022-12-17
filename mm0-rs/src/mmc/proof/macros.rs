@@ -175,7 +175,7 @@ macro_rules! app_match {
   // * $out: an expression of type Option<(...,)> matching operations that need to be done (in reverse order)
   //     $stk ::= (let $v = $e) | (match $c ($e) $xs*)
   (@build ((($args:tt $rhs:expr) @let) ($($vars:ident)*)) $out:expr,) => {
-    let ($($vars,)*) = if let Some(x) = $out { x } else { app_match!(@arms $args) };
+    let Some(($($vars,)*)) = ($out) else { app_match!(@arms $args) };
   };
   (@build ((($args:tt $rhs:expr) $($rest:tt)*) ($($vars:ident)*)) $out:expr,) => {
     if let Some(($($vars,)*)) = $out { $rhs } else { app_match!(@arms $args $($rest)*) }

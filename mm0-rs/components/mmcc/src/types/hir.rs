@@ -388,7 +388,7 @@ impl PlaceKind<'_> {
       }
       PlaceKind::Proj(lk, e, j) => {
         e.1.k.0.debug_indent(i, f)?;
-        if let ListKind::Array = lk { write!(f, "[{j}]") } else { write!(f, ".{j}") }
+        if matches!(lk, ListKind::Array) { write!(f, "[{j}]") } else { write!(f, ".{j}") }
       }
       PlaceKind::Error => write!(f, "??"),
     }
@@ -730,7 +730,7 @@ impl ExprKind<'_> {
       }
       ExprKind::Proj(lk, e, j) => {
         e.1.k.0.debug_indent(i, f)?;
-        if let ListKind::Array = lk { write!(f, "[{j}]") } else { write!(f, ".{j}") }
+        if matches!(lk, ListKind::Array) { write!(f, "[{j}]") } else { write!(f, ".{j}") }
       }
       ExprKind::Rval(e) => e.k.0.debug_indent(i, f),
       ExprKind::Deref(e) => { write!(f, "*")?; e.1.k.0.debug_indent(i, f) }

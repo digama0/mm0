@@ -512,11 +512,8 @@ impl<'a> DerefMut for Evaluator<'a> {
 }
 
 macro_rules! stack_match {
-  (let $x:ident as $pat:pat = $e:expr) => {
-    let $x = if let $pat = $e { $x } else { panic!("stack type error") };
-  };
-  (let $($x:ident),* as $pat:pat = $e:expr) => {
-    let ($($x,)*) = if let $pat = $e { ($($x,)*) } else { panic!("stack type error") };
+  (let $pat:pat = $e:expr) => {
+    let $pat = $e else { panic!("stack type error") };
   };
   ($x:ident => $e:expr) => {
     if let Stack::$x(x) = $e { x } else { panic!("stack type error") }
@@ -607,7 +604,7 @@ impl<'a> Evaluator<'a> {
 
   fn add_thm_resume(&mut self) -> Result<()> {
     let ret = self.pop_lisp();
-    stack_match!(let ap as Some(Stack::AddThmProc(ap)) = self.stack.pop());
+    stack_match!(let Some(Stack::AddThmProc(ap)) = self.stack.pop());
     let fsp = &self.call_stack.last().expect("impossible").span;
     ap.finish(self.elab, fsp, ret)?;
     self.stack.push(Stack::Undef);
@@ -656,7 +653,7 @@ impl<'a> Evaluator<'a> {
 
   fn merge_map_resume(&mut self) -> Result<()> {
     let ret = self.try_pop_lisp();
-    stack_match!(let data as Some(Stack::MergeMap(data)) = self.stack.last_mut());
+    stack_match!(let Some(Stack::MergeMap(data)) = self.stack.last_mut());
     if let (Some(ret), Some(k)) = (ret, data.k.take()) {
       data.map.insert(k, ret);
     }
@@ -667,7 +664,7 @@ impl<'a> Evaluator<'a> {
       let strat = data.strat.clone();
       self.push_apply_merge(sp, strat.as_deref(), oldv, newv)
     } else {
-      let_unchecked!(data as Some(Stack::MergeMap(data)) = self.stack.pop());
+      let Some(Stack::MergeMap(data)) = self.stack.pop() else { unreachable!() };
       let MergeMapData { mut old, map, .. } = *data;
       let mut opt = Some(map);
       if !old.is_ref() || old.as_map_mut(|m| *m = opt.take().expect("impossible")).is_none() {
@@ -1451,8 +1448,7 @@ impl<'a> Evaluator<'a> {
     }}}
     self.heartbeat()?;
     func.unwrapped(|func| {
-      let func = if let LispKind::Proc(f) = func { f }
-      else { throw!(sp.0, "not a function, cannot apply") };
+      let LispKind::Proc(func) = func else { throw!(sp.0, "not a function, cannot apply") };
       let spec = func.spec();
       if !spec.valid(args.len()) { throw!(sp.0, spec.arity_error()) }
       match func {
@@ -1520,7 +1516,7 @@ impl<'a> Evaluator<'a> {
           match &*g {
             Ok(e) => self.stack.push(e.clone().into()),
             Err(_) => if let Some(DeclKey::Thm(t)) = self.data[x].decl {
-              let_unchecked!(heap as Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())));
+              let Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())) else { unreachable!() };
               let e = self.get_proof(t, heap.into());
               *g = Ok(e.clone());
               self.stack.push(e.into())
@@ -1549,7 +1545,7 @@ impl<'a> Evaluator<'a> {
 
   fn call_refine(&mut self, tail: bool, state: RState) -> Result<()> {
     let val = self.stack.last_mut().expect("underflow");
-    stack_match!(let sp, stack as Stack::Refine(sp, ref mut stack) = *val);
+    stack_match!(let Stack::Refine(sp, ref mut stack) = *val);
     match self.elab.run_refine(self.orig.span, stack, state) {
       Err(e) => return Err(self.err(Some((e.pos, true)), e.kind.msg())),
       Ok(RefineResult::Ret(e)) => {
@@ -1820,9 +1816,9 @@ impl<'a> Evaluator<'a> {
     let pos = if name == u8::MAX {
       ProcPos::Unnamed(self.fspan(sp))
     } else {
-      let_unchecked!(
-        Ir::GlobalDef(span, full, x) = self.code[self.ip + usize::from(name)],
-        ProcPos::Named(self.fspan(full), span, x))
+      let Ir::GlobalDef(span, full, x) = self.code[self.ip + usize::from(name)]
+      else { unreachable!() };
+      ProcPos::Named(self.fspan(full), span, x)
     };
     self.stack.push(LispVal::proc(Proc::Lambda {
       pos,
@@ -1839,7 +1835,7 @@ impl<'a> Evaluator<'a> {
     }
     let len = self.stack.len();
     let func = self.stack[len - 3].cloned_lisp();
-    stack_match!(let sp, us as Some(&mut Stack::MapProc1(sp, ref mut us)) = self.stack.last_mut());
+    stack_match!(let Some(&mut Stack::MapProc1(sp, ref mut us)) = self.stack.last_mut());
     let mut it = us.iter_mut();
     let u0 = it.next().expect("impossible");
     if let Some(e0) = u0.next() {
@@ -1855,7 +1851,7 @@ impl<'a> Evaluator<'a> {
         return Err(self.err(Some((sp, false)), "mismatched input length"))
       }
       self.stack.pop();
-      stack_match!(let args as Some(Stack::MapProc2(args)) = self.stack.pop());
+      stack_match!(let Some(Stack::MapProc2(args)) = self.stack.pop());
       *self.stack.last_mut().expect("underflow") = LispVal::list(args).into()
     }
     Ok(())
@@ -2028,7 +2024,7 @@ impl<'a> Evaluator<'a> {
           }
           Ir::TestPatternResume => {
             let ok = self.pop_lisp().truthy();
-            stack_match!(let vars as Some(Stack::PatternPause(vars)) = self.stack.pop());
+            stack_match!(let Some(Stack::PatternPause(vars)) = self.stack.pop());
             self.pattern_match(vars, ok)?
           }
           Ir::BranchFail(sp) => {

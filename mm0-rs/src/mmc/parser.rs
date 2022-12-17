@@ -899,8 +899,8 @@ impl<'a, C> Parser<'a, C> {
         return Err(ElabError::new_e(span, "a labeled block is a statement, not an expression"))
       }
       let expr = if let Some(Spanned {k: ast::StmtKind::Expr(_), ..}) = stmts.last() {
-        let_unchecked!(Some(Spanned {span, k: ast::StmtKind::Expr(expr)}) = stmts.pop(),
-          Some(Box::new(Spanned {span, k: expr})))
+        let Some(Spanned {span, k: ast::StmtKind::Expr(expr)}) = stmts.pop() else { unreachable!() };
+        Some(Box::new(Spanned {span, k: expr}))
       } else {
         None
       };
@@ -919,9 +919,8 @@ impl<'a, C> Parser<'a, C> {
       name: Spanned<Symbol>,
       used: bool,
     }
-    let e = match u.next() {
-      None => return Err(ElabError::new_e(try_get_span(&span, &LispVal::from(u)), "func/proc: syntax error")),
-      Some(e) => e,
+    let Some(e) = u.next() else {
+      return Err(ElabError::new_e(try_get_span(&span, &LispVal::from(u)), "func/proc: syntax error"))
     };
     let mut outmap: Vec<OutVal> = vec![];
     let mut args = vec![];
