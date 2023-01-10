@@ -551,7 +551,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     // because LayoutProof::layout calls Environment::get_atom which mutates the env.data field.
     // This is disjoint from the reference to env.thms that we retain here, so it's okay.
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
-    self.mangler.mangle(&self.env, tid, |_, s| path.push(&format!("{s}.html")));
+    self.mangler.mangle(&self.env, tid, |_, s| path.push(format!("{s}.html")));
     let mut file = BufWriter::new(File::create(&path)?);
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
