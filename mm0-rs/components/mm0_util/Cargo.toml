@@ -26,10 +26,10 @@ libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.93", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procinfo = { version = "0.4", optional = true }
+procfs = { version = "0.14", optional = true }
 
 [features]
 default = ["lined_string"]
-memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procinfo"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procfs"]
 server = ["lsp-types", "mm0_deepsize/lsp-types"]
 lined_string = ["once_cell", "pathdiff"]

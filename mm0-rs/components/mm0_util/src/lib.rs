@@ -629,7 +629,8 @@ fn get_memory_rusage() -> usize { 0 }
 #[cfg(all(feature = "memory", target_os = "linux"))]
 #[must_use]
 pub fn get_memory_usage() -> usize {
-  procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
+  procfs::process::Process::myself().and_then(|me| me.statm())
+    .map_or_else(|_| get_memory_rusage(), |stat| stat.data as usize * 4096)
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
