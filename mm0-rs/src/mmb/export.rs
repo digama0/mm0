@@ -616,6 +616,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                     write_expr_proof(self.env, vec, &td.heap, &td.store,
                       &mut reorder, vars, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
+                    reorder.idx += 1;
                   }
                   write_expr_proof(self.env, vec, &td.heap, &td.store,
                     &mut reorder, vars, &td.ret, false)?;
