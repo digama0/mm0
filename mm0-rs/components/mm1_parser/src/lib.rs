@@ -197,13 +197,11 @@ pub struct Parser<'a> {
 
 /// return true iff a given character is an acceptable ident starter.
 #[must_use]
-pub fn ident_start(c: u8) -> bool {
-  (b'a'..=b'z').contains(&c) || (b'A'..=b'Z').contains(&c) || c == b'_'
-}
+pub fn ident_start(c: u8) -> bool { c.is_ascii_alphabetic() || c == b'_' }
 
 /// return true iff a given character is an acceptable ident character.
 #[must_use]
-pub fn ident_rest(c: u8) -> bool { ident_start(c) || (b'0'..=b'9').contains(&c) }
+pub fn ident_rest(c: u8) -> bool { ident_start(c) || c.is_ascii_digit() }
 
 /// return true iff a given character is an acceptable lisp ident.
 #[must_use]
@@ -614,7 +612,7 @@ impl<'a> Parser<'a> {
   fn decimal(&mut self, mut val: BigUint) -> BigUint {
     while self.idx < self.source.len() {
       let c = self.cur();
-      if !(b'0'..=b'9').contains(&c) {
+      if !c.is_ascii_digit() {
         break
       }
       self.idx += 1;
@@ -637,7 +635,7 @@ impl<'a> Parser<'a> {
           self.idx += 1;
           while self.idx < self.source.len() {
             let c = self.cur();
-            if (b'0'..=b'9').contains(&c) {
+            if c.is_ascii_digit() {
               self.idx += 1;
               val = 16_u8 * val + (c - b'0');
             } else if (b'A'..=b'F').contains(&c) {
@@ -778,7 +776,7 @@ impl<'a> Parser<'a> {
         let f = unsafe { self.formula()?.unwrap_unchecked() };
         Ok(SExpr { span: f.0, k: SExprKind::Formula(f) })
       }
-      Some(c) if (b'0'..=b'9').contains(&c) => {
+      Some(c) if c.is_ascii_digit() => {
         let (span, n) = self.number()?;
         Ok(SExpr { span, k: SExprKind::Number(n) })
       }
@@ -846,7 +844,7 @@ impl<'a> Parser<'a> {
 
   fn prec(&mut self) -> Result<Prec> {
     match self.cur_opt() {
-      Some(c) if (b'0'..=b'9').contains(&c) => {
+      Some(c) if c.is_ascii_digit() => {
         let (span, n) = self.number()?;
         Ok(Prec::Prec(
           n.to_u32().ok_or_else(|| ParseError::new(span, "precedence out of range".into()))?,

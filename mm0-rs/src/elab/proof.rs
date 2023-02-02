@@ -365,18 +365,14 @@ pub trait Node: Sized {
 /// store a reference to the [`Ref`](Val::Ref) node index that was allocated to it.
 /// The [`Done`](Val::Done) constructor represents an unshared value that has
 /// already been "used up" by its referent.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Val<T: Node> {
   /// An unshared value.
   Built(T),
   /// A shared value; the corresponding node is `T::REF(n)`.
   Ref(usize),
   /// An unshared value that has been moved away.
-  Done,
-}
-
-impl<T: Node> Default for Val<T> {
-  fn default() -> Self {Val::Done}
+  #[default] Done,
 }
 
 impl<T: Node> Val<T> {

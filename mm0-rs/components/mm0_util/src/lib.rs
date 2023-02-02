@@ -630,7 +630,8 @@ fn get_memory_rusage() -> usize { 0 }
 #[must_use]
 pub fn get_memory_usage() -> usize {
   procfs::process::Process::myself().and_then(|me| me.statm())
-    .map_or_else(|_| get_memory_rusage(), |stat| stat.data as usize * 4096)
+    .map_or_else(|_| get_memory_rusage(), |stat|
+      usize::try_from(stat.data).expect("overflow") * 4096)
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
