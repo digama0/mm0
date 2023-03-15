@@ -390,7 +390,6 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
       MAX_EMITTED_ERROR.fetch_max(level, Ordering::Relaxed);
     }
     let ast = Arc::new(ast);
-    let mut deps = Vec::new();
     if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elab {path}")) }
     let rd = rd.push(path.clone());
     let fut =
@@ -408,8 +407,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
           if rd.contains(&p) {
             send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
           } else {
-            POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
-            deps.push(p);
+            POOL.spawn_ok(elaborate_and_send(p, send, rd.clone()));
           }
           Ok(recv)
         },

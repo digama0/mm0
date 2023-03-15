@@ -1111,7 +1111,7 @@ impl<'a> ProcProver<'a> {
   /// Returns `(tctx', |- okWrite tctx loc v tctx')`
   fn write(&mut self, tctx: &mut P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
     let l1 = tctx.1;
-    tctx.1 = l1;
+    // tctx.1 = l1;
     let ret = app!(self.thm, okWrite[l1, loc.1, v.1, tctx.1]);
     thm!(self.thm, sorry(ret): ret) // TODO
   }

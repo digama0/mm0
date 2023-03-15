@@ -551,12 +551,11 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         let td = &self.env.terms[term];
         vassert!(p + td.args.len() <= self.store.len(), VerifyError::MalformedStore);
         let args = td.unpack_term(&self.store[p..]);
-        let mut deps = vec![];
         let mut accum = 0;
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
           let (pr, s, bv) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
-          let d = self.deps[&(pr as *const _)];
+          accum |= self.deps[&(pr as *const _)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
@@ -564,13 +563,11 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
                 ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
               vassert!(bv, VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
                 ProofVerifyError::BoundError(self.thm_parent, e, i)));
-              deps.push(d);
             }
             Type::Reg(s2, _) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
                 self.orig_heap, self.store, Some(node),
                 ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
-              accum |= d;
             }
           }
         }

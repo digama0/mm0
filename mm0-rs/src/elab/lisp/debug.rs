@@ -29,7 +29,7 @@ macro_rules! env_debug {
   ( $($xs:ty),+ ) => {
     $(
       impl EnvDebug for $xs {
-        fn env_dbg<'a>(&self, _: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn env_dbg(&self, _: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
           write!(f, "{:#?}", self)
         }
       }
