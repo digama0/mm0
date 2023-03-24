@@ -121,7 +121,7 @@ Notations
 ---
 The notation system is intended to be a minimal operator precedence parser. There is support for `prefix` and `infix` notations, `coercion` (nameless notation), and `notation` for everything else. The precedence levels are nonnegative integers, or `max`, representing infinity.
 
-* A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation commmand) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
+* A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation command) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
 
 * A `prefix` constructor parses its argument with the given precedence.
 
