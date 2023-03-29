@@ -143,7 +143,13 @@ impl LispKind {
         (r, None) => (r, None),
         (r, Some(e)) => (r, Some(LispVal::new(LispKind::Annot(sp.clone(), e)))),
       },
-      LispKind::Ref(m) => (m.get_mut(|e| e.as_map_mut(f)), None),
+      LispKind::Ref(m) => {
+        let mut f = Some(f);
+        match m.try_get_mut(|e| e.as_map_mut(f.take().expect("impossible"))) {
+          Some(r) => (r, None),
+          None => m.get(|e| e.make_map_mut(f.take().expect("impossible")))
+        }
+      }
       _ => (None, None)
     }
   }

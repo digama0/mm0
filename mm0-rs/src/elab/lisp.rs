@@ -589,6 +589,10 @@ impl LispRef {
       panic!("not frozen")
     })
   }
+  /// Attempt to mutate the stored value, or return `None`.
+  pub fn try_get_mut<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
+    Some(self.0.try_borrow_mut().ok()?.get_mut(f))
+  }
   /// Get a mutable reference to the stored value.
   pub fn get_mut_weak(&self) -> impl DerefMut<Target=LispWeak> + '_ { self.0.borrow_mut() }
   /// Set this reference to a weak reference to `e`.
