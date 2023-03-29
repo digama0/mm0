@@ -351,6 +351,7 @@ impl<T> SliceUninit<T> {
   #[must_use]
   pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
+    #[allow(clippy::uninit_vec)] // rust-clippy#10565
     // Safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
     unsafe { res.set_len(size) };
