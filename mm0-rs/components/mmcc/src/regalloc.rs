@@ -217,6 +217,7 @@ impl PCodeBuilder {
     }
   }
 
+  #[allow(clippy::unnecessary_box_returns)]
   fn finish(self, saved_regs: Vec<PReg>) -> Box<PCode> {
     let Self {mut code, fwd_jumps, ..} = self;
     code.saved_regs = saved_regs;
