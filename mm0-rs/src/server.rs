@@ -501,7 +501,7 @@ impl Vfs {
         for dep in deps {
           Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Close).spawn();
         }
-      } else {}
+      }
     }
     Ok(())
   }
@@ -972,7 +972,7 @@ async fn definition<T>(path: FileRef, pos: Position,
           res.push(g(fsp, full))
         } else if let Some(sp) = ad.graveyard() {
           res.push(g(&sp.0, sp.1))
-        } else {}
+        }
       }
       ObjectKind::Import(file) => {
         res.push(g(&FileSpan {file: file.clone(), span: 0.into()}, 0.into()))

@@ -501,7 +501,7 @@ impl<'a, C> Parser<'a, C> {
         Some((Keyword::Ghost, mut u)) => u.try_for_each(|e| self.on_names(base, &e, f))?,
         _ => Uncons::from(e.clone()).try_for_each(|e| self.on_names(base, &e, f))?,
       }
-    } else {}
+    }
     Ok(())
   }
 

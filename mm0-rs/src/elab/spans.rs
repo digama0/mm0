@@ -155,7 +155,7 @@ impl<T> Spans<T> {
   /// position. ([`Span`]s are considered as closed,
   /// i.e. `start <= pos <= end`, for this purpose.)
   pub fn find_pos(&self, pos: usize) -> impl Iterator<Item=&(Span, T)> {
-    self.data.range(..=pos).rev().next().into_iter()
+    self.data.range(..=pos).next_back().into_iter()
       .flat_map(move |(_, v)| v.iter().filter(move |x| pos <= x.0.end))
   }
 

@@ -51,19 +51,13 @@ impl mmcc::PrintLambda for PrintLambda<'_> {
   }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct Config;
 struct ItemContext<'a> {
   elab: &'a Elaborator,
   lambdas: &'a IdxVec<LambdaId, Mm0ExprNode>,
   errors: &'a mut Vec<ElabError>,
-}
-
-impl Clone for Config {
-  /// Clone is used when copying a compiler struct from one file to another.
-  /// In this case, we don't need to preserve the error list.
-  fn clone(&self) -> Self { Self::default() }
 }
 
 impl mmcc::Config for Config {

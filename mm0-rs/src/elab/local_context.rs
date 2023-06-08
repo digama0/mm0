@@ -772,7 +772,7 @@ impl Elaborator {
             } else if is.0 && mods.contains(Modifiers::FREE) {
               report!(sp, format!("free sort '{}' does not admit dummy variables",
                 self.sorts[sort].name.as_str()))
-            } else {}
+            }
           }
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
             report!(bi.local.expect("this can't happen unless the variable was written explicitly"),
@@ -813,7 +813,7 @@ impl Elaborator {
           if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
         } else if d.val.is_none() && !self.mm0_mode {
           self.report(ElabError::warn(d.id, "def declaration missing value"));
-        } else {}
+        }
         let val = match &d.val {
           None => None,
           Some(f) => (|| -> Result<Option<(Span, LispVal)>> {

@@ -241,7 +241,7 @@ impl<'a> MathParser<'a> {
       let actual = if args.is_empty() { Prec::Max } else { APP_PREC };
       let e = QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())};
       return Ok((e, actual, None))
-    } else {}
+    }
     Err(ParseError::new(sp, format!("expecting prefix expression >= {p}").into()))
   }
 
@@ -269,12 +269,10 @@ impl<'a> MathParser<'a> {
       self.idx = tok_end.1;
       let mut args = SliceUninit::new(info.nargs);
       let start = lhs.0.span.start;
-      let lits = match info.lits.split_first() {
-        Some((&Literal::Var(i, q), lits)) => {
-          self.check_paren(&mut lhs, q);
-          args.set(i, lhs.0); lits
-        }
-        _ => unreachable!()
+      let lits = {
+        let Some((&Literal::Var(i, q), lits)) = info.lits.split_first() else { unreachable!() };
+        self.check_paren(&mut lhs, q);
+        args.set(i, lhs.0); lits
       };
       let mut consts = vec![tk];
       let end;
@@ -299,7 +297,7 @@ impl<'a> MathParser<'a> {
       } else {
         end = self.literals(&mut args, &lits[1..], &mut consts, tk.end)?;
         tok_end = self.peek_token();
-      };
+      }
       let span = (start..end).into();
       for sp in consts { self.spans.insert(sp, ObjectKind::TermNota(info.term, span)); }
       // Safety: We checked in elab_gen_nota that the lits array contains every index,
