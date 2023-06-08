@@ -371,7 +371,7 @@ $ S\ x, {z | E. y (x, y e. F /\ y, z e. G)} $;
 infixr comp: $o>$ prec 91;
 
 --| The restriction of a relation to a set: `A |` B` is
---| the set of `(x,y) e. A` such that `y e. B`.
+--| the set of `(x,y) e. A` such that `x e. B`.
 def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 54;
 

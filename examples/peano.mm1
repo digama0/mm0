@@ -3572,7 +3572,7 @@ theorem prco: $ x, z e. A o> B <-> E. y (x, y e. A /\ y, z e. B) $ =
 '(elsabe @ elabed ,eqtac);
 
 --| The restriction of a relation to a set: `A |` B` is
---| the set of `(x,y) e. A` such that `y e. B`.
+--| the set of `(x,y) e. A` such that `x e. B`.
 @_ def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 54;
 
