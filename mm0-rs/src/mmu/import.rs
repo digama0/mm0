@@ -149,6 +149,8 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
+  #[allow(dead_code)] fn iter(&self) -> DedupIter<'_, H> { self.into_iter() }
+
   fn add(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {

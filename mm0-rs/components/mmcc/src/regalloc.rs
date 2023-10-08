@@ -196,7 +196,7 @@ impl PCodeBuilder {
 
   fn apply_edits(&mut self,
     edits: &mut std::iter::Peekable<impl Iterator<Item=(ProgPoint, Edit)>>,
-    ar: &mut ApplyRegalloc,
+    ar: &ApplyRegalloc,
     pt: ProgPoint
   ) {
     while edits.peek().map_or(false, |p| p.0 == pt) {
@@ -349,7 +349,7 @@ impl VCode {
         code.block_params.push_new();
         code.code.block_addr.push(code.len);
       };
-      code.apply_edits(&mut edits, &mut ar, ProgPoint::before(i));
+      code.apply_edits(&mut edits, &ar, ProgPoint::before(i));
       match *inst {
         Inst::Fallthrough { dst } => {
           assert!(self.blocks[dst].1 == i.next());
@@ -452,7 +452,7 @@ impl VCode {
         }
         Inst::Ud2 => { code.push(PInst::Ud2); }
       }
-      code.apply_edits(&mut edits, &mut ar, ProgPoint::after(i));
+      code.apply_edits(&mut edits, &ar, ProgPoint::after(i));
     }
     bb.finish_block(&mut code);
     (self.abi, code.finish(saved_regs))

@@ -92,6 +92,8 @@ impl Dedup {
     Self((0..nargs).map(|i| (ProofHash::Ref(ProofKind::Expr, i), true)).collect())
   }
 
+  #[allow(dead_code)] fn iter(&self) -> DedupIter<'_> { self.into_iter() }
+
   fn push(&mut self, v: ProofHash) -> usize {
     (self.0.len(), self.0.push((v, false))).0
   }
@@ -382,9 +384,9 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
     let get_var = $get_var;
     let mut $var = 0;
     macro_rules! $next_var {() => {{
-      let var = $var;
+      let var2 = $var;
       $var += 1;
-      get_var(env, var)
+      get_var(env, var2)
     }}}
   }}
   while let Some(e) = it.next() {

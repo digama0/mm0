@@ -736,7 +736,7 @@ pub fn find_header_error(mmb: &[u8]) -> ParseError {
   }
   match find_header_error_aux(mmb) {
     Err(e) => e,
-    Ok(_) => panic!(
+    Ok(()) => panic!(
       "zerocopy errored out when parsing mmb header, \
        but `inspect_header_aux` wasn't able to find a problem"
     ),

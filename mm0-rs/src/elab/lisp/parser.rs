@@ -352,7 +352,7 @@ impl LocalCtx {
   }
   fn push(&mut self, x: AtomId) -> usize {
     let old = self.ctx.len();
-    if x != AtomId::UNDER { self.names.entry(x).or_insert_with(Vec::new).push(old) }
+    if x != AtomId::UNDER { self.names.entry(x).or_default().push(old) }
     self.ctx.push(x);
     old
   }

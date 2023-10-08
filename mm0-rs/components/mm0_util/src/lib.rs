@@ -314,6 +314,9 @@ impl<T> ArcList<T> {
     }
     l.join(t, tail).push(t2.clone())
   }
+
+  /// Returns a new iterator over the contents of the [`ArcList`].
+  pub fn iter(&self) -> ArcListIter<'_, T> { ArcListIter(self) }
 }
 
 /// An iterator over an [`ArcList`].
@@ -324,7 +327,7 @@ pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 impl<'a, T> Iterator for ArcListIter<'a, T> {
   type Item = &'a T;
   fn next(&mut self) -> Option<&'a T> {
-    let (l, t) = &**self.0.0.as_ref()?;
+    let (l, t) = &**self.0 .0.as_ref()?;
     self.0 = l;
     Some(t)
   }
@@ -354,7 +357,7 @@ impl<T> SliceUninit<T> {
     #[allow(clippy::uninit_vec)] // rust-clippy#10565
     // Safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
-    unsafe { res.set_len(size) };
+    (unsafe { res.set_len(size) });
     Self(res.into_boxed_slice())
   }
 
@@ -465,14 +468,13 @@ pub struct Range {
 
 #[cfg(feature = "lined_string")]
 /// A [`PathBuf`] lazily initialized to a canonicalized "."
-static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> =
-  once_cell::sync::Lazy::new(|| {
-    #[cfg(target_arch = "wasm32")]
-    let buf = PathBuf::from(".");
-    #[cfg(not(target_arch = "wasm32"))]
-    let buf = std::fs::canonicalize(".").expect("failed to find current directory");
-    buf
-  });
+static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> = once_cell::sync::Lazy::new(|| {
+  #[cfg(target_arch = "wasm32")]
+  let buf = PathBuf::from(".");
+  #[cfg(not(target_arch = "wasm32"))]
+  let buf = std::fs::canonicalize(".").expect("failed to find current directory");
+  buf
+});
 
 /// Given a [`PathBuf`] 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.
@@ -630,9 +632,10 @@ fn get_memory_rusage() -> usize { 0 }
 #[cfg(all(feature = "memory", target_os = "linux"))]
 #[must_use]
 pub fn get_memory_usage() -> usize {
-  procfs::process::Process::myself().and_then(|me| me.statm())
-    .map_or_else(|_| get_memory_rusage(), |stat|
-      usize::try_from(stat.data).expect("overflow") * 4096)
+  procfs::process::Process::myself().and_then(|me| me.statm()).map_or_else(
+    |_| get_memory_rusage(),
+    |stat| usize::try_from(stat.data).expect("overflow") * 4096,
+  )
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.

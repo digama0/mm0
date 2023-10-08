@@ -328,7 +328,7 @@ impl<I> VCode<I> {
     let bl = self.blocks.push((id, inst, inst));
     self.block_preds.push(vec![]);
     self.block_succs.push(vec![]);
-    self.block_params.push(params.into_iter());
+    self.block_params.push(params);
     bl
   }
 }

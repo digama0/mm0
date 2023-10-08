@@ -1109,7 +1109,7 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns `(tctx', |- okWrite tctx loc v tctx')`
-  fn write(&mut self, tctx: &mut P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
+  fn write(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
     let l1 = tctx.1;
     // tctx.1 = l1;
     let ret = app!(self.thm, okWrite[l1, loc.1, v.1, tctx.1]);
@@ -1117,7 +1117,7 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns `|- okCode bctx tctx code tctx'` for a regalloc operation.
-  fn ok_spill_op(&mut self, tctx: &mut P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
+  fn ok_spill_op(&mut self, tctx: &P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
     let l1 = tctx.1;
     app_match!(self.thm, let (instMov _ dst src) = code);
     let reg_or_mem = |arg| app_match!(self.thm, arg => {
@@ -1183,7 +1183,7 @@ impl<'a> ProcProver<'a> {
   /// or `(tctx2, |- applyCallG tctx1 args ret tctx2)` if `rel` is false
   #[allow(clippy::too_many_arguments)]
   fn apply_call(&mut self,
-    tctx: &mut P<&mut TCtx>,
+    tctx: &P<&mut TCtx>,
     abi: &ProcAbi,
     args: ProofId,
     ret: ProofId,
@@ -1387,7 +1387,7 @@ impl<'a, 'b> BlockProofVisitor<'a, 'b> {
     app_match!(proc.thm, let (okProc _ tgt args ret clob _) = x);
     let rel = inst.is_some();
     let l1 = self.tctx.1;
-    let h2 = proc.apply_call(&mut self.tctx, abi, args, ret, clob, rel);
+    let h2 = proc.apply_call(&self.tctx, abi, args, ret, clob, rel);
     let l2 = self.tctx.1;
     let th = match (rel, se) {
       (true, true) => thm!(self.thm, (okCode[self.bctx, l1, self.code, l2]) =>
@@ -1427,7 +1427,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
         _ => {}
       }
       self.split();
-      let th = self.proc.ok_spill_op(&mut self.tctx, inst.inst, self.code);
+      let th = self.proc.ok_spill_op(&self.tctx, inst.inst, self.code);
       self.finish(th);
     } else {
       match self.inst_state {

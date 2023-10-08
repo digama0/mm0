@@ -57,6 +57,7 @@ unsafe impl Sync for FrozenEnv {}
 
 impl FrozenEnv {
   /// Create a new [`FrozenEnv`] from an [`Environment`].
+  #[allow(clippy::arc_with_non_send_sync)]
   #[must_use] pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
 
   /// Convert a [`&FrozenEnv`](FrozenEnv) into an [`&Environment`](Environment).

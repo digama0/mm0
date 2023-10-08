@@ -214,7 +214,7 @@ impl<'a> Collector<'a> {
 /// The start of the `.text` section, also the entry point for the program.
 pub const TEXT_START: u32 = 0x40_0078;
 
-//// A completed code object. This includes the list of instructions,
+/// A completed code object. This includes the list of instructions,
 /// and can be serialized to a list of bytes using the [`LinkedCode::write_elf`] method.
 #[derive(Clone, Debug)]
 pub struct LinkedCode {

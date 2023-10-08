@@ -188,4 +188,7 @@ impl<T> Spans<T> {
         .for_each(|(_, v)| v.iter().for_each(|x| f(sp, x))))
     }
   }
+
+  /// Returns an iterator over the collected spans.
+  #[must_use] pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter { self.into_iter() }
 }

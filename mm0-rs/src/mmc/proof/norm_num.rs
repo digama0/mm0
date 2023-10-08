@@ -71,6 +71,7 @@ impl PartialEq for Num {
   fn eq(&self, other: &Self) -> bool { self.val == other.val }
 }
 impl Eq for Num {}
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Num {
   fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
     self.val.partial_cmp(&other.val)

@@ -1,4 +1,5 @@
 //! Types used in the rest of the compiler.
+#![allow(clippy::tuple_array_conversions)]
 
 use std::{fmt::Display, ops::BitOrAssign};
 use num::BigInt;

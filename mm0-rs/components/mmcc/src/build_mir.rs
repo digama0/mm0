@@ -279,7 +279,7 @@ impl<'a> Translator<'a, '_> {
   }
 
   fn locate(&mut self, var: VarId) -> &mut Vec<VarId> {
-    self.located.entry(var).or_insert_with(Vec::new)
+    self.located.entry(var).or_default()
   }
 
   fn add_gen(&mut self, dominator: GenId, gen: GenId, value: HashMap<HVarId, VarId>) {

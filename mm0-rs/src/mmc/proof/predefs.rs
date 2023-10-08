@@ -4,7 +4,7 @@ use crate::{DeclKey, Environment};
 
 fn mk_array<A, const N: usize>(mut f: impl FnMut(usize) -> A) -> [A; N] {
   let mut i = 0_usize;
-  [(); N].map(|_| { let a = f(i); i += 1; a })
+  [(); N].map(|()| { let a = f(i); i += 1; a })
 }
 
 fn mk_remap<'a, A, const N: usize>(
@@ -12,7 +12,7 @@ fn mk_remap<'a, A, const N: usize>(
   mut f: impl FnMut(usize, &'a A) -> A
 ) -> [A; N] {
   let mut i = 0_usize;
-  [(); N].map(|_| { let a = f(i, &arr[i]); i += 1; a })
+  [(); N].map(|()| { let a = f(i, &arr[i]); i += 1; a })
 }
 
 fn get_sort(env: &Environment, s: &[u8]) -> SortId {

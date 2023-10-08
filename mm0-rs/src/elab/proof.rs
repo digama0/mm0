@@ -190,6 +190,9 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
+  /// Returns an iterator over the elements allocated by the [`Dedup`].
+  pub fn iter(&self) -> DedupIter<'_, H> { self.into_iter() }
+
   /// Insert a new hash object `v`, originating from lisp object `p`,
   /// into the [`Dedup`], returning the allocated index.
   pub fn add(&mut self, kind: ProofKind, p: LispVal, v: H) -> usize {
