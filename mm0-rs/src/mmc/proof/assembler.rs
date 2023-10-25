@@ -1374,24 +1374,24 @@ impl<'a> BuildAssembly<'a> {
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, s);
       de.build_def0(code, Modifiers::LOCAL,
-        self.span.clone(), self.full, Some(doc), e, self.pd.string)
-    }).map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), e, self.pd.string)
+    }).map_err(|e| e.into_elab_error(self.full.clone()))?;
 
     let (asm, doc) = self.mangler.get_data(self.elab, Name::ProcAsm(proc.name()));
     let asm = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, a);
       de.build_def0(asm, Modifiers::LOCAL,
-        self.span.clone(), self.full, Some(doc), e, self.pd.set)
-    }).map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), e, self.pd.set)
+    }).map_err(|e| e.into_elab_error(self.full.clone()))?;
 
     let th = thm!(build.thm, ((assemble ({code}) start end (asmProc start ({asm})))) =>
       CONV({th} => (assemble (UNFOLD({code}); s) start end (asmProc start (UNFOLD({asm}); a)))));
     let (asm_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmThm(proc.name()));
     let asm_thm = self.elab.env
       .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(),
-        self.span.clone(), self.full, Some(doc), th))
-      .map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), th))
+      .map_err(|e| e.into_elab_error(self.full.clone()))?;
     self.proc_asm.insert(proc.id, (asm, ThmId(0)));
 
     // Import into the context of the global (Name::Content) proof
@@ -1425,8 +1425,8 @@ impl<'a> BuildAssembly<'a> {
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = self.thm.to_expr(&mut de, c);
       de.build_def0(content, Modifiers::LOCAL,
-        self.span.clone(), self.full, Some(doc), e, self.pd.string)
-    }).map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), e, self.pd.string)
+    }).map_err(|e| e.into_elab_error(self.full.clone()))?;
 
     let (gctx, doc) = self.mangler.get_data(self.elab, Name::GCtx);
     let gctx = self.elab.env.add_term({
@@ -1436,8 +1436,8 @@ impl<'a> BuildAssembly<'a> {
       let res = self.thm.to_expr(&mut de, res);
       let e = app!(de, (mkGCtx ({content}) filesz memsz res));
       de.build_def0(gctx, Modifiers::LOCAL,
-        self.span.clone(), self.full, Some(doc), e, self.pd.set)
-    }).map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), e, self.pd.set)
+    }).map_err(|e| e.into_elab_error(self.full.clone()))?;
 
     let th = thm!(self.thm, ((assembled ({gctx}) a)) =>
       CONV({th} => (assembled (UNFOLD({gctx});
@@ -1445,8 +1445,8 @@ impl<'a> BuildAssembly<'a> {
     let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::AsmdThm);
     let asmd_thm = self.elab.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(),
-        self.span.clone(), self.full, Some(doc), th))
-      .map_err(|e| e.into_elab_error(self.full))?;
+        self.span.clone(), self.full.clone(), Some(doc), th))
+      .map_err(|e| e.into_elab_error(self.full.clone()))?;
 
     let mut iter = proof.assembly();
     self.prove_conjuncts(iter.len(), &mut iter, &|this, de| de.thm0(this.elab, asmd_thm))?;
@@ -1462,8 +1462,8 @@ impl<'a> BuildAssembly<'a> {
     self.asmd_lemmas += 1;
     self.elab.env
       .add_thm(de.build_thm0(lem, Modifiers::empty(),
-        self.span.clone(), self.full, Some(doc), th))
-      .map_err(|e| e.into_elab_error(self.full))
+        self.span.clone(), self.full.clone(), Some(doc), th))
+      .map_err(|e| e.into_elab_error(self.full.clone()))
   }
 
   fn prove_conjuncts(&mut self,
@@ -1480,8 +1480,8 @@ impl<'a> BuildAssembly<'a> {
           let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmdThm(proc.name()));
           let asmd_thm = self.elab.env
             .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(),
-              self.span.clone(), self.full, Some(doc), th))
-            .map_err(|e| e.into_elab_error(self.full))?;
+              self.span.clone(), self.full.clone(), Some(doc), th))
+            .map_err(|e| e.into_elab_error(self.full.clone()))?;
           self.proc_asm.get_mut(&proc.id).expect("impossible").1 = asmd_thm;
         }
         AssemblyItem::Const(_) => todo!(),

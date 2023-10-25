@@ -445,14 +445,14 @@ pub(crate) fn render_proof(
   let mangler = Mangler {
     module: elab.data[name].name.clone(),
   };
-  let fsp = elab.fspan(sp);
+  let fsp = elab.fspan(sp.clone());
   let mut proc_asm = HashMap::new();
   scope_ast_source(&elab.ast.source.clone(), || {
-    let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
+    let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp.clone())?;
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
+      compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp.clone(), gctx)
       // Ok(())
-    })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))
+    })).unwrap_or_else(|e| Err(ElabError::new_e(sp.clone(), "panicked")))
   })?;
   // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
   Ok(())

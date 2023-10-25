@@ -849,7 +849,7 @@ impl Remap for Term {
       atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
-      full: self.full,
+      full: self.full.clone(),
       doc: self.doc.clone(),
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
@@ -911,7 +911,7 @@ impl Remap for Thm {
       atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
-      full: self.full,
+      full: self.full.clone(),
       doc: self.doc.clone(),
       args: self.args.remap(r),
       heap: self.heap.remap(r),
@@ -1071,7 +1071,7 @@ impl ParserEnv {
   /// This function can fail if the updated coercion graph contains a diamond or cycle.
   pub fn add_coe(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortId, s2: SortId, fsp: FileSpan, t: TermId) -> Result<(), ElabError> {
-    self.add_coe_raw(sp, sorts, s1, s2, fsp, t)?;
+    self.add_coe_raw(sp.clone(), sorts, s1, s2, fsp, t)?;
     self.update_provs(sp, sorts)?;
     self.decl_nota.entry(t).or_default().0 = true;
     Ok(())
@@ -1083,32 +1083,32 @@ impl ParserEnv {
     self.delims_r.merge(&other.delims_r);
     for (tk, &(ref fsp, p)) in &other.consts {
       self.add_const(tk.clone(), fsp.clone(), p).unwrap_or_else(|r|
-        errors.push(ElabError::with_info(sp,
+        errors.push(ElabError::with_info(sp.clone(),
           format!("constant '{tk}' declared with two precedences").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&p, &(ref fsp, r)) in &other.prec_assoc {
       self.add_prec_assoc(p, fsp.clone(), r).unwrap_or_else(|r|
-        errors.push(ElabError::with_info(sp,
+        errors.push(ElabError::with_info(sp.clone(),
           format!("precedence level {p} has incompatible associativity").into(),
           vec![(r.decl1, "left assoc here".into()), (r.decl2, "right assoc here".into())])))
     }
     for (tk, i) in &other.prefixes {
       self.add_prefix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
-        errors.push(ElabError::with_info(sp,
+        errors.push(ElabError::with_info(sp.clone(),
           format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (tk, i) in &other.infixes {
       self.add_infix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
-        errors.push(ElabError::with_info(sp,
+        errors.push(ElabError::with_info(sp.clone(),
           format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&s1, m) in &other.coes {
       for (&s2, coe) in m {
         if let Coe::One(ref fsp, t) = **coe {
-          self.add_coe(sp, sorts, s1, s2, fsp.clone(), t.remap(r))
+          self.add_coe(sp.clone(), sorts, s1, s2, fsp.clone(), t.remap(r))
             .unwrap_or_else(|r| errors.push(r))
         }
       }
@@ -1308,7 +1308,7 @@ impl Environment {
 
   /// Add a coercion declaration to the environment.
   pub fn add_coe(&mut self, s1: SortId, s2: SortId, fsp: FileSpan, t: TermId) -> Result<(), ElabError> {
-    self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
+    self.pe.add_coe(fsp.span.clone(), &self.sorts, s1, s2, fsp, t)
   }
 
   /// Convert a string to an [`AtomId`]. This mutates the environment because we maintain
@@ -1348,7 +1348,7 @@ impl Environment {
         let i = other.data()[a].sort().expect("wf env");
         let sort = other.sort(i);
         let id = match self.add_sort(a.remap(remap),
-          sort.span.clone(), sort.full, sort.mods, sort.doc.clone())
+          sort.span.clone(), sort.full.clone(), sort.mods, sort.doc.clone())
         {
           Ok(id) => id,
           Err(AddItemError::Redeclaration(id, r)) => {
@@ -1478,10 +1478,10 @@ impl<'a> EnvMergeIter<'a> {
           }
         }
       } else {
-        env.merge_no_lisp(&mut self.remap, self.other, s, self.sp, errors)?;
+        env.merge_no_lisp(&mut self.remap, self.other, s, self.sp.clone(), errors)?;
       }
     }
-    env.pe.merge(self.other.pe(), &mut self.remap, self.sp, &env.sorts, errors);
+    env.pe.merge(self.other.pe(), &mut self.remap, self.sp.clone(), &env.sorts, errors);
     Ok(None)
   }
 }

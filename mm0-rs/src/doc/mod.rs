@@ -572,7 +572,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       use std::fmt::Write;
       let url = base.join(filename).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
       write!(nav, " | <a href=\"{url}").expect("writing to a string");
-      let range = self.source.to_range(td.full);
+      let range = self.source.to_range(td.full.clone());
       if range.start.line == range.end.line {
         write!(nav, "#L{}\">src</a>", range.start.line + 1)
       } else {

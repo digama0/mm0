@@ -326,12 +326,12 @@ impl Remap for Ir {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      &Ir::Global(sp, a) => Ir::Global(sp, a.remap(r)),
+      &Ir::Global(ref sp, a) => Ir::Global(sp.clone(), a.remap(r)),
       // Safety: The input Ir is already frozen
       Ir::Const(v) => Ir::Const(unsafe { v.freeze() }.remap(r)),
-      &Ir::SetMergeStrategy(sp, a) => Ir::SetMergeStrategy(sp, a.remap(r)),
-      &Ir::GlobalDef(sp, sp2, a) => Ir::GlobalDef(sp, sp2, a.remap(r)),
-      &Ir::Lambda(name, ref args) => Ir::Lambda(name, Box::new((args.0, args.1, args.2.remap(r)))),
+      &Ir::SetMergeStrategy(ref sp, a) => Ir::SetMergeStrategy(sp.clone(), a.remap(r)),
+      &Ir::GlobalDef(ref sp, ref sp2, a) => Ir::GlobalDef(sp.clone(), sp2.clone(), a.remap(r)),
+      &Ir::Lambda(name, ref args) => Ir::Lambda(name, Box::new((args.0.clone(), args.1, args.2.remap(r)))),
       &Ir::PatternQuoteAtom(a) => Ir::PatternQuoteAtom(a.remap(r)),
       &Ir::PatternQExprAtom(a) => Ir::PatternQExprAtom(a.remap(r)),
       _ => self.clone()
@@ -468,12 +468,12 @@ impl<'a> LispParser<'a> {
     let mut stack = vec![];
     loop {
       match &e.k {
-        &SExprKind::Atom(a) => break Ok((e.span, self.parse_atom(e.span, a)?, stack)),
+        &SExprKind::Atom(a) => break Ok((e.span.clone(), self.parse_atom(e.span.clone(), a)?, stack)),
         SExprKind::List(xs) if !xs.is_empty() =>
           {stack.push(Item::List(&xs[1..])); e = &xs[0]}
         SExprKind::DottedList(xs, y) if !xs.is_empty() =>
           {stack.push(Item::DottedList(&xs[1..], y)); e = &xs[0]}
-        _ => return Err(ElabError::new_e(e.span, "def: invalid spec"))
+        _ => return Err(ElabError::new_e(e.span.clone(), "def: invalid spec"))
       }
     }
   }
@@ -510,11 +510,11 @@ impl<'a> LispParser<'a> {
         match e {
           Item::List(xs) => {
             len -= xs.len();
-            self.push_lambda(sp, len, ProcSpec::Exact(xs.len()), code.into())
+            self.push_lambda(sp.clone(), len, ProcSpec::Exact(xs.len()), code.into())
           }
           Item::DottedList(xs, _) => {
             len -= xs.len() + 1;
-            self.push_lambda(sp, len, ProcSpec::AtLeast(xs.len()), code.into())
+            self.push_lambda(sp.clone(), len, ProcSpec::AtLeast(xs.len()), code.into())
           }
         }
       }
@@ -525,12 +525,12 @@ impl<'a> LispParser<'a> {
 
   fn def(&mut self, global: bool, tail: bool, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomId), ElabError> {
     let (sp, x, stack) = self.def_var(e)?;
-    self.spans.insert(sp, if global {
+    self.spans.insert(sp.clone(), if global {
       ObjectKind::Global(true, !stack.is_empty(), x)
     } else {
       ObjectKind::LispVar(true, !stack.is_empty(), x)
     });
-    self.def_ir(sp, x != AtomId::UNDER, tail, es, stack)?;
+    self.def_ir(sp.clone(), x != AtomId::UNDER, tail, es, stack)?;
     Ok((sp, x))
   }
 }
@@ -605,21 +605,21 @@ impl<'a> LispParser<'a> {
   }
 
   fn parse_atom(&mut self, sp: Span, a: Atom) -> Result<AtomId, ElabError> {
-    self.parse_ident_or_syntax(sp, a).map_err(|_|
+    self.parse_ident_or_syntax(sp.clone(), a).map_err(|_|
       ElabError::new_e(sp, "keyword in invalid position"))
   }
 
   fn parse_ident_raw(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
     if let SExprKind::Atom(a) = e.k {
-      self.parse_atom(e.span, a)
+      self.parse_atom(e.span.clone(), a)
     } else {
-      Err(ElabError::new_e(e.span, "expected an identifier"))
+      Err(ElabError::new_e(e.span.clone(), "expected an identifier"))
     }
   }
 
   fn parse_ident(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
     let x = self.parse_ident_raw(e)?;
-    self.spans.insert(e.span, ObjectKind::LispVar(true, false, x));
+    self.spans.insert(e.span.clone(), ObjectKind::LispVar(true, false, x));
     Ok(x)
   }
 
@@ -632,10 +632,10 @@ impl<'a> LispParser<'a> {
   fn qexpr(&mut self, keep: bool, e: QExpr) -> Result<(), ElabError> {
     let fsp = self.fspan(e.span);
     match e.k {
-      QExprKind::IdentApp(sp, es) => {
+      QExprKind::IdentApp(ref sp, es) => {
         if keep {
           self.code.push(Ir::Const(LispVal::atom(
-            self.elab.env.get_atom(self.ast.clone().span(sp))).span(self.fspan(sp))));
+            self.elab.env.get_atom(self.ast.clone().span(sp.clone()))).span(self.fspan(sp.clone()))));
         }
         if !es.is_empty() {
           let n = es.len();
@@ -643,10 +643,10 @@ impl<'a> LispParser<'a> {
           if keep { self.list(fsp, n + 1) }
         }
       }
-      QExprKind::App(sp, t, es) => {
+      QExprKind::App(ref sp, t, es) => {
         let a = self.terms[t].atom;
         if keep {
-          self.code.push(Ir::Const(LispVal::atom(a).span(self.fspan(sp))));
+          self.code.push(Ir::Const(LispVal::atom(a).span(self.fspan(sp.clone()))));
         }
         let n = es.len();
         for e in es.into_vec() { self.qexpr(keep, e)? }
@@ -654,7 +654,7 @@ impl<'a> LispParser<'a> {
       }
       QExprKind::Unquote(e) => {
         if self.mm0_mode {
-          self.report(ElabError::warn(e.span, "(MM0 mode) unquotation not allowed"))
+          self.report(ElabError::warn(e.span.clone(), "(MM0 mode) unquotation not allowed"))
         }
         self.expr(ExprCtx::eval(keep), &e)?;
       }
@@ -706,10 +706,10 @@ impl<'a> LispParser<'a> {
     match &e.k {
       SExprKind::List(es) if !es.is_empty() => {
         let (sp, x, stk) = self.def_var(&es[0])?;
-        self.spans.insert(sp, ObjectKind::LispVar(true, !stk.is_empty(), x));
+        self.spans.insert(sp.clone(), ObjectKind::LispVar(true, !stk.is_empty(), x));
         Ok(((sp, x, stk), &es[1..]))
       }
-      _ => Err(ElabError::new_e(e.span, "let: invalid spec"))
+      _ => Err(ElabError::new_e(e.span.clone(), "let: invalid spec"))
     }
   }
 
@@ -719,7 +719,7 @@ impl<'a> LispParser<'a> {
       return Ok(())
     }
     let SExprKind::List(ls) = &es[0].k else {
-      return Err(ElabError::new_e(es[0].span, "let: invalid spec"))
+      return Err(ElabError::new_e(es[0].span.clone(), "let: invalid spec"))
     };
     rec &= !ls.is_empty();
     if rec {
@@ -728,14 +728,14 @@ impl<'a> LispParser<'a> {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let n = self.ctx.push(x);
         self.code.push(Ir::Undef);
-        self.code.push(Ir::BuiltinApp(false, BuiltinProc::NewRef, Box::new((sp, sp)), 1));
+        self.code.push(Ir::BuiltinApp(false, BuiltinProc::NewRef, Box::new((sp.clone(), sp.clone())), 1));
         self.code.push(Ir::LocalDef(n));
         ds.push((sp, x, stk, e2, n));
       }
       for (sp, x, stk, e2, n) in ds {
         self.code.push(Ir::Local(n));
-        self.def_ir(sp, true, false, e2, stk)?;
-        self.code.push(Ir::BuiltinApp(false, BuiltinProc::SetWeak, Box::new((sp, sp)), 2));
+        self.def_ir(sp.clone(), true, false, e2, stk)?;
+        self.code.push(Ir::BuiltinApp(false, BuiltinProc::SetWeak, Box::new((sp.clone(), sp.clone())), 2));
         let m = self.ctx.push(x);
         self.code.push(Ir::LocalDef(m));
       }
@@ -782,77 +782,77 @@ impl<'a> LispParser<'a> {
           for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
           return Ok(())
         }
-        [SExpr {span, k: SExprKind::Atom(a)}, ref e] if quote =>
-          if self.ast.span_atom(span, a) == b"unquote" {
+        [SExpr {ref span, k: SExprKind::Atom(a)}, ref e] if quote =>
+          if self.ast.span_atom(span.clone(), a) == b"unquote" {
             finish!(self.pattern(ctx, false, e)?)
           }
         _ if quote => {},
         [ref head, ref args @ ..] => if let SExprKind::Atom(a) = head.k {
-          match self.ast.span_atom(head.span, a) {
+          match self.ast.span_atom(head.span.clone(), a) {
             b"quote" => {
-              self.spans.insert(head.span, ObjectKind::Syntax(Syntax::Quote));
+              self.spans.insert(head.span.clone(), ObjectKind::Syntax(Syntax::Quote));
               if let [e] = args { finish!(self.pattern(ctx, true, e)?) }
-              return Err(ElabError::new_e(head.span, "expected one argument"))
+              return Err(ElabError::new_e(head.span.clone(), "expected one argument"))
             }
             b"mvar" => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::MVar));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::MVar));
               match args {
                 [] => finish!(self.code.push(Ir::PatternMVar(MVarPattern::Unknown))),
-                &[SExpr {span, k: SExprKind::Atom(a)}]
-                if matches!(self.ast.span_atom(span, a), b"___" | b"...") =>
+                &[SExpr {ref span, k: SExprKind::Atom(a)}]
+                if matches!(self.ast.span_atom(span.clone(), a), b"___" | b"...") =>
                   finish!(self.code.push(Ir::PatternMVar(MVarPattern::Any))),
                 [bd, s] => finish!({
                   self.code.push(Ir::PatternMVar(MVarPattern::Simple));
                   self.pattern(ctx, quote, bd)?;
                   self.pattern(ctx, quote, s)?;
                 }),
-                _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
+                _ => return Err(ElabError::new_e(head.span.clone(), "expected zero or two arguments")),
               }
             }
             b"goal" => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Goal));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Goal));
               if let [e] = args {
                 finish!({
                   self.code.push(Ir::PatternGoal);
                   self.pattern(ctx, quote, e)?
                 })
               }
-              return Err(ElabError::new_e(head.span, "expected one argument"))
+              return Err(ElabError::new_e(head.span.clone(), "expected one argument"))
             },
             b"and" => finish!({
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::And));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::And));
               self.patterns_and(ctx, args)?
             }),
             b"or" => finish!({
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Or));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Or));
               self.patterns_or(ctx, args)?
             }),
             b"not" => finish!({
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Not));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Not));
               let patch = self.new_patch();
               self.patterns_and(ctx, args)?;
               self.finish_patch(patch, |ip| Ir::PatternTry(ip, ip + 1));
               self.code.push(Ir::PatternResult(false))
             }),
             b"?" => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Test));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Test));
               if let [test, tail @ ..] = args {
                 finish!({
                   self.code.push(Ir::PatternTestPause);
                   self.expr(ExprCtx::EVAL.mask_def(), test)?;
                   if let Some(p) = self.pop_builtin() {
-                    self.code.push(Ir::BuiltinApp(false, p, Box::new((test.span, test.span)), 1));
+                    self.code.push(Ir::BuiltinApp(false, p, Box::new((test.span.clone(), test.span.clone())), 1));
                   } else {
-                    self.code.push(Ir::AppHead(test.span));
+                    self.code.push(Ir::AppHead(test.span.clone()));
                   }
                   self.code.push(Ir::TestPatternResume);
                   self.patterns_and(ctx, tail)?
                 })
               }
-              return Err(ElabError::new_e(head.span, "expected at least one argument"))
+              return Err(ElabError::new_e(head.span.clone(), "expected at least one argument"))
             }
             b"cons" => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Cons));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Cons));
               if let [es2 @ .., e] = args {
                 if es2.len() + pfx != 0 {
                   self.code.push(Ir::PatternDottedList(es2.len() + pfx));
@@ -862,26 +862,26 @@ impl<'a> LispParser<'a> {
                 self.pattern(ctx, quote, e)?;
                 return Ok(())
               }
-              return Err(ElabError::new_e(head.span, "expected at least one argument"))
+              return Err(ElabError::new_e(head.span.clone(), "expected at least one argument"))
             }
             b"___" | b"..." => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::Rest));
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::Rest));
               if args.is_empty() {
                 self.code.push(Ir::PatternList(pfx, Some(0)));
                 for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
                 return Ok(())
               }
-              return Err(ElabError::new_e(head.span, "expected nothing after '...'"))
+              return Err(ElabError::new_e(head.span.clone(), "expected nothing after '...'"))
             }
             b"__" => {
-              self.spans.insert(head.span, ObjectKind::PatternSyntax(PatternSyntax::RestN));
-              if let [SExpr {span, k: SExprKind::Number(ref n)}] = *args {
+              self.spans.insert(head.span.clone(), ObjectKind::PatternSyntax(PatternSyntax::RestN));
+              if let [SExpr {ref span, k: SExprKind::Number(ref n)}] = *args {
                 self.code.push(Ir::PatternList(pfx, Some(n.to_usize().ok_or_else(||
-                  ElabError::new_e(span, "number out of range"))?)));
+                  ElabError::new_e(span.clone(), "number out of range"))?)));
                 for e in &es[..pfx] { self.pattern(ctx, quote, e)? }
                 return Ok(())
               }
-              return Err(ElabError::new_e(head.span, "expected number after '__'"))
+              return Err(ElabError::new_e(head.span.clone(), "expected number after '__'"))
             }
             _ => {}
           }
@@ -962,13 +962,13 @@ impl<'a> LispParser<'a> {
     match &e.k {
       &SExprKind::Atom(a) => if quote {
         self.code.push(Ir::PatternQuoteAtom(
-          self.elab.env.get_atom(self.elab.ast.span_atom(e.span, a))))
+          self.elab.env.get_atom(self.elab.ast.span_atom(e.span.clone(), a))))
       } else {
-        let x = self.parse_atom(e.span, a)?;
+        let x = self.parse_atom(e.span.clone(), a)?;
         if x == AtomId::UNDER {
           self.code.push(Ir::PatternResult(true))
         } else {
-          self.spans.insert(e.span, ObjectKind::LispVar(true, false, x));
+          self.spans.insert(e.span.clone(), ObjectKind::LispVar(true, false, x));
           self.code.push(Ir::PatternAtom(ctx.get_or_push(x)))
         }
       }
@@ -983,8 +983,8 @@ impl<'a> LispParser<'a> {
       SExprKind::Undef => self.code.push(Ir::PatternUndef),
       SExprKind::DocComment(_, e) => self.pattern(ctx, quote, e)?,
       SExprKind::List(es) => self.list_pattern(ctx, quote, es)?,
-      &SExprKind::Formula(f) => {
-        let q = self.parse_formula(f)?;
+      SExprKind::Formula(f) => {
+        let q = self.parse_formula(f.clone())?;
         self.qexpr_pattern(ctx, q)?
       }
     }
@@ -995,13 +995,13 @@ impl<'a> LispParser<'a> {
     let patch1 = self.new_patch();
     let (e, mut es) = match &e.k {
       SExprKind::List(es) if !es.is_empty() => (&es[0], &es[1..]),
-      _ => return Err(ElabError::new_e(e.span, "match: improper syntax"))
+      _ => return Err(ElabError::new_e(e.span.clone(), "match: improper syntax"))
     };
     let mut cont = AtomId::UNDER;
     if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
-        if let [SExpr {span, k: SExprKind::Atom(a)}, ref x] = **v {
-          if self.ast.span_atom(span, a) == b"=>" {
+        if let [SExpr {ref span, k: SExprKind::Atom(a)}, ref x] = **v {
+          if self.ast.span_atom(span.clone(), a) == b"=>" {
             cont = self.parse_ident(x)?;
             es = &es[1..];
           }
@@ -1065,90 +1065,90 @@ impl<'a> LispParser<'a> {
     let restore = self.ctx.len();
     match &e.k {
       &SExprKind::Atom(a) => if ctx.quote {
-        push_const!(span!(e.span,
-          match self.parse_ident_or_syntax(e.span, a) {
+        push_const!(span!(e.span.clone(),
+          match self.parse_ident_or_syntax(e.span.clone(), a) {
             Ok(x) => LispVal::atom(x),
             Err(s) => LispVal::syntax(s),
           }
         ))
       } else {
-        match self.parse_atom(e.span, a)? {
-          AtomId::UNDER => push_const!(span!(e.span, LispVal::atom(AtomId::UNDER))),
+        match self.parse_atom(e.span.clone(), a)? {
+          AtomId::UNDER => push_const!(span!(e.span.clone(), LispVal::atom(AtomId::UNDER))),
           x => {
-            if self.eval_atom(ctx.keep, e.span, x) {
-              self.spans.insert(e.span, ObjectKind::LispVar(false, false, x));
+            if self.eval_atom(ctx.keep, e.span.clone(), x) {
+              self.spans.insert(e.span.clone(), ObjectKind::LispVar(false, false, x));
             } else {
-              self.spans.insert(e.span, ObjectKind::Global(false, false, x));
+              self.spans.insert(e.span.clone(), ObjectKind::Global(false, false, x));
             }
           }
         }
       }
       SExprKind::DottedList(es, e) => {
         if !ctx.quote {
-          return Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))
+          return Err(ElabError::new_e(e.span.clone(), "cannot evaluate an improper list"))
         }
         for e in es {
           if let SExprKind::Atom(a) = es[0].k {
-            if Syntax::parse(self.ast.span(e.span), a) == Ok(Syntax::Unquote) {
-              return Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))
+            if Syntax::parse(self.ast.span(e.span.clone()), a) == Ok(Syntax::Unquote) {
+              return Err(ElabError::new_e(e.span.clone(), "cannot evaluate an improper list"))
             }
           }
           self.expr(ExprCtx::EVAL.quote(true), e)?;
         }
         self.expr(ExprCtx::EVAL.quote(true), e)?;
-        self.dotted_list(e.span, es.len());
+        self.dotted_list(e.span.clone(), es.len());
       }
-      SExprKind::Number(n) => push_const!(span!(e.span, LispVal::number(n.clone().into()))),
-      SExprKind::String(s) => push_const!(span!(e.span, LispVal::string(s.clone()))),
-      &SExprKind::Bool(b) => push_const!(span!(e.span, LispVal::bool(b))),
-      SExprKind::Undef => push_const!(span!(e.span, LispVal::undef())),
+      SExprKind::Number(n) => push_const!(span!(e.span.clone(), LispVal::number(n.clone().into()))),
+      SExprKind::String(s) => push_const!(span!(e.span.clone(), LispVal::string(s.clone()))),
+      &SExprKind::Bool(b) => push_const!(span!(e.span.clone(), LispVal::bool(b))),
+      SExprKind::Undef => push_const!(span!(e.span.clone(), LispVal::undef())),
       SExprKind::DocComment(doc2, e) => {
         // push an extra newline to separate multiple doc comments
         if !doc.is_empty() {doc.push('\n');}
         doc.push_str(doc2);
         return self.expr_doc(doc, ctx, e)
       }
-      SExprKind::List(es) if es.is_empty() => push_const!(span!(e.span, LispVal::nil())),
+      SExprKind::List(es) if es.is_empty() => push_const!(span!(e.span.clone(), LispVal::nil())),
       SExprKind::List(es) => if ctx.quote {
         let mut size = 0;
         let mut it = es.iter();
         loop {
           if let Some(arg) = it.next() {
             if let SExprKind::Atom(a) = arg.k {
-              if Syntax::parse(self.ast.span(arg.span), a) == Ok(Syntax::Unquote) {
+              if Syntax::parse(self.ast.span(arg.span.clone()), a) == Ok(Syntax::Unquote) {
                 let r = it.next().ok_or_else(||
-                  ElabError::new_e(arg.span, "expected at least one argument"))?;
+                  ElabError::new_e(arg.span.clone(), "expected at least one argument"))?;
                 self.expr(ExprCtx::eval(ctx.keep), r)?;
-                if ctx.keep { self.dotted_list(e.span, size) }
+                if ctx.keep { self.dotted_list(e.span.clone(), size) }
                 break
               }
             }
             size += 1;
             self.expr(ExprCtx::eval(ctx.keep).quote(true), arg)?;
           } else {
-            if ctx.keep { let fsp = self.fspan(e.span); self.list(fsp, size) }
+            if ctx.keep { let fsp = self.fspan(e.span.clone()); self.list(fsp, size) }
             break
           }
         }
       } else if let SExprKind::Atom(a) = es[0].k {
-        match self.parse_ident_or_syntax(es[0].span, a) {
-          Ok(AtomId::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
+        match self.parse_ident_or_syntax(es[0].span.clone(), a) {
+          Ok(AtomId::UNDER) => return Err(ElabError::new_e(es[0].span.clone(), "'_' is not a function")),
           Ok(x) => {
-            let mut local = self.eval_atom(true, es[0].span, x);
+            let mut local = self.eval_atom(true, es[0].span.clone(), x);
             let p = self.pop_builtin();
             let n = self.exprs(ExprsCtx::App, &es[1..])?;
             if let Some(p) = p {
               local = false;
               let spec = p.spec();
               if spec.valid(n) {
-                self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span, es[0].span)), n));
+                self.code.push(Ir::BuiltinApp(ctx.tail, p, Box::new((e.span.clone(), es[0].span.clone())), n));
               } else {
-                self.code.push(Ir::ArityError(e.span, spec));
+                self.code.push(Ir::ArityError(e.span.clone(), spec));
               }
             } else {
-              self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
+              self.code.push(Ir::App(ctx.tail, Box::new((e.span.clone(), es[0].span.clone())), n));
             };
-            self.spans.insert(es[0].span, if local {
+            self.spans.insert(es[0].span.clone(), if local {
               ObjectKind::LispVar(false, true, x)
             } else {
               ObjectKind::Global(false, true, x)
@@ -1156,24 +1156,24 @@ impl<'a> LispParser<'a> {
             if !ctx.keep { self.code.push(Ir::Drop(1)) }
           }
           Err(stx) => {
-            self.spans.insert_if(Some(es[0].span), || ObjectKind::Syntax(stx));
+            self.spans.insert_if(Some(es[0].span.clone()), || ObjectKind::Syntax(stx));
             match stx {
               Syntax::Begin => { self.exprs(ExprsCtx::Eval(ctx.keep, ctx.tail), &es[1..])?; }
               Syntax::Define if es.len() < 2 => return Err(
-                ElabError::new_e(es[0].span, "expected at least one argument")),
+                ElabError::new_e(es[0].span.clone(), "expected at least one argument")),
               Syntax::Define => {
                 let (sp, x) = self.def(
                   !ctx.mask_def && ctx.global, ctx.tail && !ctx.keep, &es[1], &es[2..])?;
                 if x != AtomId::UNDER && !ctx.mask_def {
                   let doc = if doc.is_empty() {None} else {Some(doc.into())};
-                  self.push_def(ctx.global, e.span, sp, doc, x);
+                  self.push_def(ctx.global, e.span.clone(), sp, doc, x);
                 }
                 if ctx.keep { self.code.push(Ir::Undef) }
                 if ctx.mask_def { self.restore(restore) }
                 return Ok(false)
               }
               Syntax::Lambda if es.len() < 2 => return Err(
-                ElabError::new_e(es[0].span, "expected at least one argument")),
+                ElabError::new_e(es[0].span.clone(), "expected at least one argument")),
               Syntax::Lambda => if ctx.keep {
                 let orig = std::mem::take(&mut self.code);
                 match &es[1].k {
@@ -1182,7 +1182,7 @@ impl<'a> LispParser<'a> {
                     let n = self.ctx.push_list(&xs);
                     self.exprs(ExprsCtx::Eval(true, true), &es[2..])?;
                     let code = std::mem::replace(&mut self.code, orig).into();
-                    self.push_lambda(es[0].span, n, ProcSpec::Exact(xs.len()), code)
+                    self.push_lambda(es[0].span.clone(), n, ProcSpec::Exact(xs.len()), code)
                   }
                   SExprKind::DottedList(xs, y) => {
                     let xs = self.parse_idents(xs)?;
@@ -1191,22 +1191,22 @@ impl<'a> LispParser<'a> {
                     self.ctx.push(y);
                     self.exprs(ExprsCtx::Eval(true, true), &es[2..])?;
                     let code = std::mem::replace(&mut self.code, orig).into();
-                    self.push_lambda(es[0].span, n, ProcSpec::AtLeast(xs.len()), code)
+                    self.push_lambda(es[0].span.clone(), n, ProcSpec::AtLeast(xs.len()), code)
                   }
                   _ => {
                     let x = self.parse_ident(&es[1])?;
                     let n = self.ctx.push(x);
                     self.exprs(ExprsCtx::Eval(true, true), &es[2..])?;
                     let code = std::mem::replace(&mut self.code, orig).into();
-                    self.push_lambda(es[0].span, n, ProcSpec::AtLeast(0), code)
+                    self.push_lambda(es[0].span.clone(), n, ProcSpec::AtLeast(0), code)
                   }
                 }
               }
               Syntax::Quote if es.len() < 2 => return Err(
-                ElabError::new_e(es[0].span, "expected at least one argument")),
+                ElabError::new_e(es[0].span.clone(), "expected at least one argument")),
               Syntax::Quote => { self.expr(ExprCtx::eval(ctx.keep).quote(true), &es[1])?; }
               Syntax::Unquote if es.len() < 2 => return Err(
-                ElabError::new_e(es[0].span, "expected at least one argument")),
+                ElabError::new_e(es[0].span.clone(), "expected at least one argument")),
               Syntax::Unquote => { self.expr(ExprCtx::eval(ctx.keep), &es[1])?; }
               Syntax::If if 3 <= es.len() && es.len() <= 4 => {
                 self.expr(ExprCtx::EVAL.mask_def(), &es[1])?;
@@ -1221,28 +1221,28 @@ impl<'a> LispParser<'a> {
                 self.finish_patch(patch2, Ir::Jump);
               }
               Syntax::If => return Err(
-                ElabError::new_e(es[0].span, "expected two or three arguments")),
+                ElabError::new_e(es[0].span.clone(), "expected two or three arguments")),
               Syntax::Focus => {
-                self.code.push(Ir::FocusStart(es[0].span));
+                self.code.push(Ir::FocusStart(es[0].span.clone()));
                 self.exprs(ExprsCtx::Focus, &es[1..])?;
               }
               Syntax::Let => self.let_(false, ctx.keep, ctx.tail, &es[1..])?,
               Syntax::Letrec => self.let_(true, ctx.keep, ctx.tail, &es[1..])?,
               Syntax::SetMergeStrategy if 2 <= es.len() && es.len() <= 3 => {
                 let a = self.parse_ident_raw(&es[1])?;
-                self.spans.insert(es[1].span, ObjectKind::Global(false, false, a));
+                self.spans.insert(es[1].span.clone(), ObjectKind::Global(false, false, a));
                 if let Some(e) = es.get(2) { self.expr(ExprCtx::EVAL, e)?; }
                 else { self.code.push(Ir::Undef) }
-                self.code.push(Ir::SetMergeStrategy(es[0].span, a));
+                self.code.push(Ir::SetMergeStrategy(es[0].span.clone(), a));
                 if ctx.keep { self.code.push(Ir::Undef) }
               }
               Syntax::SetMergeStrategy => return Err(
-                ElabError::new_e(es[0].span, "expected one or two arguments")),
+                ElabError::new_e(es[0].span.clone(), "expected one or two arguments")),
               Syntax::Match if es.len() < 2 => return Err(
-                ElabError::new_e(es[0].span, "expected at least one argument")),
+                ElabError::new_e(es[0].span.clone(), "expected at least one argument")),
               Syntax::Match => {
                 self.expr(ExprCtx::EVAL.mask_def(), &es[1])?;
-                self.match_(ctx.keep, ctx.tail, es[0].span, &es[2..])?
+                self.match_(ctx.keep, ctx.tail, es[0].span.clone(), &es[2..])?
               }
               Syntax::MatchFn | Syntax::MatchFns => {
                 let spec = match stx {
@@ -1253,9 +1253,9 @@ impl<'a> LispParser<'a> {
                 let i = self.ctx.push(AtomId::UNDER);
                 let orig = std::mem::take(&mut self.code);
                 self.code.push(Ir::Local(i));
-                self.match_(true, true, es[0].span, &es[1..])?;
+                self.match_(true, true, es[0].span.clone(), &es[1..])?;
                 let code = std::mem::replace(&mut self.code, orig).into();
-                self.push_lambda(es[0].span, i, spec, code);
+                self.push_lambda(es[0].span.clone(), i, spec, code);
               }
             }
           }
@@ -1263,11 +1263,11 @@ impl<'a> LispParser<'a> {
       } else {
         self.expr(ExprCtx::EVAL.mask_def(), &es[0])?;
         let n = self.exprs(ExprsCtx::App, &es[1..])?;
-        self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
+        self.code.push(Ir::App(ctx.tail, Box::new((e.span.clone(), es[0].span.clone())), n));
         if !ctx.keep { self.code.push(Ir::Drop(1)) }
       },
-      &SExprKind::Formula(f) => {
-        let q = self.parse_formula(f)?;
+      SExprKind::Formula(f) => {
+        let q = self.parse_formula(f.clone())?;
         self.qexpr(ctx.keep, q)?
       }
     };

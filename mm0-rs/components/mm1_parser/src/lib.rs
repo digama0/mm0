@@ -147,8 +147,8 @@ type Result<T> = std::result::Result<T, ParseError>;
 
 impl Clone for ParseError {
   fn clone(&self) -> Self {
-    let &ParseError { pos, level, ref msg } = self;
-    ParseError { pos, level, msg: format!("{msg}").into() }
+    let &ParseError { ref pos, level, ref msg } = self;
+    ParseError { pos: pos.clone(), level, msg: format!("{msg}").into() }
   }
 }
 
@@ -164,7 +164,7 @@ impl ParseError {
   #[must_use]
   pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
-      range: file.to_range(self.pos),
+      range: file.to_range(self.pos.clone()),
       severity: Some(self.level.to_diag_severity()),
       code: None,
       code_description: None,
@@ -395,8 +395,8 @@ impl<'a> Parser<'a> {
     loop {
       self.idx += 1;
       if !self.cur_opt().map_or(false, ident_rest) {
-        let sp = (start..self.idx).into();
-        if self.restart_pos.is_none() && CommandKeyword::parse(self.span(sp)).is_some() {
+        let sp: Span = (start..self.idx).into();
+        if self.restart_pos.is_none() && CommandKeyword::parse(self.span(sp.clone())).is_some() {
           self.restart_pos = Some(start);
         }
         self.ws();
@@ -408,7 +408,7 @@ impl<'a> Parser<'a> {
   /// Attempt to parse an `ident`. This is the same as [`ident_`](Self::ident_),
   /// except that `_` is not accepted.
   /// On success, advances past the ident and any trailing whitespace.
-  fn ident(&mut self) -> Option<Span> { self.ident_().filter(|&s| self.span(s) != b"_") }
+  fn ident(&mut self) -> Option<Span> { self.ident_().filter(|s| self.span(s.clone()) != b"_") }
 
   /// Attempt to parse an ident or blank, returning an error on failure.
   fn ident_err_(&mut self) -> Result<Span> {
@@ -449,7 +449,7 @@ impl<'a> Parser<'a> {
     loop {
       match self.ident_() {
         None => return (modifiers, None),
-        Some(id) => match Modifiers::from_name(self.span(id)) {
+        Some(id) => match Modifiers::from_name(self.span(id.clone())) {
           Modifiers::NONE => return (modifiers, Some(id)),
           m => {
             if modifiers.intersects(m) {
@@ -489,7 +489,7 @@ impl<'a> Parser<'a> {
       let dummy = self.chr(b'.').is_some();
       let x = if dummy { Some(self.ident_err_()?) } else { self.ident_() };
       if let Some(x) = x {
-        let k = if self.span(x) == b"_" {
+        let k = if self.span(x.clone()) == b"_" {
           LocalKind::Anon
         } else if dummy {
           LocalKind::Dummy
@@ -516,7 +516,7 @@ impl<'a> Parser<'a> {
     let mut bis = Vec::new();
     while let Some((span, locals, ty)) = self.binder_group()? {
       bis.extend(locals.into_iter().map(|(x, kind)| Binder {
-        span,
+        span: span.clone(),
         local: Some(x),
         kind,
         ty: ty.clone(),
@@ -665,7 +665,7 @@ impl<'a> Parser<'a> {
 
   fn is_atom(&self, e: &SExpr, s: &[u8]) -> bool {
     if let SExpr { span, k: SExprKind::Atom(Atom::Ident) } = e {
-      self.span(*span) == s
+      self.span(span.clone()) == s
     } else {
       false
     }
@@ -691,7 +691,7 @@ impl<'a> Parser<'a> {
   ) -> SExpr {
     SExpr::curly_list(span.into(), curly, es, dot, |e1, e2| match (&e1.k, &e2.k) {
       (SExprKind::Atom(Atom::Ident), SExprKind::Atom(Atom::Ident)) =>
-        self.span(e1.span) == self.span(e2.span),
+        self.span(e1.span.clone()) == self.span(e2.span.clone()),
       _ => false,
     })
   }
@@ -760,7 +760,7 @@ impl<'a> Parser<'a> {
       Some(b'#') => {
         self.idx += 1;
         let mut span = self.ident_err()?;
-        match (self.span(span), span.start -= 1).0 {
+        match (self.span(span.clone()), span.start -= 1).0 {
           b"t" => Ok(SExpr { span, k: SExprKind::Bool(true) }),
           b"f" => Ok(SExpr { span, k: SExprKind::Bool(false) }),
           b"undef" => Ok(SExpr { span, k: SExprKind::Undef }),
@@ -774,7 +774,7 @@ impl<'a> Parser<'a> {
       Some(b'$') => {
         // Safety: `formula()` only returns `Ok(None)` on non-`$` input
         let f = unsafe { self.formula()?.unwrap_unchecked() };
-        Ok(SExpr { span: f.0, k: SExprKind::Formula(f) })
+        Ok(SExpr { span: f.0.clone(), k: SExprKind::Formula(f) })
       }
       Some(c) if c.is_ascii_digit() => {
         let (span, n) = self.number()?;
@@ -819,21 +819,21 @@ impl<'a> Parser<'a> {
   fn cnst(&mut self) -> Result<Const> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
-    for i in trim.into_iter().rev() {
+    for i in trim.clone().into_iter().rev() {
       if whitespace(self.source[i]) {
         trim.end -= 1
       } else {
         break
       }
     }
-    for i in trim {
+    for i in trim.clone() {
       if whitespace(self.source[i]) {
         trim.start += 1
       } else {
         break
       }
     }
-    if { trim }.any(|i| whitespace(self.source[i])) {
+    if { trim.clone() }.any(|i| whitespace(self.source[i])) {
       return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))
     }
     if trim.start >= trim.end {
@@ -853,7 +853,7 @@ impl<'a> Parser<'a> {
       _ => {
         self
           .ident_()
-          .filter(|&id| self.span(id) == b"max")
+          .filter(|id| self.span(id.clone()) == b"max")
           .ok_or_else(|| self.err("expected number or 'max'".into()))?;
         Ok(Prec::Max)
       }
@@ -866,7 +866,7 @@ impl<'a> Parser<'a> {
     let c = self.cnst()?;
     self
       .ident_()
-      .filter(|&id| self.span(id) == b"prec")
+      .filter(|id| self.span(id.clone()) == b"prec")
       .ok_or_else(|| self.err("expected 'prec'".into()))?;
     let prec = self.prec()?;
     Ok((self.chr_err(b';')?, SimpleNota { k, id, c, prec }))
@@ -983,7 +983,7 @@ impl<'a> Parser<'a> {
           self.err_str("expected command keyword")
         },
       (mut m, Some(id)) => {
-        let k = self.span(id);
+        let k = self.span(id.clone());
         match CommandKeyword::parse(k) {
           Some(CommandKeyword::Sort) => {
             if !Modifiers::sort_data().contains(m) {
@@ -1073,11 +1073,11 @@ impl<'a> Parser<'a> {
             self.modifiers_empty(m, id, "import statements do not take modifiers");
             let (sp, s) = self.string()?;
             let span = (start..self.chr_err(b';')?).into();
-            self.imports.push((sp, s.clone()));
+            self.imports.push((sp.clone(), s.clone()));
             Ok(Some(Stmt::new(span, StmtKind::Import(sp, s))))
           }
           Some(CommandKeyword::Exit) => {
-            self.modifiers_empty(m, id, "exit does not take modifiers");
+            self.modifiers_empty(m, id.clone(), "exit does not take modifiers");
             self.chr_err(b';')?;
             self.errors.push(ParseError::new(id, "early exit on 'exit' command".into()));
             Ok(None)

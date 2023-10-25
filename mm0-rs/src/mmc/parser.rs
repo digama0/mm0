@@ -812,7 +812,7 @@ impl<'a, C> Parser<'a, C> {
               return Ok(ExprOrStmt::Label(Spanned {span, k}))
             } else {
               let fsp = try_get_fspan(&span, &e);
-              let f = e.as_atom().ok_or_else(|| ElabError::new_e(fsp.span,
+              let f = e.as_atom().ok_or_else(|| ElabError::new_e(fsp.span.clone(),
                 "only variables can be called like functions"))?;
               let f = self.as_symbol(f);
               let mut args = vec![];

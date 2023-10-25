@@ -163,7 +163,7 @@ impl ElabError {
   #[cfg(feature = "server")]
   pub fn to_diag(&self, file: &LinedString, to_loc: impl FnMut(&FileSpan) -> Location) -> Diagnostic {
     Diagnostic {
-      range: file.to_range(self.pos),
+      range: file.to_range(self.pos.clone()),
       severity: Some(self.level.to_diag_severity()),
       code: None,
       code_description: None,
@@ -358,17 +358,17 @@ impl Elaborator {
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {
     match &stmt.k {
       StmtKind::Annot(_, s) => self.name_of(s),
-      StmtKind::Decl(d) => LispVal::atom(self.env.get_atom(self.ast.span(d.id))),
-      &StmtKind::Sort(id, _) => LispVal::atom(self.env.get_atom(self.ast.span(id))),
+      StmtKind::Decl(d) => LispVal::atom(self.env.get_atom(self.ast.span(d.id.clone()))),
+      StmtKind::Sort(id, _) => LispVal::atom(self.env.get_atom(self.ast.span(id.clone()))),
       _ => LispVal::bool(false),
     }
   }
 
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
-    let a = self.env.get_atom(self.ast.span(n.id));
-    let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    self.spans.insert(n.id, ObjectKind::Term(false, term));
-    let tk: ArcString = self.span(n.c.trim).into();
+    let a = self.env.get_atom(self.ast.span(n.id.clone()));
+    let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id.clone(), "term not declared"))?;
+    self.spans.insert(n.id.clone(), ObjectKind::Term(false, term));
+    let tk: ArcString = self.span(n.c.trim.clone()).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => {
         let nargs = self.terms[term].args.len();
@@ -381,36 +381,36 @@ impl Elaborator {
       }
       SimpleNotaKind::Infix {right} =>
         if let Prec::Prec(i) = n.prec {
-          let i2 = i.checked_add(1).ok_or_else(|| ElabError::new_e(n.id, "precedence out of range"))?;
+          let i2 = i.checked_add(1).ok_or_else(|| ElabError::new_e(n.id.clone(), "precedence out of range"))?;
           let (l, r) = if right {(i2, i)} else {(i, i2)};
-          self.check_term_nargs(n.id, term, 2)?;
+          self.check_term_nargs(n.id.clone(), term, 2)?;
           (right, 2, vec![
             ELiteral::Var(0, Prec::Prec(l)),
             ELiteral::Const(tk.clone()),
             ELiteral::Var(1, Prec::Prec(r))])
         } else {
-          return Err(ElabError::new_e(n.id, "max prec not allowed for infix"))
+          return Err(ElabError::new_e(n.id.clone(), "max prec not allowed for infix"))
         }
     };
-    self.add_const(n.c.trim, n.prec)?;
-    let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
+    self.add_const(n.c.trim.clone(), n.prec)?;
+    let info = NotaInfo { span: self.fspan(n.id.clone()), term, nargs, rassoc: Some(rassoc), lits };
     match n.k {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
       SimpleNotaKind::Infix {..} => self.pe.add_infix(tk.clone(), info),
-    }.map_err(|r| ElabError::with_info(n.id,
+    }.map_err(|r| ElabError::with_info(n.id.clone(),
       format!("constant '{tk}' already declared").into(),
       vec![(r.decl1, "declared here".into())]))
   }
 
   fn elab_coe(&mut self, id: Span, from: Span, to: Span) -> Result<()> {
-    let a_id = self.env.get_atom(self.ast.span(id));
-    let a_from = self.env.get_atom(self.ast.span(from));
-    let a_to = self.env.get_atom(self.ast.span(to));
-    let t = self.term(a_id).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
-    let s1 = self.data[a_from].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
-    let s2 = self.data[a_to].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
-    self.check_term_nargs(id, t, 1)?;
-    self.spans.insert(id, ObjectKind::Term(false, t));
+    let a_id = self.env.get_atom(self.ast.span(id.clone()));
+    let a_from = self.env.get_atom(self.ast.span(from.clone()));
+    let a_to = self.env.get_atom(self.ast.span(to.clone()));
+    let t = self.term(a_id).ok_or_else(|| ElabError::new_e(id.clone(), "term not declared"))?;
+    let s1 = self.data[a_from].sort.ok_or_else(|| ElabError::new_e(from.clone(), "sort not declared"))?;
+    let s2 = self.data[a_to].sort.ok_or_else(|| ElabError::new_e(to.clone(), "sort not declared"))?;
+    self.check_term_nargs(id.clone(), t, 1)?;
+    self.spans.insert(id.clone(), ObjectKind::Term(false, t));
     self.spans.insert(from, ObjectKind::Sort(false, s1));
     self.spans.insert(to, ObjectKind::Sort(false, s2));
     let fsp = self.fspan(id);
@@ -418,12 +418,12 @@ impl Elaborator {
   }
 
   fn add_const(&mut self, tk: Span, p: Prec) -> Result<()> {
-    let s: ArcString = self.span(tk).into();
+    let s: ArcString = self.span(tk.clone()).into();
     if matches!(&*s, b"(" | b")") {
       return Err(ElabError::new_e(tk,
         "parentheses are not allowed in notations"))
     }
-    let fsp = self.fspan(tk);
+    let fsp = self.fspan(tk.clone());
     self.pe.add_const(s, fsp, p).map_err(|r| ElabError::with_info(tk,
       "constant already declared with a different precedence".into(),
       vec![(r.decl1, "declared here".into())]))
@@ -438,104 +438,104 @@ impl Elaborator {
       } else {Err(ElabError::new_e(sp, "infix constants cannot have prec max"))}
     }
 
-    let a = self.env.get_atom(self.ast.span(nota.id));
-    let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
+    let a = self.env.get_atom(self.ast.span(nota.id.clone()));
+    let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id.clone(), "term not declared"))?;
     let nargs = nota.bis.iter().filter(|bi| bi.kind != LocalKind::Dummy).count();
-    self.check_term_nargs(nota.id, term, nargs)?;
-    self.spans.insert(nota.id, ObjectKind::Term(false, term));
+    self.check_term_nargs(nota.id.clone(), term, nargs)?;
+    self.spans.insert(nota.id.clone(), ObjectKind::Term(false, term));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&[u8], (usize, bool)>::new();
     for (idx, bi) in nota.bis.iter().enumerate() {
       match bi.kind {
-        LocalKind::Dummy => return Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
+        LocalKind::Dummy => return Err(ElabError::new_e(bi.local.clone().unwrap_or(bi.span.clone()),
           "dummies not permitted in notation declarations")),
-        LocalKind::Anon => return Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
+        LocalKind::Anon => return Err(ElabError::new_e(bi.local.clone().unwrap_or(bi.span.clone()),
           "all variables must be used in notation declaration")),
-        _ => { vars.insert(ast.span(bi.local.unwrap_or(bi.span)), (idx, false)); }
+        _ => { vars.insert(ast.span(bi.local.clone().unwrap_or(bi.span.clone())), (idx, false)); }
       }
     }
 
     if self.mm0_mode && nota.prec.is_some() {
-      return Err(ElabError::new_e(nota.id,
+      return Err(ElabError::new_e(nota.id.clone(),
         "(MM0 mode) generalized infix precedence specifier not allowed"))
     }
 
     let mut get_var = |sp: Span| -> Result<usize> {
-      let v = vars.get_mut(ast.span(sp))
-        .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
-      if v.1 { return Err(ElabError::new_e(sp, "variable used twice in notation")) }
+      let v = vars.get_mut(ast.span(sp.clone()))
+        .ok_or_else(|| ElabError::new_e(sp.clone(), "variable not found"))?;
+      if v.1 { return Err(ElabError::new_e(sp.clone(), "variable used twice in notation")) }
       v.1 = true;
       Ok(v.0)
     };
 
     let mut it = nota.lits.iter().peekable();
     let (mut lits, mut rassoc, infix, tk, prec) = match it.next() {
-      None => return Err(ElabError::new_e(nota.id,
+      None => return Err(ElabError::new_e(nota.id.clone(),
         "notation requires at least one literal")),
       Some(&ALiteral::Const(ref cnst, prec)) => (vec![], Some(true), false, cnst, prec),
-      Some(&ALiteral::Var(var)) if self.mm0_mode =>
-        return Err(ElabError::new_e(var,
+      Some(ALiteral::Var(var)) if self.mm0_mode =>
+        return Err(ElabError::new_e(var.clone(),
           "(MM0 mode) generalized infix notations not allowed")),
-      Some(&ALiteral::Var(var)) => match it.next() {
-        None => return Err(ElabError::new_e(var,
+      Some(ALiteral::Var(var)) => match it.next() {
+        None => return Err(ElabError::new_e(var.clone(),
           "notation requires at least one constant")),
-        Some(&ALiteral::Var(var)) => return Err(ElabError::new_e(var,
+        Some(ALiteral::Var(var)) => return Err(ElabError::new_e(var.clone(),
           "notation cannot start with two variables")),
         Some(&ALiteral::Const(ref cnst, prec)) => {
           let rassoc = match nota.prec {
             None => None,
-            Some((q, _)) if q != prec => return Err(ElabError::new_e(cnst.fmla.0,
+            Some((q, _)) if q != prec => return Err(ElabError::new_e(cnst.fmla.0.clone(),
               "notation precedence must match first constant")),
             Some((_, rassoc)) => Some(rassoc),
           };
           let lits = vec![
-            ELiteral::Var(get_var(var)?, bump(rassoc.unwrap_or(false), cnst.fmla.0, prec)?),
-            ELiteral::Const(self.span(cnst.trim).into())];
+            ELiteral::Var(get_var(var.clone())?, bump(rassoc.unwrap_or(false), cnst.fmla.0.clone(), prec)?),
+            ELiteral::Const(self.span(cnst.trim.clone()).into())];
           (lits, rassoc, true, cnst, prec)
         }
       }
     };
 
-    self.add_const(tk.trim, prec)?;
+    self.add_const(tk.trim.clone(), prec)?;
     if infix && it.peek().is_none() { rassoc = Some(false) }
     while let Some(lit) = it.next() {
       match *lit {
         ALiteral::Const(ref cnst, prec) => {
-          lits.push(ELiteral::Const(self.span(cnst.trim).into()));
-          self.add_const(cnst.trim, prec)?;
+          lits.push(ELiteral::Const(self.span(cnst.trim.clone()).into()));
+          self.add_const(cnst.trim.clone(), prec)?;
         }
-        ALiteral::Var(var) => {
+        ALiteral::Var(ref var) => {
           let prec = match it.peek() {
             None => {
               let r: bool =
                 if let Some(r) = rassoc {r}
                 else if let Some((_, r)) = nota.prec {r}
                 else {
-                  return Err(ElabError::new_e(nota.id,
+                  return Err(ElabError::new_e(nota.id.clone(),
                     "general infix notation requires explicit associativity"))
                 };
               rassoc = Some(r);
-              bump(!r, tk.fmla.0, prec)?
+              bump(!r, tk.fmla.0.clone(), prec)?
             }
-            Some(&&ALiteral::Const(ref cnst, prec)) => bump(true, cnst.fmla.0, prec)?,
+            Some(&&ALiteral::Const(ref cnst, prec)) => bump(true, cnst.fmla.0.clone(), prec)?,
             Some(ALiteral::Var(_)) => Prec::Max,
           };
-          lits.push(ELiteral::Var(get_var(var)?, prec));
+          lits.push(ELiteral::Var(get_var(var.clone())?, prec));
         }
       }
     }
 
     for (_, (i, b)) in vars {
       if !b {
-        return Err(ElabError::new_e(nota.bis[i].local.unwrap_or(nota.bis[i].span),
+        return Err(ElabError::new_e(nota.bis[i].local.clone().unwrap_or(nota.bis[i].span.clone()),
           "variable not used in notation"))
       }
     }
-    let s: ArcString = self.span(tk.trim).into();
-    let info = NotaInfo { span: self.fspan(nota.id), term, nargs, rassoc, lits };
+    let s: ArcString = self.span(tk.trim.clone()).into();
+    let info = NotaInfo { span: self.fspan(nota.id.clone()), term, nargs, rassoc, lits };
     if infix { self.pe.add_infix(s.clone(), info) }
     else { self.pe.add_prefix(s.clone(), info) }
-      .map_err(|r| ElabError::with_info(nota.id,
+      .map_err(|r| ElabError::with_info(nota.id.clone(),
         format!("constant '{s}' already declared").into(),
         vec![(r.decl1, "declared here".into())]))
   }
@@ -547,12 +547,12 @@ impl Elaborator {
       // to make it easy to look up theorems by name
       if let Some(a) = val.as_atom() {
         if let Some(sp) = try_get_span_opt(
-          &FileSpan {file: self.path.clone(), span: e.span},
+          &FileSpan {file: self.path.clone(), span: e.span.clone()},
           val.fspan().as_ref()
         ) {
           let ad = &self.env.data[a];
           if let Some(s) = ad.sort {
-            self.spans.insert(sp, ObjectKind::Sort(false, s));
+            self.spans.insert(sp.clone(), ObjectKind::Sort(false, s));
           }
           if let Some(k) = ad.decl {
             match k {
@@ -562,7 +562,7 @@ impl Elaborator {
           }
         }
       }
-      self.print_lisp(e.span, &val)
+      self.print_lisp(e.span.clone(), &val)
     }
     Ok(())
   }
@@ -587,21 +587,21 @@ impl Elaborator {
     }
 
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
-    self.spans.set_stmt(span);
+    self.spans.set_stmt(span.clone());
     match &stmt.k {
-      &StmtKind::Sort(sp, sd) => {
-        let a = self.env.get_atom(self.ast.span(sp));
-        let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, span, sd, to_doc(doc)).map_err(|e| e.into_elab_error(sp))?;
-        self.spans.insert(sp, ObjectKind::Sort(true, id));
+      &StmtKind::Sort(ref sp, sd) => {
+        let a = self.env.get_atom(self.ast.span(sp.clone()));
+        let fsp = self.fspan(sp.clone());
+        let id = self.add_sort(a, fsp, span, sd, to_doc(doc)).map_err(|e| e.into_elab_error(sp.clone()))?;
+        self.spans.insert(sp.clone(), ObjectKind::Sort(true, id));
       }
       StmtKind::Decl(d) => self.elab_decl(span, d, to_doc(doc))?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
-      &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
+      StmtKind::Coercion {id, from, to} => self.elab_coe(id.clone(), from.clone(), to.clone())?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
-      &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
+      StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp.clone())),
       StmtKind::Do(es) => {
         if self.mm0_mode {
           self.report(ElabError::warn(span, "(MM0 mode) do blocks not allowed"))
@@ -610,26 +610,26 @@ impl Elaborator {
       }
       StmtKind::Annot(e, s) => {
         if self.mm0_mode {
-          self.report(ElabError::warn(e.span, "(MM0 mode) annotations not allowed"))
+          self.report(ElabError::warn(e.span.clone(), "(MM0 mode) annotations not allowed"))
         }
         let v = self.eval_lisp(false, e)?;
         self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomId::ANNOTATE].lisp {
           Some(e) => e.val.clone(),
-          None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
+          None => return Err(ElabError::new_e(e.span.clone(), "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];
-        self.call_func(e.span, &ann, args)?;
+        self.call_func(e.span.clone(), &ann, args)?;
       },
       StmtKind::DocComment(doc2, s) => {
         // push an extra newline to separate multiple doc comments
         if !doc.is_empty() {doc.push('\n');}
         doc.push_str(doc2);
         // use s.span to discount the span of the doc comment
-        self.elab_stmt(doc, s, s.span)?;
+        self.elab_stmt(doc, s, s.span.clone())?;
       }
-      &StmtKind::Inout {out: true, k, ref hs} => self.elab_output(span, k, hs)?,
-      &StmtKind::Inout {out: false, k, ref hs} => self.elab_input(span, k, hs)?,
+      &StmtKind::Inout {out: true, ref k, ref hs} => self.elab_output(span, k.clone(), hs)?,
+      &StmtKind::Inout {out: false, ref k, ref hs} => self.elab_input(span, k.clone(), hs)?,
     }
     Ok(ElabStmt::Ok)
   }
@@ -758,7 +758,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                             p.clone()
                           };
                           elab.report(ElabError {
-                            pos: *sp, level,
+                            pos: sp.clone(), level,
                             kind: ElabErrorKind::Upstream { file, owner: errs, idx: i, n }
                           });
                           break
@@ -766,13 +766,13 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                       }
                     }
                   }
-                  let mut it = EnvMergeIter::new(&mut elab.env, &env, *sp);
+                  let mut it = EnvMergeIter::new(&mut elab.env, &env, sp.clone());
                   loop {
                     match it.next(&mut elab.env, &mut elab.errors) {
                       Err(e) => {elab.report(e); break}
                       Ok(None) => break,
                       Ok(Some(mut merge)) => {
-                        merge.val = elab.apply_merge(*sp,
+                        merge.val = elab.apply_merge(sp.clone(),
                             merge.strat.as_deref(), merge.val.clone(), merge.new.val.clone())
                           .unwrap_or_else(|e| {elab.report(e); merge.new.val.clone()});
                         merge.apply(&mut elab.env);
@@ -781,7 +781,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                   }
                 }
                 Ok(ElabResult::Canceled) => {
-                  elab.report(ElabError::new_e(*sp, "canceled"));
+                  elab.report(ElabError::new_e(sp.clone(), "canceled"));
                   elab.cancel.store(true, Ordering::Relaxed);
                   break
                 }
@@ -789,7 +789,7 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
                   use std::fmt::Write;
                   let mut s = format!("import cycle: {}", p.clone());
                   for p2 in &cyc2 { write!(s, " -> {p2}").unwrap() }
-                  elab.report(ElabError::new_e(*sp, s));
+                  elab.report(ElabError::new_e(sp.clone(), s));
                   if cyc.is_none() { *cyc = Some(cyc2) }
                 }
                 Err(_) => {} // already handled
@@ -800,11 +800,11 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
           let ast = elab.ast.clone();
           while let Some(s) = ast.stmts.get(*idx) {
             if elab.cancel.load(Ordering::Relaxed) {break}
-            match elab.elab_stmt(String::new(), s, s.span) {
+            match elab.elab_stmt(String::new(), s, s.span.clone()) {
               Ok(ElabStmt::Ok) => {}
               Ok(ElabStmt::Import(sp)) => {
                 if let Some((file, recv)) = recv.remove(&sp) {
-                  elab.spans.insert(sp, ObjectKind::Import(file.clone()));
+                  elab.spans.insert(sp.clone(), ObjectKind::Import(file.clone()));
                   *progress = UnfinishedStmt::Import(sp, file, recv);
                   elab.push_spans();
                   continue 'l
@@ -830,13 +830,13 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
     let mut elab = Elaborator::new(self.ast.clone(),
       self.path, self.mm0_mode, self.options, self.cancel, self.recv_goal);
     elab.arena.install_thread_local();
-    for &(sp, ref f) in &self.ast.imports {
+    for (sp, f) in &self.ast.imports {
       (|| -> Result<_> {
-        let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
+        let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp.clone(), e))?;
         let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
-        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
-        let tok = recv_dep(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
-        recv.insert(sp, (r, tok));
+        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?.into();
+        let tok = recv_dep(r.clone()).map_err(|e| ElabError::new_e(sp.clone(), e))?;
+        recv.insert(sp.clone(), (r, tok));
         Ok(())
       })().unwrap_or_else(|e| elab.report(e));
     }

@@ -332,14 +332,14 @@ impl Elaborator {
   }
 
   fn elab_output_string(&mut self, sp: Span, hs: &[SExpr]) -> EResult<()> {
-    let (sorts, _) = self.get_string_handler(sp)?;
-    let fsp = self.fspan(sp);
+    let (sorts, _) = self.get_string_handler(sp.clone())?;
+    let fsp = self.fspan(sp.clone());
     let mut es = Vec::with_capacity(hs.len());
     for f in hs {
       let e = self.eval_lisp(false, f)?;
-      let val = self.elaborate_term(f.span, true, &e,
+      let val = self.elaborate_term(f.span.clone(), true, &e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
-      let s = self.infer_sort(sp, &val)?;
+      let s = self.infer_sort(sp.clone(), &val)?;
       if s != sorts.str {
         return Err(ElabError::new_e(sp, format!("type error: expected string, got {}",
           self.env.sorts[s].name)))
@@ -362,13 +362,13 @@ impl Elaborator {
   /// are elaborated as type `string`, and the result is evaluated to produce a byte
   /// vector that is passed back to lisp code.
   pub fn eval_string(&mut self, fsp: &FileSpan, hs: &[LispVal]) -> EResult<Vec<u8>> {
-    let (sorts, _) = self.get_string_handler(fsp.span)?;
+    let (sorts, _) = self.get_string_handler(fsp.span.clone())?;
     let mut es = Vec::with_capacity(hs.len());
     for e in hs {
       let sp = try_get_span(fsp, e);
-      let val = self.elaborate_term(sp, true, e,
+      let val = self.elaborate_term(sp.clone(), true, e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
-      let s = self.infer_sort(sp, &val)?;
+      let s = self.infer_sort(sp.clone(), &val)?;
       if s != sorts.str {
         return Err(ElabError::new_e(sp, format!("type error: expected string, got {}",
           self.env.sorts[s].name)))
@@ -385,7 +385,7 @@ impl Elaborator {
     let terms = &self.inout.string.as_ref().expect("string handler should be initialized").1;
     self.env.write_output_string(terms, &mut w, &heap, &store, &exprs).map_err(|e| match e {
       OutputError::IoError(e) => panic!("{}", e),
-      OutputError::String(e) => ElabError::new_e(fsp.span, e),
+      OutputError::String(e) => ElabError::new_e(fsp.span.clone(), e),
     })?;
     Ok(w.w)
   }
@@ -394,7 +394,7 @@ impl Elaborator {
   /// the operation of printing a string to standard out, as this would be disruptive.
   /// It is triggered only in "compile" mode, and by manual selection in server mode.
   pub fn elab_output(&mut self, sp: Span, kind: Span, hs: &[SExpr]) -> EResult<()> {
-    match self.span(kind) {
+    match self.span(kind.clone()) {
       b"string" => self.elab_output_string(sp, hs),
       _ => Err(ElabError::new_e(kind, "unsupported output kind")),
     }

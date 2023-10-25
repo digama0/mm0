@@ -54,10 +54,10 @@ pub enum QExprKind {
 impl EnvDisplay for QExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
-      &QExprKind::IdentApp(sp, ref es) if es.is_empty() =>
-        fe.source.str_at(sp).fmt(f),
-      &QExprKind::IdentApp(sp, ref es) => {
-        write!(f, "({}", fe.source.str_at(sp))?;
+      QExprKind::IdentApp(sp, es) if es.is_empty() =>
+        fe.source.str_at(sp.clone()).fmt(f),
+      QExprKind::IdentApp(sp, es) => {
+        write!(f, "({}", fe.source.str_at(sp.clone()))?;
         for e in &**es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
       }
@@ -178,10 +178,10 @@ impl<'a> MathParser<'a> {
         },
         Literal::Const(ref c) => {
           let tk = self.token().ok_or_else(|| self.err(format!("expecting '{c}'").into()))?;
-          if *self.span(tk) != **c {
+          if *self.span(tk.clone()) != **c {
             return Err(ParseError::new(tk, format!("expecting '{c}'").into()))
           }
-          consts.push(tk);
+          consts.push(tk.clone());
           end = tk.end;
         }
       }
@@ -211,15 +211,15 @@ impl<'a> MathParser<'a> {
       c => c
     };
     let sp = self.token().ok_or_else(|| self.err("expecting expression".into()))?;
-    let v = self.span(sp);
+    let v = self.span(sp.clone());
     if let Some(&(_, q)) = self.pe.consts.get(v) {
       if q >= p {
         if let Some(info) = self.pe.prefixes.get(v) {
           let mut args = SliceUninit::new(info.nargs);
-          let mut consts = vec![sp];
+          let mut consts = vec![sp.clone()];
           let end = self.literals(&mut args, &info.lits, &mut consts, sp.end)?;
-          let span = (start..end).into();
-          for sp in consts { self.spans.insert(sp, ObjectKind::TermNota(info.term, span)); }
+          let span: Span = (start..end).into();
+          for sp in consts { self.spans.insert(sp, ObjectKind::TermNota(info.term, span.clone())); }
           // Safety: We checked in elab_gen_nota that the lits array contains every index,
           // so every item in `args` gets initialized exactly once by the literals() call
           let k = QExprKind::App(sp, info.term, unsafe { args.assume_init() });
@@ -229,7 +229,7 @@ impl<'a> MathParser<'a> {
     } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
       let mut args = Vec::new();
       let mut start = self.idx;
-      let mut span = sp;
+      let mut span = sp.clone();
       if p <= APP_PREC {
         while let Ok((e, _)) = self.expr(Prec::Max) {
           span.end = e.span.end;
@@ -250,7 +250,7 @@ impl<'a> MathParser<'a> {
     if let Some(actual) = e.2.take() {
       if p <= actual {
         self.p.errors.push(ParseError {
-          pos: e.0.span, level: ErrorLevel::Warning,
+          pos: e.0.span.clone(), level: ErrorLevel::Warning,
           msg: "unnecessary parentheses".into()
         })
       }
@@ -261,8 +261,8 @@ impl<'a> MathParser<'a> {
     p: Prec, mut lhs: (QExpr, Prec, Option<Prec>),
   ) -> Result<(QExpr, Prec, Option<Prec>), ParseError> {
     let mut tok_end = self.peek_token();
-    while let Some(tk) = tok_end.0 {
-      let s = self.span(tk);
+    while let Some(tk) = tok_end.0.clone() {
+      let s = self.span(tk.clone());
       let Some(&(_, p1)) = self.pe.consts.get(s) else { break };
       if p1 < p { break }
       let Some(info) = self.pe.infixes.get(s) else { break };
@@ -274,14 +274,14 @@ impl<'a> MathParser<'a> {
         self.check_paren(&mut lhs, q);
         args.set(i, lhs.0); lits
       };
-      let mut consts = vec![tk];
+      let mut consts = vec![tk.clone()];
       let end;
       if let Some((&Literal::Var(i, q), mid)) = lits.split_last() {
         self.literals(&mut args, &mid[1..], &mut consts, 0)?;
         let mut rhs = self.prefix(q)?;
         loop {
           tok_end = self.peek_token();
-          let Some(tk) = tok_end.0 else { break };
+          let Some(tk) = tok_end.0.clone() else { break };
           let s = self.span(tk);
           let Some(info2) = self.pe.infixes.get(s) else { break };
           let q = self.pe.consts[s].1;
@@ -298,8 +298,8 @@ impl<'a> MathParser<'a> {
         end = self.literals(&mut args, &lits[1..], &mut consts, tk.end)?;
         tok_end = self.peek_token();
       }
-      let span = (start..end).into();
-      for sp in consts { self.spans.insert(sp, ObjectKind::TermNota(info.term, span)); }
+      let span: Span = (start..end).into();
+      for sp in consts { self.spans.insert(sp, ObjectKind::TermNota(info.term, span.clone())); }
       // Safety: We checked in elab_gen_nota that the lits array contains every index,
       // and also lits[1] must be Const(..) since lits[0] is Var(..), so even though
       // we skip lits[1] in the cases above, every item in `args` gets initialized

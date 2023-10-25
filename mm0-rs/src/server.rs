@@ -559,17 +559,17 @@ request_type! { self,
     let p = p.text_document_position_params;
     if SERVER.caps.ulock().definition_location_links {
       definition(p.text_document.uri.into(), p.position,
-        |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
+        |text, text2, src, FileSpan {file, span}, full| LocationLink {
           origin_selection_range: Some(text.to_range(src)),
           target_uri: file.url().clone(),
           target_range: text2.to_range(full),
-          target_selection_range: text2.to_range(span),
+          target_selection_range: text2.to_range(span.clone()),
         }).await.map(GotoDefinitionResponse::Link)
     } else {
       definition(p.text_document.uri.into(), p.position,
-        |_, text2, _, &FileSpan {ref file, span}, _| Location {
+        |_, text2, _, FileSpan {file, span}, _| Location {
           uri: file.url().clone(),
-          range: text2.to_range(span),
+          range: text2.to_range(span.clone()),
         }).await.map(GotoDefinitionResponse::Array)
     }.map(Some)
   },
@@ -756,25 +756,25 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
 
   let mut out: Vec<(Span, MarkedString)> = vec![];
-  for &(sp, ref k) in spans.find_pos(idx) {
+  for (sp, k) in spans.find_pos(idx) {
     if let Some((r, doc)) = (|| Some(match k {
       &ObjectKind::Sort(_, s) => {
         let sd = &env.sorts[s];
-        ((sp, mk_mm0(format!("{sd}"))), sd.doc.clone())
+        ((sp.clone(), mk_mm0(format!("{sd}"))), sd.doc.clone())
       }
       &ObjectKind::Term(_, t) => {
         let td = &env.terms[t];
-        ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
+        ((sp.clone(), mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
-      &ObjectKind::TermNota(t, sp1) => {
+      &ObjectKind::TermNota(t, ref sp1) => {
         let td = &env.terms[t];
-        ((sp1, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
+        ((sp1.clone(), mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
       &ObjectKind::Thm(_, t) => {
         let td = &env.thms[t];
-        ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
+        ((sp.clone(), mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
-      &ObjectKind::Var(_, x) => ((sp, mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+      &ObjectKind::Var(_, x) => ((sp.clone(), mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound { sort, .. })) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg { sort, deps, .. })) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -793,13 +793,13 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           // Safety: render_fmt doesn't clone the expression
           fe.pretty(|p| p.expr(ty).render_fmt(80, &mut out).expect("impossible"));
           out += ")";
-          ((sp, mk_mm0(out)), None)
+          ((sp.clone(), mk_mm0(out)), None)
         }
         _ => return None,
       }
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
-        let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
+        let sp1 = head.fspan().map_or(sp.clone(), |fsp| fsp.span);
         let a = head.as_atom()?;
         let (s, doc) = if let Some(DeclKey::Term(t)) = env.data[a].decl {
           let td = &env.terms[t];
@@ -821,15 +821,15 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           let mut out = String::new();
           fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
             .render_fmt(80, &mut out).expect("impossible"));
-          ((sp, mk_mm0(out)), None)
+          ((sp.clone(), mk_mm0(out)), None)
         } else {
           let mut u = p.uncons();
           let head = u.next()?;
-          let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
+          let sp1 = head.fspan().map_or(sp.clone(), |fsp| fsp.span);
           let a = head.as_atom()?;
           if let Some(DeclKey::Thm(t)) = env.data[a].decl {
             let td = &env.thms[t];
-            out.push((sp, mk_mm0(format!("{}", fe.to(td)))));
+            out.push((sp.clone(), mk_mm0(format!("{}", fe.to(td)))));
             let mut args = vec![];
             for _ in 0..td.args.len() {
               // Safety: FIXME this is actually unsafe. `Subst` both requires cloned expressions
@@ -850,50 +850,50 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
       }
       ObjectKind::Syntax(stx) => {
         if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
-          ((sp, mk_doc(stx.doc())), None)
+          ((sp.clone(), mk_doc(stx.doc())), None)
         } else { return None }
       }
       ObjectKind::PatternSyntax(stx) => {
         if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
-          ((sp, mk_doc(stx.doc())), None)
+          ((sp.clone(), mk_doc(stx.doc())), None)
         } else { return None }
       }
       ObjectKind::RefineSyntax(stx) => {
         if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
-          ((sp, mk_doc(stx.doc())), None)
+          ((sp.clone(), mk_doc(stx.doc())), None)
         } else { return None }
       }
       &ObjectKind::Global(_, _, a) => {
         let ad = &env.data[a];
         if let Some(ld) = &ad.lisp {
           if let Some(doc) = &ld.doc {
-            ((sp, mk_doc(doc)), None)
+            ((sp.clone(), mk_doc(doc)), None)
           } else {
             let bp = ld.unwrapped(|e| match *e {
               LispKind::Proc(Proc::Builtin(p)) => Some(p),
               _ => None
             })?;
-            ((sp, mk_doc(bp.doc())), None)
+            ((sp.clone(), mk_doc(bp.doc())), None)
           }
         } else {
           let bp = BuiltinProc::from_bytes(&ad.name)?;
-          ((sp, mk_doc(bp.doc())), None)
+          ((sp.clone(), mk_doc(bp.doc())), None)
         }
       }
       ObjectKind::LispVar(..) |
       ObjectKind::Import(_) |
       ObjectKind::MathComment => return None,
     }))() {
-      let sp = r.0;
+      let sp = r.0.clone();
       out.push(r);
       if let Some(doc) = doc {
-        out.push((sp, mk_doc(&doc)))
+        out.push((sp.clone(), mk_doc(&doc)))
       }
     }
   }
   if out.is_empty() {return Ok(None)}
   Ok(Some(Hover {
-    range: Some(text.to_range(out[0].0)),
+    range: Some(text.to_range(out[0].0.clone())),
     contents: HoverContents::Array(out.into_iter().map(|s| s.1).collect())
   }))
 }
@@ -918,24 +918,24 @@ async fn definition<T>(path: FileRef, pos: Position,
   let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(env.find(idx));
   let mut res = vec![];
-  for &(sp, ref k) in spans.find_pos(idx) {
+  for (sp, k) in spans.find_pos(idx) {
     let g = |fsp: &FileSpan, full|
       if fsp.file.ptr_eq(&path) {
-        f(&text, &text, sp, fsp, full)
+        f(&text, &text, sp.clone(), fsp, full)
       } else {
-        f(&text, &vfs.source(&fsp.file), sp, fsp, full)
+        f(&text, &vfs.source(&fsp.file), sp.clone(), fsp, full)
       };
     let sort = |s| {
       let sd = env.sort(s);
-      g(&sd.span, sd.full)
+      g(&sd.span, sd.full.clone())
     };
     let term = |t| {
       let td = env.term(t);
-      g(&td.span, td.full)
+      g(&td.span, td.full.clone())
     };
     let thm = |t| {
       let td = env.thm(t);
-      g(&td.span, td.full)
+      g(&td.span, td.full.clone())
     };
     match k {
       &ObjectKind::Sort(_, s) => res.push(sort(s)),
@@ -968,10 +968,10 @@ async fn definition<T>(path: FileRef, pos: Position,
           None => {}
         }
         if let Some(s) = ad.sort() {res.push(sort(s))}
-        if let Some(&(ref fsp, full)) = ad.lisp().as_ref().and_then(|ld| ld.src().as_ref()) {
-          res.push(g(fsp, full))
+        if let Some((fsp, full)) = ad.lisp().as_ref().and_then(|ld| ld.src().as_ref()) {
+          res.push(g(fsp, full.clone()))
         } else if let Some(sp) = ad.graveyard() {
-          res.push(g(&sp.0, sp.1))
+          res.push(g(&sp.0, sp.1.clone()))
         }
       }
       ObjectKind::Import(file) => {
@@ -1012,7 +1012,7 @@ async fn document_symbol(path: FileRef) -> Result<Option<DocumentSymbolResponse>
   };
   let mut res = vec![];
   macro_rules! push {($fsp:expr, $($e:expr),*) => {
-    if $fsp.file == path { res.push(f($fsp.span, $($e),*)) }
+    if $fsp.file == path { res.push(f($fsp.span.clone(), $($e),*)) }
   }}
   for s in env.stmts() {
     match *s {
@@ -1020,28 +1020,28 @@ async fn document_symbol(path: FileRef) -> Result<Option<DocumentSymbolResponse>
         let ad = &env.data()[a];
         let s = ad.sort().expect("env well formed");
         let sd = env.sort(s);
-        push!(sd.span, ad.name(), format!("{sd}"), sd.full, SymbolKind::CLASS)
+        push!(sd.span, ad.name(), format!("{sd}"), sd.full.clone(), SymbolKind::CLASS)
       }
       StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
         match ad.decl().expect("env well formed") {
           DeclKey::Term(t) => {
             let td = env.term(t);
-            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::CONSTRUCTOR)
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full.clone(), SymbolKind::CONSTRUCTOR)
           }
           DeclKey::Thm(t) => {
             let td = env.thm(t);
-            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::METHOD)
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full.clone(), SymbolKind::METHOD)
           }
         }
       }
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
         if let Some(ld) = ad.lisp() {
-          if let Some((ref fsp, full)) = *ld.src() {
+          if let Some((ref fsp, ref full)) = *ld.src() {
             let e = &**ld;
             // Safety: We only use the expression for printing and don't Rc::clone it
-            push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
+            push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full.clone(),
               match (|| Some(match e.unwrap() {
                 FrozenLispKind::Atom(_) |
                 FrozenLispKind::MVar(_, _) |
@@ -1268,21 +1268,21 @@ async fn references<T>(
   };
 
   let mut res = vec![];
-  for &(sp, ref k) in spans.find_pos(idx) {
+  for (sp, k) in spans.find_pos(idx) {
     let Some(key) = to_key(k) else { continue };
     match key {
       Key::Global(a) if BuiltinProc::from_bytes(env.data()[a].name()).is_some() => continue,
       _ => {}
     }
-    let mut cont = |&(sp2, ref k2)| {
+    let mut cont = |(sp2, k2): &_| {
       let eq = match *k2 {
         ObjectKind::Expr(_) if !matches!(key, Key::Term(_) | Key::Var(_)) => false,
         ObjectKind::Proof(_) if !matches!(key, Key::Thm(_) | Key::Hyp(_)) => false,
         _ => Some(key) == to_key(k2),
       };
       if eq && (include_self || sp != sp2) {
-        let sp2 = if let ObjectKind::TermNota(_, sp2) = *k2 {sp2} else {sp2};
-        res.push(f(text.to_range(sp2)))
+        let sp2 = if let ObjectKind::TermNota(_, ref sp2) = *k2 {sp2} else {sp2};
+        res.push(f(text.to_range(sp2.clone())))
       }
     };
     if let Key::Var(_) | Key::Hyp(_) | Key::LispVar(_) = key {
@@ -1309,7 +1309,7 @@ async fn prepare_rename(path: FileRef, pos: Position) -> Result<Option<PrepareRe
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{e:?}")))?;
   let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(Spans::find(env.spans(), idx));
-  for &(sp, ref k) in spans.find_pos(idx) {
+  for (sp, k) in spans.find_pos(idx) {
     match k {
       ObjectKind::Import(_) |
       ObjectKind::Syntax(_) |
@@ -1327,7 +1327,7 @@ async fn prepare_rename(path: FileRef, pos: Position) -> Result<Option<PrepareRe
       ObjectKind::Proof(_) |
       ObjectKind::Global(..) => {}
     }
-    return Ok(Some(PrepareRenameResponse::Range(text.to_range(sp))))
+    return Ok(Some(PrepareRenameResponse::Range(text.to_range(sp.clone()))))
   }
   Ok(None)
 }
@@ -1391,10 +1391,10 @@ async fn semantic_tokens(
   let mut data = vec![];
   let mut last_end = 0;
   let mut last_start = Position::default();
-  Spans::on_range(env.spans(), range, |spans, &(sp, ref k)| {
+  Spans::on_range(env.spans(), range, |spans, (sp, k)| {
     if sp.start < last_end { return }
     let mut push = |token_type, token_modifiers_bitset| {
-      let range = text.to_range(sp);
+      let range = text.to_range(sp.clone());
       if range.start.line != range.end.line { return }
       last_end = sp.end;
       data.push(SemanticToken {

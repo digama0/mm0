@@ -116,7 +116,7 @@ impl LinedString {
   #[cfg(feature = "server")]
   #[must_use]
   pub fn to_loc(&self, fs: &crate::FileSpan) -> lsp_types::Location {
-    lsp_types::Location { uri: fs.file.url().clone(), range: self.to_range(fs.span) }
+    lsp_types::Location { uri: fs.file.url().clone(), range: self.to_range(fs.span.clone()) }
   }
 
   /// Get the total number of lines in the file (as a `u32` for LSP compatibility).

@@ -258,7 +258,7 @@ pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 /// one statement from causing error reports further up the file or
 /// even in another file.)
 #[must_use] pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
-  try_get_span_opt(fsp, fsp2).unwrap_or(fsp.span)
+  try_get_span_opt(fsp, fsp2).unwrap_or(fsp.span.clone())
 }
 /// Get the span from `fsp2`, but only if it lies inside the
 /// span `fsp`. (This prevents errors in
@@ -266,7 +266,7 @@ pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 /// even in another file.)
 #[must_use] pub fn try_get_span_opt(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Option<Span> {
   match fsp2 {
-    Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => Some(fsp2.span),
+    Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => Some(fsp2.span.clone()),
     _ => None,
   }
 }
@@ -392,7 +392,7 @@ impl<'a> ElabTermMut<'a> {
           InferTarget::Provable => VarContext::Provable,
           InferTarget::Unknown => VarContext::Unknown,
         };
-        let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
+        let sp = FileSpan {file: self.fsp.file.clone(), span: src.clone()};
         let val = &*sorts.entry(s).or_insert_with(||
           new_mvar(&mut self.elab.lc.mvars, tgt, Some(sp)));
         Ok(val.clone())
@@ -424,7 +424,7 @@ impl<'a> ElabTermMut<'a> {
     if self.check_vis && tdata.vis.contains(Modifiers::LOCAL) {
       let msg = format!("{}: using private definition '{}' in a public context",
         self.env.data[self.spans.decl()].name, self.env.data[a].name);
-      self.report(ElabError::warn(sp1, msg));
+      self.report(ElabError::warn(sp1.clone(), msg));
       tdata = &self.env.terms[tid];
     }
     let nargs = tdata.args.len();
@@ -568,9 +568,9 @@ impl Elaborator {
   /// bound and dummy variables do not have dependencies, (2) regular variables do not depend
   /// on dummy variables. The bool in the result's pair indicates whether the variable is a dummy variable.
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
-    let a = self.env.get_atom(self.ast.span(d.sort));
-    let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
-    self.spans.insert(d.sort, ObjectKind::Sort(false, sort));
+    let a = self.env.get_atom(self.ast.span(d.sort.clone()));
+    let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort.clone(), "sort not found"))?;
+    self.spans.insert(d.sort.clone(), ObjectKind::Sort(false, sort));
     Ok(if lk.is_bound() {
       if let Some(&Span {end, ..}) = d.deps.last() {
         self.report(ElabError::new_e(d.deps[0].start..end,
@@ -579,19 +579,19 @@ impl Elaborator {
       }
       (lk == LocalKind::Dummy, InferSort::Bound { sort, used: false })
     } else {
-      let deps = d.deps.iter().map(|&sp| {
-        let y = self.env.get_atom(self.ast.span(sp));
-        self.spans.insert(sp, ObjectKind::Var(false, y));
-        match self.lc.var(y, sp) {
+      let deps = d.deps.iter().map(|sp| {
+        let y = self.env.get_atom(self.ast.span(sp.clone()));
+        self.spans.insert(sp.clone(), ObjectKind::Var(false, y));
+        match self.lc.var(y, sp.clone()) {
           (_, InferSort::Unknown {dummy, must_bound, ..}) =>
             {*dummy = false; *must_bound = true}
           (_, InferSort::Reg {..}) => {
-            self.report(ElabError::new_e(sp,
+            self.report(ElabError::new_e(sp.clone(),
               "regular variables cannot depend on other regular variables"));
             *error = true;
           }
           (true, InferSort::Bound {..}) => {
-            self.report(ElabError::new_e(sp,
+            self.report(ElabError::new_e(sp.clone(),
               "regular variables cannot depend on dummy variables"));
             *error = true;
           }
@@ -607,8 +607,8 @@ impl Elaborator {
     error: &mut bool, check_vis: bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>
   ) -> Result<InferBinder> {
     let x = if lk == LocalKind::Anon {None} else {
-      sp.map(|sp| {
-        let a = self.env.get_atom(self.ast.span(sp));
+      sp.clone().map(|sp| {
+        let a = self.env.get_atom(self.ast.span(sp.clone()));
         self.spans.insert(sp, if matches!(ty, Some(Type::Formula(_))) {
           ObjectKind::Hyp(true, a)
         } else {
@@ -620,9 +620,9 @@ impl Elaborator {
     Ok(match ty {
       None => {
         let src = sp.expect("omitted type must come from a span");
-        let fsp = self.fspan(src);
+        let fsp = self.fspan(src.clone());
         if self.mm0_mode {
-          self.report(ElabError::warn(src, "(MM0 mode) variable missing sort"))
+          self.report(ElabError::warn(src.clone(), "(MM0 mode) variable missing sort"))
         }
         let mv = self.lc.new_mvar(InferTarget::Unknown, Some(fsp));
         let dummy = lk == LocalKind::Dummy;
@@ -632,10 +632,10 @@ impl Elaborator {
         }))
       },
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
-      Some(&Type::Formula(f)) => {
-        let e = self.parse_formula(f)?;
+      Some(Type::Formula(f)) => {
+        let e = self.parse_formula(f.clone())?;
         let e = self.eval_qexpr(e)?;
-        let e = self.elaborate_term(f.0, check_vis, &e, InferTarget::Provable)?;
+        let e = self.elaborate_term(f.0.clone(), check_vis, &e, InferTarget::Provable)?;
         InferBinder::Hyp(x, e)
       },
     })
@@ -657,7 +657,8 @@ impl Elaborator {
     let mut errs = Vec::new();
     let mut newvars = Vec::new();
     for (&a, (new, is)) in &mut self.lc.vars {
-      if let InferSort::Unknown {src, must_bound, dummy: d2, ref mut sorts} = *is {
+      if let InferSort::Unknown {ref src, must_bound, dummy: d2, ref mut sorts} = *is {
+        let src = src.clone();
         let unk = sorts.remove(&VarContext::Unknown);
         let prov = sorts.remove(&VarContext::Provable);
         let as_sort = |s| if let VarContext::Sort(s) = s { s } else { unreachable!() };
@@ -684,7 +685,7 @@ impl Elaborator {
           {
             let mut val = LispVal::atom(a);
             if s != sort {
-              let fsp = Some(FileSpan {file: self.path.clone(), span: src});
+              let fsp = Some(FileSpan {file: self.path.clone(), span: src.clone()});
               val = self.env.apply_coe(&fsp, &self.env.pe.coes[&sort][&s], val);
             }
             if let LispKind::Ref(m) = &**e { m.get_mut(|e| *e = val); } else {unreachable!()}
@@ -692,7 +693,7 @@ impl Elaborator {
           let new2 = if (dummy && *new) || must_bound {
             *is = InferSort::Bound { sort, used: true };
             if self.mm0_mode {
-              errs.push(ElabError::warn(src,
+              errs.push(ElabError::warn(src.clone(),
                 format!("(MM0 mode) inferred {{{}: {}}}, type inference is not allowed in MM0 files",
                   self.env.data[a].name, self.env.sorts[sort].name)))
             }
@@ -700,20 +701,20 @@ impl Elaborator {
           } else {
             *is = InferSort::Reg { sort, deps: Box::new([]), used: true };
             if self.mm0_mode {
-              errs.push(ElabError::warn(src,
+              errs.push(ElabError::warn(src.clone(),
                 format!("(MM0 mode) inferred ({}: {}), type inference is not allowed in MM0 files",
                   self.env.data[a].name, self.env.sorts[sort].name)))
             }
             false
           };
-          if !new2 && *new {*new = false; newvars.push((src, a))}
+          if !new2 && *new {*new = false; newvars.push((src.clone(), a))}
         } else {
           let iter = prov.iter().map(|_| std::borrow::Cow::Borrowed("<provable>"))
             .chain(iter
               .map(|s| &*self.env.sorts[s].name)
               .sorted()
               .map(String::from_utf8_lossy));
-          errs.push(ElabError::new_e(src, format!("could not infer consistent type from {{{}}}",
+          errs.push(ElabError::new_e(src.clone(), format!("could not infer consistent type from {{{}}}",
             iter.format(", "))))
         }
       }
@@ -728,7 +729,7 @@ impl Elaborator {
           if let Some(InferSort::Bound { used: false, .. } | InferSort::Reg { used: false, .. }) =
             is.as_ref().or_else(|| self.lc.vars.get(&a).map(|p| &p.1));
           if !self.data[a].name.starts_with(b"_");
-          then { self.report(ElabError::warn(*sp, "Unused variable")) }
+          then { self.report(ElabError::warn(sp.clone(), "Unused variable")) }
         }
       }
     }
@@ -745,7 +746,7 @@ impl Elaborator {
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
     if self.mm0_mode && !d.mods.is_empty() {
-      self.report(ElabError::warn(d.id, "(MM0 mode) decl modifiers not allowed"))
+      self.report(ElabError::warn(d.id.clone(), "(MM0 mode) decl modifiers not allowed"))
     }
 
     // log!("elab {}", self.ast.span(d.id));
@@ -756,14 +757,14 @@ impl Elaborator {
     };
     self.lc.clear();
     for bi in &d.bis {
-      match self.elab_binder(&mut error, check_vis, bi.local, bi.kind, bi.ty.as_ref()) {
+      match self.elab_binder(&mut error, check_vis, bi.local.clone(), bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
           if !e_hyps.is_empty() {
-            report!(bi.span, "hypothesis binders must come after variable binders")
+            report!(bi.span.clone(), "hypothesis binders must come after variable binders")
           }
           if let InferSort::Bound { sort, .. } = is.1 {
-            let sp = bi.local.expect(
+            let sp = bi.local.clone().expect(
               "this can't happen unless the variable was written explicitly");
             let mods = self.sorts[sort].mods;
             if mods.contains(Modifiers::STRICT) {
@@ -774,56 +775,56 @@ impl Elaborator {
                 self.sorts[sort].name.as_str()))
             }
           }
-          if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
-            report!(bi.local.expect("this can't happen unless the variable was written explicitly"),
+          if self.lc.push_var(bi.local.clone().unwrap_or(bi.span.clone()), x, is) {
+            report!(bi.local.clone().expect("this can't happen unless the variable was written explicitly"),
               "variable occurs twice in binder list");
           }
         }
         Ok(InferBinder::Hyp(x, e)) => e_hyps.push((bi, x, e)),
       }
     }
-    let atom = self.env.get_atom(self.ast.span(d.id));
+    let atom = self.env.get_atom(self.ast.span(d.id.clone()));
     self.spans.set_decl(atom);
     if self.mm0_mode && atom == AtomId::UNDER {
-      self.report(ElabError::warn(d.id, "(MM0 mode) declaration name required"))
+      self.report(ElabError::warn(d.id.clone(), "(MM0 mode) declaration name required"))
     }
     match d.k {
       DeclKind::Term | DeclKind::Def => {
-        for (bi, _, _) in e_hyps {report!(bi.span, "term/def declarations have no hypotheses")}
+        for (bi, _, _) in e_hyps {report!(bi.span.clone(), "term/def declarations have no hypotheses")}
         let ret = match &d.ty {
           None => {
             if self.mm0_mode {
-              self.report(ElabError::warn(d.id, "(MM0 mode) return type required"))
+              self.report(ElabError::warn(d.id.clone(), "(MM0 mode) return type required"))
             }
             None
           }
-          Some(Type::Formula(f)) => return Err(ElabError::new_e(f.0, "sort expected")),
+          Some(Type::Formula(f)) => return Err(ElabError::new_e(f.0.clone(), "sort expected")),
           Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)?.1 {
             InferSort::Reg { sort, deps, .. } => {
               if self.sorts[sort].mods.contains(Modifiers::PURE) {
-                report!(ty.sort, format!("pure sort '{}' cannot have term constructors",
+                report!(ty.sort.clone(), format!("pure sort '{}' cannot have term constructors",
                   self.sorts[sort].name.as_str()))
               }
-              Some((ty.sort, sort, deps))
+              Some((ty.sort.clone(), sort, deps))
             }
             _ => unreachable!(),
           },
         };
         if d.k == DeclKind::Term {
-          if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
+          if let Some(v) = &d.val {report!(v.span.clone(), "term declarations have no definition")}
         } else if d.val.is_none() && !self.mm0_mode {
-          self.report(ElabError::warn(d.id, "def declaration missing value"));
+          self.report(ElabError::warn(d.id.clone(), "def declaration missing value"));
         }
         let val = match &d.val {
           None => None,
           Some(f) => (|| -> Result<Option<(Span, LispVal)>> {
             if self.mm0_mode {
               if let SExprKind::Formula(_) = f.k {} else {
-                self.report(ElabError::warn(f.span, "(MM0 mode) expected formula"))
+                self.report(ElabError::warn(f.span.clone(), "(MM0 mode) expected formula"))
               }
             }
             let e = self.eval_lisp(false, f)?;
-            Ok(Some((f.span, self.elaborate_term(f.span, check_vis, &e, match ret {
+            Ok(Some((f.span.clone(), self.elaborate_term(f.span.clone(), check_vis, &e, match ret {
               None => InferTarget::Unknown,
               Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
             })?)))
@@ -833,12 +834,12 @@ impl Elaborator {
         if error {return Ok(())}
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
-        for &(sp, a, ref is) in &self.lc.var_order {
+        for &(ref sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
-            ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
+            ElabError::new_e(sp.clone(), format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
-              return Err(ElabError::new_e(sp,
+              return Err(ElabError::new_e(sp.clone(),
                 format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
             }
           }
@@ -851,14 +852,14 @@ impl Elaborator {
               if d.k == DeclKind::Term {TermKind::Term} else {TermKind::Def(None)})
           },
           Some((sp, val)) => {
-            let s = self.infer_sort(sp, &val)?;
+            let s = self.infer_sort(sp.clone(), &val)?;
             if ba.push_dummies(&self.lc.vars).is_none() {
               return Err(ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))
             }
             let deps = ba.expr_deps(&self.env, &val);
             let val = {
               let mut de = Dedup::new(&args);
-              let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp));
+              let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp.clone()));
               let i = de.dedup(&nh, ProofKind::Expr, &val)?;
               let (mut ids, heap, mut store) = build(&de);
               store.push(ids[i].take());
@@ -899,18 +900,18 @@ impl Elaborator {
         };
         let t = Term {
           atom, args: args.into(), ret, kind,
-          span: self.fspan(d.id),
+          span: self.fspan(d.id.clone()),
           doc,
           vis: d.mods,
           full,
         };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id))?;
-          self.spans.insert(d.id, ObjectKind::Term(true, tid));
+          let tid = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id.clone()))?;
+          self.spans.insert(d.id.clone(), ObjectKind::Term(true, tid));
         } else if VERIFY_ON_ADD {
           match self.env.verify_termdef(&Default::default(), &t) {
             Ok(()) | Err(VerifyError::UsesSorry) => {}
-            Err(e) => return Err(ElabError::new_e(d.id, e.render_to_string(self))),
+            Err(e) => return Err(ElabError::new_e(d.id.clone(), e.render_to_string(self))),
           }
         }
       }
@@ -918,51 +919,51 @@ impl Elaborator {
         if d.val.is_none() {
           for bi in &d.bis {
             if bi.kind == LocalKind::Dummy {
-              self.report(ElabError::warn(bi.local.unwrap_or(bi.span), "useless dummy variable"))
+              self.report(ElabError::warn(bi.local.clone().unwrap_or(bi.span.clone()), "useless dummy variable"))
             }
           }
         }
         let e_ret = match &d.ty {
           None => return Err(ElabError::new_e(full, "return type required")),
-          Some(Type::DepType(ty)) => return Err(ElabError::new_e(ty.sort, "expression expected")),
-          &Some(Type::Formula(f)) => {
-            let e = self.parse_formula(f)?;
+          Some(Type::DepType(ty)) => return Err(ElabError::new_e(ty.sort.clone(), "expression expected")),
+          Some(Type::Formula(f)) => {
+            let e = self.parse_formula(f.clone())?;
             let e = self.eval_qexpr(e)?;
-            self.elaborate_term(f.0, check_vis, &e, InferTarget::Provable)?
+            self.elaborate_term(f.0.clone(), check_vis, &e, InferTarget::Provable)?
           }
         };
         if d.k == DeclKind::Axiom {
-          if let Some(v) = &d.val {report!(v.span, "axiom declarations have no definition")}
+          if let Some(v) = &d.val {report!(v.span.clone(), "axiom declarations have no definition")}
         } else if let Some(v) = &d.val {
           if self.mm0_mode {
-            self.report(ElabError::warn(v.span, "(MM0 mode) theorems should not have proofs"))
+            self.report(ElabError::warn(v.span.clone(), "(MM0 mode) theorems should not have proofs"))
           }
         } else if self.mm0_mode {
         } else {
-          self.report(ElabError::warn(d.id, "theorem declaration missing value"))
+          self.report(ElabError::warn(d.id.clone(), "theorem declaration missing value"))
         }
         for e in self.finalize_vars(false, true) {report!(e)}
         if error {return Ok(())}
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
-        for &(sp, a, ref is) in &self.lc.var_order {
+        for &(ref sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
-            ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
+            ElabError::new_e(sp.clone(), format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
-              return Err(ElabError::new_e(sp,
+              return Err(ElabError::new_e(sp.clone(),
                 format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
             }
           }
           args.push((a, ty));
         }
         let mut de = Dedup::new(&args);
-        let span = self.fspan(d.id);
+        let span = self.fspan(d.id.clone());
         let nh = NodeHasher::new(&self.lc, self.format_env(), span.clone());
         let mut is = Vec::new();
         for &(bi, a, ref e) in &e_hyps {
           if a.map_or(false, |a| self.lc.vars.contains_key(&a)) {
-            return Err(ElabError::new_e(bi.span, "hypothesis shadows local variable"))
+            return Err(ElabError::new_e(bi.span.clone(), "hypothesis shadows local variable"))
           }
           is.push((a, de.dedup(&nh, ProofKind::Expr, e)?))
         }
@@ -984,11 +985,11 @@ impl Elaborator {
                     let p = LispVal::atom(a);
                     let hyp = de.add(ProofKind::Proof, p.clone(), ProofHash::Hyp(i, is[i].1));
                     let check = self.options.unused_vars && !self.data[a].name.starts_with(b"_");
-                    is2.push((bi.span, check, hyp));
+                    is2.push((bi.span.clone(), check, hyp));
                     self.lc.add_proof(a, e, p)
                   }
                 }
-                let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), e_ret));
+                let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span.clone()), e_ret));
                 self.lc.goals = vec![g.clone()];
                 self.elab_lisp(e)?;
                 if !self.lc.goals.is_empty() {
@@ -1021,12 +1022,12 @@ impl Elaborator {
           args: args.into(), heap, store: store.into(), hyps, ret, kind
         };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id))?;
-          self.spans.insert(d.id, ObjectKind::Thm(true, tid));
+          let tid = self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id.clone()))?;
+          self.spans.insert(d.id.clone(), ObjectKind::Thm(true, tid));
         } else if VERIFY_ON_ADD {
           match self.verify_thmdef(&Default::default(), &t) {
             Ok(()) | Err(VerifyError::UsesSorry) => {}
-            Err(e) => return Err(ElabError::new_e(d.id, e.render_to_string(self))),
+            Err(e) => return Err(ElabError::new_e(d.id.clone(), e.render_to_string(self))),
           }
         }
       }
@@ -1135,7 +1136,7 @@ impl Elaborator {
           None => {
             if let Some(a) = a {
               if *next_bv >= 1 << MAX_BOUND_VARS {
-                return Err(ElabError::new_e(fsp.span,
+                return Err(ElabError::new_e(fsp.span.clone(),
                   format!("too many bound variables (max {MAX_BOUND_VARS})")))
               }
               varmap.insert(a, *next_bv);
@@ -1181,12 +1182,12 @@ impl Elaborator {
         }
         (x, args, ret, mods, Some((ds, val)))
       }
-      _ => return Err(ElabError::new_e(fsp.span, "expected 3 or 6 arguments"))
+      _ => return Err(ElabError::new_e(fsp.span.clone(), "expected 3 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
-    let x = x.as_atom().ok_or_else(|| ElabError::new_e(span.span, "expected an atom"))?;
+    let x = x.as_atom().ok_or_else(|| ElabError::new_e(span.span.clone(), "expected an atom"))?;
     if self.data[x].decl.is_some() {
-      return Err(ElabError::new_e(fsp.span,
+      return Err(ElabError::new_e(fsp.span.clone(),
         format!("duplicate term/def declaration '{}'", self.print(&x))))
     }
     let mut vars = (HashMap::new(), 1);
@@ -1221,8 +1222,8 @@ impl Elaborator {
         None
       }))
     } else {TermKind::Term};
-    let full = fsp.span;
-    self.env.add_term(Term {atom: x, span, full, vis, doc: None, args, ret, kind})
+    let full = fsp.span.clone();
+    self.env.add_term(Term {atom: x, span, full: full.clone(), vis, doc: None, args, ret, kind})
       .map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
@@ -1250,7 +1251,7 @@ impl Elaborator {
       _ => return Err(ElabError::new_e(fsp.span, "expected 4 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
-    let x = x.as_atom().ok_or_else(|| ElabError::new_e(span.span, "expected an atom"))?;
+    let x = x.as_atom().ok_or_else(|| ElabError::new_e(span.span.clone(), "expected an atom"))?;
     if self.data[x].decl.is_some() {
       return Err(ElabError::new_e(fsp.span,
         format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))
@@ -1291,7 +1292,7 @@ impl Elaborator {
     }).collect();
     let ret = ids[ir].take();
     let thm = Thm {
-      atom: x, span, vis, full: fsp.span, doc: None,
+      atom: x, span, vis, full: fsp.span.clone(), doc: None,
       kind: ThmKind::Axiom,
       args, heap, store: store.into(), hyps, ret
     };
@@ -1344,7 +1345,7 @@ impl Elaborator {
         })
       }))
     };
-    let sp = fsp.span;
+    let sp = fsp.span.clone();
     self.env.add_thm(t).map_err(|e| e.into_elab_error(sp))?;
     Ok(())
   }

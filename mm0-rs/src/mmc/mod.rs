@@ -206,7 +206,7 @@ impl Compiler {
   /// Once we are done adding functions, this function performs final linking to produce an executable.
   pub fn finish(&mut self, elab: &mut Elaborator, sp: Span, name: AtomId) -> Result<()> {
     let compiler = Rc::make_mut(&mut self.inner);
-    let code = compiler.linked_code(sp)?;
+    let code = compiler.linked_code(sp.clone())?;
     proof::render_proof(&self.predef, elab, sp, name, &code.proof())
   }
 }
@@ -225,13 +225,13 @@ impl LispProc for Compiler {
         Ok(LispVal::undef())
       }
       Some(Keyword::ToString) => {
-        self.add(elab, sp, it)?;
+        self.add(elab, sp.clone(), it)?;
         Ok(LispVal::string(self.to_str(sp)?.into()))
       }
       Some(Keyword::Finish) => {
         let name = it.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(sp, "mmc-finish: syntax error"))?;
-        self.add(elab, sp, it)?;
+          ElabError::new_e(sp.clone(), "mmc-finish: syntax error"))?;
+        self.add(elab, sp.clone(), it)?;
         self.finish(elab, sp, name)?;
         Ok(LispVal::undef())
       }

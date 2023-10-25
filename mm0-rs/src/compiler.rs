@@ -182,7 +182,7 @@ fn mk_to_range() -> impl FnMut(&FileSpan) -> Option<Range> {
   move |fsp: &FileSpan| -> Option<Range> {
     srcs.entry(fsp.file.ptr())
       .or_insert_with(|| VFS.0.ulock()[&fsp.file].text.clone())
-      .try_ascii().map(|f| f.to_range(fsp.span))
+      .try_ascii().map(|f| f.to_range(fsp.span.clone()))
   }
 }
 
@@ -297,7 +297,7 @@ impl ElabError {
   fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
       to_range: impl FnMut(&FileSpan) -> Option<Range>,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
-    f(make_snippet(path, file, self.pos, &self.kind.msg(), self.level,
+    f(make_snippet(path, file, self.pos.clone(), &self.kind.msg(), self.level,
       self.kind.to_footer(&Arena::new(), to_range)))
   }
 
@@ -323,7 +323,7 @@ impl ElabError {
 /// about the parameters.
 fn to_snippet<T>(err: &ParseError, path: &FileRef, file: &LinedString,
   f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
-  f(make_snippet(path, file, err.pos, &format!("{}", err.msg), err.level, vec![]))
+  f(make_snippet(path, file, err.pos.clone(), &format!("{}", err.msg), err.level, vec![]))
 }
 
 fn log_msg(#[allow(unused_mut)] mut s: String) {
@@ -429,7 +429,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     } else {
       for e in &errors {
         level = level.max(e.level as u8);
-        e.to_snippet_no_source(&path, e.pos, print)
+        e.to_snippet_no_source(&path, e.pos.clone(), print)
       }
     }
     MAX_EMITTED_ERROR.fetch_max(level, Ordering::Relaxed);

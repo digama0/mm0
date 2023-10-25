@@ -381,16 +381,14 @@ impl<T> SliceUninit<T> {
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
-#[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
 pub struct Span {
   /// The byte index of the beginning of the span (inclusive).
   pub start: usize,
   /// The byte index of the end of the span (exclusive).
   pub end: usize,
 }
-
-#[cfg(feature = "memory")]
-mm0_deepsize::deep_size_0!(Span);
 
 impl From<std::ops::Range<usize>> for Span {
   #[inline]
@@ -603,7 +601,7 @@ impl fmt::Debug for FileSpan {
   }
 }
 impl<'a> From<&'a FileSpan> for Span {
-  fn from(fsp: &'a FileSpan) -> Self { fsp.span }
+  fn from(fsp: &'a FileSpan) -> Self { fsp.span.clone() }
 }
 
 /// Try to get memory usage (resident set size) in bytes using the

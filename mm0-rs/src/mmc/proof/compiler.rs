@@ -1672,8 +1672,8 @@ pub(super) fn compile_proof(
     let (ok_thm, doc) = mangler.get_data(build.elab,
       proc.name().map_or(Name::StartOkThm, Name::ProcOkThm));
     let ok_thm = build.elab.env
-      .add_thm(build.thm.build_thm0(ok_thm, Modifiers::empty(), span.clone(), full, Some(doc), th))
-      .map_err(|e| e.into_elab_error(full))?;
+      .add_thm(build.thm.build_thm0(ok_thm, Modifiers::empty(), span.clone(), full.clone(), Some(doc), th))
+      .map_err(|e| e.into_elab_error(full.clone()))?;
     proc_proof.insert(proc.id, ok_thm);
   }
   Ok(())

@@ -78,7 +78,7 @@ impl<T> Spans<T> {
   /// [`Environment.spans`].
   #[must_use] pub fn stmt(&self) -> Span {
     // Safety: by assumption
-    unsafe { self.stmt.assume_init() }
+    unsafe { self.stmt.as_ptr().read() }
   }
 
   /// Get the `decl` field of a [`Spans`].

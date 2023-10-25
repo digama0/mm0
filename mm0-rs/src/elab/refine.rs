@@ -506,41 +506,41 @@ impl Elaborator {
             let (im, t) = match a {
               AtomId::BANG => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
+                self.spans.insert_if(sp2.clone(), || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
                 let t = u.next().ok_or_else(||
-                  ElabError::new_e(sp2.unwrap_or(fsp.span), "!: expected at least one argument"))?;
+                  ElabError::new_e(sp2.unwrap_or(fsp.span.clone()), "!: expected at least one argument"))?;
                 (InferMode::Explicit, t)
               }
               AtomId::BANG2 => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
+                self.spans.insert_if(sp2.clone(), || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
                 let t = u.next().ok_or_else(||
-                  ElabError::new_e(sp2.unwrap_or(fsp.span), "!!: expected at least one argument"))?;
+                  ElabError::new_e(sp2.unwrap_or(fsp.span.clone()), "!!: expected at least one argument"))?;
                 (InferMode::BoundOnly, t)
               }
               AtomId::VERB => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
+                self.spans.insert_if(sp2.clone(), || ObjectKind::RefineSyntax(RefineSyntax::Verb));
                 return if let (Some(e), true) = (u.next(), u.is_empty()) {
                   Ok(RefineExpr::Exact(e))
                 } else {
-                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "verb: expected one argument"))
+                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span.clone()), "verb: expected one argument"))
                 }
               }
               AtomId::COLON => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
+                self.spans.insert_if(sp2.clone(), || ObjectKind::RefineSyntax(RefineSyntax::Typed));
                 return if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
                   Ok(RefineExpr::Typed {ty, e})
                 } else {
-                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "':' expected two arguments"))
+                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span.clone()), "':' expected two arguments"))
                 }
               }
               _ => (InferMode::Regular, e)
             };
             let sp2 = t.fspan().as_ref().and_then(|fsp2| try_get_span_opt(fsp, Some(fsp2)));
             let head = t.as_atom().ok_or_else(||
-              ElabError::new_e(sp2.unwrap_or(fsp.span), "refine: expected an atom"))?;
+              ElabError::new_e(sp2.clone().unwrap_or(fsp.span.clone()), "refine: expected an atom"))?;
             RefineExpr::App {sp, sp2, im, head, u}
           }
         }
@@ -559,7 +559,7 @@ impl Elaborator {
   /// Get the sort of the term `e` (with only minimal type-checking).
   pub fn infer_target(&self, sp: Span, e: &LispVal) -> Result<InferTarget> {
     macro_rules! err {
-      ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp), &$e), $err)}
+      ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp.clone()), &$e), $err)}
     }
     Ok(match *e.unwrapped_arc() {
       LispKind::Atom(x) => match self.lc.vars.get(&x) {
@@ -585,7 +585,7 @@ impl Elaborator {
   /// Get the type of the proof `e` (with only minimal type-checking).
   pub fn infer_type(&self, sp: Span, e: &LispVal) -> Result<LispVal> {
     macro_rules! err {
-      ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp), &$e), $err)}
+      ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp.clone()), &$e), $err)}
     }
     Ok(match &*e.unwrapped_arc() {
       &LispKind::Atom(h) => match self.lc.get_proof(h) {
@@ -619,14 +619,14 @@ impl Elaborator {
       InferTarget::Unknown => return Ok(e),
       InferTarget::Provable if self.sorts[s].mods.contains(Modifiers::PROVABLE) => return Ok(e),
       InferTarget::Provable => *self.pe.coe_prov.get(&s).ok_or_else(||
-        ElabError::new_e(sp, format!("type error: expected provable, got {}", self.print(&s))))?,
+        ElabError::new_e(sp.clone(), format!("type error: expected provable, got {}", self.print(&s))))?,
       InferTarget::Bound(_) if !bd => return Err(ElabError::new_e(sp, "type error: expected bound var, got regular")),
-      InferTarget::Bound(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
-      InferTarget::Reg(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
+      InferTarget::Bound(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp.clone(), "bad sort"))?,
+      InferTarget::Reg(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp.clone(), "bad sort"))?,
     };
     if s == tgt {return Ok(e)}
     let c = self.pe.coes.get(&s).and_then(|m| m.get(&tgt)).ok_or_else(||
-      ElabError::new_e(sp, format!("type error: expected {}, got {}", self.print(&tgt), self.print(&s))))?;
+      ElabError::new_e(sp.clone(), format!("type error: expected {}, got {}", self.print(&tgt), self.print(&s))))?;
     Ok(self.apply_coe(&Some(self.fspan(sp)), c, e))
   }
 
@@ -811,7 +811,7 @@ impl Elaborator {
     stack: &mut Vec<RStack>,
     mut active: RState
   ) -> Result<RefineResult> {
-    let fsp = self.fspan(sp);
+    let fsp = self.fspan(sp.clone());
     'main: loop {
       // if self.check_proofs {
       //   println!("{}", self.print(&active));
@@ -847,14 +847,14 @@ impl Elaborator {
               self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
               RState::Ret(head)
             } else {
-              let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp2.unwrap_or(sp))));
+              let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp2.clone().unwrap_or(sp.clone()))));
               let head = self.new_goal(sp, mv);
               self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
               return Ok(RefineResult::RefineExtraArgs(tgt, head, u))
             }
           }
           RefineExpr::App {sp, sp2, im, head: a, u} => {
-            let head = LispVal::atom(a).span(self.fspan(sp2.unwrap_or(sp)));
+            let head = LispVal::atom(a).span(self.fspan(sp2.clone().unwrap_or(sp.clone())));
             if let Some((_, ty, _)) = self.lc.get_proof(a) {
               self.spans.insert_if(sp2, || ObjectKind::Hyp(false, a));
               RState::RefineArgs {sp, ty: ty.clone(), tgt, p: head, u}
@@ -870,14 +870,14 @@ impl Elaborator {
             RState::RefineExpr {tgt: InferTarget::Unknown, e: ty}
           }
           RefineExpr::Exact(p) => {
-            let e = self.infer_type(sp, &p)?;
-            RState::Ret(self.coerce_to(sp, tgt, &e, p))
+            let e = self.infer_type(sp.clone(), &p)?;
+            RState::Ret(self.coerce_to(sp.clone(), tgt, &e, p))
           }
           RefineExpr::Proc => RState::Proc {tgt, p},
         },
         RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e) {
           Ok(RefineExpr::App {sp, sp2, head: AtomId::UNDER, ..}) => {
-            let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2.unwrap_or(sp))));
+            let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2.clone().unwrap_or(sp.clone()))));
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             RState::Ret(head)
           }
@@ -885,7 +885,7 @@ impl Elaborator {
             let empty = u.is_empty();
             let head = LispVal::atom(a);
             if let Some((_, is)) = if empty {self.lc.vars.get(&a)} else {None} {
-              self.spans.insert_if(sp2, || ObjectKind::Var(false, a));
+              self.spans.insert_if(sp2.clone(), || ObjectKind::Var(false, a));
               let (sort, bd) = match *is {
                 InferSort::Bound { sort, .. } => (sort, true),
                 InferSort::Reg { sort, .. } => (sort, false),
@@ -893,7 +893,7 @@ impl Elaborator {
               };
               RState::Ret(self.coerce_term(sp, tgt, sort, bd, head)?)
             } else if let Some(t) = if tgt.bound() {None} else {self.term(a)} {
-              self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
+              self.spans.insert_if(sp2.clone(), || ObjectKind::expr(head.clone()));
               RState::RefineApp {sp2: sp2.unwrap_or(sp), tgt, t, u, args: vec![head]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
@@ -906,7 +906,7 @@ impl Elaborator {
           }
           Ok(RefineExpr::Typed {ty: s, e}) => {
             let s = s.as_atom().filter(|&s| self.data[s].sort.is_some())
-              .ok_or_else(|| ElabError::new_e(sp, "expected a sort"))?;
+              .ok_or_else(|| ElabError::new_e(sp.clone(), "expected a sort"))?;
             RState::RefineExpr {
               e,
               tgt: if tgt.bound() {InferTarget::Bound(s)} else {InferTarget::Reg(s)}
@@ -918,7 +918,7 @@ impl Elaborator {
             if let Some(proc) = &self.data[AtomId::TO_EXPR_FALLBACK].lisp {
               let proc = proc.val.clone();
               let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
-              if let Ok(res) = self.call_func(sp, &proc, args) {
+              if let Ok(res) = self.call_func(sp.clone(), &proc, args) {
                 return Ok(RState::Ret(res))
               }
             }
@@ -935,11 +935,11 @@ impl Elaborator {
                   stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
                   break 'l RState::RefineExpr {tgt, e}
                 }
-                None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
+                None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2.clone()))))
               }
             }
             let s = tdata.ret.0;
-            break RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
+            break RState::Ret(self.coerce_term(sp.clone(), ret, s, false, LispVal::list(args))?)
           }
         }
         RState::RefineArgs {sp, tgt, ty, p, u} if u.is_empty() =>
@@ -960,14 +960,14 @@ impl Elaborator {
                 stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
                 break 'l2 RState::RefineExpr {tgt: tgt1, e}
               }
-              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2.unwrap_or(sp)))))
+              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2.clone().unwrap_or(sp.clone())))))
             }
             let mut subst = Subst::new(&self.env, &tdata.heap, &tdata.store, Vec::from(&args[1..]));
             let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
             let ret = subst.subst(&tdata.ret);
             break RState::RefineHyps {
               res: if u.len() <= hyps.len() {
-                RefineHypsResult::Ok(self.unify(sp2.unwrap_or(sp), &tgt, &ret))
+                RefineHypsResult::Ok(self.unify(sp2.clone().unwrap_or(sp.clone()), &tgt, &ret))
               } else {
                 RefineHypsResult::Extra
               },
@@ -982,7 +982,7 @@ impl Elaborator {
                 stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
                 break 'l3 RState::RefineProof {tgt: h, p}
               }
-              args.push(self.new_goal(sp, h))
+              args.push(self.new_goal(sp.clone(), h))
             }
             let head = LispVal::list(args);
             self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
@@ -1007,7 +1007,7 @@ impl Elaborator {
           Some(RStack::Coerce {tgt, u}) => RState::Ret(LispVal::apply_conv(u, tgt, ret)),
           Some(RStack::CoerceTo(tgt)) => {
             let sp = try_get_span(&fsp, &ret);
-            let e = self.infer_type(sp, &ret)?;
+            let e = self.infer_type(sp.clone(), &ret)?;
             RState::Ret(self.coerce_to(sp, tgt, &e, ret))
           }
           Some(RStack::TypedAt {sp, tgt, p}) => {

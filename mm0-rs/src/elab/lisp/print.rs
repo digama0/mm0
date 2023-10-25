@@ -206,7 +206,7 @@ impl<T: EnvDisplay> EnvDisplay for [T] {
 
 impl EnvDisplay for crate::Span {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fe.source.str_at(*self).fmt(f)
+    fe.source.str_at(self.clone()).fmt(f)
   }
 }
 
@@ -261,7 +261,7 @@ impl EnvDisplay for SExpr {
     match &self.k {
       &SExprKind::Atom(a) => {
         // Safety: Atoms are ASCII
-        unsafe { std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a)) }.fmt(f)
+        unsafe { std::str::from_utf8_unchecked(span_atom(fe.source, self.span.clone(), a)) }.fmt(f)
       }
       SExprKind::List(es) => {
         let mut it = es.iter();
@@ -285,7 +285,7 @@ impl EnvDisplay for SExpr {
       SExprKind::Bool(false) => "#f".fmt(f),
       SExprKind::DocComment(_, e) => e.fmt(fe, f),
       SExprKind::Undef => "#undef".fmt(f),
-      SExprKind::Formula(s) => fe.source.str_at(s.0).fmt(f),
+      SExprKind::Formula(s) => fe.source.str_at(s.0.clone()).fmt(f),
     }
   }
 }

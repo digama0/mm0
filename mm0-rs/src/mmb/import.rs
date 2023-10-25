@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
 use crate::elab::proof::{IDedup, ProofKind, ProofHash, build};
-use crate::{FileRef, FileSpan, SliceExt};
+use crate::{FileRef, FileSpan, Span, SliceExt};
 use mm0b_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile,
   ParseError, UnifyIter, ProofIter, exhausted};
 
@@ -395,8 +395,8 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       NumdStmtCmd::Sort {sort_id} => {
         if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
         let atom = env.get_atom(file.sort_name(sort_id).as_bytes());
-        let span = (start..pf.pos).into();
-        let fsp = FileSpan {file: fref.clone(), span};
+        let span: Span = (start..pf.pos).into();
+        let fsp = FileSpan {file: fref.clone(), span: span.clone()};
         let sd = file.sort(sort_id).and_then(|sd| sd.try_into().ok())
           .ok_or(StrError("Step sort overflow", start))?;
         env.add_sort(atom, fsp, span, sd, None)

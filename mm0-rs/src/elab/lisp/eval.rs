@@ -190,7 +190,7 @@ impl Elaborator {
 
   /// Parse and evaluate a lisp expression, with the given doc comment.
   pub fn eval_lisp_doc(&mut self, global: bool, e: &SExpr, doc: String) -> Result<LispVal> {
-    let sp = e.span;
+    let sp = e.span.clone();
     let ir = self.parse_lisp_doc(global, e, doc)?;
     // println!("{}", self.print(&ir));
     self.evaluate(sp, &ir)
@@ -198,7 +198,7 @@ impl Elaborator {
 
   /// Parse and evaluate a math formula.
   pub fn eval_qexpr(&mut self, e: QExpr) -> Result<LispVal> {
-    let sp = e.span;
+    let sp = e.span.clone();
     let ir = self.parse_qexpr(e)?;
     self.evaluate(sp, &ir)
   }
@@ -207,7 +207,7 @@ impl Elaborator {
   /// as evaluating `(refine e)` where `e` is the input expression.
   pub fn elab_lisp(&mut self, e: &SExpr) -> Result<LispVal> {
     let ir = self.parse_refine_lisp(e)?;
-    self.evaluate(e.span, &ir)
+    self.evaluate(e.span.clone(), &ir)
   }
 
   /// Evaluate a compiled lisp expression.
@@ -219,8 +219,8 @@ impl Elaborator {
 
   /// Shorthand to call a lisp function from the top level.
   pub fn call_func(&mut self, sp: Span, f: &LispVal, es: Vec<LispVal>) -> Result<LispVal> {
-    let mut eval = Evaluator::new(self, sp, &[]);
-    eval.app(false, &(sp, sp), f, es)?;
+    let mut eval = Evaluator::new(self, sp.clone(), &[]);
+    eval.app(false, &(sp.clone(), sp), f, es)?;
     eval.run()
   }
 
@@ -241,7 +241,7 @@ impl Elaborator {
   pub fn apply_merge(&mut self,
     sp: Span, strat: Option<&MergeStrategyInner>, old: LispVal, new: LispVal
   ) -> Result<LispVal> {
-    let mut eval = Evaluator::new(self, sp, &[]);
+    let mut eval = Evaluator::new(self, sp.clone(), &[]);
     eval.run_apply_merge(sp, strat, old, new)
   }
 
@@ -603,7 +603,7 @@ impl<'a> Evaluator<'a> {
         let sp = try_get_span(&fsp, &proc);
         self.call(tail, &[Ir::AddThm], None, fsp, ProcPos::Builtin(BuiltinProc::AddThm), vec![]);
         self.stack.push(Stack::AddThmProc(ap));
-        self.app(false, &(sp, sp), &proc, vec![])
+        self.app(false, &(sp.clone(), sp), &proc, vec![])
       }
     }
   }
@@ -625,7 +625,7 @@ impl<'a> Evaluator<'a> {
       LispKind::AtomMap(newmap) => {
         if newmap.is_empty() { return Ok(Some(old)) }
         let mut opt = Some(old.as_map_mut(mem::take).ok_or_else(||
-          self.err(Some((sp, false)), "merge-map: not an atom-map"))?);
+          self.err(Some((sp.clone(), false)), "merge-map: not an atom-map"))?);
         let oldmap = opt.as_mut().expect("impossible");
         let mut todo = vec![];
         if strat.is_none() {
@@ -663,7 +663,7 @@ impl<'a> Evaluator<'a> {
     if let (Some(ret), Some(k)) = (ret, data.k.take()) {
       data.map.insert(k, ret);
     }
-    let sp = self.call_stack.last().expect("impossible").span.span;
+    let sp = self.call_stack.last().expect("impossible").span.span.clone();
     if let Some((k, oldv, newv)) = data.it.next() {
       data.k = Some(k);
       self.ip -= 1;
@@ -698,7 +698,7 @@ impl<'a> Evaluator<'a> {
       Some(MergeStrategyInner::AtomMap(strat)) =>
         self.merge_map(sp, strat.clone(), old, &new),
       Some(MergeStrategyInner::Custom(f)) => {
-        self.app(false, &(sp, sp), f, vec![old, new])?;
+        self.app(false, &(sp.clone(), sp), f, vec![old, new])?;
         Ok(None)
       }
     }
@@ -742,7 +742,7 @@ macro_rules! make_builtins {
         macro_rules! print {($sp:expr, $x:expr) => {{
           let msg = $x; $self.info($sp, false, f.to_str(), msg)
         }}}
-        let ($sp1, $sp2) = *sp;
+        let ($sp1, $sp2) = sp.clone();
         macro_rules! try1 {($x:expr) => {{
           match $x {
             Ok(e) => e,
@@ -1010,7 +1010,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     if it.as_slice().is_empty() {
       return self.app(tail, &(sp1, sp), &proc, vec![])
     }
-    let fsp = self.fspan(sp1);
+    let fsp = self.fspan(sp1.clone());
     self.call(tail, &[Ir::Map], None, fsp, ProcPos::Builtin(BuiltinProc::Map), vec![]);
     self.stack.push(proc.into());
     self.stack.push(Stack::MapProc2(vec![]));
@@ -1148,7 +1148,7 @@ make_builtins! { self, tail, sp1, sp2, args,
   IsMVar: Exact(1) => args[0].is_mvar().into(),
   IsGoal: Exact(1) => args[0].is_goal().into(),
   NewMVar: AtLeast(0) => {
-    let fsp = self.fspan(sp1);
+    let fsp = self.fspan(sp1.clone());
     self.lc.new_mvar(
       if args.is_empty() { InferTarget::Unknown }
       else if args.len() == 2 {
@@ -1165,8 +1165,8 @@ make_builtins! { self, tail, sp1, sp2, args,
     LispVal::string(format!("{}", self.format_env().pp(&args[0], 80)).into()).into(),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()).into(),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")).into(),
-  InferType: Exact(1) => try1!(self.infer_type(sp1, &args[0]).map_err(|e| e.kind.msg())).into(),
-  InferSort: Exact(1) => match try1!(self.infer_target(sp1, &args[0]).map_err(|e| e.kind.msg())) {
+  InferType: Exact(1) => try1!(self.infer_type(sp1.clone(), &args[0]).map_err(|e| e.kind.msg())).into(),
+  InferSort: Exact(1) => match try1!(self.infer_target(sp1.clone(), &args[0]).map_err(|e| e.kind.msg())) {
     InferTarget::Bound(s) | InferTarget::Reg(s) => LispVal::atom(s).into(),
     InferTarget::Unknown | InferTarget::Provable => Stack::Undef,
   },
@@ -1199,7 +1199,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     let mut args = args.into_iter();
     let xarg = args.next().unwrap();
     try1!(xarg.as_atom().ok_or("expected an atom"));
-    let fsp = self.fspan(sp1);
+    let fsp = self.fspan(sp1.clone());
     let x_sp = try_get_span(&fsp, &xarg);
     self.call(tail, &[Ir::Have], None, fsp, ProcPos::Builtin(BuiltinProc::Have), vec![]);
     let mut rstack = vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))];
@@ -1223,7 +1223,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     self.get_decl(args[0].fspan(), x).into()
   },
   AddDecl: AtLeast(4) => {
-    let fsp = self.fspan_base(sp1);
+    let fsp = self.fspan_base(sp1.clone());
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
       AtomId::TERM | AtomId::DEF => self.add_term(&fsp, &args[1..])?,
       AtomId::AXIOM | AtomId::THM => return self.add_thm(tail, fsp, &args[1..]),
@@ -1450,7 +1450,7 @@ impl<'a> Evaluator<'a> {
   ) -> Result<()> {
     macro_rules! throw {($sp:expr, $e:expr) => {{
       let err = $e;
-      return Err(self.err(Some(($sp, false)), err))
+      return Err(self.err(Some(($sp.clone(), false)), err))
     }}}
     self.heartbeat()?;
     func.unwrapped(|func| {
@@ -1470,7 +1470,7 @@ impl<'a> Evaluator<'a> {
           // the IR inside the Ret instruction above, so that it won't get deallocated
           // while in use. Rust doesn't reason about other owners of an Arc though, so...
           let code2 = unsafe { std::mem::transmute::<&[Ir], &[Ir]>(&**code) };
-          let fsp = self.fspan(sp.0);
+          let fsp = self.fspan(sp.0.clone());
           self.call(tail, code2, Some(code.clone()), fsp, pos.clone(), (**env).into());
           match spec {
             ProcSpec::Exact(_) => self.ctx.extend(args),
@@ -1502,14 +1502,14 @@ impl<'a> Evaluator<'a> {
         Proc::MergeMap(strat) => {
           let new = args.pop().expect("impossible");
           let old = args.pop().expect("impossible");
-          self.push_merge_map(sp.0, strat.clone(), old, &new)?
+          self.push_merge_map(sp.0.clone(), strat.clone(), old, &new)?
         }
         Proc::RefineCallback => {
-          self.stack.push(Stack::Refine(sp.0, vec![]));
+          self.stack.push(Stack::Refine(sp.0.clone(), vec![]));
           let p = args.pop().expect("impossible");
           let tgt = match args.pop() {
             None => {
-              let fsp = p.fspan().unwrap_or_else(|| self.fspan(sp.0));
+              let fsp = p.fspan().unwrap_or_else(|| self.fspan(sp.0.clone()));
               self.lc.new_mvar(InferTarget::Unknown, Some(fsp))
             }
             Some(tgt) if args.is_empty() => tgt,
@@ -1530,7 +1530,7 @@ impl<'a> Evaluator<'a> {
           }
         }
         Proc::Dyn(c) => {
-          let sp = self.respan(sp.0);
+          let sp = self.respan(sp.0.clone());
           let ret = c.borrow_mut().call(self, sp, args)?;
           self.stack.push(ret.into())
         }
@@ -1551,8 +1551,9 @@ impl<'a> Evaluator<'a> {
 
   fn call_refine(&mut self, tail: bool, state: RState) -> Result<()> {
     let val = self.stack.last_mut().expect("underflow");
-    stack_match!(let Stack::Refine(sp, ref mut stack) = *val);
-    match self.elab.run_refine(self.orig.span, stack, state) {
+    stack_match!(let Stack::Refine(ref sp, ref mut stack) = *val);
+    let sp = sp.clone();
+    match self.elab.run_refine(self.orig.span.clone(), stack, state) {
       Err(e) => return Err(self.err(Some((e.pos, true)), e.kind.msg())),
       Ok(RefineResult::Ret(e)) => {
         self.elab.lc.clean_mvars();
@@ -1566,15 +1567,15 @@ impl<'a> Evaluator<'a> {
         let mut args = vec![LispVal::proc(Proc::RefineCallback), tgt.clone(), e];
         for e in u { args.push(e) }
         stack.push(RStack::CoerceTo(tgt));
-        self.insert_call_refine(tail, sp);
+        self.insert_call_refine(tail, sp.clone());
         match &self.data[AtomId::REFINE_EXTRA_ARGS].lisp {
-          None => self.evaluate_builtin(false, &(sp, sp), BuiltinProc::RefineExtraArgs, args)?,
-          Some(v) => { let v = v.val.clone(); self.app(false, &(sp, sp), &v, args)? }
+          None => self.evaluate_builtin(false, &(sp.clone(), sp), BuiltinProc::RefineExtraArgs, args)?,
+          Some(v) => { let v = v.val.clone(); self.app(false, &(sp.clone(), sp), &v, args)? }
         }
       }
       Ok(RefineResult::Proc(tgt, proc)) => {
-        self.insert_call_refine(tail, sp);
-        self.app(false, &(sp, sp), &proc, vec![LispVal::proc(Proc::RefineCallback), tgt])?
+        self.insert_call_refine(tail, sp.clone());
+        self.app(false, &(sp.clone(), sp), &proc, vec![LispVal::proc(Proc::RefineCallback), tgt])?
       }
     }
     Ok(())
@@ -1765,13 +1766,13 @@ impl<'a> Evaluator<'a> {
         if close {
           if self.lc.closer.is_def() {
             self.ip -= 1;
-            self.stack.push(Stack::Focus(sp, gs));
-            self.app(false, &(sp, sp), &self.lc.closer.clone(), vec![])?;
+            self.stack.push(Stack::Focus(sp.clone(), gs));
+            self.app(false, &(sp.clone(), sp), &self.lc.closer.clone(), vec![])?;
             break
           } else if !self.lc.goals.is_empty() {
             let stat = self.stat();
             self.call_goal_listener(&stat);
-            let span = self.fspan(sp);
+            let span = self.fspan(sp.clone());
             for g in mem::take(&mut self.lc.goals) {
               let err = ElabError::new_e(try_get_span(&span, &g), format!("|- {}",
                 self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)));
@@ -1818,13 +1819,13 @@ impl<'a> Evaluator<'a> {
     Ok(())
   }
 
-  fn lambda(&mut self, name: u8, &(sp, spec, ref code): &(Span, ProcSpec, Arc<[Ir]>)) {
+  fn lambda(&mut self, name: u8, &(ref sp, spec, ref code): &(Span, ProcSpec, Arc<[Ir]>)) {
     let pos = if name == u8::MAX {
-      ProcPos::Unnamed(self.fspan(sp))
+      ProcPos::Unnamed(self.fspan(sp.clone()))
     } else {
-      let Ir::GlobalDef(span, full, x) = self.code[self.ip + usize::from(name)]
+      let Ir::GlobalDef(ref span, ref full, x) = self.code[self.ip + usize::from(name)]
       else { unreachable!() };
-      ProcPos::Named(self.fspan(full), span, x)
+      ProcPos::Named(self.fspan(full.clone()), span.clone(), x)
     };
     self.stack.push(LispVal::proc(Proc::Lambda {
       pos,
@@ -1841,7 +1842,8 @@ impl<'a> Evaluator<'a> {
     }
     let len = self.stack.len();
     let func = self.stack[len - 3].cloned_lisp();
-    stack_match!(let Some(&mut Stack::MapProc1(sp, ref mut us)) = self.stack.last_mut());
+    stack_match!(let Some(&mut Stack::MapProc1(ref sp, ref mut us)) = self.stack.last_mut());
+    let sp = sp.clone();
     let mut it = us.iter_mut();
     let u0 = it.next().expect("impossible");
     if let Some(e0) = u0.next() {
@@ -1851,7 +1853,7 @@ impl<'a> Evaluator<'a> {
         else { return Err(self.err(Some((sp, false)), "mismatched input length")) }
       }
       self.ip -= 1;
-      self.app(false, &(sp, sp), &func, args)?
+      self.app(false, &(sp.clone(), sp), &func, args)?
     } else {
       if !(u0.exactly(0) && it.all(|u| u.exactly(0))) {
         return Err(self.err(Some((sp, false)), "mismatched input length"))
@@ -1868,7 +1870,7 @@ impl<'a> Evaluator<'a> {
     let x = self.pop_lisp();
     let a = x.as_atom().expect("checked");
     let fsp = &self.call_stack.last().expect("impossible").span;
-    let e = self.elab.infer_type(fsp.span, &ret)?;
+    let e = self.elab.infer_type(fsp.span.clone(), &ret)?;
     let span = try_get_span(fsp, &x);
     self.elab.lc.add_proof(a, e, ret);
     if span != fsp.span {
@@ -1970,11 +1972,11 @@ impl<'a> Evaluator<'a> {
           Ir::AssertScope(n) => assert!(self.ctx.len() == n),
           Ir::EndScope(n) => self.ctx.truncate(n),
           Ir::Local(i) => self.stack.push(self.ctx[i].clone().into()),
-          Ir::Global(sp, a) => self.global_var(sp, a)?,
+          Ir::Global(ref sp, a) => self.global_var(sp.clone(), a)?,
           Ir::Const(ref val) => self.stack.push(val.clone().into()),
-          Ir::List(sp, n) => {
+          Ir::List(ref sp, n) => {
             let args = self.popn(n).map(Stack::into_lisp).collect::<Box<[_]>>();
-            self.stack.push(LispVal::list(args).span(self.fspan(sp)).into())
+            self.stack.push(LispVal::list(args).span(self.fspan(sp.clone())).into())
           }
           Ir::DottedList(n) => self.dotted_list(n),
           Ir::App(tail, ref sp, n) => {
@@ -1988,11 +1990,11 @@ impl<'a> Evaluator<'a> {
             self.heartbeat()?;
             self.evaluate_builtin(tail, sp, func, args)?
           }
-          Ir::ArityError(sp, spec) => throw!(sp, spec.arity_error()),
-          Ir::AppHead(sp) => {
+          Ir::ArityError(ref sp, spec) => throw!(sp.clone(), spec.arity_error()),
+          Ir::AppHead(ref sp) => {
             let func = self.pop_lisp();
             let e = self.pop_lisp();
-            self.app(false, &(sp, sp), &func, vec![e])?
+            self.app(false, &(sp.clone(), sp.clone()), &func, vec![e])?
           }
           Ir::JumpUnless(tgt) => match self.stack.pop().expect("underflow") {
             Stack::Bool(true) => {}
@@ -2000,16 +2002,16 @@ impl<'a> Evaluator<'a> {
             _ => self.ip = tgt
           }
           Ir::Jump(tgt) => self.ip = tgt,
-          Ir::FocusStart(sp) => {
-            if self.lc.goals.is_empty() { throw!(sp, "no goals") }
+          Ir::FocusStart(ref sp) => {
+            if self.lc.goals.is_empty() { throw!(sp.clone(), "no goals") }
             let gs = self.lc.goals.drain(1..).collect();
-            self.stack.push(Stack::Focus(sp, gs));
+            self.stack.push(Stack::Focus(sp.clone(), gs));
           }
           Ir::FocusFinish => self.focus_finish()?,
-          Ir::SetMergeStrategy(sp, a) => if let Some(ref mut data) = self.elab.data[a].lisp {
+          Ir::SetMergeStrategy(ref sp, a) => if let Some(ref mut data) = self.elab.data[a].lisp {
             data.merge = self.stack.pop().expect("underflow").into_lisp().into_merge_strategy()
           } else {
-            throw!(sp, format!("unknown definition '{}', cannot set merge strategy",
+            throw!(sp.clone(), format!("unknown definition '{}', cannot set merge strategy",
               self.print(&a)))
           }
           Ir::LocalDef(n) => {
@@ -2017,7 +2019,7 @@ impl<'a> Evaluator<'a> {
             let ret = self.pop_lisp();
             self.ctx.push(ret);
           }
-          Ir::GlobalDef(sp1, sp2, a) => self.global_def(sp1, sp2, a)?,
+          Ir::GlobalDef(ref sp1, ref sp2, a) => self.global_def(sp1.clone(), sp2.clone(), a)?,
           Ir::SetDoc(ref doc, a) => if let Some(data) = &mut self.data[a].lisp {
             if data.val.is_def_strict() { data.doc = Some(doc.clone()) }
           }
@@ -2033,9 +2035,9 @@ impl<'a> Evaluator<'a> {
             stack_match!(let Some(Stack::PatternPause(vars)) = self.stack.pop());
             self.pattern_match(vars, ok)?
           }
-          Ir::BranchFail(sp) => {
+          Ir::BranchFail(ref sp) => {
             let e = self.pop_lisp();
-            throw!(sp, format!("match failed: {}", self.print(&e)))
+            throw!(sp.clone(), format!("match failed: {}", self.print(&e)))
           }
 
           Ir::Map => self.map()?,

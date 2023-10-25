@@ -31,10 +31,9 @@ pub enum Delimiter {
 /// A dollar-delimited formula: $ .. $.
 /// `f.0` is the span of the entire formula including the delimiters, and
 /// `f.inner()` is the span of the interior (excluding `$` but including any inner whitespace).
-#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Clone, Debug)]
 pub struct Formula(pub Span);
-#[cfg(feature = "memory")]
-mm0_deepsize::deep_size_0!(Formula);
 
 impl Formula {
   /// Get the span of the interior of the formula (excluding `$` but including any inner whitespace).
@@ -46,7 +45,8 @@ impl Formula {
 /// Information about constants can be found in the [notation grammar].
 ///
 /// [notation grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
-#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Clone, Debug)]
 pub struct Const {
   /// The underlying formula (dollar delimited token)
   pub fmla: Formula,
@@ -54,8 +54,6 @@ pub struct Const {
   /// (which should itself contain no embedded whitespace)
   pub trim: Span,
 }
-#[cfg(feature = "memory")]
-mm0_deepsize::deep_size_0!(Const);
 
 /// Declarations; term, axiom, theorem, def. Part of a [`Decl`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -162,7 +160,7 @@ impl Type {
   pub fn span(&self) -> Span {
     match self {
       Type::DepType(d) => d.span(),
-      Type::Formula(f) => f.0,
+      Type::Formula(f) => f.0.clone(),
     }
   }
 }
@@ -414,7 +412,7 @@ pub enum SimpleNotaKind {
 /// Represents a notation item declared with the prefix, infixl, or infixr keywords. Notation
 /// declared with the 'notation' keyword is represented by [`GenNota`]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct SimpleNota {
   /// The initial notation keyword, one of `prefix`, `infixl`, or `infixr`.
   pub k: SimpleNotaKind,
@@ -431,7 +429,7 @@ pub struct SimpleNota {
 /// For example in `notation ab {x} (ph) = (${$:max) x ($|$:50) ph ($}$:0);` there
 /// are 5 notation literals, `(${$:0)`, `x`, `($|$:50)`, `ph`, `($}$:0)`.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum Literal {
   /// A constant with a precedence, such as `($|$:50)`.
   Const(Const, Prec),
@@ -587,7 +585,7 @@ impl Ast {
   pub fn get_decl(&self, ident: &[u8]) -> Option<&Decl> {
     for stmt in self.stmts_iter() {
       if let StmtKind::Decl(decl @ Decl { .. }) = &stmt.k {
-        if self.span(decl.id) == ident {
+        if self.span(decl.id.clone()) == ident {
           return Some(decl)
         }
       }

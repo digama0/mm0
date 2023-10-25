@@ -105,7 +105,7 @@ impl<'a> Importer<'a> {
     while self.close().is_none() {
       self.open_err()?;
       let xsp = self.ident_err()?;
-      let x = self.env.get_atom(self.span(xsp));
+      let x = self.env.get_atom(self.span(xsp.clone()));
       let s = self.ident_atom_err()?;
       let s = self.env.data[s].sort.ok_or_else(|| self.err("expecting sort".into()))?;
       if vars.insert(x, VarKind::Dummy(s)).is_some() {
@@ -235,8 +235,8 @@ impl<'a> Importer<'a> {
           if next == Some(b"provable") {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
           if next == Some(b"free") {mods |= Modifiers::FREE;}
           let end = self.close_err()?;
-          let a = self.env.get_atom(self.span(x));
-          self.env.add_sort(a, self.fspan(x), (start..end).into(), mods, None)
+          let a = self.env.get_atom(self.span(x.clone()));
+          self.env.add_sort(a, self.fspan(x.clone()), (start..end).into(), mods, None)
             .map_err(|e| e.into_elab_error(x))?;
         }
         Some(b"term") => self.decl(start, DeclKind::Term)?,
@@ -259,7 +259,7 @@ impl<'a> Importer<'a> {
 
   fn decl(&mut self, start: usize, dk: DeclKind) -> Result<()> {
     let span = self.ident_err()?;
-    let atom = self.env.get_atom(self.span(span));
+    let atom = self.env.get_atom(self.span(span.clone()));
     self.open_err()?;
     let mut args = vec![];
     let mut vars = HashMap::new();
@@ -268,7 +268,7 @@ impl<'a> Importer<'a> {
     while self.close().is_none() {
       self.open_err()?;
       let ysp = self.ident_err()?;
-      let y = self.env.get_atom(self.span(ysp));
+      let y = self.env.get_atom(self.span(ysp.clone()));
       let oy = if y == AtomId::UNDER {None} else {
         vars.insert(y, VarKind::Var(args.len()));
         Some(y)
@@ -310,7 +310,7 @@ impl<'a> Importer<'a> {
         let end = self.close_err()?;
         self.env.add_term(Term {
           atom,
-          span: self.fspan(span),
+          span: self.fspan(span.clone()),
           vis: if matches!(dk, DeclKind::LocalDef) {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
@@ -362,7 +362,7 @@ impl<'a> Importer<'a> {
         let end = self.close_err()?;
         self.env.add_thm(Thm {
           atom,
-          span: self.fspan(span),
+          span: self.fspan(span.clone()),
           vis: if matches!(dk, DeclKind::Theorem) {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,

@@ -1676,7 +1676,7 @@ impl Remap for ProcPos {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), *sp, a.remap(r)),
+      ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), sp.clone(), a.remap(r)),
       ProcPos::Unnamed(fsp) => ProcPos::Unnamed(fsp.clone()),
       &ProcPos::Builtin(p) => ProcPos::Builtin(p),
     }
