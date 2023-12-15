@@ -61,7 +61,7 @@ pub(crate) trait UnifyCtx<V> {
 
 impl UnifyCtx<()> for () {
   type Error = std::convert::Infallible;
-  fn unify_values(&mut self, _: &(), _: &()) -> Result<(), Self::Error> { Ok(()) }
+  fn unify_values(&mut self, (): &(), (): &()) -> Result<(), Self::Error> { Ok(()) }
 }
 
 /// Value of a unification key. We implement Tarjan's union-find

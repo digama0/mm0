@@ -340,11 +340,11 @@ impl<T: Domain> DualDomain for Dual<T> {
 }
 
 impl Domain for () {
-  fn join(&mut self, _: &Self) -> bool { false }
+  fn join(&mut self, (): &Self) -> bool { false }
 }
 
 impl DualDomain for () {
-  fn meet(&mut self, _: &Self) -> bool { false }
+  fn meet(&mut self, (): &Self) -> bool { false }
 }
 
 impl Domain for bool {

@@ -374,8 +374,8 @@ impl<L> NodeKind for RegKind<L> {
       MCtxNode::One((k, _)) | MCtxNode::Node(_, k, _) => k
     }
   }
-  fn leaf_key(_: &(), &(k, _): &(u8, L)) -> u8 { k }
-  fn node_key(_: &(), &k: &u8) -> u8 { k }
+  fn leaf_key((): &(), &(k, _): &(u8, L)) -> u8 { k }
+  fn node_key((): &(), &k: &u8) -> u8 { k }
 }
 
 struct StackKind<L>(PhantomData<L>);

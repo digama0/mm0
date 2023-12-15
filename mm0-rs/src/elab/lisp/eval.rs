@@ -1027,7 +1027,7 @@ make_builtins! { self, tail, sp1, sp2, args,
   IsDef: Exact(1) => args[0].is_def().into(),
   IsRef: Exact(1) => args[0].is_ref().into(),
   NewRef: AtLeast(0) =>
-    LispVal::new_ref(args.get(0).cloned().unwrap_or_else(LispVal::undef)).into(),
+    LispVal::new_ref(args.first().cloned().unwrap_or_else(LispVal::undef)).into(),
   GetRef: Exact(1) => try1!(self.as_ref(&args[0], |e| Ok(e.clone()))).into(),
   SetRef: Exact(2) => {
     try1!(self.as_ref(&args[0], |e| {*e = args[1].clone(); Ok(())}));

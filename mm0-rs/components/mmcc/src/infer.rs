@@ -516,6 +516,7 @@ impl<'a> From<Ty<'a>> for WhnfTy<'a> {
 struct Subst<'a> {
   tsubst: Option<Vec<Ty<'a>>>,
   fvars: im::HashSet<VarId>,
+  #[allow(clippy::struct_field_names)]
   subst: im::HashMap<VarId, Result<Expr<'a>, &'a FileSpan>>,
 }
 
@@ -1890,10 +1891,9 @@ impl<'a, 'n> InferCtx<'a, 'n> {
 
   fn whnf_ty(&mut self, sp: &'a FileSpan, wty: WhnfTy<'a>) -> WhnfTy<'a> {
     wty.map(intern!(self, match wty.ty.k {
-      TyKind::List(es) if es.is_empty() => return wty.map(self.common.t_unit),
-      TyKind::Struct(es) if es.is_empty() => return wty.map(self.common.t_unit),
-      TyKind::And(es) if es.is_empty() => return wty.map(self.common.t_true),
-      TyKind::Or(es) if es.is_empty() => return wty.map(self.common.t_false),
+      TyKind::List([]) | TyKind::Struct([]) => return wty.map(self.common.t_unit),
+      TyKind::And([]) => return wty.map(self.common.t_true),
+      TyKind::Or([]) => return wty.map(self.common.t_false),
       TyKind::Unit |
       TyKind::True |
       TyKind::False |

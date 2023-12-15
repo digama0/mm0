@@ -234,6 +234,7 @@ struct VarData {
   vars: Vec<AtomId>,
 }
 
+#[allow(clippy::struct_field_names)]
 struct IndexTemp {
   sort_names: Vec<NameData>,
   term_names: Vec<(NameData, VarData)>,
