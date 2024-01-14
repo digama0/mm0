@@ -20,7 +20,7 @@ use crate::types::{Binop, Spanned, FieldName, VarId, IdxVec, ast::{self, LabelId
 #[derive(Debug)]
 enum Ctx {
   Var(VarId),
-  Label(Symbol, LabelId),
+  Label(Symbol),
 }
 
 fn let_var(sp: &FileSpan, name: Spanned<Symbol>, v: VarId, rhs: ast::Expr) -> ast::Stmt {
@@ -91,7 +91,7 @@ impl BuildAst {
   /// Push a named label. Uses of `break name` or `jump name` will target this label until the
   /// scope is closed.
   pub fn push_label(&mut self, name: Symbol, label: LabelId) {
-    self.ctx.push(Ctx::Label(name, label));
+    self.ctx.push(Ctx::Label(name));
     self.label_map.entry(name).or_default().push(label);
   }
 
@@ -164,7 +164,7 @@ impl BuildAst {
       Ctx::Var(v) => {
         self.name_map.get_mut(&self.var_names[v].k).and_then(Vec::pop).expect("stack underflow");
       }
-      Ctx::Label(name, _) => {
+      Ctx::Label(name) => {
         self.label_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");
       }
     }

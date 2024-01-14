@@ -132,15 +132,6 @@ impl<T> RcExt<T> for Rc<T> {
   }
 }
 
-/// Does the same as `panic!` but works in a `const fn`.
-#[macro_export]
-macro_rules! const_panic {
-  () => {{
-    #[allow(unconditional_panic)]
-    [][0]
-  }};
-}
-
 /// Converts `n` from `u32` to `usize` or panics (which should not happen since we don't support
 /// 16 bit systems).
 #[inline]

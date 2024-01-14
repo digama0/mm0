@@ -59,6 +59,7 @@
   clippy::too_many_lines,
   clippy::trait_duplication_in_bounds, // rust-clippy#8757, rust-clippy#8771
   clippy::type_repetition_in_bounds, // rust-clippy#8771
+  clippy::uninhabited_references, // rust-clippy#11984
   clippy::use_self
 )]
 

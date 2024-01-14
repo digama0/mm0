@@ -394,7 +394,7 @@ struct UnelabTupPat<'a> {
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 enum UnelabTupPatKind<'a> {
   /// A simple pattern, containing the actual binding in the [`ContextNext`].
-  Name(bool, Symbol),
+  Name(Symbol),
   /// An unelaborated tuple pattern match. The subpatterns are elaborated with metavariable types,
   /// but we don't yet know how to connect this list of types to the target type - for example
   /// the target type could be a metavariable, and propagating our default guess of a nondependent
@@ -1293,9 +1293,9 @@ enum ExpectTy<'a> {
   /// we will just signal a type error if the synthesized type is not good.)
   Any,
   /// We are expecting some `A` such that `R(A, B)`, where `B` is stored here.
-  Relate(Relation, Ty<'a>),
+  Relate { _rel: Relation, tgt: Ty<'a> },
   /// We are expecting some `B` such that `R(A, B)`, where `A` is stored here.
-  RelateRev(Relation, Ty<'a>),
+  RelateRev { _rel: Relation, tgt: Ty<'a> },
 }
 
 impl<'a> ExpectTy<'a> {
@@ -1306,10 +1306,10 @@ impl<'a> ExpectTy<'a> {
   //   tgt.map_or(Self::Any, |ty| Self::Relate(Relation::Subtype, ty))
   // }
   fn supertype(tgt: Option<Ty<'a>>) -> Self {
-    tgt.map_or(Self::Any, |ty| Self::RelateRev(Relation::Subtype, ty))
+    tgt.map_or(Self::Any, |tgt| Self::RelateRev { _rel: Relation::Subtype, tgt })
   }
   fn coerce_to(tgt: Option<Ty<'a>>) -> Self {
-    tgt.map_or(Self::Any, |ty| Self::Relate(Relation::Coerce, ty))
+    tgt.map_or(Self::Any, |tgt| Self::Relate { _rel: Relation::Coerce, tgt })
   }
   // fn coerce_from(tgt: Option<Ty<'a>>) -> Self {
   //   tgt.map_or(Self::Any, |ty| Self::RelateRev(Relation::Coerce, ty))
@@ -1318,8 +1318,8 @@ impl<'a> ExpectTy<'a> {
   fn to_ty(self) -> Option<Ty<'a>> {
     match self {
       ExpectTy::Any => None,
-      ExpectTy::Relate(_, ty) |
-      ExpectTy::RelateRev(_, ty) => Some(ty),
+      ExpectTy::Relate { tgt, .. } |
+      ExpectTy::RelateRev { tgt, .. } => Some(tgt),
     }
   }
 }
@@ -1572,7 +1572,7 @@ impl<'a> Common<'a> {
       2 => self.e_num[2],
       4 => self.e_num[3],
       8 => self.e_num[4],
-      _ => const_panic!(),
+      _ => panic!(),
     }
   }
 }
@@ -2366,11 +2366,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     expect_t: Option<Ty<'a>>,
   ) -> (UnelabTupPat<'a>, Option<Expr<'a>>) {
     match pat {
-      &ast::TuplePatternKind::Name(g, n, v) => {
+      &ast::TuplePatternKind::Name(_, n, v) => {
         let ty = expect_t.unwrap_or_else(|| self.new_ty_mvar(span));
         let ctx = self.new_context_next(v, expect_e, ty);
         self.dc.context = ctx.into();
-        (UnelabTupPat {span, ctx, k: UnelabTupPatKind::Name(g, n)},
+        (UnelabTupPat {span, ctx, k: UnelabTupPatKind::Name(n)},
          Some(intern!(self, ExprKind::Var(v))))
       }
       ast::TuplePatternKind::Typed(pat, ty) => {
@@ -2627,7 +2627,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let err = tgt.filter(|tgt|
       self.relate_ty(pat.span, None, pat.ctx.ty, tgt, Relation::Equal).is_err());
     let (k, e) = match &pat.k {
-      &UnelabTupPatKind::Name(_, n) => {
+      &UnelabTupPatKind::Name(n) => {
         self.dc.context = pat.ctx.into();
         (TuplePatternKind::Name(n), intern!(self, ExprKind::Var(pat.ctx.var)))
       }
@@ -4413,7 +4413,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           rets2.push((ArgAttr::GHOST, UnelabArgKind::Lam(UnelabTupPat {
             span: &out.name.span,
             ctx,
-            k: UnelabTupPatKind::Name(false, out.name.k)
+            k: UnelabTupPatKind::Name(out.name.k)
           })));
           out.input
         }).collect::<Box<[_]>>();

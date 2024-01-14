@@ -488,9 +488,10 @@ impl Eq for LispVal {}
 
 #[derive(Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[allow(unused)]
 pub(crate) struct LispArena(typed_arena::Arena<Weak<LispKind>>);
 
-thread_local!(static REFS: Cell<Option<*const LispArena>> = Cell::new(None));
+thread_local!(static REFS: Cell<Option<*const LispArena>> = const { Cell::new(None) });
 
 impl LispArena {
   pub(crate) fn install_thread_local(&self) { REFS.with(|refs| refs.set(Some(self))) }

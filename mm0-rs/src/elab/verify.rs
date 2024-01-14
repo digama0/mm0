@@ -269,7 +269,7 @@ pub fn with_format_env<R>(env: &Environment, f: impl FnOnce(Option<FormatEnv<'_>
 thread_local! {
   /// A side-channel parameter passed through a thread local.
   /// See [`scope_ast_source`] and [`with_format_env`].
-  static SCOPED_SRC: Cell<*const LinedString> = Cell::new(std::ptr::null());
+  static SCOPED_SRC: Cell<*const LinedString> = const { Cell::new(std::ptr::null()) };
 }
 
 /// An upper bound on the terms/theorems that can be used in a proof. Used to ensure acyclicity.

@@ -33,6 +33,7 @@ use crate::elab::{ElabResult, ElaborateBuilder, GoalListener,
 
 /// The error type returned by server functions.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ServerError(BoxError);
 
 type Result<T, E = ServerError> = std::result::Result<T, E>;
@@ -1134,7 +1135,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   }
 }
 
-async fn completion(path: FileRef, _pos: Position) -> Result<Option<CompletionResponse>, ResponseError> {
+async fn completion(path: FileRef, _: Position) -> Result<Option<CompletionResponse>, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let (text, env) = if let Some(old) = try_old(&file) { old } else {
