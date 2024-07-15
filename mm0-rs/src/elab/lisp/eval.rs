@@ -365,10 +365,10 @@ impl Elaborator {
       ThmKind::Thm(Some(pr)) => {
         let mut ds = Vec::new();
         for e in &pr.heap[heap.len()..] {
-          let e = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.store, e);
+          let e = self.proof_node(&tdata.hyps, &heap, &mut Some(&mut ds), &pr.store, e);
           heap.push(e)
         }
-        let ret = self.proof_node(&[], &heap, &mut Some(&mut ds), &pr.store, pr.head());
+        let ret = self.proof_node(&tdata.hyps, &heap, &mut Some(&mut ds), &pr.store, pr.head());
         LispVal::list(vec![LispVal::list(ds), ret])
       }
       _ => LispVal::atom(AtomId::SORRY),
