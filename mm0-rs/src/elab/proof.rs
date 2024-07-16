@@ -454,6 +454,8 @@ impl NodeHash for ExprHash {
   fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
+      LispKind::Atom(AtomId::SORRY) =>
+        return Err(ElabError::warn(try_get_span_from(&nh.fsp, fsp), "proof uses sorry")),
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
         None => match nh.lc.vars.get(&a) {
@@ -761,6 +763,8 @@ impl NodeHash for ProofHash {
   fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
+      LispKind::Atom(AtomId::SORRY) =>
+        return Err(ElabError::warn(try_get_span_from(&nh.fsp, fsp), "proof uses sorry")),
       &LispKind::Atom(a) => match kind {
         ProofKind::Expr | ProofKind::Conv => {
           let e = match nh.var_map.get(&a) {
