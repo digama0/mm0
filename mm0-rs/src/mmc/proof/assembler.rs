@@ -1370,7 +1370,7 @@ impl<'a> BuildAssembly<'a> {
     };
 
     let (code, doc) = self.mangler.get_data(self.elab, Name::ProcContent(proc.name()));
-    let code = self.elab.env.add_term({
+    let (code, _) = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, s);
       de.build_def0(code, Modifiers::LOCAL,
@@ -1378,7 +1378,7 @@ impl<'a> BuildAssembly<'a> {
     }).map_err(|e| e.into_elab_error(self.full))?;
 
     let (asm, doc) = self.mangler.get_data(self.elab, Name::ProcAsm(proc.name()));
-    let asm = self.elab.env.add_term({
+    let (asm, _) = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = build.thm.to_expr(&mut de, a);
       de.build_def0(asm, Modifiers::LOCAL,
@@ -1388,7 +1388,7 @@ impl<'a> BuildAssembly<'a> {
     let th = thm!(build.thm, ((assemble ({code}) start end (asmProc start ({asm})))) =>
       CONV({th} => (assemble (UNFOLD({code}); s) start end (asmProc start (UNFOLD({asm}); a)))));
     let (asm_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmThm(proc.name()));
-    let asm_thm = self.elab.env
+    let (asm_thm, _) = self.elab.env
       .add_thm(build.thm.build_thm0(asm_thm, Modifiers::empty(),
         self.span.clone(), self.full, Some(doc), th))
       .map_err(|e| e.into_elab_error(self.full))?;
@@ -1421,7 +1421,7 @@ impl<'a> BuildAssembly<'a> {
       assembledI(a, res, c, *end, filesz, memsz, h1, h2, h3, h4));
 
     let (content, doc) = self.mangler.get_data(self.elab, Name::Content);
-    let content = self.elab.env.add_term({
+    let (content, _) = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let e = self.thm.to_expr(&mut de, c);
       de.build_def0(content, Modifiers::LOCAL,
@@ -1429,7 +1429,7 @@ impl<'a> BuildAssembly<'a> {
     }).map_err(|e| e.into_elab_error(self.full))?;
 
     let (gctx, doc) = self.mangler.get_data(self.elab, Name::GCtx);
-    let gctx = self.elab.env.add_term({
+    let (gctx, _) = self.elab.env.add_term({
       let mut de = ExprDedup::new(self.pd, &[]);
       let filesz = self.thm.to_expr(&mut de, filesz);
       let memsz = self.thm.to_expr(&mut de, memsz);
@@ -1443,7 +1443,7 @@ impl<'a> BuildAssembly<'a> {
       CONV({th} => (assembled (UNFOLD({gctx});
         (mkGCtx (UNFOLD({content}); c) filesz memsz res)) a)));
     let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::AsmdThm);
-    let asmd_thm = self.elab.env
+    let (asmd_thm, _) = self.elab.env
       .add_thm(self.thm.build_thm0(asmd_thm, Modifiers::empty(),
         self.span.clone(), self.full, Some(doc), th))
       .map_err(|e| e.into_elab_error(self.full))?;
@@ -1460,10 +1460,11 @@ impl<'a> BuildAssembly<'a> {
     let th = mk_proof(self, &mut de).1;
     let (lem, doc) = self.mangler.get_data(self.elab, Name::AsmdThmLemma(self.asmd_lemmas));
     self.asmd_lemmas += 1;
-    self.elab.env
+    let (lem, _) = self.elab.env
       .add_thm(de.build_thm0(lem, Modifiers::empty(),
         self.span.clone(), self.full, Some(doc), th))
-      .map_err(|e| e.into_elab_error(self.full))
+      .map_err(|e| e.into_elab_error(self.full))?;
+    Ok(lem)
   }
 
   fn prove_conjuncts(&mut self,
@@ -1478,7 +1479,7 @@ impl<'a> BuildAssembly<'a> {
       match item {
         AssemblyItem::Proc(proc) => {
           let (asmd_thm, doc) = self.mangler.get_data(self.elab, Name::ProcAsmdThm(proc.name()));
-          let asmd_thm = self.elab.env
+          let (asmd_thm, _) = self.elab.env
             .add_thm(de.build_thm0(asmd_thm, Modifiers::empty(),
               self.span.clone(), self.full, Some(doc), th))
             .map_err(|e| e.into_elab_error(self.full))?;

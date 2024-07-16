@@ -908,7 +908,8 @@ impl Elaborator {
           full,
         };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id))?;
+          let (tid, err) = self.env.add_term(t).map_err(|e| e.into_elab_error(d.id))?;
+          if let Some(e) = err { self.report(e.into_elab_error(d.id)) }
           self.spans.insert(d.id, ObjectKind::Term(true, tid));
         } else if VERIFY_ON_ADD {
           match self.env.verify_termdef(&Default::default(), &t) {
@@ -1024,7 +1025,8 @@ impl Elaborator {
           args: args.into(), heap, store: store.into(), hyps, ret, kind
         };
         if atom != AtomId::UNDER {
-          let tid = self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id))?;
+          let (tid, err) = self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id))?;
+          if let Some(e) = err { self.report(e.into_elab_error(d.id)) }
           self.spans.insert(d.id, ObjectKind::Thm(true, tid));
         } else if VERIFY_ON_ADD {
           match self.verify_thmdef(&Default::default(), &t) {

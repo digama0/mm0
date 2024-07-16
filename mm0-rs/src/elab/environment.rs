@@ -7,6 +7,7 @@ use std::fmt::Write;
 use std::collections::HashMap;
 use debug_derive::EnvDebug;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use mm0b_parser::MAX_BOUND_VARS;
 use super::{BoxError, ElabError, FrozenEnv, FrozenLispVal, spans::Spans, verify::VERIFY_ON_ADD};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
@@ -1161,9 +1162,34 @@ pub enum AddItemError<A> {
   Verify(String),
 }
 
+/// Non-fatal errors produced by add item functions.
+#[allow(missing_copy_implementations)]
+#[derive(Debug)]
+pub enum AddItemNonFatalError {
+  /// The declaration used more bound variables than the verifier supports
+  MaxBoundVars,
+}
+
+impl AddItemNonFatalError {
+  fn from_verify_err(e: &VerifyError<'_>) -> Option<Self> {
+    match e {
+      VerifyError::MaxBoundVars => Some(Self::MaxBoundVars),
+      _ => None
+    }
+  }
+
+  /// Convert this error into an [`ElabError`] at the provided location.
+  #[must_use] pub fn into_elab_error(self, sp: Span) -> ElabError {
+    match self {
+      Self::MaxBoundVars =>
+        ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")),
+    }
+  }
+}
+
 /// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
 /// redeclaration case they can still return an `A`, namely the ID of the old declaration
-type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
+type AddItemResult<A> = Result<(A, Option<AddItemNonFatalError>), AddItemError<Option<A>>>;
 
 impl<A> AddItemError<A> {
   /// Convert this error into an [`ElabError`] at the provided location.
@@ -1229,7 +1255,7 @@ impl Environment {
       let (res, sp) = match key {
         DeclKey::Term(old_id) => {
           let sp = &self.terms[old_id].span;
-          if *sp == *new { return Ok(old_id) }
+          if *sp == *new { return Ok((old_id, None)) }
           (Some(old_id), sp)
         }
         DeclKey::Thm(old_id) => (None, &self.thms[old_id].span)
@@ -1241,20 +1267,24 @@ impl Environment {
       }))
     } else {
       let t = t();
+      let mut err = None;
       if verify {
         match self.verify_termdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
           Err(e) => {
-            let mut msg = format!("while adding {}: ", data.name);
-            e.render(self, &mut msg).expect("impossible");
-            return Err(AddItemError::Verify(msg))
+            err = AddItemNonFatalError::from_verify_err(&e);
+            if err.is_none() {
+              let mut msg = format!("while adding {}: ", data.name);
+              e.render(self, &mut msg).expect("impossible");
+              return Err(AddItemError::Verify(msg))
+            }
           }
         }
       }
       self.data[a].decl = Some(DeclKey::Term(new_id));
       self.terms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
-      Ok(new_id)
+      Ok((new_id, err))
     }
   }
 
@@ -1273,7 +1303,7 @@ impl Environment {
       let (res, sp) = match key {
         DeclKey::Thm(old_id) => {
           let sp = &self.thms[old_id].span;
-          if *sp == *new { return Ok(old_id) }
+          if *sp == *new { return Ok((old_id, None)) }
           (Some(old_id), sp)
         }
         DeclKey::Term(old_id) => (None, &self.terms[old_id].span)
@@ -1285,20 +1315,24 @@ impl Environment {
       }))
     } else {
       let t = t();
+      let mut err = None;
       if verify {
         match self.verify_thmdef(&Default::default(), &t) {
           Ok(()) | Err(VerifyError::UsesSorry) => {}
           Err(e) => {
-            let mut msg = format!("while adding {}: ", data.name);
-            e.render(self, &mut msg).expect("impossible");
-            return Err(AddItemError::Verify(msg))
+            err = AddItemNonFatalError::from_verify_err(&e);
+            if err.is_none() {
+              let mut msg = format!("while adding {}: ", data.name);
+              e.render(self, &mut msg).expect("impossible");
+              return Err(AddItemError::Verify(msg))
+            }
           }
         }
       }
       self.data[a].decl = Some(DeclKey::Thm(new_id));
       self.thms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
-      Ok(new_id)
+      Ok((new_id, err))
     }
   }
 
@@ -1369,7 +1403,10 @@ impl Environment {
         DeclKey::Term(tid) => {
           let otd: &Term = other.term(tid);
           let id = match self.try_add_term(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
-            Ok(id) => id,
+            Ok((id, err)) => {
+              if let Some(e) = err { errors.push(e.into_elab_error(sp)) }
+              id
+            }
             Err(AddItemError::Redeclaration(id, r)) => {
               let e = ElabError::with_info(sp, r.msg.into(), vec![
                 (otd.span.clone(), r.othermsg.clone().into()),
@@ -1385,7 +1422,10 @@ impl Environment {
         DeclKey::Thm(tid) => {
           let otd: &Thm = other.thm(tid);
           let id = match self.try_add_thm(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
-            Ok(id) => id,
+            Ok((id, err)) => {
+              if let Some(e) = err { errors.push(e.into_elab_error(sp)) }
+              id
+            }
             Err(AddItemError::Redeclaration(id, r)) => {
               let e = ElabError::with_info(sp, r.msg.into(), vec![
                 (otd.span.clone(), r.othermsg.clone().into()),
