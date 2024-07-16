@@ -16,15 +16,15 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 [dependencies]
 mm0_util = { path = "../mm0_util" }
 num = "0.4"
-annotate-snippets = { version = "0.9", features = ["color"] }
-byteorder = "1.4"
-zerocopy = "0.6"
+annotate-snippets = "0.11"
+byteorder = "1.5"
+zerocopy = "0.7"
 
 # optional dependencies
 mm0_deepsize = { path = "../mm0_deepsize", optional = true }
 mm0_deepsize_derive = { path = "../mm0_deepsize_derive", optional = true }
 libc = { version = "0.2", optional = true }
-lsp-types = { version = "0.93", optional = true }
+lsp-types = { version = "0.97", optional = true }
 
 [features]
 default = []

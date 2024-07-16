@@ -15,9 +15,7 @@ use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::{ThreadPool, block_on};
 use futures::lock::Mutex as FMutex;
-use annotate_snippets::{
-  snippet::{Snippet, Annotation, AnnotationType, SourceAnnotation, Slice},
-  display_list::{DisplayList, FormatOptions}};
+use annotate_snippets::{Message, Snippet, Level, Renderer};
 use once_cell::sync::Lazy;
 use typed_arena::Arena;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
@@ -196,23 +194,20 @@ impl ElabErrorKind {
   /// - `arena`: A temporary [`typed_arena::Arena`] for storing [`String`]s that are
   ///   allocated for the snippet
   /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
-  pub fn to_footer<'a>(&self, arena: &'a Arena<String>,
-      mut to_range: impl FnMut(&FileSpan) -> Option<Range>) -> Vec<Annotation<'a>> {
-    match self {
-      ElabErrorKind::Boxed(_, Some(info)) =>
-        info.iter().map(|(fs, e)| Annotation {
-          id: None,
-          label: Some(arena.alloc({
-            if let Some(Range {start, ..}) = to_range(fs) {
-              format!("{}:{}:{}: {e}", fs.file.rel(), start.line + 1, start.character + 1)
-            } else {
-              format!("{}:{:#x}: {e}", fs.file.rel(), fs.span.start)
-            }
-          })),
-          annotation_type: AnnotationType::Note,
-        }).collect(),
-      _ => vec![]
-    }
+  pub fn to_footer<'a: 'b, 'b>(&'b self, arena: &'a Arena<String>,
+    mut to_range: impl FnMut(&FileSpan) -> Option<Range> + 'b
+  ) -> impl IntoIterator<Item = Message<'a>> + 'b {
+    let info = match self {
+      ElabErrorKind::Boxed(_, Some(info)) => &**info,
+      _ => &[],
+    };
+    info.iter().map(move |(fs, e)| Level::Note.title(arena.alloc({
+      if let Some(Range {start, ..}) = to_range(fs) {
+        format!("{}:{}:{}: {e}", fs.file.rel(), start.line + 1, start.character + 1)
+      } else {
+        format!("{}:{:#x}: {e}", fs.file.rel(), fs.span.start)
+      }
+    })))
   }
 }
 
@@ -228,7 +223,7 @@ impl ElabErrorKind {
 /// - `footer`: The snippet footer (calculated by [`ElabErrorKind::to_footer`])
 /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
 fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
-    msg: &'a str, level: ErrorLevel, footer: Vec<Annotation<'a>>) -> Snippet<'a> {
+    msg: &'a str, level: ErrorLevel, footer: impl IntoIterator<Item = Message<'a>>) -> Message<'a> {
   let annotation_type = level.to_annotation_type();
   let (start, start_line) = file.line_start(pos.start);
   let (_, end_line) = file.line_start(pos.end);
@@ -237,55 +232,21 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
     line: u32::try_from(end_line).expect("too many lines") + 1,
     character: 0
   }).unwrap_or(file.len());
-  Snippet {
-    title: Some(Annotation {
-      id: None,
-      label: Some(msg),
-      annotation_type,
-    }),
-    slices: vec![Slice {
-      source: {
-        // Safety: We assume `Span` is coming from the correct file,
-        unsafe { std::str::from_utf8_unchecked(&file[(start..end).into()]) }
-      },
-      line_start: start_line + 1,
-      origin: Some(path.rel()),
-      fold: end_line - start_line >= 5,
-      annotations: vec![SourceAnnotation {
-        range: (pos.start - start, pos.end - start),
-        label: "",
-        annotation_type,
-      }],
-    }],
-    footer,
-    opt: FormatOptions { color: true, anonymized_line_numbers: false, margin: None }
-  }
-}
-
-/// Create a [`Snippet`] from a message, when there is no source to display.
-///
-/// # Parameters
-///
-/// - `msg`: The error message
-/// - `level`: The error level
-fn make_snippet_no_source(msg: &str, level: ErrorLevel) -> Snippet<'_> {
-  let annotation_type = level.to_annotation_type();
-  Snippet {
-    title: Some(Annotation {
-      id: None,
-      label: Some(msg),
-      annotation_type,
-    }),
-    slices: vec![],
-    footer: vec![],
-    opt: FormatOptions { color: true, anonymized_line_numbers: false, margin: None }
-  }
+  // Safety: We assume `Span` is coming from the correct file.
+  let source = unsafe { std::str::from_utf8_unchecked(&file[(start..end).into()]) };
+  annotation_type.title(msg)
+    .snippet(Snippet::source(source)
+      .line_start(start_line + 1)
+      .origin(path.rel())
+      .fold(end_line - start_line >= 5)
+      .annotation(annotation_type.span(pos.start - start..pos.end - start)))
+    .footers(footer)
 }
 
 impl ElabError {
-  /// Create a [`Snippet`] from this error.
+  /// Create a [`Message`] from this error.
   ///
-  /// Because [`Snippet`] is a borrowed type, we "return" the snippet in CPS form,
+  /// Because [`Message`] is a borrowed type, we "return" the snippet in CPS form,
   /// passing it to `f` which is used to produce an (unborrowed) value `T` that is returned.
   /// This idiom allows us to scope references to the snippet to the passed closure.
   ///
@@ -297,12 +258,12 @@ impl ElabError {
   /// - `f`: The function to pass the constructed snippet
   fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
       to_range: impl FnMut(&FileSpan) -> Option<Range>,
-      f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+      f: impl for<'a> FnOnce(Message<'a>) -> T) -> T {
     f(make_snippet(path, file, self.pos, &self.kind.msg(), self.level,
       self.kind.to_footer(&Arena::new(), to_range)))
   }
 
-  /// Create a [`Snippet`] from an error when the file source is not available
+  /// Create a [`Message`] from an error when the file source is not available
   /// (e.g. for binary files).
   ///
   /// # Parameters
@@ -310,20 +271,20 @@ impl ElabError {
   /// - `path`: The location of the error
   /// - `f`: The function to pass the constructed snippet
   fn to_snippet_no_source<T>(&self, path: &FileRef, span: Span,
-      f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+      f: impl for<'a> FnOnce(Message<'a>) -> T) -> T {
     let s = if span.end == span.start {
       format!("{path}:{:#x}: {}", span.start, self.kind.msg())
     } else {
       format!("{path}:{:#x}-{:#x}: {}", span.start, span.end, self.kind.msg())
     };
-    f(make_snippet_no_source(&s, self.level))
+    f(self.level.to_annotation_type().title(&s))
   }
 }
 
-/// Create a [`Snippet`] from this error. See [`ElabError::to_snippet`] for information
+/// Create a [`Message`] from this error. See [`ElabError::to_snippet`] for information
 /// about the parameters.
 fn to_snippet<T>(err: &ParseError, path: &FileRef, file: &LinedString,
-  f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+  f: impl for<'a> FnOnce(Message<'a>) -> T) -> T {
   f(make_snippet(path, file, err.pos, &format!("{}", err.msg), err.level, vec![]))
 }
 
@@ -383,10 +344,10 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let (_, ast) = parse(text.ascii().clone(), None);
     if !ast.errors.is_empty() {
       let mut level = 0;
+      let r = Renderer::styled();
       for e in &ast.errors {
         level = level.max(e.level as u8);
-        to_snippet(e, &path, &ast.source,
-          |s| println!("{}", DisplayList::from(s)))
+        to_snippet(e, &path, &ast.source, |s| println!("{}", r.render(s)))
       }
       MAX_EMITTED_ERROR.fetch_max(level, Ordering::Relaxed);
     }
@@ -419,7 +380,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   };
   if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {path}")) }
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
-    fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s)) }
+    fn print(s: Message<'_>) { println!("{}\n", Renderer::styled().render(s)) }
     let mut to_range = mk_to_range();
     let mut level = 0;
     if let FileContents::Ascii(text) = &file.text {
@@ -530,7 +491,7 @@ impl Args {
         let e = ElabError::new_e(fsp.span, e);
         let file = VFS.get_or_insert(fsp.file.clone())?.1;
         e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
-          |s| println!("{}\n", DisplayList::from(s)));
+          |s| println!("{}\n", Renderer::styled().render(s)));
         std::process::exit(1);
       }
     }
@@ -545,16 +506,7 @@ impl Args {
         env.export_mmu(w)?;
       } else {
         let mut report = |lvl: ErrorLevel, err: &str| {
-          println!("{}\n", DisplayList::from(Snippet {
-            title: Some(Annotation {
-              label: Some(err),
-              id: None,
-              annotation_type: lvl.to_annotation_type(),
-            }),
-            footer: vec![],
-            slices: vec![],
-            opt: FormatOptions { color: true, ..Default::default() },
-          }));
+          println!("{}\n", Renderer::styled().render(lvl.to_annotation_type().title(err)));
           MAX_EMITTED_ERROR.fetch_max(lvl as u8, Ordering::Relaxed);
         };
         let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);

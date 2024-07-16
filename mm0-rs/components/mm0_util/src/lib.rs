@@ -487,14 +487,14 @@ struct FileRefInner {
   path: PathBuf,
   rel: String,
   #[cfg(feature = "server")]
-  url: Option<lsp_types::Url>,
+  uri: Option<lsp_types::Uri>,
 }
 
 /// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
 /// A [`FileRef`] can be constructed either from a [`PathBuf`] or a
-/// (`file://`) [`Url`](lsp_types::Url),
+/// (`file://`) [`Uri`](lsp_types::Uri),
 /// and provides (precomputed) access to these views using
-/// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
+/// [`path()`](FileRef::path) and [`uri()`](FileRef::uri), as well as
 /// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Clone, Default)]
@@ -503,12 +503,15 @@ pub struct FileRef(Arc<FileRefInner>);
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
   fn from(path: PathBuf) -> FileRef {
+    fn from_file_path(path: &std::path::Path) -> Option<lsp_types::Uri> {
+      std::str::FromStr::from_str(&format!("file://{}", path.to_str()?)).ok()
+    }
     let rel = make_relative(&path);
     FileRef(Arc::new(FileRefInner {
       #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
-      url: lsp_types::Url::from_file_path(&path).ok(),
+      uri: from_file_path(&path),
       #[cfg(all(target_arch = "wasm32", feature = "server"))]
-      url: lsp_types::Url::parse(&format!("wasm:/{rel}")).ok(),
+      uri: lsp_types::Uri::from_str(&format!("wasm:/{rel}")).ok(),
       rel,
       path,
     }))
@@ -516,14 +519,18 @@ impl From<PathBuf> for FileRef {
 }
 
 #[cfg(feature = "server")]
-impl From<lsp_types::Url> for FileRef {
-  fn from(url: lsp_types::Url) -> FileRef {
+impl From<lsp_types::Uri> for FileRef {
+  fn from(uri: lsp_types::Uri) -> FileRef {
+    fn to_file_path(uri: &lsp_types::Uri) -> Option<PathBuf> {
+      if uri.scheme()?.as_str() != "file" || uri.authority().is_some() { return None }
+      Some(PathBuf::from(uri.path().as_str()))
+    }
     #[cfg(not(target_arch = "wasm32"))]
-    let path = url.to_file_path().expect("bad URL");
+    let path = to_file_path(&uri).expect("bad URI");
     #[cfg(target_arch = "wasm32")]
-    let path = PathBuf::from(url.path());
+    let path = PathBuf::from(uri.path().as_str());
     let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner { path, rel, url: Some(url) }))
+    FileRef(Arc::new(FileRefInner { path, rel, uri: Some(uri) }))
   }
 }
 
@@ -536,10 +543,10 @@ impl FileRef {
   #[must_use]
   pub fn rel(&self) -> &str { &self.0.rel }
 
-  /// Convert this [`FileRef`] to a `file://` URL, for use with LSP.
+  /// Convert this [`FileRef`] to a `file://` URI, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use]
-  pub fn url(&self) -> &lsp_types::Url { self.0.url.as_ref().expect("bad file location") }
+  pub fn url(&self) -> &lsp_types::Uri { self.0.uri.as_ref().expect("bad file location") }
 
   /// Get a pointer to this allocation, for use in hashing.
   #[must_use]

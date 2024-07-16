@@ -408,9 +408,9 @@ impl DeepSizeOf for num::BigInt {
 }
 
 #[cfg(feature = "lsp-types")]
-impl DeepSizeOf for lsp_types::Url {
+impl DeepSizeOf for lsp_types::Uri {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
-        // this is an underestimate, but Url doesn't expose its capacity
+        // this is an underestimate, but Uri doesn't expose its capacity
         self.as_str().len()
     }
 }

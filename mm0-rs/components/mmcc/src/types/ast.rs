@@ -827,6 +827,7 @@ pub enum ProcKind {
 
 bitflags::bitflags! {
   /// Attributes on function arguments.
+  #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
   pub struct ArgAttr: u8 {
     /// A `(mut x)` argument, which is modified in the body and passed out
     /// via an `(out x x')` in the returns.

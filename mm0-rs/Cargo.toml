@@ -18,7 +18,7 @@ server = [
   "lsp-types", "mm0_deepsize/lsp-types",
   "lsp-server", "crossbeam", "simplelog", "log",
   "mm0_util/server", "mm1_parser/server"]
-doc = ["lsp-types", "pulldown-cmark", "webbrowser"]
+doc = ["lsp-types", "url", "pulldown-cmark", "pulldown-cmark-escape", "webbrowser"]
 memory = [
   "mm0_deepsize", "mm0_deepsize_derive",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
@@ -32,25 +32,25 @@ debug = true
 opt-level = 2
 
 [dependencies]
-bitflags = "1.3"
-byteorder = "1.4"
+bitflags = "2.6"
+byteorder = "1.5"
 once_cell = "1.12"
 if_chain = "1.0"
-itertools = "0.10"
+itertools = "0.13"
 pathdiff = "0.2"
 arrayvec = "0.7"
 num = "0.4"
-pretty = "0.11"
-clap = { version = "3.1", features = ["derive", "unstable-v4"] }
+pretty = "0.12"
+clap = { version = "4.5", features = ["derive"] }
 futures = { version = "0.3", features = ["thread-pool"] }
 serde = "1.0"
 serde_json = "1.0"
 serde_repr = "0.1"
-annotate-snippets = { version = "0.9", features = ["color"] }
+annotate-snippets = "0.11"
 libc = "0.2"
-zerocopy = "0.6"
-memchr = "2.5"
-bit-set = "0.5"
+zerocopy = "0.7"
+memchr = "2.7"
+bit-set = "0.6"
 typed-arena = "2.0"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", optional = true }
 debug_derive = { path = "components/debug_derive" }
@@ -64,12 +64,14 @@ mm1_parser = { path = "components/mm1_parser" }
 log = { version = "0.4", optional = true }
 simplelog = { version = "0.12", optional = true }
 crossbeam = { version = "0.8", optional = true }
-lsp-types = { version = "0.93", optional = true }
-lsp-server = { version = "0.6", optional = true }
+lsp-types = { version = "0.97", optional = true }
+lsp-server = { version = "0.7", optional = true }
 
 # For "doc" feature
-pulldown-cmark = { version = "0.9", optional = true }
-webbrowser = { version = "0.8", optional = true }
+url = { version = "2.5", optional = true }
+pulldown-cmark = { version = "0.11", optional = true }
+pulldown-cmark-escape = { version = "0.11", optional = true }
+webbrowser = { version = "1.0", optional = true }
 
 # For "wasm" feature
 console_error_panic_hook = { version = "0.1", optional = true }
@@ -82,7 +84,7 @@ mmcc = { path = "components/mmcc", optional = true }
 im = { version = "15.1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.14"
+procfs = "0.16"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 memmap = "0.7"

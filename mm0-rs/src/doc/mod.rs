@@ -1,8 +1,8 @@
 //! Build documentation pages for MM1/MM0 files
 use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
 use bit_set::BitSet;
-use lsp_types::Url;
-use pulldown_cmark::escape::WriteWrapper;
+use url::Url;
+use pulldown_cmark_escape::IoWriter;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::mem;
@@ -17,7 +17,7 @@ struct HtmlPrinter<'a, W: Write> {
   env: &'a Environment,
   mangler: &'a mut Mangler,
   rel: &'static str,
-  w: WriteWrapper<&'a mut W>,
+  w: IoWriter<&'a mut W>,
   stack: Vec<&'static str>
 }
 
@@ -25,7 +25,7 @@ impl<'a, W: Write> HtmlPrinter<'a, W> {
   /// Make a new `HtmlPrinter` from some writer.
   fn new(env: &'a Environment,
       mangler: &'a mut Mangler, w: &'a mut W, rel: &'static str) -> Self {
-    HtmlPrinter { env, mangler, w: WriteWrapper(w), rel, stack: Vec::new() }
+    HtmlPrinter { env, mangler, w: IoWriter(w), rel, stack: Vec::new() }
   }
 }
 
@@ -33,7 +33,7 @@ impl<'a, W: Write> pretty::Render for HtmlPrinter<'a, W> {
   type Error = std::io::Error;
 
   fn write_str(&mut self, s: &str) -> io::Result<usize> {
-    pulldown_cmark::escape::escape_html(&mut self.w, s)?;
+    pulldown_cmark_escape::escape_html(&mut self.w, s)?;
     Ok(s.len())
   }
 
@@ -433,7 +433,7 @@ impl PartialEq for CaseInsensitiveName {
 impl Eq for CaseInsensitiveName {}
 
 /// Sets the order of steps in a proof.
-#[derive(Clone, Copy, Debug, clap::ArgEnum)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum ProofOrder {
   /// Preorder traversal. This means that each step precedes its subproofs,
   /// which makes it easier to read proofs top-down but may be confusing
@@ -526,7 +526,7 @@ fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
   if let Some(doc) = doc {
     use pulldown_cmark::{Parser, html};
     write!(w, r#"      <div class="doc">"#)?;
-    html::write_html(&mut *w, Parser::new(doc))?;
+    html::write_html_io(&mut *w, Parser::new(doc))?;
     writeln!(w, "</div>")?;
   }
   Ok(())
@@ -620,7 +620,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           write!(file, "    <span class=\"axs\"")?;
           if !doc.is_empty() {
             write!(file, " title=\"")?;
-            pulldown_cmark::escape::escape_html(WriteWrapper(&mut file), doc)?;
+            pulldown_cmark_escape::escape_html(IoWriter(&mut file), doc)?;
             write!(file, "\"")?;
           }
           write!(file, ">{}</span><span class=\"axm\">\n     (",
@@ -731,7 +731,7 @@ pub struct Args {
   #[clap(long, value_name = "THM")]
   pub open_to: Option<String>,
   /// Proof tree traversal order
-  #[clap(long, arg_enum, default_value_t = ProofOrder::Post)]
+  #[clap(long, value_enum, default_value_t = ProofOrder::Post)]
   pub order: ProofOrder,
   /// Use URL as the base for source doc links (use - to disable)
   #[clap(long, value_name = "URL")]

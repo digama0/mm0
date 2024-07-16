@@ -58,7 +58,7 @@
 
 pub mod ast;
 
-use annotate_snippets::snippet::AnnotationType;
+use annotate_snippets::Level;
 use ast::{
   Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal, LocalKind,
   SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
@@ -107,13 +107,13 @@ impl ErrorLevel {
     }
   }
 
-  /// Convert an [`ErrorLevel`] to [`AnnotationType`], used by the CLI compiler.
+  /// Convert an [`ErrorLevel`] to [`annotate_snippets::Level`], used by the CLI compiler.
   #[must_use]
-  pub fn to_annotation_type(self) -> AnnotationType {
+  pub fn to_annotation_type(self) -> Level {
     match self {
-      ErrorLevel::Info => AnnotationType::Info,
-      ErrorLevel::Warning => AnnotationType::Warning,
-      ErrorLevel::Error => AnnotationType::Error,
+      ErrorLevel::Info => Level::Info,
+      ErrorLevel::Warning => Level::Warning,
+      ErrorLevel::Error => Level::Error,
     }
   }
 }
@@ -449,7 +449,7 @@ impl<'a> Parser<'a> {
     loop {
       match self.ident_() {
         None => return (modifiers, None),
-        Some(id) => match Modifiers::from_name(self.span(id)) {
+        Some(id) => match Modifiers::from_keyword(self.span(id)) {
           Modifiers::NONE => return (modifiers, Some(id)),
           m => {
             if modifiers.intersects(m) {

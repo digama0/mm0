@@ -64,7 +64,7 @@ use std::mem::size_of;
 
 use byteorder::LE;
 use mm0_util::{Modifiers, SortId, TermId, ThmId};
-use zerocopy::{AsBytes, FromBytes, Unaligned, U16, U32, U64};
+use zerocopy::{AsBytes, FromZeroes, FromBytes, Unaligned, U16, U32, U64};
 
 pub use mm0_util::u32_as_usize;
 pub use {parser::*, ty::*, write::*};
@@ -514,7 +514,7 @@ impl TryFrom<(u8, u32)> for UnifyCmd {
 /// It is followed by a `sorts: [`[`SortData`]`; num_sorts]` array
 /// (which we keep separate because of the dependency).
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, Default, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, Default, FromZeroes, FromBytes, AsBytes)]
 pub struct Header {
   /// The magic number, which is used to identify this as an mmb file. Must be
   /// equal to [`MM0B_MAGIC`](cmd::MM0B_MAGIC) = `"MM0B"`.
@@ -584,7 +584,7 @@ impl Header {
 /// of the modifiers in [`Modifiers::sort_data`]: [`PURE`](Modifiers::PURE),
 /// [`STRICT`](Modifiers::STRICT), [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes, Unaligned)]
 pub struct SortData(pub u8);
 
 impl TryFrom<SortData> for Modifiers {
@@ -603,7 +603,7 @@ impl TryFrom<SortData> for Modifiers {
 /// An entry in the term table, which describes the "signature" of the term/def,
 /// the information needed to apply the term and use it in theorems.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 pub struct TermEntry {
   /// The number of arguments to the term.
   pub num_args: U16<LE>,
@@ -621,7 +621,7 @@ pub struct TermEntry {
 /// An entry in the theorem table, which describes the "signature" of the axiom/theorem,
 /// the information needed to apply the theorem to use it in other theorems.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 pub struct ThmEntry {
   /// The number of arguments to the theorem (exprs, not hyps).
   pub num_args: U16<LE>,
@@ -635,7 +635,7 @@ pub struct ThmEntry {
 /// An index table entry, which is essentially an ID describing the table format, and some
 /// additional data to find the actual table.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 pub struct TableEntry {
   /// A magic number that identifies this table entry, and determines the interpretation of the
   /// rest of the data.
@@ -649,7 +649,7 @@ pub struct TableEntry {
 
 /// An individual symbol name entry in the index.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 pub struct NameEntry {
   /// A pointer to the location in the proof stream which introduced this entity.
   pub p_proof: U64<LE>,

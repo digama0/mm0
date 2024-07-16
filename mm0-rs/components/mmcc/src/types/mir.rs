@@ -106,6 +106,7 @@ impl HasAlpha for Lifetime {
 
 bitflags::bitflags! {
   /// Attributes on arguments in a `(struct)` dependent tuple type.
+  #[derive(Clone, Copy, Hash, PartialEq, Eq)]
   pub struct ArgAttr: u8 {
     /// An argument is nondependent if the remainder of the type does not depend on this variable.
     const NONDEP = 1 << 0;

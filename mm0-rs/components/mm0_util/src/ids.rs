@@ -107,6 +107,7 @@ id_wrapper!(AtomId: u32, AtomVec);
 
 bitflags::bitflags! {
   /// Visibility and sort modifiers for Sort statements and Declarations.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
   pub struct Modifiers: u8 {
     // Note: These particular values are important because they are used in the MMB format.
 
@@ -153,7 +154,7 @@ impl Modifiers {
 
   /// Construct a [`Modifiers`] from a byte.
   #[must_use]
-  pub fn new(bits: u8) -> Self { Self { bits } }
+  pub fn new(bits: u8) -> Self { Self::from_bits_retain(bits) }
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
@@ -164,7 +165,7 @@ impl Modifiers {
 
   /// Parses a string into a singleton [`Modifiers`], or [`NONE`](Self::NONE) if the string is not valid.
   #[must_use]
-  pub fn from_name(s: &[u8]) -> Modifiers {
+  pub fn from_keyword(s: &[u8]) -> Modifiers {
     match s {
       b"pure" => Modifiers::PURE,
       b"strict" => Modifiers::STRICT,

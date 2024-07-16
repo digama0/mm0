@@ -235,7 +235,7 @@ env_debug! {
 }
 
 #[cfg(feature = "server")]
-env_debug! {lsp_types::Url}
+env_debug! {lsp_types::Uri}
 
 dbg_tuples! {
   {

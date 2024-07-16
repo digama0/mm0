@@ -48,6 +48,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for VarId {
 bitflags::bitflags! {
   /// A list of flags that are propagated on type/expr construction
   /// for quick answers to some basic questions.
+  #[derive(Clone, Copy)]
   pub struct Flags: u8 {
     /// Does this type/expr have a type metavariable?
     const HAS_TY_MVAR   = 1 << 0;
@@ -63,8 +64,8 @@ bitflags::bitflags! {
     const HAS_ERROR     = 1 << 5;
     /// Does this type/expr have a metavariable?
     const HAS_MVAR =
-      Self::HAS_TY_MVAR.bits | Self::HAS_PROP_MVAR.bits |
-      Self::HAS_EXPR_MVAR.bits | Self::HAS_LFT_MVAR.bits;
+      Self::HAS_TY_MVAR.bits() | Self::HAS_PROP_MVAR.bits() |
+      Self::HAS_EXPR_MVAR.bits() | Self::HAS_LFT_MVAR.bits();
     /// (For Ty:) Is this type not (necessarily) a copy type?
     const IS_NON_COPY   = 1 << 6;
     /// (For Ty:) Is this a computationally relevant type?

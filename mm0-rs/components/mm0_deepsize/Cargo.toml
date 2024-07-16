@@ -18,9 +18,9 @@ mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive" }
 num = { version = "0.4", optional = true }
 typed-arena = { version = "2.0", optional = true }
 smallvec = { version = "1.8", optional = true }
-bit-vec = { version = "0.6", optional = true }
-bit-set = { version = "0.5", optional = true }
-lsp-types = { version = "0.93", optional = true }
+bit-vec = { version = "0.7", optional = true }
+bit-set = { version = "0.6", optional = true }
+lsp-types = { version = "0.97", optional = true }
 futures = { version = "0.3", optional = true }
 hybrid-rc = { version = "0.6", optional = true }
 

@@ -8,7 +8,7 @@ use mm0_util::{SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::ops::Range;
 use std::{io, mem, mem::size_of};
-use zerocopy::{FromBytes, LayoutVerified, U16, U32, U64};
+use zerocopy::{FromBytes, Ref, U16, U32, U64};
 
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
@@ -256,10 +256,10 @@ pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), Parse
           .first()
           .map(|&n| (val, n.into(), starts_at + size_of::<u8>() + size_of::<u8>()))
           .ok_or_else(|| exhausted!()),
-        DATA_16 => LayoutVerified::<_, U16<LE>>::new_from_prefix(tl)
+        DATA_16 => Ref::<_, U16<LE>>::new_from_prefix(tl)
           .map(|(n, _)| (val, n.get().into(), starts_at + size_of::<u8>() + size_of::<u16>()))
           .ok_or_else(|| exhausted!()),
-        DATA_32 => LayoutVerified::<_, U32<LE>>::new_from_prefix(tl)
+        DATA_32 => Ref::<_, U32<LE>>::new_from_prefix(tl)
           .map(|(n, _)| (val, n.get(), starts_at + size_of::<u8>() + size_of::<u32>()))
           .ok_or_else(|| exhausted!()),
         _ => unreachable!(),
@@ -591,7 +591,7 @@ fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8]
   let mid = mem::size_of::<T>().checked_mul(n)?;
   if mid <= bytes.len() {
     let (left, right) = bytes.split_at(mid);
-    Some((LayoutVerified::new_slice(left)?.into_slice(), right))
+    Some((Ref::new_slice(left)?.into_slice(), right))
   } else {
     None
   }
@@ -628,7 +628,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
   pub fn parse(buf: &'a [u8]) -> Result<Self, ParseError> {
     use ParseError::{BadIndexParse, BadSorts, BadTerms, BadThms};
     let (zc_header, sorts) =
-      LayoutVerified::<_, Header>::new_from_prefix(buf).ok_or_else(|| find_header_error(buf))?;
+      Ref::<_, Header>::new_from_prefix(buf).ok_or_else(|| find_header_error(buf))?;
     // For potential error reporting
     let p_sorts = zc_header.bytes().len();
     let header = zc_header.into_ref();
@@ -638,7 +638,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
     // so if this fails, it's a size issue.
     let sorts = sorts
       .get(..header.num_sorts.into())
-      .and_then(LayoutVerified::new_slice_unaligned)
+      .and_then(Ref::new_slice_unaligned)
       .ok_or_else(|| BadSorts(p_sorts..u32_as_usize(header.p_terms.get())))?
       .into_slice();
     let terms = buf
@@ -660,7 +660,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
     if n != 0 {
       let (entries, _) = (|| -> Option<_> {
         let (num_entries, rest) =
-          LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
+          Ref::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
         new_slice_prefix(rest, num_entries.get().try_into().ok()?)
       })()
       .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
@@ -954,7 +954,7 @@ str_list_wrapper! {
 
 impl<'a, X> MmbFile<'a, X> {
   fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
-    let (num_vars, rest) = LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(
+    let (num_vars, rest) = Ref::<_, U64<LE>>::new_unaligned_from_prefix(
       self.buf.get(u64_as_usize(p_vars)..)?,
     )?;
     Some(StrListRef {

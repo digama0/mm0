@@ -499,6 +499,7 @@ impl Vfs {
       } else if e.get().text.ulock().0.take().is_some() {
         let file = e.get().clone();
         drop(g);
+        #[allow(clippy::mutable_key_type)]
         let deps = file.downstream.ulock().clone();
         for dep in deps {
           Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Close).spawn();
@@ -639,7 +640,7 @@ fn log_message(message: String) -> Result<()> {
   })
 }
 
-fn send_diagnostics(uri: Url, version: Option<i32>, diagnostics: Vec<Diagnostic>) -> Result<()> {
+fn send_diagnostics(uri: Uri, version: Option<i32>, diagnostics: Vec<Diagnostic>) -> Result<()> {
   send_message(Notification {
     method: "textDocument/publishDiagnostics".to_owned(),
     params: to_value(PublishDiagnosticsParams {uri, diagnostics, version})?
@@ -1181,7 +1182,7 @@ async fn completion_resolve(ci: CompletionItem) -> Result<CompletionItem, Respon
       ..Default::default()
     })
   };
-  let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
+  let (uri, tk): (Uri, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {e:?}")))?;
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
