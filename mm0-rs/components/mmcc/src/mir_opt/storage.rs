@@ -1,11 +1,14 @@
 //! The storage pass, which computes the stack and register allocations for a function.
 
 use std::collections::{HashMap, HashSet, hash_map::Entry};
+use if_chain::if_chain;
 
 use crate::{Idx, Symbol};
 use super::{VecPatch, Replace, types::{IdxVec, entity, mir, global}};
 use entity::{Entity, ConstTc};
 #[allow(clippy::wildcard_imports)] use mir::*;
+
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 
 enum StorageEdit {
   ChangeAssignTarget(VarId, VarId)

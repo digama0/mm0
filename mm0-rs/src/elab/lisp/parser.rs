@@ -6,6 +6,8 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
+use debug_derive::EnvDebug;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::ast::{SExpr, SExprKind, Atom};
 use crate::ArcString;
 use super::super::{AtomId, Span, DocComment, Elaborator, ElabError, ObjectKind};
@@ -1157,6 +1159,7 @@ impl<'a> LispParser<'a> {
           }
           Err(stx) => {
             self.spans.insert_if(Some(es[0].span), || ObjectKind::Syntax(stx));
+            #[allow(clippy::match_same_arms)]
             match stx {
               Syntax::Begin => { self.exprs(ExprsCtx::Eval(ctx.keep, ctx.tail), &es[1..])?; }
               Syntax::Define if es.len() < 2 => return Err(

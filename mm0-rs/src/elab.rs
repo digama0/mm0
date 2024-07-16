@@ -9,7 +9,7 @@
 pub mod environment;
 pub mod spans;
 pub mod lisp;
-#[macro_use] pub mod frozen;
+pub mod frozen;
 pub mod math_parser;
 pub mod local_context;
 pub mod refine;
@@ -23,11 +23,12 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-use std::{future::Future, pin::Pin, task::{Context, Poll}};
+use std::{future::Future, pin::Pin, task::{Context, Poll, ready}};
 use std::time::Duration;
 use instant::Instant;
 use futures::channel::oneshot::Receiver;
 use spans::Spans;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::ast::{self, Ast, DeclKind, Delimiter, GenNota, Literal as ALiteral,
   LocalKind, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind};
 use inout::InoutHandlers;

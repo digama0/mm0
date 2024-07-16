@@ -881,8 +881,9 @@ impl<'a> ProcProver<'a> {
   }
 
   /// Returns
-  /// * `(ip, |- okBlock bctx (suc ip) tctx)`
-  /// * `(INVALID, |- okCode bctx tctx ASM0 ok0)` or
+  /// * `(ip, |- okBlock bctx (suc ip) tctx)` or
+  /// * `(INVALID, |- okCode bctx tctx ASM0 ok0)`
+  ///
   /// for the given block, starting from the given `tctx`.
   fn ok_block_opt(&mut self, (tctx, l1): P<&mut TCtx>, tgt: BlockId) -> (ProofId, ProofId) {
     if let Some(vid) = self.proc.vblock_id(tgt) {

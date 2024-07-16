@@ -94,6 +94,7 @@ impl<T> BitSet<T> {
 
   /// Intersects in-place with the specified other bit vector.
   /// Returns `true` if `self` was changed.
+  #[allow(unused)]
   #[inline] pub(crate) fn intersect_with(&mut self, other: &Self) -> bool {
     if self.0.is_subset(&other.0) {
       false
@@ -231,6 +232,7 @@ impl<'a> Iterator for Postorder<'a> {
 }
 
 trait Direction {
+  #[allow(unused)]
   const FORWARD: bool;
 
   fn map_block<'a, D>(
@@ -321,49 +323,49 @@ trait Domain: Clone {
   fn join(&mut self, other: &Self) -> bool;
 }
 
-trait DualDomain: Clone {
-  /// Compute the greatest lower bound of `self` and `other`,
-  /// storing into `self` and returning `true` if `self` changed as a result.
-  fn meet(&mut self, other: &Self) -> bool;
-}
+// trait DualDomain: Clone {
+//   /// Compute the greatest lower bound of `self` and `other`,
+//   /// storing into `self` and returning `true` if `self` changed as a result.
+//   fn meet(&mut self, other: &Self) -> bool;
+// }
 
-/// The dual of a [`Domain`] as a [`DualDomain`] and vice versa.
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-struct Dual<T>(T);
+// /// The dual of a [`Domain`] as a [`DualDomain`] and vice versa.
+// #[repr(transparent)]
+// #[derive(Copy, Clone, Debug)]
+// struct Dual<T>(T);
 
-impl<T: DualDomain> Domain for Dual<T> {
-  fn join(&mut self, other: &Self) -> bool { self.0.meet(&other.0) }
-}
-impl<T: Domain> DualDomain for Dual<T> {
-  fn meet(&mut self, other: &Self) -> bool { self.0.join(&other.0) }
-}
+// impl<T: DualDomain> Domain for Dual<T> {
+//   fn join(&mut self, other: &Self) -> bool { self.0.meet(&other.0) }
+// }
+// impl<T: Domain> DualDomain for Dual<T> {
+//   fn meet(&mut self, other: &Self) -> bool { self.0.join(&other.0) }
+// }
 
 impl Domain for () {
   fn join(&mut self, (): &Self) -> bool { false }
 }
 
-impl DualDomain for () {
-  fn meet(&mut self, (): &Self) -> bool { false }
-}
+// impl DualDomain for () {
+//   fn meet(&mut self, (): &Self) -> bool { false }
+// }
 
 impl Domain for bool {
   fn join(&mut self, other: &Self) -> bool {
     *other && !*self && { *self = true; true }
   }
 }
-impl DualDomain for bool {
-  fn meet(&mut self, other: &Self) -> bool {
-    !*other && *self && { *self = false; true }
-  }
-}
+// impl DualDomain for bool {
+//   fn meet(&mut self, other: &Self) -> bool {
+//     !*other && *self && { *self = false; true }
+//   }
+// }
 
 impl<T> Domain for BitSet<T> {
   fn join(&mut self, other: &Self) -> bool { self.union_with(other) }
 }
-impl<T> DualDomain for BitSet<T> {
-  fn meet(&mut self, other: &Self) -> bool { self.intersect_with(other) }
-}
+// impl<T> DualDomain for BitSet<T> {
+//   fn meet(&mut self, other: &Self) -> bool { self.intersect_with(other) }
+// }
 
 impl<K: Clone + Hash + Eq, V: Domain> Domain for im::HashMap<K, V> {
   fn join(&mut self, other: &Self) -> bool {
@@ -390,17 +392,17 @@ impl<K: Clone + Hash + Eq> Domain for im::HashSet<K> {
   }
 }
 
-impl<K: Clone + Hash + Eq> DualDomain for im::HashSet<K> {
-  fn meet(&mut self, other: &Self) -> bool {
-    let old = std::mem::take(self);
-    for value in other {
-      if old.contains(value) {
-        self.insert(value.clone());
-      }
-    }
-    self.len() != old.len()
-  }
-}
+// impl<K: Clone + Hash + Eq> DualDomain for im::HashSet<K> {
+//   fn meet(&mut self, other: &Self) -> bool {
+//     let old = std::mem::take(self);
+//     for value in other {
+//       if old.contains(value) {
+//         self.insert(value.clone());
+//       }
+//     }
+//     self.len() != old.len()
+//   }
+// }
 
 trait DomainsBottom {
   fn bottom(n: usize) -> Self;
@@ -440,11 +442,11 @@ impl<D: Default> DomainsBottom for BlockVec<D> {
   fn bottom(n: usize) -> Self { BlockVec::from_default(n) }
 }
 
-impl<D: DualDomain> Domains for Dual<BlockVec<D>> {
-  type Item = D;
-  fn cloned(&self, id: BlockId) -> D { self.0[id].clone() }
-  fn join(&mut self, id: BlockId, other: &D) -> bool { self.0[id].meet(other) }
-}
+// impl<D: DualDomain> Domains for Dual<BlockVec<D>> {
+//   type Item = D;
+//   fn cloned(&self, id: BlockId) -> D { self.0[id].clone() }
+//   fn join(&mut self, id: BlockId, other: &D) -> bool { self.0[id].meet(other) }
+// }
 
 impl Domains for BitSet<BlockId> {
   type Item = bool;
@@ -456,11 +458,11 @@ impl DomainsBottom for BitSet<BlockId> {
   fn bottom(n: usize) -> Self { BitSet::with_capacity(n) }
 }
 
-impl Domains for Dual<BitSet<BlockId>> {
-  type Item = bool;
-  fn cloned(&self, id: BlockId) -> bool { self.0.contains(id) }
-  fn join(&mut self, id: BlockId, other: &bool) -> bool { !*other && self.0.remove(id) }
-}
+// impl Domains for Dual<BitSet<BlockId>> {
+//   type Item = bool;
+//   fn cloned(&self, id: BlockId) -> bool { self.0.contains(id) }
+//   fn join(&mut self, id: BlockId, other: &bool) -> bool { !*other && self.0.remove(id) }
+// }
 
 trait Analysis {
   type Dir: Direction;

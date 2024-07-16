@@ -45,7 +45,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for VarId {
   }
 }
 
-bitflags! {
+bitflags::bitflags! {
   /// A list of flags that are propagated on type/expr construction
   /// for quick answers to some basic questions.
   pub struct Flags: u8 {
@@ -127,7 +127,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for WithMeta<T> {
 }
 impl<T> std::hash::Hash for WithMeta<T> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    (self as *const Self).hash(state)
+    std::ptr::from_ref(self).hash(state)
   }
 }
 impl<T> PartialEq for WithMeta<T> {

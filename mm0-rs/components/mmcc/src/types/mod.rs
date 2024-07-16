@@ -404,6 +404,7 @@ impl Unop {
   /// inputs are out of range or if it is not a `int -> int` function.
   #[must_use] pub fn apply_int(self, n: &BigInt) -> Option<Cow<'_, BigInt>> {
     macro_rules! truncate_signed {($iN:ty, $uN:ty) => {{
+      #[allow(clippy::cast_possible_wrap)]
       if <$iN>::try_from(n).is_ok() { Cow::Borrowed(n) }
       else { Cow::Owned((<$uN>::try_from(n & BigInt::from(<$uN>::MAX)).unwrap() as $iN).into()) }
     }}}

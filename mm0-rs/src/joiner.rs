@@ -67,7 +67,7 @@ impl<W: Write> Joiner<W> {
         if self.working.insert(r.clone()) {
           self.write(r)?;
           if self.comments {
-            self.w.write_all(&[b'\n'])?;
+            self.w.write_all(b"\n")?;
           }
         }
         start = s.span.end;

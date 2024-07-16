@@ -20,6 +20,7 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use once_cell::sync::Lazy;
 use typed_arena::Arena;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use mm1_parser::{parse, ErrorLevel, ParseError};
 use crate::elab::{ElabError, ElabErrorKind, ElabResult, ElaborateBuilder};
 use crate::{ArcList, FileRef, FileSpan, FrozenEnv, LinedString, MutexExt, Position, Range, Span};

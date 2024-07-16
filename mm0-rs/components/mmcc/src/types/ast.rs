@@ -825,7 +825,7 @@ pub enum ProcKind {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ProcKind);
 
-bitflags! {
+bitflags::bitflags! {
   /// Attributes on function arguments.
   pub struct ArgAttr: u8 {
     /// A `(mut x)` argument, which is modified in the body and passed out

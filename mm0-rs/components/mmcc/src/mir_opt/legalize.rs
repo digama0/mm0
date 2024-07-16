@@ -2,6 +2,7 @@
 //! compilable expressions.
 
 use std::collections::HashMap;
+use if_chain::if_chain;
 
 use super::super::types::{self, Size, IntTy};
 #[allow(clippy::wildcard_imports)] use super::*;

@@ -169,7 +169,7 @@ impl AxiomUse {
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
-      return unsafe { std::mem::transmute(bs) }
+      return unsafe { std::mem::transmute::<&BitSet, &BitSet>(bs) }
     }
     let mut bs = BitSet::new();
     let td = &env.thms[tid];

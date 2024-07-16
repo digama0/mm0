@@ -54,9 +54,6 @@
   clippy::use_self
 )]
 
-#[macro_use]
-extern crate bitflags;
-
 #[cfg(feature = "memory")]
 use mm0_deepsize_derive::DeepSizeOf;
 use std::borrow::Borrow;

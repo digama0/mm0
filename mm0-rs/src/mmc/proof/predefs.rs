@@ -1,4 +1,6 @@
+use if_chain::if_chain;
 use mm0_util::{SortId, TermId, ThmId};
+use debug_derive::EnvDebug;
 
 use crate::{DeclKey, Environment};
 

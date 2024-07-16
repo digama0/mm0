@@ -487,10 +487,10 @@ impl<'a, 'b> Unifier<'a, 'b> {
         if let Some(pf2) = self.dummy.insert(a, pf) {
           if !std::ptr::eq(pf, pf2) { return Err(UnifyExprErr::UnifyFailure) }
         } else {
-          let d = deps[&(pf as *const _)];
+          let d = deps[&std::ptr::from_ref(pf)];
           for pf2 in &self.tr {
             if let Some(pf2) = *pf2 {
-              if deps[&(pf2 as *const _)] & d != 0 {
+              if deps[&std::ptr::from_ref(pf2)] & d != 0 {
                 return Err(UnifyExprErr::DisjointVariableViolation)
               }
             }
@@ -555,7 +555,7 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
           let (pr, s, bv) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
-          accum |= self.deps[&(pr as *const _)];
+          accum |= self.deps[&std::ptr::from_ref(pr)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
@@ -592,7 +592,7 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
           let (e2, s, bv) = self.verify_proof_node(e)?.as_expr(
             self.orig_heap, self.store, Some(node))?;
-          let d = self.deps[&(e2 as *const _)];
+          let d = self.deps[&std::ptr::from_ref(e2)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(

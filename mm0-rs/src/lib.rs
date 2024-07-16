@@ -48,17 +48,6 @@
   clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self)]
 
-#[macro_use] extern crate futures;
-#[macro_use] extern crate debug_derive;
-#[macro_use] extern crate mm0_util;
-#[macro_use] extern crate if_chain;
-
-#[cfg(feature = "mmc")]
-#[macro_use] extern crate mmcc;
-
-#[cfg(feature = "memory")]
-#[macro_use] extern crate mm0_deepsize;
-
 #[cfg(feature = "memory")]
 pub use mm0_deepsize::deep_size_0;
 
@@ -67,7 +56,7 @@ pub use mm0_deepsize::deep_size_0;
 #[macro_export] macro_rules! deep_size_0 {($($e:tt)*) => {}}
 
 #[cfg(feature = "server")]
-#[macro_use] pub mod server;
+pub mod server;
 pub mod compiler;
 pub mod joiner;
 pub mod elab;

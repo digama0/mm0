@@ -5,6 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
 use std::collections::HashMap;
+use debug_derive::EnvDebug;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use super::{BoxError, ElabError, FrozenEnv, FrozenLispVal, spans::Spans, verify::VERIFY_ON_ADD};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
@@ -1474,7 +1476,7 @@ impl<'a> EnvMergeIter<'a> {
         } else {
           data.lisp = newlisp;
           if data.lisp.is_none() {
-            data.graveyard = d.graveyard().clone();
+            data.graveyard.clone_from(d.graveyard());
           }
         }
       } else {
@@ -1498,7 +1500,7 @@ impl AwaitingMerge<'_> {
       }
     } else {
       data.lisp = None;
-      data.graveyard = d.graveyard().clone();
+      data.graveyard.clone_from(d.graveyard());
     }
   }
 }

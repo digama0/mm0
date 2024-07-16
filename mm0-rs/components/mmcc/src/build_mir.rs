@@ -2,13 +2,13 @@
 
 use std::{rc::Rc, fmt::Debug, mem};
 use std::collections::{HashMap, hash_map::Entry};
+use smallvec::SmallVec;
+use if_chain::if_chain;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use mm0_util::{u32_as_usize, FileSpan};
-use smallvec::SmallVec;
-use types::{IntTy, Size};
 use crate::{Idx, Symbol};
 use super::types;
-use types::{Spanned, VarId as HVarId, hir, ty, mir};
+use types::{IntTy, Size, Spanned, VarId as HVarId, hir, ty, mir};
 use hir::GenId;
 use ty::{TuplePattern, TuplePatternKind, TupleMatchKind};
 #[allow(clippy::wildcard_imports)] use mir::*;

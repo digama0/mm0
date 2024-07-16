@@ -614,7 +614,7 @@ impl Elaborator {
   }
 
   /// Coerce term `e`, which has sort `s` and boundedness `bd`, to target `tgt`.
-  fn coerce_term(&mut self, sp: Span, tgt: InferTarget, s: SortId, bd: bool, e: LispVal) -> Result<LispVal> {
+  fn coerce_term(&self, sp: Span, tgt: InferTarget, s: SortId, bd: bool, e: LispVal) -> Result<LispVal> {
     let tgt = match tgt {
       InferTarget::Unknown => return Ok(e),
       InferTarget::Provable if self.sorts[s].mods.contains(Modifiers::PROVABLE) => return Ok(e),
@@ -638,7 +638,7 @@ impl Elaborator {
   /// Assign metavariable `mv` to `e` (or fail). `m` is the underlying reference of `mv`.
   /// If `sym` is false then this is the result of `mv =?= e`, otherwise it
   /// is `e =?= mv`; currently we don't use this information.
-  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> Result<(), AssignError> {
+  fn assign(&self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> Result<(), AssignError> {
     /// Return true if `e` contains an occurrence of the metavariable `mv`.
     /// We use this before assigning `mv := e` to ensure acyclicity.
     fn occurs(mv: &LispVal, e: &LispVal) -> bool {

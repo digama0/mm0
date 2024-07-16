@@ -1,6 +1,7 @@
 //! Support for the `input` and `output` commands.
 
 use std::io;
+use debug_derive::EnvDebug;
 use super::proof::{Dedup, NodeHasher, ProofKind, build};
 use crate::{DeclKey, SortId, TermId, Type, ExprNode,
   TermKind, OutputString, StmtTrace, Environment, FileSpan, BoxError};

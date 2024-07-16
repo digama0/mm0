@@ -3,11 +3,13 @@ use std::mem;
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
 use once_cell::sync::Lazy;
-use crate::{Elaborator, EnvDisplay};
-use crate::{FileSpan, AtomId, Type as EType, elab::Result, Environment, ElabError,
+use if_chain::if_chain;
+use debug_derive::EnvDebug;
+use crate::{Elaborator, FileSpan, AtomId, Type as EType, elab::Result, Environment, ElabError,
   LispKind, LispVal, Uncons, FormatEnv, try_get_span};
 use crate::elab::lisp::Syntax;
 use mm0_util::{BoxError, TermId, u32_as_usize};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use mmcc::{Idx, init_dense_symbol_map};
 use mmcc::build_ast::{BadBinding, BuildAst, BuildMatch, Incomplete, Pattern, PatternBuilder,
   RenameError, Renames, UnreachablePattern};
@@ -127,22 +129,22 @@ pub(crate) enum Mm0ExprNode {
   Expr(TermId, Vec<Mm0ExprNode>),
 }
 
-struct Mm0ExprNodePrint<'a, T>(&'a [T], &'a Mm0ExprNode);
-impl<'a, T: EnvDisplay> EnvDisplay for Mm0ExprNodePrint<'a, T> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self.1 {
-      Mm0ExprNode::Const(e) => e.fmt(fe, f),
-      &Mm0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
-      Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", fe.to(t))?;
-        for e in es {
-          write!(f, " {}", fe.to(&Self(self.0, e)))?
-        }
-        write!(f, ")")
-      }
-    }
-  }
-}
+// struct Mm0ExprNodePrint<'a, T>(&'a [T], &'a Mm0ExprNode);
+// impl<'a, T: EnvDisplay> EnvDisplay for Mm0ExprNodePrint<'a, T> {
+//   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//     match self.1 {
+//       Mm0ExprNode::Const(e) => e.fmt(fe, f),
+//       &Mm0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
+//       Mm0ExprNode::Expr(t, es) => {
+//         write!(f, "({}", fe.to(t))?;
+//         for e in es {
+//           write!(f, " {}", fe.to(&Self(self.0, e)))?
+//         }
+//         write!(f, ")")
+//       }
+//     }
+//   }
+// }
 
 // impl<'a, C, E: CtxDisplay<C>> CtxDisplay<(&'a C, &'a [E])> for Mm0ExprNode {
 //   fn fmt(&self, ctx: &(&'a C, &'a [E]), f: &mut std::fmt::Formatter<'_>
@@ -361,7 +363,7 @@ impl<'a, C> Parser<'a, C> {
     Ok(self.as_symbol(f))
   }
 
-  fn get_var(&mut self, sp: &FileSpan, name: Symbol) -> Result<VarId> {
+  fn get_var(&self, sp: &FileSpan, name: Symbol) -> Result<VarId> {
     self.ba.get_var(name).ok_or_else(||
       ElabError::new_e(sp, format!("unknown variable '{name}'")))
   }
@@ -1392,8 +1394,6 @@ impl<'a, C> Parser<'a, C> {
         (PrimOp::MulDeref, [e]) => ExprKind::Deref(expr!(e)),
         (PrimOp::MulDeref, _) => {let args = exprs!(args); return Ok(self.ba.mk_mul(&span, args))}
         (PrimOp::Not, _) => {let args = exprs!(args); return Ok(self.ba.mk_nor(&span, args))}
-        (PrimOp::Le | PrimOp::Lt | PrimOp::Eq | PrimOp::Ne, _) if args.is_empty() =>
-          err!("expected 2 arguments"),
         (PrimOp::Le, _) => {let args = exprs!(args); return Ok(self.ba.mk_le(&span, args))}
         (PrimOp::Lt, _) => {let args = exprs!(args); return Ok(self.ba.mk_lt(&span, args))}
         (PrimOp::Eq, _) => {let args = exprs!(args); return Ok(self.ba.mk_eq(&span, args))}

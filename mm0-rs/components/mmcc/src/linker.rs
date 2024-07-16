@@ -1,6 +1,7 @@
 //! Handles layout of functions, globals, constants in the overall program.
 
 use std::collections::{HashMap, HashSet};
+use if_chain::if_chain;
 
 use crate::build_vcode::{VCodeCtx, build_vcode};
 use crate::codegen::FUNCTION_ALIGN;

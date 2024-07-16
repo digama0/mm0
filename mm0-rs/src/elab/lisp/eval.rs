@@ -542,7 +542,7 @@ impl<'a> Evaluator<'a> {
     }
   }
 
-  fn fspan_base(&mut self, sp: Span) -> FileSpan {
+  fn fspan_base(&self, sp: Span) -> FileSpan {
     if let Some(frame) = self.call_stack.first() {
       frame.span.clone()
     } else {
@@ -550,7 +550,7 @@ impl<'a> Evaluator<'a> {
     }
   }
 
-  fn make_stack_err(&mut self, sp: Option<(Span, bool)>, level: ErrorLevel,
+  fn make_stack_err(&self, sp: Option<(Span, bool)>, level: ErrorLevel,
       base: BoxError, err: impl Into<BoxError>) -> ElabError {
     let mut old = sp.map(|(sp, good)| (self.fspan(sp), good, base));
     let mut info = vec![];
@@ -592,7 +592,7 @@ impl<'a> Evaluator<'a> {
     self.report(msg)
   }
 
-  fn err(&mut self, sp: Option<(Span, bool)>, err: impl Into<BoxError>) -> ElabError {
+  fn err(&self, sp: Option<(Span, bool)>, err: impl Into<BoxError>) -> ElabError {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
 
@@ -1725,7 +1725,7 @@ impl<'a> Evaluator<'a> {
     }
   }
 
-  fn heartbeat(&mut self) -> Result<()> {
+  fn heartbeat(&self) -> Result<()> {
     // self.iters = self.iters.wrapping_add(1);
     if self.cur_timeout.map_or(false, |t| t < Instant::now()) {
       return Err(self.err(None, "timeout"))

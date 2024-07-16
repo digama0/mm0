@@ -405,11 +405,11 @@ pub enum ParseError {
   /// If a malformed mmb file tries to sneak in a declar with a (cmd, data) pair
   /// whose data is a 0, `try_next_decl` will loop forever.
   BadProofLen(usize),
-  /// The u8 could not be converted to a [`StmtCmd`] via TryFrom
+  /// The u8 could not be converted to a [`StmtCmd`] via `TryFrom`
   StmtCmdConv(u8),
-  /// The pair could not be converted to a [`ProofCmd`] via TryFrom
+  /// The pair could not be converted to a [`ProofCmd`] via `TryFrom`
   ProofCmdConv(u8, u32),
-  /// The pair could not be converted to a [`UnifyCmd`] via TryFrom
+  /// The pair could not be converted to a [`UnifyCmd`] via `TryFrom`
   UnifyCmdConv(u8, u32),
   /// Wrap other errors to allow for some backtracing.
   Trace(&'static str, u32, Box<ParseError>),
@@ -802,7 +802,7 @@ pub struct NameEntryRef<'a> {
   pub p_proof: U64<LE>,
   /// The C string for the value (actually a suffix of the file
   /// starting at the appropriate location). Note that `strlen` has to be called
-  /// to get the end of the string in [value()](Self::value()).
+  /// to get the end of the string in [`value()`](Self::value()).
   pub value: &'a [u8],
 }
 

@@ -247,7 +247,7 @@ fn parse_proof(
     fn pop(&mut self, pos: usize) -> Result<Stack> {
       self.stack.pop().ok_or(StrError("stack underflow", pos))
     }
-    fn popn_mid(&mut self, n: usize, pos: usize) -> Result<usize> {
+    fn popn_mid(&self, n: usize, pos: usize) -> Result<usize> {
       self.stack.len().checked_sub(n).ok_or(StrError("stack underflow", pos))
     }
     fn popn<T>(&mut self, n: usize, pos: usize,

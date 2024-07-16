@@ -6,6 +6,7 @@ use std::{cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
 use bumpalo::Bump;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use itertools::Itertools;
+use if_chain::if_chain;
 use num::Signed;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use types::IntTy;
@@ -250,7 +251,7 @@ impl<T> Borrow<T> for Interned<&WithMeta<T>> {
 type InternedSet<T> = hashbrown::HashMap<Interned<T>, ()>;
 
 trait Internable<'a>: Sized + Eq + Hash + AddFlags {
-  fn get<'b>(_: &'b Interner<'a>) -> &'b InternedSet<&'a WithMeta<Self>>;
+  // fn get<'b>(_: &'b Interner<'a>) -> &'b InternedSet<&'a WithMeta<Self>>;
   fn get_mut<'b>(_: &'b mut Interner<'a>) -> &'b mut InternedSet<&'a WithMeta<Self>>;
 }
 
@@ -261,7 +262,7 @@ macro_rules! mk_interner {($($field:ident: $ty:ident,)*) => {
   }
 
   $(impl<'a> Internable<'a> for $ty<'a> {
-    fn get<'b>(i: &'b Interner<'a>) -> &'b InternedSet<&'a WithMeta<Self>> { &i.$field }
+    // fn get<'b>(i: &'b Interner<'a>) -> &'b InternedSet<&'a WithMeta<Self>> { &i.$field }
     fn get_mut<'b>(i: &'b mut Interner<'a>) -> &'b mut InternedSet<&'a WithMeta<Self>> { &mut i.$field }
   })*
 }}
@@ -1436,7 +1437,7 @@ enum TupleIter<'a> {
   /// A singleton pattern `(sn {a : T})`, which expands to the expected type
   /// `{x : T} {h : x = a}`.
   Sn(Expr<'a>, Ty<'a>),
-  /// A list of types {_ : T1} {_ : T2} ... {_ : Tn}`, resulting from a pattern match
+  /// A list of types `{_ : T1} {_ : T2} ... {_ : Tn}`, resulting from a pattern match
   /// on `List` or `And`.
   List(std::slice::Iter<'a, Ty<'a>>),
   /// A dependent list of types `{xi : Ti}`, resulting from a pattern match on a `Struct`.
@@ -2839,7 +2840,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     (self.as_pure(&e.span, pe), ty)
   }
 
-  fn apply_coe(&mut self, c: Coercion<'a>, e: Expr<'a>) -> Expr<'a> {
+  fn apply_coe(&self, c: Coercion<'a>, e: Expr<'a>) -> Expr<'a> {
     match c {
       Coercion::TypedPure(_) |
       Coercion::Shr(..) => e,
@@ -3966,7 +3967,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     }
   }
 
-  fn elab_proof(&mut self, ty: Ty<'a>,
+  fn elab_proof(&self, ty: Ty<'a>,
     &Spanned {ref span, k: pf}: &'a Spanned<ProofId>
   ) -> hir::Expr<'a> {
     hir::Spanned {span, k: (hir::ExprKind::Mm0Proof(pf), (Some(self.common.e_unit), ty))}

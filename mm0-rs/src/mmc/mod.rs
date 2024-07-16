@@ -11,6 +11,7 @@ mod parser;
 mod proof;
 
 use std::{collections::HashMap, rc::Rc};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkedCode, LinkerErr};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,

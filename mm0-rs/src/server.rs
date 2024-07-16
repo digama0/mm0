@@ -18,9 +18,10 @@ use serde_repr::{Serialize_repr, Deserialize_repr};
 use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use mm1_parser::{Ast, parse};
 use crate::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
   MutexExt, CondvarExt};
-use mm1_parser::{Ast, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;

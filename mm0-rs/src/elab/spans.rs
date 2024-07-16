@@ -3,6 +3,7 @@
 use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
 use std::ops::Range;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::AtomId;
 use super::local_context::LocalContext;
 use crate::Span;

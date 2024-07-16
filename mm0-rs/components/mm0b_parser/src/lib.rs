@@ -329,7 +329,7 @@ pub enum ProofCmd {
   /// ```
   /// Pop `n` elements from the stack and put them on the unify heap, then call the
   /// unifier for `T` with `e` as the target. The unifier will pop additional
-  /// proofs from the stack if the UHyp command is used, and when it is done,
+  /// proofs from the stack if the `UHyp` command is used, and when it is done,
   /// the conclusion is pushed as a proven statement.
   ///
   /// When Save is used, the proven statement is also saved to the heap.
@@ -398,11 +398,11 @@ pub enum ProofCmd {
   /// Sorry: S, e -> S, |- e
   /// ConvSorry: S, e1 =?= e2 -> S
   /// ```
-  /// * Sorry: Pop an expression `e` from the stack, and push `|- e`. This step exists
+  /// * `Sorry`: Pop an expression `e` from the stack, and push `|- e`. This step exists
   ///   only for debugging purposes and incomplete proofs, it is not a valid step
   ///   under any circumstances, and verifiers are free to pretend it doesn't exist.
   ///
-  /// * ConvSorry: Pop a convertibility obligation `e1 =?= e2`. This reuses the Sorry
+  /// * `ConvSorry`: Pop a convertibility obligation `e1 =?= e2`. This reuses the `Sorry`
   ///   command, and depends on the type of the head of stack for its behavior.
   Sorry,
 }

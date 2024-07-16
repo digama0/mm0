@@ -113,6 +113,7 @@ macro_rules! make_dedup {
     struct $id(u32);
     impl Idx for $id {
       fn into_usize(self) -> usize { self.0 as usize }
+      #[allow(clippy::cast_possible_truncation)]
       fn from_usize(n: usize) -> Self { Self(n as u32) }
     }
     impl $id {

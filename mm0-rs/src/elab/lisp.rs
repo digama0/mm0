@@ -17,6 +17,8 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use num::BigInt;
+use debug_derive::EnvDebug;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{ast::Atom, ArcString, AtomId, FileSpan, MergeStrategy, MergeStrategyInner, Modifiers,
   MutexExt, Remap, Remapper, SliceExt, Span, StackList};
 use parser::Ir;
@@ -655,7 +657,8 @@ impl LispKind {
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     fn rec<T>(e: &LispKind, stack: StackList<'_, *const LispRef>, f: impl FnOnce(&LispKind) -> T) -> T {
       match e {
-        LispKind::Ref(m) if !stack.contains(&(m as *const _)) => m.get(|e| rec(e, StackList(Some(&(stack, m))), f)),
+        LispKind::Ref(m) if !stack.contains(&std::ptr::from_ref(m)) =>
+          m.get(|e| rec(e, StackList(Some(&(stack, m))), f)),
         LispKind::Annot(_, v) => rec(v, stack, f),
         _ => f(e)
       }
@@ -675,7 +678,7 @@ impl LispKind {
       f: impl FnOnce(Option<&FileSpan>, &LispKind) -> T
     ) -> T {
       match e {
-        LispKind::Ref(m) if !stack.contains(&(m as *const _)) =>
+        LispKind::Ref(m) if !stack.contains(&std::ptr::from_ref(m)) =>
           m.get(|e| rec(e, StackList(Some(&(stack, m))), fsp, f)),
         LispKind::Annot(Annot::Span(fsp), v) => rec(v, stack, Some(fsp), f),
         _ => f(fsp, e)

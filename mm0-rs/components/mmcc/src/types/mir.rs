@@ -3,6 +3,7 @@
 use std::{collections::HashMap, ops::{Index, IndexMut, Range, RangeTo}, rc::Rc};
 use std::mem;
 use bit_vec::BitVec;
+use if_chain::if_chain;
 use mm0_util::FileSpan;
 use num::BigInt;
 use smallvec::SmallVec;
@@ -103,7 +104,7 @@ impl HasAlpha for Lifetime {
   }
 }
 
-bitflags! {
+bitflags::bitflags! {
   /// Attributes on arguments in a `(struct)` dependent tuple type.
   pub struct ArgAttr: u8 {
     /// An argument is nondependent if the remainder of the type does not depend on this variable.

@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use mm0_util::ArcString;
 use pretty::DocAllocator;
 use itertools::Itertools;
+use if_chain::if_chain;
 use crate::{LispVal, LispKind, Uncons, FormatEnv,
   Prec, DeclKey, Literal, TermKind, ThmKind, Modifiers,
   Environment, NotaInfo, AtomData, AtomId, TermId, ThmId, SortId, Thm, Type,

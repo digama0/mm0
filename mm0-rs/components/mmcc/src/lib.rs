@@ -86,7 +86,7 @@
     #[allow(unreachable_pub)]
     pub struct $id(pub u32);
     #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($id);
-    mk_id!(@ImplDebug $id $($($lit)*)?);
+    $crate::mk_id!(@ImplDebug $id $($($lit)*)?);
     impl From<$id> for usize {
       fn from(id: $id) -> usize { $crate::u32_as_usize(id.0) }
     }
@@ -101,10 +101,6 @@
     }
   )*}
 }
-
-#[macro_use] extern crate mm0_util;
-#[macro_use] extern crate bitflags;
-#[macro_use] extern crate if_chain;
 
 pub mod types;
 pub mod build_ast;

@@ -48,17 +48,20 @@ macro_rules! id_wrapper {
       pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
 
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
+      #[allow(clippy::cast_possible_truncation)]
       pub fn enum_iter(&self) -> impl Iterator<Item = ($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
 
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
+      #[allow(clippy::cast_possible_truncation)]
       pub fn enum_iter_mut(&mut self) -> impl Iterator<Item = ($id, &mut T)> {
         self.0.iter_mut().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
 
       /// Returns the index that will be returned by the next call to `push`.
       #[must_use]
+      #[allow(clippy::cast_possible_truncation)]
       pub fn peek(&self) -> $id { $id(self.0.len() as $ty) }
 
       /// Push a new element to the vector, and return the ID of the element just pushed.
@@ -102,7 +105,7 @@ id_wrapper!(TermId: u32, TermVec);
 id_wrapper!(ThmId: u32, ThmVec);
 id_wrapper!(AtomId: u32, AtomVec);
 
-bitflags! {
+bitflags::bitflags! {
   /// Visibility and sort modifiers for Sort statements and Declarations.
   pub struct Modifiers: u8 {
     // Note: These particular values are important because they are used in the MMB format.

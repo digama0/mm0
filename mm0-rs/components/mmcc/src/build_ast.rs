@@ -14,6 +14,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::rc::Rc;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{FileSpan, Symbol};
 use crate::types::{Binop, Spanned, FieldName, VarId, IdxVec, ast::{self, LabelId}};
 

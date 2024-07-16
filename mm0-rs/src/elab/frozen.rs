@@ -37,6 +37,7 @@ use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{mk_lisp_kind, ArcString, AtomData, AtomId, AtomVec, DeclKey, DocComment, Environment,
   FileSpan, LinedString, LispData, LispKind, LispVal, MergeStrategy, MergeStrategyInner, ParserEnv, Sort,
   SortId, SortVec, Span, StmtTrace, Term, TermId, TermVec, Thm, ThmId, ThmVec,
@@ -424,14 +425,14 @@ impl Remap for FrozenLispKind {
       FrozenLispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
       FrozenLispKind::Proc(f) => LispVal::proc(f.remap(r)),
       FrozenLispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      FrozenLispKind::Ref(m) => match r.refs.entry(m as *const _) {
+      FrozenLispKind::Ref(m) => match r.refs.entry(std::ptr::from_ref(m)) {
         Entry::Occupied(e) => e.get().clone(),
         Entry::Vacant(e) => {
           let ref_ = LispVal::new_ref(LispVal::undef());
           e.insert(ref_.clone());
           let w = m.remap(r);
           ref_.as_lref(|val| *val.get_mut_weak() = w).expect("impossible");
-          r.refs.remove(&(m as *const _));
+          r.refs.remove(&std::ptr::from_ref(m));
           ref_
         }
       },
