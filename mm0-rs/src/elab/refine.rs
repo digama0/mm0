@@ -925,72 +925,66 @@ impl Elaborator {
             Err(err)
           })()?
         },
-        RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => {
-         'l: loop { // labeled block, not a loop. See rust#48594
-            let tdata = &self.env.terms[t];
-            for (_, ty) in &tdata.args[args.len() - 1..] {
-              let tgt = self.type_target(ty);
-              match u.next() {
-                Some(e) => {
-                  stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
-                  break 'l RState::RefineExpr {tgt, e}
-                }
-                None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
+        RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => 'l: {
+          let tdata = &self.env.terms[t];
+          for (_, ty) in &tdata.args[args.len() - 1..] {
+            let tgt = self.type_target(ty);
+            match u.next() {
+              Some(e) => {
+                stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
+                break 'l RState::RefineExpr {tgt, e}
               }
+              None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
             }
-            let s = tdata.ret.0;
-            break RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
           }
+          let s = tdata.ret.0;
+          RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
         }
         RState::RefineArgs {sp, tgt, ty, p, u} if u.is_empty() =>
           RState::Ret(self.coerce_to(sp, tgt, &ty, p)),
         RState::RefineArgs {tgt, p, u, ..} =>
           return Ok(RefineResult::RefineExtraArgs(tgt, p, u)),
-        RState::RefineBis {sp, sp2, tgt, im, t, mut u, mut args} => {
-          'l2: loop { // labeled block, not a loop. See rust#48594
-            let tdata = &self.env.thms[t];
-            for (_, ty) in &tdata.args[args.len() - 1..] {
-              let tgt1 = self.type_target(ty);
-              let explicit = match im {
-                InferMode::Regular => false,
-                InferMode::Explicit => true,
-                InferMode::BoundOnly => ty.bound(),
-              };
-              if let Some(e) = if explicit {u.next()} else {None} {
-                stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
-                break 'l2 RState::RefineExpr {tgt: tgt1, e}
-              }
-              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2.unwrap_or(sp)))))
+        RState::RefineBis {sp, sp2, tgt, im, t, mut u, mut args} => 'l2: {
+          let tdata = &self.env.thms[t];
+          for (_, ty) in &tdata.args[args.len() - 1..] {
+            let tgt1 = self.type_target(ty);
+            let explicit = match im {
+              InferMode::Regular => false,
+              InferMode::Explicit => true,
+              InferMode::BoundOnly => ty.bound(),
+            };
+            if let Some(e) = if explicit {u.next()} else {None} {
+              stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
+              break 'l2 RState::RefineExpr {tgt: tgt1, e}
             }
-            let mut subst = Subst::new(&self.env, &tdata.heap, &tdata.store, Vec::from(&args[1..]));
-            let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
-            let ret = subst.subst(&tdata.ret);
-            break RState::RefineHyps {
-              res: if u.len() <= hyps.len() {
-                RefineHypsResult::Ok(self.unify(sp2.unwrap_or(sp), &tgt, &ret))
-              } else {
-                RefineHypsResult::Extra
-              },
-              sp, sp2, tgt, t, u, args, hyps: hyps.into_iter()
-            }
+            args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2.unwrap_or(sp)))))
+          }
+          let mut subst = Subst::new(&self.env, &tdata.heap, &tdata.store, Vec::from(&args[1..]));
+          let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
+          let ret = subst.subst(&tdata.ret);
+          RState::RefineHyps {
+            res: if u.len() <= hyps.len() {
+              RefineHypsResult::Ok(self.unify(sp2.unwrap_or(sp), &tgt, &ret))
+            } else {
+              RefineHypsResult::Extra
+            },
+            sp, sp2, tgt, t, u, args, hyps: hyps.into_iter()
           }
         }
-        RState::RefineHyps {sp, sp2, tgt, t, mut u, mut args, mut hyps, res} => {
-          'l3: loop { // labeled block, not a loop. See rust#48594
-            while let Some(h) = hyps.next() {
-              if let Some(p) = u.next() {
-                stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
-                break 'l3 RState::RefineProof {tgt: h, p}
-              }
-              args.push(self.new_goal(sp, h))
+        RState::RefineHyps {sp, sp2, tgt, t, mut u, mut args, mut hyps, res} => 'l3: {
+          while let Some(h) = hyps.next() {
+            if let Some(p) = u.next() {
+              stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
+              break 'l3 RState::RefineProof {tgt: h, p}
             }
-            let head = LispVal::list(args);
-            self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
-            break match res {
-              RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
-              RefineHypsResult::Extra =>
-                return Ok(RefineResult::RefineExtraArgs(tgt, head, u)),
-            }
+            args.push(self.new_goal(sp, h))
+          }
+          let head = LispVal::list(args);
+          self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
+          match res {
+            RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
+            RefineHypsResult::Extra =>
+              return Ok(RefineResult::RefineExtraArgs(tgt, head, u)),
           }
         }
         RState::Proc {tgt, p} => return Ok(RefineResult::Proc(tgt, p)),
