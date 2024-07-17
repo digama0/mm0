@@ -23,7 +23,7 @@ use crate::types::vcode::{self, IsReg, InstId, ProcAbi, SpillId, BlockId, ChunkV
 
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn do_regalloc(&self) -> regalloc2::Output {
-    let opts = regalloc2::RegallocOptions { verbose_log: true };
+    let opts = regalloc2::RegallocOptions { verbose_log: true, validate_ssa: true };
     regalloc2::run(self, &MACHINE_ENV, &opts).expect("fatal regalloc error")
   }
 }
@@ -283,7 +283,8 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
     if let Some(r) = to.as_reg() { result.insert(PReg(r)) }
   }
   for (i, _) in vcode.insts.enum_iter() {
-    for &r in vcode.inst_clobbers(i) { result.insert(PReg(r)) }
+    use crate::types::vcode::Inst;
+    result |= vcode.insts[i].clobbers();
     for (op, alloc) in vcode.inst_operands(i).iter().zip(out.inst_allocs(i)) {
       if op.kind() != regalloc2::OperandKind::Use {
         if let Some(r) = alloc.as_reg() { result.insert(PReg(r)) }

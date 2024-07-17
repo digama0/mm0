@@ -85,17 +85,51 @@ pub(crate) fn caller_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
 }
 
 pub(crate) static MACHINE_ENV: Lazy<MachineEnv> = Lazy::new(|| MachineEnv {
-  preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![]],
-  non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![]],
+  preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![], vec![]],
+  non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![], vec![]],
+  scratch_by_class: [None; 3],
   fixed_stack_slots: vec![],
 });
 
-#[derive(Copy, Clone, Default)]
-pub(crate) struct PRegSet(u16);
+/// A set of physical registers. For x86, this can be stored as a 16 bit bitfield.
+#[derive(Copy, Clone, Default, Debug)]
+pub struct PRegSet(u16);
 impl PRegSet {
   #[inline] pub(crate) fn insert(&mut self, r: PReg) { self.0 |= 1 << r.index() }
   #[inline] pub(crate) fn get(self, r: PReg) -> bool { self.0 & (1 << r.index()) != 0 }
   #[inline] pub(crate) fn remove(&mut self, r: PReg) { self.0 &= !(1 << r.index()) }
+
+  /// An iterator over the registers in the set.
+  pub fn iter(self) -> impl Iterator<Item=PReg> {
+    (0..16).map(PReg::new).filter(move |&r| self.get(r))
+  }
+}
+
+impl std::ops::BitOrAssign for PRegSet {
+  fn bitor_assign(&mut self, rhs: Self) {
+    self.0 |= rhs.0
+  }
+}
+
+impl From<PRegSet> for regalloc2::PRegSet {
+  fn from(val: PRegSet) -> Self {
+    let mut out = Self::empty();
+    for i in 0..16 {
+      let r = PReg::new(i);
+      if val.get(r) {
+        out.add(r.0)
+      }
+    }
+    out
+  }
+}
+
+impl FromIterator<PReg> for PRegSet {
+  fn from_iter<T: IntoIterator<Item = PReg>>(iter: T) -> Self {
+    let mut out = Self::default();
+    for i in iter { out.insert(i); }
+    out
+  }
 }
 
 /// These indicate the form of a scalar shift/rotate: left, signed right, unsigned right.
@@ -937,7 +971,7 @@ pub(crate) enum Inst {
     f: ProcId,
     operands: Box<[Operand]>,
     /// If `clobbers = None` then this call does not return.
-    clobbers: Option<Box<[PReg]>>,
+    clobbers: Option<PRegSet>,
   },
   // /// Indirect call: `callq r/m`.
   // CallUnknown {
@@ -981,7 +1015,6 @@ impl Debug for Inst {
         let vreg = VReg(self.0.vreg());
         match self.0.kind() {
           OperandKind::Def => write!(f, "out ")?,
-          OperandKind::Mod => write!(f, "inout ")?,
           OperandKind::Use => {}
         }
         match self.0.constraint() {
@@ -1146,11 +1179,11 @@ impl VInst for Inst {
     }
   }
 
-  fn clobbers(&self) -> &[PReg] {
+  fn clobbers(&self) -> PRegSet {
     match self {
-      Inst::CallKnown { clobbers: Some(cl), .. } => cl,
-      Inst::SysCall { f, .. } if f.returns() => &[RCX, R11],
-      _ => &[],
+      &Inst::CallKnown { clobbers: Some(cl), .. } => cl,
+      Inst::SysCall { f, .. } if f.returns() => [RCX, R11].into_iter().collect(),
+      _ => Default::default(),
     }
   }
 }

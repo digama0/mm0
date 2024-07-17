@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt::{Debug, Display}, iter::FromIterator};
 
-use crate::{Idx, types::{IdxVec, mir}, arch::PReg};
+use crate::{arch::{PReg, PRegSet}, types::{mir, IdxVec}, Idx};
 
 use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
@@ -112,7 +112,7 @@ pub trait Inst: Sized {
   fn collect_operands(&self, _: &mut Vec<Operand>);
 
   /// Get the clobbers for an instruction.
-  fn clobbers(&self) -> &[PReg];
+  fn clobbers(&self) -> PRegSet;
 }
 
 /// Conceptually the same as `IdxVec<I, Vec<T>>`, but shares allocations between the vectors.
@@ -249,7 +249,7 @@ pub struct ProcAbi {
   /// The total size of the stack-allocated incoming arguments in bytes
   pub args_space: u32,
   /// The registers that are clobbered by the call.
-  pub clobbers: Box<[PReg]>,
+  pub clobbers: PRegSet,
 }
 
 /// A low level representation of a function, after instruction selection but before
@@ -375,13 +375,10 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
     self.insts[insn].branch_blockparams(succ_idx)
   }
 
-  fn is_move(&self, insn: InstId) -> Option<(Operand, Operand)> { self.insts[insn].is_move() }
+  // fn is_move(&self, insn: InstId) -> Option<(Operand, Operand)> { self.insts[insn].is_move() }
   fn inst_operands(&self, insn: InstId) -> &[Operand] { &self.operands[insn] }
-  fn inst_clobbers(&self, insn: InstId) -> &[regalloc2::PReg] {
-    let ret = self.insts[insn].clobbers();
-    #[allow(clippy::transmute_ptr_to_ptr)]
-    // Safety: `PReg` is repr(transparent)
-    unsafe { std::mem::transmute::<&[PReg], &[regalloc2::PReg]>(ret) }
+  fn inst_clobbers(&self, insn: InstId) -> regalloc2::PRegSet {
+    self.insts[insn].clobbers().into()
   }
   fn num_vregs(&self) -> usize { self.num_vregs }
   fn spillslot_size(&self, _: regalloc2::RegClass) -> usize { 1 }

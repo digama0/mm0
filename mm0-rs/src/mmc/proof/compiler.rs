@@ -1225,7 +1225,7 @@ impl<'a> ProcProver<'a> {
       let (vctx1, sz1) = (vctx.e, *vctx.nvars);
       let mctx1 = mctx.1;
       let args2 = app!(self.thm, (mkArgs args mctx1));
-      let (clob, h3) = self.accum_clob(&mut mctx, abi.clobbers.iter().map(|r| r.index()));
+      let (clob, h3) = self.accum_clob(&mut mctx, abi.clobbers.iter().map(PReg::index));
       let mctx2 = mctx.1;
       let h4 = self.ok_prologue(&mut mctx, prol);
       let mctx3 = mctx.1;

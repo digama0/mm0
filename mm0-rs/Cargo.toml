@@ -50,7 +50,7 @@ annotate-snippets = "0.11"
 libc = "0.2"
 zerocopy = "0.7"
 memchr = "2.7"
-bit-set = "0.6"
+bit-set = "0.8"
 typed-arena = "2.0"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", optional = true }
 debug_derive = { path = "components/debug_derive" }

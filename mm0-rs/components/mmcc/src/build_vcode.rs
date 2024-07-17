@@ -787,7 +787,7 @@ impl<'a> LowerCtx<'a> {
       self.emit(Inst::CallKnown {
         f,
         operands: operands.into(),
-        clobbers: Some(fabi.clobbers.clone()),
+        clobbers: Some(fabi.clobbers),
       });
       let mut ret_regs = ret_regs.into_iter();
       for (arg, &(vr, v)) in fabi.rets.iter().zip(rets) {
