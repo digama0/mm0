@@ -1079,8 +1079,9 @@ impl VInst for Inst {
   }
 
   fn is_branch(&self) -> bool {
-    matches!(self, Inst::JmpCond {..} | Inst::JmpKnown {..})
-  }
+    matches!(self,
+      Inst::Fallthrough {..} | Inst::Assert {..} | Inst::JmpKnown {..} | Inst::JmpCond {..})
+}
 
   fn branch_blockparams(&self, _: usize) -> &[regalloc2::VReg] {
     match self {
