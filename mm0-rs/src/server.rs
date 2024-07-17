@@ -827,28 +827,38 @@ async fn hover(path: FileRef, pos: Position) -> Result<Option<Hover>, ResponseEr
           ((sp, mk_mm0(out)), None)
         } else {
           let mut u = p.uncons();
-          let head = u.next()?;
+          let head = u.next().map_or_else(|| p.unwrap(), |x| &**x);
           let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
-          let a = head.as_atom()?;
-          if let Some(DeclKey::Thm(t)) = env.data[a].decl {
-            let td = &env.thms[t];
-            out.push((sp, mk_mm0(format!("{}", fe.to(td)))));
-            let mut args = vec![];
-            for _ in 0..td.args.len() {
-              // Safety: FIXME this is actually unsafe. `Subst` both requires cloned expressions
-              // and also clones expressions itself, but `FrozenEnv` does not permit us to do so,
-              // and there can potentially be a data race if multiple threads attempt to do this
-              // printing at the same time. But this is a hover output so this seems unlikely.
-              args.push(unsafe { u.next()?.thaw() }.clone());
+          match head.unwrap() {
+            FrozenLispKind::Goal(ty) => {
+              let mut out = String::new();
+              // Safety: We only use the expression for printing and don't Rc::clone it
+              fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), unsafe {ty.thaw()})
+                .render_fmt(80, &mut out).expect("impossible"));
+              ((sp1, mk_mm0(out)), None)
             }
-            let mut subst = Subst::new(env, &td.heap, &td.store, args);
-            let mut out = String::new();
-            let ret = subst.subst(&td.ret);
-            fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
-              td.hyps.iter().map(|(_, h)| subst.subst(h)),
-              &ret).render_fmt(80, &mut out).expect("impossible"));
-            ((sp1, mk_mm0(out)), td.doc.clone())
-          } else {return None}
+            &FrozenLispKind::Atom(a) => {
+              let Some(DeclKey::Thm(t)) = env.data[a].decl else { return None };
+              let td = &env.thms[t];
+              out.push((sp, mk_mm0(format!("{}", fe.to(td)))));
+              let mut args = vec![];
+              for _ in 0..td.args.len() {
+                // Safety: FIXME this is actually unsafe. `Subst` both requires cloned expressions
+                // and also clones expressions itself, but `FrozenEnv` does not permit us to do so,
+                // and there can potentially be a data race if multiple threads attempt to do this
+                // printing at the same time. But this is a hover output so this seems unlikely.
+                args.push(unsafe { u.next()?.thaw() }.clone());
+              }
+              let mut subst = Subst::new(env, &td.heap, &td.store, args);
+              let mut out = String::new();
+              let ret = subst.subst(&td.ret);
+              fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
+                td.hyps.iter().map(|(_, h)| subst.subst(h)),
+                &ret).render_fmt(80, &mut out).expect("impossible"));
+              ((sp1, mk_mm0(out)), td.doc.clone())
+            }
+            _ => return None,
+          }
         }
       }
       ObjectKind::Syntax(stx) => {
