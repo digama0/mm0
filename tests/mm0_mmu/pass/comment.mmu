@@ -1,0 +1,4 @@
+ --  <-- comment doesn't start the line
+(sort 
+-- comment inside a directive
+s)
