@@ -126,42 +126,51 @@ theorem subst_imp (A B A2 B2 e: expr x)
 term ty: ctx > expr > expr > prov;
 notation ty (G x t) = G ($|-$:0) x ($:$:1) t: 0 lassoc;
 
-axiom ty_cons: $ G |- A : Sort u $ > $ G |- e : B $ > $ G, x : t |- e : B $;
-axiom ty_var: $ G |- A : Sort u $ > $ G, x : t |- x : t $;
-axiom ty_univ: $ nil |- Sort u : Sort (l_S u) $;
-axiom ty_app: $ G |- f : A. x : A, B $ > $ G |- e : A $ >
+axiom ty_cons: $ G |- e : B $ > $ G, x : A |- e : B $;
+axiom ty_var: $ G, x : A |- x : A $;
+axiom ty_univ: $ G |- Sort u : Sort (l_S u) $;
+axiom ty_app (f B e: expr x): $ G |- f : A. x : A, B $ > $ G |- e : A $ >
   $ subst: B [e / x] = C $ > $ G |- f @ e : C $;
-axiom ty_lambda: $ G, x : A |- e : B $ > $ G |- \. x : A, e : A. x : A, B $;
-axiom ty_Pi:
+axiom ty_lambda (e B: expr x): $ G, x : A |- e : B $ > $ G |- \. x : A, e : A. x : A, B $;
+axiom ty_Pi (B: expr x):
   $ G |- A : Sort u $ >
   $ G, x : A |- B : Sort v $ >
   $ G |- A. x : A, B : Sort (l_imax u v) $;
+theorem ty_imp
+  (h1: $ G |- A : Sort u $)
+  (h2: $ G |- B : Sort v $):
+  $ G |- (A -> B) : Sort (l_imax u v) $ =
+'(ty_Pi h1 @ !! ty_cons x h2);
+theorem ty_ndapp (h1: $ G |- f : A -> B $) (h2: $ G |- e : A $):
+   $ G |- f @ e : B $ = '(ty_app h1 h2 @ !! subst_nf x);
 
 term conv: ctx > expr > expr > prov;
 notation conv (G a b) = G ($|=$:0) a ($=$:1) b: 0 lassoc;
 axiom ty_conv: $ G |- e : A $ > $ G |= A = B $ > $ G |- e : B $;
+axiom ty_l_conv: $ G |- e : A $ > $ G |= e = e2 $ > $ G |- e2 : A $;
 
 def conv_ty (G: ctx) (a b A: expr): prov =
 $ and (and (G |- a : A) (G |- b : A)) (G |= a = b) $;
 notation conv_ty (G a b t) = G ($|=:$:0) a ($=$:1) b ($:$:1) t: 0 lassoc;
 
+axiom conv_cons: $ G |= a = b $ > $ G, x : A |= a = b $;
 axiom conv_refl: $ G |- e : A $ > $ G |= e = e $;
 axiom conv_symm: $ G |= a = b $ > $ G |= b = a $;
 axiom conv_trans: $ G |= a = b $ > $ G |= b = c $ > $ G |= a = c $;
 axiom conv_sort: $ u =l v $ > $ G |= Sort u = Sort v $;
-axiom conv_app:
-  $ G |=: e1 = e2 : A. x : A, B $ >
-  $ G |=: f1 = f2 : A $ >
+axiom conv_app (B: expr x):
+  $ G |=: f1 = f2 : A. x : A, B $ >
+  $ G |=: e1 = e2 : A $ >
   $ G |= f1 @ e1 = f2 @ e2 $;
-axiom conv_lambda:
+axiom conv_lambda (e1 e2: expr x):
   $ G |= A1 = A2 $ >
   $ G, x : A1 |= e1 = e2 $ >
   $ G |= \. x : A1, e1 = \. x : A2, e2 $;
-axiom conv_Pi:
+axiom conv_Pi (e1 e2: expr x):
   $ G |= A1 = A2 $ >
   $ G, x : A1 |= e1 = e2 $ >
   $ G |= A. x : A1, e1 = A. x : A2, e2 $;
-axiom conv_beta (e e2 e3: expr x):
+axiom conv_beta (B e e2 e3: expr x):
   $ G, x : A |- e : B $ > $ G |- e2 : A $ >
   $ subst: e [e2 / x] = e3 $ >
   $ G |= (\. x : A, e) @ e2 = e3 $;
@@ -171,6 +180,45 @@ axiom conv_eta (e A B: expr y):
 axiom proof_irrel:
   $ G |- p : Prop $ >
   $ G |- h1 : p $ > $ G |- h2 : p $ > $ G |= h1 = h2 $;
+theorem conv_imp
+  (h1: $ G |= A1 = A2 $)
+  (h2: $ G |= B1 = B2 $):
+  $ G |= (A1 -> B1) = (A2 -> B2) $ =
+'(conv_Pi h1 @ !! conv_cons x h2);
+
+theorem ty_conv_r (h1: $ G |- e : A $) (h2: $ G |= B = A $): $ G |- e : B $ =
+'(ty_conv h1 @ conv_symm h2);
+
+theorem ty_r_conv (h1: $ G |- e : A $) (h2: $ G |= e2 = e $): $ G |- e2 : A $ =
+'(ty_l_conv h1 @ conv_symm h2);
+
+theorem conv_ty_refl (h: $ G |- e : A $): $ G |=: e = e : A $ =
+'(mk_and (mk_and h h) (conv_refl h));
+theorem conv_ty_l (h1: $ G |- e : A $) (h2: $ G |= e = e2 $): $ G |=: e = e2 : A $ =
+'(mk_and (mk_and h1 (ty_l_conv h1 h2)) h2);
+theorem conv_ty_r (h1: $ G |- e2 : A $) (h2: $ G |= e = e2 $): $ G |=: e = e2 : A $ =
+'(mk_and (mk_and (ty_r_conv h1 h2) h1) h2);
+theorem conv_ty_cons (h: $ G |=: e = e2 : B $): $ G, x : A |=: e = e2 : B $ =
+'(mk_and (mk_and (ty_cons @ and_left @ and_left h) (ty_cons @ and_right @ and_left h)) @
+  conv_cons @ and_right h);
+theorem conv_ty_app (B: expr x)
+  (h1: $ G |=: f1 = f2 : A. x : A, B $)
+  (h2: $ G |=: e1 = e2 : A $)
+  (h3: $ subst: B [e1 / x] = B2 $):
+  $ G |=: f1 @ e1 = f2 @ e2 : B2 $ =
+'(conv_ty_l (ty_app (and_left @ and_left h1) (and_left @ and_left h2) h3) (conv_app h1 h2));
+theorem conv_ty_ndapp
+  (h1: $ G |=: f1 = f2 : A -> B $)
+  (h2: $ G |=: e1 = e2 : A $):
+  $ G |=: f1 @ e1 = f2 @ e2 : B $ =
+'(conv_ty_app h1 h2 @ !! subst_nf x);
+theorem conv_ty_beta (B e e2 e3: expr x)
+  (h1: $ G, x : A |- e : B $)
+  (h2: $ G |- e2 : A $)
+  (h3: $ subst: B [e2 / x] = B2 $)
+  (h4: $ subst: e [e2 / x] = e3 $):
+  $ G |=: (\. x : A, e) @ e2 = e3 : B2 $ =
+'(conv_ty_l (ty_app (ty_lambda h1) h2 h3) @ conv_beta h1 h2 h4);
 
 term let {x: expr} (t e: expr) (a: expr x): expr;
 axiom ty_let:
@@ -188,6 +236,18 @@ sort indspec;
 term K0: indspec;
 term KS: expr > indspec > indspec;
 def K1 (e: expr) = $ KS e K0 $;
+
+term substIS {x: expr} (K: indspec x) (e: expr) (B: indspec): prov;
+notation substIS (x K e K2) = ($substIS:$:0) K ($[$:0) e ($/$:0) x ($]$:0) ($=$:1) K2;
+
+axiom substIS_nf (K: indspec) (e: expr x): $ substIS: K [e / x] = K $;
+axiom substIS_KS (A e A2: expr x) (K K2: indspec x):
+  $ subst: A [e / x] = A2 $ >
+  $ substIS: K [e / x] = K2 $ >
+  $ substIS: KS A K [e / x] = (KS A2 K2) $;
+theorem substIS_K0 (e: expr x): $ substIS: K0 [e / x] = K0 $ = 'substIS_nf;
+theorem substIS_K1 (e A A2: expr x) (h: $ subst: A [e / x] = A2 $):
+  $ substIS: K1 A [e / x] = K1 A2 $ = '(substIS_KS h substIS_K0);
 
 term Ind_ty (F: expr) (l: level): prov;
 axiom Ind_ty_0: $ Ind_ty (Sort l) l $;
@@ -238,6 +298,19 @@ term cS: cidx > cidx;
 term Ctor (c: cidx) {x: expr} (e: expr) (K: indspec x): expr;
 term Rec (l: level) {x: expr} (e: expr) (K: indspec x): expr;
 
+axiom subst_Ind (A e A2: expr x t) (K K2: indspec x t):
+  $ subst: A [e / x] = A2 $ >
+  $ substIS: K [e / x] = K2 $ >
+  $ subst: Ind t A K [e / x] = (Ind t A2 K2) $;
+axiom subst_Ctor (A e A2: expr x t) (K K2: indspec x t):
+  $ subst: A [e / x] = A2 $ >
+  $ substIS: K [e / x] = K2 $ >
+  $ subst: Ctor c t A K [e / x] = (Ctor c t A2 K2) $;
+axiom subst_Rec (A e A2: expr x t) (K K2: indspec x t):
+  $ subst: A [e / x] = A2 $ >
+  $ substIS: K [e / x] = K2 $ >
+  $ subst: Rec l t A K [e / x] = (Rec l t A2 K2) $;
+
 term cty: cidx > indspec > expr > prov;
 axiom cty_0: $ cty c0 (KS e K) e $;
 axiom cty_S: $ cty c K e $ > $ cty (cS c) (KS a K) e $;
@@ -283,7 +356,7 @@ axiom LE_1: $ LE_ctor G t F e $ > $ LE G t F (K1 e) u $;
 
 term Rec_kappa (u: level) (t F e: expr): prov;
 axiom Rec_kappa_0: $ Rec_kappa u P (Sort l) (P -> Sort u) $;
-axiom Rec_kappa_S:
+axiom Rec_kappa_S (B e: expr x):
   $ Rec_kappa u (P @ x) B e $ >
   $ Rec_kappa u P (A. x : A, B) (A. x : A, e) $;
 
@@ -318,7 +391,7 @@ axiom Rec_beta_rec (T A A2 C c D B e1 e2 e3: expr u t):
 
 term Rec_alpha (t F C e: expr): prov;
 axiom Rec_alpha_0: $ Rec_alpha P (Sort l) C (A. z : P, C @ z) $;
-axiom Rec_alpha_S (e: expr):
+axiom Rec_alpha_S (B e: expr x):
   $ Rec_alpha (P @ x) B (C @ x) e $ >
   $ Rec_alpha P (A. x : A, B) C (A. x : A, e) $;
 
@@ -359,9 +432,9 @@ axiom iota_beta_rec (A C c B e r1 r2 v1 v2: expr t):
   $ iota_beta G t C (c @ u) B e (r1 @ u) r2 (v1 @ v) v2 $ >
   $ iota_beta G t C c (A -> B) e r1 r2 v1 v2 $;
 
-term iota_epsilon2 (G: ctx) (t F: expr) (L: indspec t)
+term iota_epsilon2 (G: ctx) {t: expr} (F: expr) (L: indspec t)
   (C: expr) (c: cidx) (K: indspec) (R e: expr): prov;
-axiom iota_epsilon2_0:
+axiom iota_epsilon2_0 (K0 L: indspec t) (F C R: expr t) :
   $ iota_epsilon2 G t F L C c K0 R R $;
 axiom iota_epsilon2_S (K L: indspec t) (A C F R a e r x: expr t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
@@ -374,7 +447,7 @@ theorem iota_epsilon2_1 (L: indspec t) (A C F R a r x: expr t)
   $ iota_epsilon2 G t F L C c (K1 a) R (R @ x) $ =
 '(iota_epsilon2_S h1 h2 iota_epsilon2_0);
 
-term iota_epsilon (G: ctx) (t F: expr) (L: indspec t)
+term iota_epsilon (G: ctx) {t: expr} (F: expr) (L: indspec t)
   (C: expr) (c: cidx) (K: indspec) (R e1 e2: expr): prov;
 axiom iota_epsilon_0 (K L: indspec t) (A C F R R2 a e e1 e2 r x v: expr t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
@@ -443,6 +516,9 @@ term choice: level > expr;
 axiom ty_choice: $ nil |- choice u : A. A : Sort u, nonempty u @ A -> A $;
 
 -- ---------------------------
+-- inductive Nat : Type
+--   | zero : Nat
+--   | succ : Nat → Nat
 
 def nat_spec (t: expr) = $ KS t (K1 (t -> t)) $;
 def nat = $ Ind t Type (nat_spec t) $;
@@ -503,3 +579,196 @@ theorem nat_succ_iota
   (iota_beta_rec (iota_delta_0 Rec_app_0)
     (iota_beta_app Rec_app_0))
   iota_epsilon2_0);
+
+-- ---------------------------
+-- inductive List (α : Type u) where
+--   | nil : List α
+--   | cons : α → List α → List α
+
+def list_spec (t: expr) (A: expr) = $ KS t (K1 (A -> t -> t)) $;
+def list_ind (l: level) (A: expr) = $ Ind t (Sort (l_S l)) (list_spec t A) $;
+def list (l: level) = $ \. A : Sort (l_S l), list_ind l A $;
+def list_ctor (c: cidx) (l: level) (A: expr) = $ Ctor c t (Sort (l_S l)) (list_spec t A) $;
+def list_nil (l: level) = $ \. A : Sort (l_S l), list_ctor c0 l A $;
+def list_cons (l: level) = $ \. A : Sort (l_S l), list_ctor (cS c0) l A $;
+def list_rec2 (u l: level) (A: expr) = $ Rec u t (Sort (l_S l)) (list_spec t A) $;
+def list_rec (u l: level) = $ \. A : Sort (l_S l), list_rec2 u l A $;
+
+theorem list_spec_spec (h1: $ G |- A : Sort (l_S l) $): $ spec G t (Sort (l_S l)) (list_spec t A) $ =
+'(spec_KS (ctor_app ty_app_ts_0) @
+  spec_KS (!! ctor_Pi a Ind_ty_0 h1 l_le_refl @
+    ctor_rec (ctorR_0 ty_app_ts_0) @
+    ctor_app ty_app_ts_0) @
+  spec_K0 Ind_ty_0);
+
+theorem ty_list_ind (h: $ G |- A : Sort (l_S l) $): $ G |- list_ind l A : Sort (l_S l) $ =
+'(!! ty_Ind t @ list_spec_spec h);
+
+theorem ty_list: $ G |- list l : A. A : Sort (l_S l), Sort (l_S l) $ =
+'(ty_lambda @ ty_list_ind ty_var);
+
+theorem subst_list_spec (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
+  $ substIS: list_spec t A [e / x] = list_spec t A2 $ =
+'(substIS_KS subst_nf @ substIS_K1 @ subst_imp h subst_nf);
+
+theorem subst_list_ind (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
+  $ subst: list_ind l A [e / x] = list_ind l A2 $ =
+'(!! subst_Ind t _ subst_nf @ subst_list_spec h);
+
+theorem subst_list_ctor (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
+  $ subst: list_ctor c l A [e / x] = list_ctor c l A2 $ =
+'(!! subst_Ctor t _ subst_nf @ subst_list_spec h);
+
+theorem conv_list_ind (h: $ G |- A : Sort (l_S l) $): $ G |= list l @ A = list_ind l A $ =
+'(!! conv_beta a (ty_list_ind ty_var) h @ subst_list_ind subst_var);
+
+theorem ty_list_nil_core (h: $ G |- A : Sort (l_S l) $): $ G |- list_ctor c0 l A : list l @ A $ =
+'(ty_conv_r (ty_Ctor (list_spec_spec h) cty_0
+  {(!! subst_var a) : $ subst: _ [ list_ind / _ ] = _ $}) @ conv_list_ind h);
+
+theorem ty_list_nil: $ G |- list_nil l : A. A : Sort (l_S l), list l @ A $ =
+'(ty_lambda @ ty_list_nil_core ty_var);
+
+theorem conv_ty_list_nil (h: $ G |- A : Sort (l_S l) $):
+  $ G |=: list_nil l @ A = list_ctor c0 l A : list l @ A $ =
+'(conv_ty_r (ty_list_nil_core h) @
+  conv_beta (ty_list_nil_core ty_var) h @ subst_list_ctor @ !! subst_var a);
+
+theorem ty_list_cons_core (h: $ G |- A : Sort (l_S l) $):
+  $ G |- list_ctor (cS c0) l A : A -> list l @ A -> list l @ A $ =
+'(ty_conv_r (ty_Ctor (list_spec_spec h) (cty_S cty_0)
+  {(!! subst_imp t subst_nf @ subst_imp subst_var subst_var)
+    : $ subst: _ [ list_ind / _ ] = _ $}) @
+  conv_imp (conv_refl h) (conv_imp (conv_list_ind h) (conv_list_ind h)));
+
+theorem ty_list_cons: $ G |- list_cons l : A. A : Sort (l_S l), A -> list l @ A -> list l @ A $ =
+'(ty_lambda @ ty_list_cons_core ty_var);
+
+theorem conv_ty_list_cons (h: $ G |- A : Sort (l_S l) $):
+  $ G |=: list_cons l @ A = list_ctor (cS c0) l A : A -> list l @ A -> list l @ A $ =
+'(conv_ty_r (ty_list_cons_core h) @
+  conv_beta (ty_list_cons_core ty_var) h @ subst_list_ctor @ !! subst_var a);
+
+theorem ty_list_rec_core (h: $ G |- A : Sort (l_S l) $):
+  $ G |- list_rec2 u l A : A. C : (list l @ A -> Sort u),
+    (C @ (list_nil l @ A)) ->
+    (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
+    (A. z : list l @ A, C @ z) $ =
+'(ty_conv_r (ty_Rec (list_spec_spec h)
+      (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
+      {Rec_kappa_0 : $ Rec_kappa _ list_ind $} @
+    Rec_epsilon_S {(Rec_beta_app Rec_app_0 subst_var)
+      : $ Rec_beta _ list_ind _ list_ctor $} @
+    Rec_epsilon_S {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
+      Rec_beta_app Rec_app_0 subst_var)
+      : $ Rec_beta _ list_ind _ list_ctor $} @
+    !! Rec_epsilon_0 t {Rec_alpha_0 : $ Rec_alpha list_ind $}) @
+  conv_Pi (conv_imp (conv_list_ind h) (conv_refl ty_univ)) @
+  conv_imp (!! conv_app t (conv_ty_refl ty_var) @ conv_ty_list_nil @ ty_cons h) @
+  conv_imp (conv_Pi (conv_refl @ ty_cons h) @
+    conv_Pi (conv_list_ind @ ty_cons @ ty_cons h) @
+    conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons ty_var) ty_var) @
+    !! conv_app t (conv_ty_refl @ ty_cons @ ty_cons ty_var) @
+    conv_ty_ndapp (conv_ty_cons @
+      conv_ty_ndapp (conv_ty_cons @ conv_ty_list_cons @ ty_cons h)
+      (conv_ty_refl ty_var))
+    (conv_ty_refl ty_var)) @
+  conv_Pi (conv_list_ind @ ty_cons h) @ conv_refl @ ty_ndapp (ty_cons ty_var) ty_var);
+
+theorem ty_list_rec:
+  $ G |- list_rec u l : A. A : Sort (l_S l), A. C : (list l @ A -> Sort u),
+    (C @ (list_nil l @ A)) ->
+    (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
+    (A. z : list l @ A, C @ z) $ =
+'(ty_lambda @ ty_list_rec_core ty_var);
+
+theorem conv_ty_list_rec (h: $ G |- A : Sort (l_S l) $):
+  $ G |=: list_rec u l @ A = list_rec2 u l A :
+    A. C : (list l @ A -> Sort u),
+      (C @ (list_nil l @ A)) ->
+      (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
+      (A. z : list l @ A, C @ z) $ =
+'(conv_ty_beta (ty_list_rec_core ty_var) h
+  (subst_Pi (subst_imp (subst_app subst_nf subst_var) subst_nf) @
+    subst_imp (subst_app subst_nf @ subst_app subst_nf subst_var) @
+    subst_imp (subst_Pi subst_var @ subst_Pi (subst_app subst_nf subst_var) @
+      subst_imp subst_nf @ subst_app subst_nf @
+      subst_app (subst_app (subst_app subst_nf subst_var) subst_nf) subst_nf) @
+    subst_Pi (subst_app subst_nf subst_var) subst_nf) @
+  !! subst_Rec t _ subst_nf @ subst_list_spec @ !! subst_var a);
+
+theorem list_nil_iota
+  (h1: $ G |- A : Sort (l_S l) $)
+  (h2: $ G |- C : list l @ A -> Sort u $)
+  (h3: $ G |- z : C @ (list_nil l @ A) $)
+  (h4: $ G |- s : A. head : A, A. tail : list l @ A,
+    C @ tail -> C @ (list_cons l @ A @ head @ tail) $):
+  $ G |= list_rec u l @ A @ C @ z @ s @ (list_nil l @ A) = z $ =
+'(conv_trans (conv_app (conv_ty_ndapp (conv_ty_ndapp
+    (conv_ty_app (conv_ty_list_rec h1) (conv_ty_refl h2) @
+      subst_imp (subst_app subst_var subst_nf) @
+      subst_imp (subst_Pi subst_nf @ subst_Pi subst_nf @
+        subst_imp (subst_app subst_var subst_nf) (subst_app subst_var subst_nf)) @
+      !! subst_Pi c x subst_nf @ subst_app subst_var subst_nf) @
+    conv_ty_refl h3) @ conv_ty_refl h4) @ conv_ty_list_nil h1) @
+  conv_iota (list_spec_spec h1) (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
+    {Rec_kappa_0 : $ Rec_kappa _ list_ind $}
+    (ty_conv h2 (conv_imp (conv_list_ind h1) (conv_refl ty_univ))) @
+  iota_epsilon_0
+    {(Rec_beta_app Rec_app_0 subst_var) : $ Rec_beta _ list_ind _ list_ctor $}
+    (ty_conv h3 (!! conv_app x (conv_ty_refl h2) (conv_ty_list_nil h1)))
+    {(iota_beta_app Rec_app_0) : $ iota_beta _ _ _ list_ctor $} @
+  iota_epsilon2_1 {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
+    Rec_beta_app Rec_app_0 @ !! subst_var t) : $ Rec_beta _ list_ind _ list_ctor $} @
+  ty_conv h4 @ conv_Pi (conv_refl h1) @ conv_Pi (conv_list_ind @ ty_cons h1) @
+  conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons h2) ty_var) @
+  !! conv_app x (conv_ty_refl @ ty_cons @ ty_cons h2) @
+  conv_ty_ndapp (conv_ty_ndapp (conv_ty_list_cons @ ty_cons @ ty_cons h1) @
+    conv_ty_refl @ ty_cons ty_var) @ conv_ty_refl ty_var);
+
+theorem list_cons_iota {hd tl}
+  (h1: $ G |- A : Sort (l_S l) $)
+  (h2: $ G |- C : list l @ A -> Sort u $)
+  (h3: $ G |- z : C @ (list_nil l @ A) $)
+  (h4: $ G |- s : A. head : A, A. tail : list l @ A,
+    C @ tail -> C @ (list_cons l @ A @ head @ tail) $)
+  (h5: $ G |- hd : A $)
+  (h6: $ G |- tl : list l @ A $):
+  $ G |= list_rec u l @ A @ C @ z @ s @ (list_cons l @ A @ hd @ tl) =
+    s @ hd @ tl @ (list_rec u l @ A @ C @ z @ s @ tl) $ =
+(focus
+  (have 'h7 '(conv_ty_ndapp (conv_ty_ndapp (conv_ty_app (conv_ty_list_rec h1) (conv_ty_refl h2) @
+      subst_imp (subst_app subst_var subst_nf) @
+      subst_imp (subst_Pi subst_nf @ subst_Pi subst_nf @
+        subst_imp (subst_app subst_var subst_nf) (subst_app subst_var subst_nf)) @
+      !! subst_Pi c x subst_nf @ subst_app subst_var subst_nf) @
+    conv_ty_refl h3) @ conv_ty_refl h4))
+'(conv_trans (conv_app h7 @
+    conv_ty_ndapp (conv_ty_ndapp (conv_ty_list_cons h1) @ conv_ty_refl h5) @
+    conv_ty_refl h6) @ conv_symm @
+  conv_trans (
+    !! conv_app a (conv_ty_refl @
+      ty_app (ty_app h4 h5 @
+        subst_Pi subst_nf @ subst_imp subst_nf @ subst_app subst_nf @
+        subst_app (subst_app subst_nf subst_var) subst_nf) h6 @
+      subst_imp (subst_app subst_nf subst_var) @
+      subst_app subst_nf @ subst_app subst_nf subst_var) @
+    conv_ty_app h7 (conv_ty_refl h6) @ subst_app subst_nf subst_var) @ conv_symm @
+  conv_iota (list_spec_spec h1) (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
+    {Rec_kappa_0 : $ Rec_kappa _ list_ind $}
+    (ty_conv h2 (conv_imp (conv_list_ind h1) (conv_refl ty_univ))) @
+  iota_epsilon_S
+    {(Rec_beta_app Rec_app_0 subst_var) : $ Rec_beta _ list_ind _ list_ctor $}
+    (ty_conv h3 (!! conv_app x (conv_ty_refl h2) (conv_ty_list_nil h1))) @
+  iota_epsilon_0
+    {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
+      Rec_beta_app Rec_app_0 @ !! subst_var t) : $ Rec_beta _ list_ind _ list_ctor $}
+    (ty_conv h4 @ conv_Pi (conv_refl h1) @ conv_Pi (conv_list_ind @ ty_cons h1) @
+      conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons h2) ty_var) @
+      !! conv_app b (conv_ty_refl @ ty_cons @ ty_cons h2) @
+      conv_ty_ndapp (conv_ty_cons @
+        conv_ty_ndapp (conv_ty_cons @ conv_ty_list_cons h1) @ conv_ty_refl ty_var) @
+      conv_ty_refl ty_var)
+    {(iota_beta_Pi @ iota_beta_rec (iota_delta_0 Rec_app_0) @
+      iota_beta_app Rec_app_0) : $ iota_beta _ _ _ list_ctor $}
+    iota_epsilon2_0));
