@@ -149,8 +149,8 @@ impl<'a> MmbIndexBuilder<'a> for Option<SymbolNames<'a>> {
 make_index_trait! {
   [<'a>, SymbolNames, HasSymbolNames, NoSymbolNames, get_symbol_names, get_symbol_names_mut]
 }
-impl<'a> NoSymbolNames for Option<VarNames<'a>> {}
-impl<'a> NoSymbolNames for Option<HypNames<'a>> {}
+impl NoSymbolNames for Option<VarNames<'_>> {}
+impl NoSymbolNames for Option<HypNames<'_>> {}
 
 /// This index subcomponent supplies variable names for terms and theorems.
 #[derive(Debug)]
@@ -182,8 +182,8 @@ impl<'a> MmbIndexBuilder<'a> for Option<VarNames<'a>> {
 make_index_trait! {
   [<'a>, VarNames, HasVarNames, NoVarNames, get_var_names, get_var_names_mut]
 }
-impl<'a> NoVarNames for Option<SymbolNames<'a>> {}
-impl<'a> NoVarNames for Option<HypNames<'a>> {}
+impl NoVarNames for Option<SymbolNames<'_>> {}
+impl NoVarNames for Option<HypNames<'_>> {}
 
 /// This index subcomponent supplies hypothesis names for theorems.
 #[derive(Debug)]
@@ -211,8 +211,8 @@ impl<'a> MmbIndexBuilder<'a> for Option<HypNames<'a>> {
 make_index_trait! {
   [<'a>, HypNames, HasHypNames, NoHypNames, get_hyp_names, get_hyp_names_mut]
 }
-impl<'a> NoHypNames for Option<SymbolNames<'a>> {}
-impl<'a> NoHypNames for Option<VarNames<'a>> {}
+impl NoHypNames for Option<SymbolNames<'_>> {}
+impl NoHypNames for Option<VarNames<'_>> {}
 
 /// A basic index, usable for getting names of declarations and variables.
 pub type BasicIndex<'a> = (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
@@ -223,6 +223,7 @@ pub type BasicIndex<'a> = (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Optio
 /// location is signalled by the presence of a `0` command.
 //
 // IMO extracting this logic into parse_cmd would make it too noisy.
+#[allow(clippy::too_long_first_doc_paragraph)]
 pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usize)>, ParseError> {
   let (cmd, data, new_start_at) = parse_cmd(mmb, start_at)?;
   if cmd == 0 {
@@ -235,6 +236,7 @@ pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usiz
 
 /// From a (full) mmb file and a start position, parse the raw data
 /// for a command, which is a `[(u8, u32)]` pair of `(cmd, data)`.
+///
 /// Also returns the new start position, which is the old position
 /// plus the size of `cmd`, and the size of `data` _which varies_
 /// despite ending up as a `u32`.
@@ -282,7 +284,7 @@ pub struct ProofIter<'a> {
   pub ends_at: usize,
 }
 
-impl<'a> ProofIter<'a> {
+impl ProofIter<'_> {
   /// True if this iterator is "null", meaning that it has zero commands.
   /// This is not the same as being empty, which happens when there is one command
   /// which is the terminating `CMD_END` command.
@@ -290,13 +292,13 @@ impl<'a> ProofIter<'a> {
   pub fn is_null(&self) -> bool { self.pos == self.ends_at }
 }
 
-impl<'a> ProofIter<'a> {
+impl ProofIter<'_> {
   /// Peek the next element.
   #[must_use]
   pub fn peek(&self) -> Option<Result<ProofCmd, ParseError>> { self.clone().next() }
 }
 
-impl<'a> Iterator for ProofIter<'a> {
+impl Iterator for ProofIter<'_> {
   type Item = Result<ProofCmd, ParseError>;
   fn next(&mut self) -> Option<Self::Item> {
     match try_next_cmd(self.mmb_source, self.pos) {
@@ -355,7 +357,7 @@ impl<'a> UnifyIter<'a> {
   }
 }
 
-impl<'a> Iterator for UnifyIter<'a> {
+impl Iterator for UnifyIter<'_> {
   type Item = Result<UnifyCmd, ParseError>;
   fn next(&mut self) -> Option<Self::Item> {
     match try_next_cmd(self.mmb_file, self.pos) {
@@ -597,7 +599,7 @@ fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8]
   }
 }
 
-impl<'a, X> MmbFile<'a, X> {
+impl<X> MmbFile<'_, X> {
   /// For error reporting after the initial parse.
   #[must_use]
   pub fn bad_index_lookup(&self) -> ParseError {
@@ -701,6 +703,8 @@ bin_parser! {
   (parse_u64, u64)
 }
 
+/// Returns a precise parse error for a malformed header.
+///
 /// In the event that [`MmbFile::parse`] fails when parsing the header, use this
 /// to get a more detailed error report (since the zerocopy parser for `Header` is just pass/fail).
 /// This method will panic if it's not able to find a problem with the header, since a disagreement

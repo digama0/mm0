@@ -48,6 +48,8 @@ impl<'a> NodeHasher<'a> {
   }
 }
 
+/// Basic contextual kind information when interpreting s-expressions as proofs.
+///
 /// Because the s-expr representation of proof terms is ambiguous between terms,
 /// proofs and conversions, we have to know up front what kind of object we are looking
 /// at. This enum is used to prevent the Dedup from mixing up identical lisp expressions
@@ -111,7 +113,9 @@ impl ToLisp {
 }
 
 /// A "hashable" type. We use this to abstract the difference between
-/// [`ExprHash`] and [`ProofHash`]. The definition of [`NodeHash`] is mutually recursive
+/// [`ExprHash`] and [`ProofHash`].
+///
+/// The definition of [`NodeHash`] is mutually recursive
 /// with the [`Dedup`] struct. A [`NodeHash`] type represents a nonrecursive shadow
 /// of a recursive type (namely [`ExprNode`] and [`ProofNode`], respectively),
 /// where recursive occurrences are replaced with indices tracked by the [`Dedup`] type.
@@ -142,9 +146,11 @@ pub trait NodeHash: Hash + Eq + Sized {
   fn on_children(&self, f: impl FnMut(usize));
 }
 
-/// The main hash-consing state object. This tracks previously hash-consed elements
-/// and uses the [`Hash`] implementation required by [`NodeHash`] to hash elements of
-/// the hash type `H`. (Since these objects may be somewhat large, we store them
+/// The main hash-consing state object.
+///
+/// This tracks previously hash-consed elements and uses the [`Hash`] implementation
+/// required by [`NodeHash`] to hash elements of the hash type `H`.
+/// (Since these objects may be somewhat large, we store them
 /// behind an [`Rc`] so that they can go in both the map and the vec.)
 #[derive(Debug)]
 pub struct Dedup<H: NodeHash> {
@@ -321,7 +327,7 @@ impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
   }
 }
 
-impl<'a, H: NodeHash> ExactSizeIterator for DedupIter<'a, H> {
+impl<H: NodeHash> ExactSizeIterator for DedupIter<'_, H> {
   fn len(&self) -> usize { self.0.len() }
 }
 
@@ -344,8 +350,9 @@ impl<'a, H: NodeHash> IntoIterator for &'a Dedup<H> {
 }
 
 /// A "hash-consable" type. We use this to abstract the difference between
-/// [`ExprNode`] and [`ProofNode`]. The [`Hash`] type here
-/// ([`ExprHash`] and [`ProofHash`]) is a de-recursified
+/// [`ExprNode`] and [`ProofNode`].
+///
+/// The [`Hash`] type here ([`ExprHash`] and [`ProofHash`]) is a de-recursified
 /// version of the type where all recursive occurrences are replaced by `usize`
 /// indexes. This trait describes how hash objects can be reconstituted
 /// into node objects.
@@ -363,6 +370,7 @@ pub trait Node: Sized {
 }
 
 /// A constructed value corresponding to one index of a [`Dedup`].
+///
 /// For unshared values, we use the [`Built`](Val::Built) constructor to store
 /// a value of type `T` directly, while for shared values we only
 /// store a reference to the [`Ref`](Val::Ref) node index that was allocated to it.
@@ -405,7 +413,7 @@ impl<T: Node> Val<T> {
 /// using the sharing annotations to determine whether to put the
 /// values directly in [`Built`](Val::Built) nodes (for unshared nodes) or in
 /// the `heap` with [`Ref`](Val::Ref) nodes in the `ids`.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::too_long_first_doc_paragraph, clippy::type_complexity)]
 pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>, Vec<T>)
 where
   T::Hash: 'a,

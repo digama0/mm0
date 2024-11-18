@@ -114,9 +114,11 @@ impl From<BoxError> for ElabErrorKind {
   fn from(e: BoxError) -> ElabErrorKind { ElabErrorKind::Boxed(e, None) }
 }
 
-/// The main error type for the elaborator. Each error has a location (which must be in
-/// the currently elaborating file), an error level, a message, and an optional list of
-/// related locations (possibly in other files) along with short messages.
+/// The main error type for the elaborator.
+///
+/// Each error has a location (which must be in the currently elaborating file),
+/// an error level, a message, and an optional list of related locations
+/// (possibly in other files) along with short messages.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ElabError {
@@ -685,7 +687,7 @@ pub struct ElaborateBuilder<'a, F> {
   pub recv_goal: Option<GoalListener>,
 }
 
-impl<'a, T: Send, F> ElaborateBuilder<'a, F>
+impl<T: Send, F> ElaborateBuilder<'_, F>
 where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
   /// Creates a future to poll for the completed environment, given an import resolver.
   ///

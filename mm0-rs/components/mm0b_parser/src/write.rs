@@ -34,6 +34,8 @@ pub fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
   }
 }
 
+/// Writes a command with a variable length trailer `buf`.
+///
 /// This is like [`write_cmd`], but it is followed by
 /// the byte array `buf`, and the initial `data` field is the length of the entire
 /// expression (the initial command byte, the `data` field, and the buffer).
@@ -130,8 +132,10 @@ impl<W: Write> Write for TrackSize<W> {
 }
 
 /// An `Mm0Writer` is a buffer for constructing an MMB file when the total number of
-/// sorts/terms/theorems is not yet known. It renders as much of the file as it can, so that the
-/// actual file write consists mostly of `memcpy`s.
+/// sorts/terms/theorems is not yet known.
+///
+/// It renders as much of the file as it can, so that the actual file write consists
+/// mostly of `memcpy`s.
 ///
 /// The proof stream is handled separately, since it is much larger than the other parts.
 /// The provided writer `W` must implement the `Reopen` trait, which allows it to be written to and
@@ -401,7 +405,9 @@ impl<'a, W: Reopen> StmtBuilder<'a, W> {
   fn finish(self) -> io::Result<()> { write_cmd_bytes(&mut self.w.proof, self.cmd, &self.buf) }
 }
 
-/// An unfinished definition. The `unify` and `proof` streams should be used to write unify and
+/// An unfinished definition.
+///
+/// The `unify` and `proof` streams should be used to write unify and
 /// proof commands, respectively, and when completed the `finish` function will finalize the
 /// streams and return the `TermId` of the new definition.
 #[derive(Debug)]
@@ -427,9 +433,11 @@ impl<'a, W: Reopen> DefBuilder<'a, W> {
   }
 }
 
-/// An unfinished axiom or theorem. The `unify` and `proof` streams should be used to write unify
-/// and proof commands, respectively, and when completed the `finish` function will finalize the
-/// streams and return the `ThmId` of the new theorem.
+/// An unfinished axiom or theorem.
+///
+/// The `unify` and `proof` streams should be used to write unify and proof commands,
+/// respectively, and when completed the `finish` function will finalize the streams
+/// and return the `ThmId` of the new theorem.
 #[derive(Debug)]
 #[must_use = "discarding a ThmBuilder will result in a corrupted file"]
 pub struct ThmBuilder<'a, W>(StmtBuilder<'a, W>, ThmId);

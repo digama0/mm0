@@ -433,6 +433,8 @@ impl TryFrom<(u8, u32)> for ProofCmd {
   }
 }
 
+/// A command in the unify stream.
+///
 /// Unify commands appear in the header data for a `def` or `axiom`/`theorem`.
 /// They are executed by the [`ProofCmd::Thm`] command in order to perform
 /// substitutions. The state of the unify stack machine is:
@@ -580,7 +582,9 @@ impl Header {
   }
 }
 
-/// A sort entry in the file header. Each sort is one byte, which can be any combination
+/// A sort entry in the file header.
+///
+/// Each sort is one byte, which can be any combination
 /// of the modifiers in [`Modifiers::sort_data`]: [`PURE`](Modifiers::PURE),
 /// [`STRICT`](Modifiers::STRICT), [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
 #[repr(C)]

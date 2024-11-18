@@ -145,15 +145,15 @@ struct ContextNext<'a> {
   parent: Context<'a>,
 }
 
-impl<'a> PartialEq for Context<'a> {
+impl PartialEq for Context<'_> {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
-impl<'a> Eq for Context<'a> {}
+impl Eq for Context<'_> {}
 
-impl<'a> PartialEq for ContextNext<'a> {
+impl PartialEq for ContextNext<'_> {
   fn eq(&self, other: &Self) -> bool { std::ptr::eq(self, other) }
 }
-impl<'a> Eq for ContextNext<'a> {}
+impl Eq for ContextNext<'_> {}
 
 impl<'a> From<&'a ContextNext<'a>> for Context<'a> {
   fn from(ctx: &'a ContextNext<'a>) -> Self { Self(Some(ctx)) }
@@ -405,7 +405,7 @@ enum UnelabTupPatKind<'a> {
   Error(Box<UnelabTupPat<'a>>),
 }
 
-impl<'a> UnelabTupPat<'a> {
+impl UnelabTupPat<'_> {
   /// Calls function `f` on all variables in the pattern, in right-to-left order.
   fn on_vars_rev(&self, f: &mut impl FnMut(VarId)) {
     match &self.k {
@@ -1101,9 +1101,11 @@ struct PrintCtxInner {
   vars: HashMap<Symbol, Counter<VarId>>,
 }
 
-/// A wrapper struct for printing error messages. It is stateful, meaning that it keeps track
-/// of variables it sees so that it can number things in the order they are printed (rather than
-/// using the internal numbering, which might involve a lot of temporaries). Variables and
+/// A wrapper struct for printing error messages.
+///
+/// It is stateful, meaning that it keeps track of variables it sees so that it
+/// can number things in the order they are printed (rather than using the
+/// internal numbering, which might involve a lot of temporaries). Variables and
 /// metavariables are numbered consistently as long as this object is kept around.
 #[derive(Debug)]
 pub struct PrintCtx<'a, 'n, 'b, C: Config, I: ItemContext<C>> {
@@ -2694,7 +2696,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     hir::Spanned { span: pat.span, k: res }
   }
 
-  fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: &Option<Box<Spanned<ast::Lifetime>>>) -> Lifetime {
+  fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: Option<&Spanned<ast::Lifetime>>) -> Lifetime {
     self.lower_lft(sp, match lft {
       None => ast::Lifetime::Infer,
       Some(lft) => lft.k,
@@ -2728,12 +2730,12 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         intern!(self, TyKind::Own(ty))
       }
       ast::TypeKind::Shr(lft, ty) => {
-        let lft = self.lower_opt_lft(&ty.span, lft);
+        let lft = self.lower_opt_lft(&ty.span, lft.as_deref());
         let ty = self.lower_ty(ty, ExpectTy::Any);
         intern!(self, TyKind::Shr(lft, ty))
       }
       ast::TypeKind::Ref(lft, ty) => {
-        let lft = self.lower_opt_lft(&ty.span, lft);
+        let lft = self.lower_opt_lft(&ty.span, lft.as_deref());
         let ty = self.lower_ty(ty, ExpectTy::Any);
         intern!(self, TyKind::Ref(lft, ty))
       }
@@ -2964,8 +2966,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     self.alloc.alloc_slice_fill_iter(args)
   }
 
-  fn lower_variant(&mut self, variant: &'a Option<Box<ast::Variant>>) -> Option<hir::Variant<'a>> {
-    variant.as_deref().map(|Spanned {k: (e, vt), ..}| match vt {
+  fn lower_variant(&mut self, variant: Option<&'a ast::Variant>) -> Option<hir::Variant<'a>> {
+    variant.map(|Spanned {k: (e, vt), ..}| match vt {
       ast::VariantType::Down => {
         let e = self.check_pure_expr(e, self.common.nat());
         hir::Variant(e, hir::VariantType::Down)
@@ -4294,7 +4296,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let labs2 = labs.iter().map(|ast::Label {args, variant, body}| {
           let args = args.iter()
             .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
-          let variant = self.lower_variant(variant);
+          let variant = self.lower_variant(variant.as_deref());
           let ctx = self.dc.context;
           let args = self.finish_args(args);
           let args2 = self.args_to_ty_args(&args);
@@ -4424,7 +4426,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let t_rets = self.args_to_ty_args(&rets);
         self.returns = Some(t_rets);
         let ctx = self.dc.context;
-        let variant = self.lower_variant(variant);
+        let variant = self.lower_variant(variant.as_deref());
         let args = self.finish_args(args2);
         let t_args = self.args_to_ty_args(&args);
         let mut gctx = self.to_global_ctx();

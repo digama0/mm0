@@ -81,6 +81,7 @@ impl HasAlpha for VarId {
 }
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
+///
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
 /// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
 /// There is a special lifetime `extern` that represents inputs to the current function.
@@ -676,9 +677,11 @@ impl BlockId {
 /// A vector indexed by [`BlockId`]s.
 pub type BlockVec<T> = super::IdxVec<BlockId, T>;
 
-/// A collection of contexts, maintaining a tree structure. The underlying data structure is a list
-/// of `CtxBuf` structs, each of which is a `CtxId` pointer to another context, plus an additional
-/// list of variables and types. The context at index 0 is the root context, and is its own parent.
+/// A collection of contexts, maintaining a tree structure.
+///
+/// The underlying data structure is a list of `CtxBuf` structs, each of which
+/// is a `CtxId` pointer to another context, plus an additional list of variables
+/// and types. The context at index 0 is the root context, and is its own parent.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Contexts(IdxVec<CtxBufId, CtxBuf>);
@@ -917,9 +920,11 @@ impl CtxVisitor {
 /// The calculated predecessor information for blocks in the CFG.
 pub type Predecessors = BlockVec<SmallVec<[(Edge, BlockId); 4]>>;
 
-/// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
-/// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
-/// logical context at the beginning of each basic block.
+/// A CFG, or control flow graph, for a function.
+///
+/// This consists of a set of basic blocks, with block ID 0 being the entry block.
+/// The `ctxs` is the context data used to supply the logical context at the
+/// beginning of each basic block.
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Cfg {
@@ -1033,10 +1038,12 @@ impl CtxBufId {
   pub const ROOT: Self = Self(0);
 }
 
-/// A context ID, which consists of a context buffer ID (which selects a context buffer from the
-/// [`Contexts`]), plus an index into that buffer. The logical context denoted includes all
-/// contexts in the parent chain up to the root, plus the selected context buffer up to the
-/// specified index (which may be any number `<= buf.len()`).
+/// A context ID, which consists of a context buffer ID (which selects a context
+/// buffer from the [`Contexts`]), plus an index into that buffer.
+///
+/// The logical context denoted includes all contexts in the parent chain up to
+/// the root, plus the selected context buffer up to the specified index
+/// (which may be any number `<= buf.len()`).
 #[derive(Copy, Clone, Default, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct CtxId(pub CtxBufId, pub u32);
@@ -1125,7 +1132,7 @@ impl<'a> Successors<'a> {
   }
 }
 
-impl<'a> Iterator for Successors<'a> {
+impl Iterator for Successors<'_> {
   type Item = (Edge, BlockId);
   fn next(&mut self) -> Option<Self::Item> {
     match self.0 {
@@ -1609,9 +1616,11 @@ impl std::fmt::Debug for Rename {
   }
 }
 
-/// A statement is an operation in a basic block that does not end the block. Generally this means
-/// that it has simple control flow behavior, in that it always steps to the following statement
-/// after performing some action that cannot fail.
+/// A statement is an operation in a basic block that does not end the block.
+///
+/// Generally this means that it has simple control flow behavior, in that it
+/// always steps to the following statement after performing some action that
+/// cannot fail.
 #[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Statement {
@@ -1917,9 +1926,12 @@ impl<F: FnMut(VarId)> Visitor for UseVisitor<F> {
   fn visit_var(&mut self, v: VarId) { (self.0)(v) }
 }
 
-/// A basic block, which consists of an initial context (containing the logical parameters to the
-/// block), followed by a list of statements, and ending with a terminator. The terminator is
-/// optional only during MIR construction, and represents an "unfinished" block.
+/// A basic block, which consists of an initial context (containing the logical
+/// parameters to the block), followed by a list of statements, and ending with
+/// a terminator.
+///
+/// The terminator is optional only during MIR construction, and represents an
+/// "unfinished" block.
 #[derive(Clone)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct BasicBlock {

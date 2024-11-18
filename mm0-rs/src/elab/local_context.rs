@@ -28,9 +28,11 @@ pub enum VarContext {
   Sort(SortId),
 }
 
-/// The infer status of a variable in a declaration. For example in
-/// `def foo {x} (ph: wff x y): wff = $ all z ph $;`, `x` has no declared type
-/// but is known to be bound, `y` is not declared at all but known to be a bound non-dummy,
+/// The infer status of a variable in a declaration.
+///
+/// For example in `def foo {x} (ph: wff x y): wff = $ all z ph $;`,
+/// `x` has no declared type but is known to be bound,
+/// `y` is not declared at all but known to be a bound non-dummy,
 /// and `z` is not declared and must be a bound dummy of type `var` (assuming
 /// that `all` has type `var` for its first argument).
 #[derive(Debug, EnvDebug)]
@@ -240,33 +242,35 @@ struct ElabTermMut<'a> {
   check_vis: bool,
 }
 
-impl<'a> Deref for ElabTermMut<'a> {
+impl Deref for ElabTermMut<'_> {
   type Target = Elaborator;
   fn deref(&self) -> &Elaborator { self.elab }
 }
-impl<'a> DerefMut for ElabTermMut<'a> {
+impl DerefMut for ElabTermMut<'_> {
   fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
 /// Get the span from the lisp value `e`, but only if it lies inside the
-/// span `fsp`, otherwise return `fsp`. (This prevents errors in
-/// one statement from causing error reports further up the file or
-/// even in another file.)
+/// span `fsp`, otherwise return `fsp`.
+///
+/// (This prevents errors in one statement from causing error reports further
+/// up the file or even in another file.)
 pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
   try_get_span_from(fsp, e.fspan().as_ref())
 }
 
-/// Get the span from `fsp2`, but only if it lies inside the
-/// span `fsp`, otherwise return `fsp`. (This prevents errors in
-/// one statement from causing error reports further up the file or
-/// even in another file.)
+/// Get the span from `fsp2`, but only if it lies inside the span `fsp`,
+/// otherwise return `fsp`.
+///
+/// (This prevents errors in one statement from causing error reports further
+/// up the file or even in another file.)
 #[must_use] pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
   try_get_span_opt(fsp, fsp2).unwrap_or(fsp.span)
 }
-/// Get the span from `fsp2`, but only if it lies inside the
-/// span `fsp`. (This prevents errors in
-/// one statement from causing error reports further up the file or
-/// even in another file.)
+/// Get the span from `fsp2`, but only if it lies inside the span `fsp`.
+///
+/// (This prevents errors in one statement from causing error reports further
+/// up the file or even in another file.)
 #[must_use] pub fn try_get_span_opt(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Option<Span> {
   match fsp2 {
     Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => Some(fsp2.span),
@@ -501,8 +505,8 @@ impl BuildArgs {
   }
 
   fn push_var(&mut self, vars: &HashMap<AtomId, (bool, InferSort)>,
-    a: Option<AtomId>, is: &Option<InferSort>) -> Option<EType> {
-    match is.as_ref().unwrap_or_else(||
+    a: Option<AtomId>, is: Option<&InferSort>) -> Option<EType> {
+    match is.unwrap_or_else(||
         &vars[&a.expect("a variable must have a name or an expected type")].1) {
       &InferSort::Bound { sort, .. } => {
         self.push_bound(a)?;
@@ -837,7 +841,7 @@ impl Elaborator {
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
-          let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
+          let ty = ba.push_var(&self.lc.vars, a, is.as_ref()).ok_or_else(||
             ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
@@ -950,7 +954,7 @@ impl Elaborator {
         let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
-          let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
+          let ty = ba.push_var(&self.lc.vars, a, is.as_ref()).ok_or_else(||
             ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")))?;
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
@@ -1043,6 +1047,8 @@ impl Elaborator {
   }
 }
 
+/// A suspension created by `add-thm!`.
+///
 /// This is a temporary structure returned by [`add_thm`](Elaborator::add_thm)
 /// which implements the `(add-thm! x bis hyps ret vis vtask)` user-level function,
 /// when `vtask` is a lambda instead of a direct proof. In this case, we have to

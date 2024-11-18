@@ -485,7 +485,8 @@ struct CallStack<'a> {
 }
 
 /// The lisp evaluation context, representing a lisp evaluation in progress.
-/// This is an explicitly unfolled state machine (rather than using recursive functions)
+///
+/// This is an explicitly unrolled state machine (rather than using recursive functions)
 /// so that we can explicitly manipulate the program stack for error reporting purposes.
 #[derive(Debug)]
 pub struct Evaluator<'a> {
@@ -509,11 +510,11 @@ pub struct Evaluator<'a> {
   stack: Vec<Stack>,
   call_stack: Vec<CallStack<'a>>,
 }
-impl<'a> Deref for Evaluator<'a> {
+impl Deref for Evaluator<'_> {
   type Target = Elaborator;
   fn deref(&self) -> &Elaborator { self.elab }
 }
-impl<'a> DerefMut for Evaluator<'a> {
+impl DerefMut for Evaluator<'_> {
   fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 

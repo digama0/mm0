@@ -1742,10 +1742,9 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.returns = Some(Rc::new(Returns { outs: outs2, args: ret_vs }));
         self.tr.cur_gen = GenId::ROOT;
         self.cur_ctx = base_ctx;
-        match self.block(it.span, body, None, None) {
-          Ok(()) => unreachable!("bodies should end in unconditional return"),
-          Err(Diverged) => {}
-        }
+        let Err(Diverged) = self.block(it.span, body, None, None) else {
+          unreachable!("bodies should end in unconditional return")
+        };
         self.cfg.max_var = self.tr.next_var;
         self.tree.append_to(&mut self.cfg.tree);
         mir.insert(name.k, Proc {

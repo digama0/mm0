@@ -205,7 +205,7 @@ impl Cfg {
   }
 }
 
-impl<'a> Postorder<'a> {
+impl Postorder<'_> {
   /// After this function is called, the top of the visit stack will have an
   /// empty list of successors.
   fn traverse_successor(&mut self) {

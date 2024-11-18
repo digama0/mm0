@@ -75,6 +75,7 @@ bitflags::bitflags! {
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Flags);
 
 /// A trait for types that can accumulate flag data.
+///
 /// (We use `T: AddFlags` roughly interchangeably with
 /// `for<'a> Flags: BitOrAssign<&'a T>`; the latter sometimes gives Rust trouble
 /// due to syntax restrictions around higher-order type bounds.)
@@ -168,6 +169,7 @@ mk_id! {
 }
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
+///
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
 /// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
 /// There is a special lifetime `extern` that represents inputs to the current function.
@@ -286,9 +288,10 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
   }
 }
 
-/// Defines the kind of pattern match being performed by a [`TuplePatternKind::Tuple`]. The [`Ty`]
-/// part defines this uniquely, but there is some weak head normalization required to determine
-/// this, so it is easier to have an enum to quickly match against.
+/// Defines the kind of pattern match being performed by a [`TuplePatternKind::Tuple`].
+///
+/// The [`Ty`] part defines this uniquely, but there is some weak head normalization
+/// required to determine this, so it is easier to have an enum to quickly match against.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TupleMatchKind {
   /// A unit pattern match just returns `()`.
@@ -314,14 +317,14 @@ pub enum TupleMatchKind {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(TupleMatchKind);
 
-impl<'a> TuplePatternS<'a> {
+impl TuplePatternS<'_> {
   /// Calls function `f` on all variables in the pattern.
   pub fn on_vars(&self, f: &mut impl FnMut(Symbol, VarId)) {
     self.k.on_vars(self.var, f)
   }
 }
 
-impl<'a> TuplePatternKind<'a> {
+impl TuplePatternKind<'_> {
   /// Calls function `f` on all variables in the pattern.
   pub fn on_vars(&self, v: VarId, f: &mut impl FnMut(Symbol, VarId)) {
     match *self {
@@ -628,7 +631,7 @@ impl<'a> TyS<'a> {
   /// Calls function `f` on all type metavariables.
   pub fn on_mvars(&self, f: impl FnMut(TyMVarId)) {
     struct Visitor<F>(F);
-    impl<'a, F: FnMut(TyMVarId)> TyVisit<'a> for Visitor<F> {
+    impl<F: FnMut(TyMVarId)> TyVisit<'_> for Visitor<F> {
       fn visit_mvar(&mut self, v: TyMVarId) { self.0(v) }
     }
     impl<'a, F: FnMut(TyMVarId)> ExprVisit<'a> for Visitor<F> {
@@ -795,7 +798,7 @@ impl std::fmt::Debug for TyKind<'_> {
   }
 }
 
-impl<'a> TyS<'a> {
+impl TyS<'_> {
   /// Returns true if this is a copy type (i.e. `|T| = T`).
   #[inline] #[must_use] pub fn is_copy(&self) -> bool {
     !self.flags.contains(Flags::IS_NON_COPY)
@@ -1041,7 +1044,7 @@ impl<'a> ExprS<'a> {
   /// Calls function `f` on all expression metavariables.
   pub fn on_mvars(&self, f: impl FnMut(ExprMVarId)) {
     struct Visitor<F>(F);
-    impl<'a, F: FnMut(ExprMVarId)> ExprVisit<'a> for Visitor<F> {
+    impl<F: FnMut(ExprMVarId)> ExprVisit<'_> for Visitor<F> {
       fn visit_mvar(&mut self, e: ExprMVarId) { self.0(e) }
     }
     self.visit(&mut Visitor(f));

@@ -49,7 +49,7 @@ impl<'a> FormatEnv<'a> {
   }
 }
 
-impl<'a> Deref for FormatEnv<'a> {
+impl Deref for FormatEnv<'_> {
   type Target = Environment;
   fn deref(&self) -> &Environment {self.env}
 }
@@ -66,12 +66,12 @@ impl Elaborator {
   }
 }
 
-impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
+impl<D: EnvDisplay + ?Sized> fmt::Display for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
 /// Items implementing [`EnvDebug`] can be put in formatters using `{:#?}`.
-impl<'a, D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'a, D> {
+impl<D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.e.env_dbg(self.fe, f)
   }

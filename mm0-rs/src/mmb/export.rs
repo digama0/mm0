@@ -56,7 +56,7 @@ pub struct Exporter<'a, W> {
   fixups: Vec<(u64, Value)>,
 }
 
-impl<'a, W: std::fmt::Debug> std::fmt::Debug for Exporter<'a, W> {
+impl<W: std::fmt::Debug> std::fmt::Debug for Exporter<'_, W> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Exporter")
       .field("file", &self.file)

@@ -142,22 +142,25 @@ impl BuildAst {
   }
 }
 
-/// A scope guard, which is constructed by the [`BuildAst::scope`] function to start a scope,
-/// and is closed by the `Scope::close` function (which would be a `Drop` implementation except
-/// that it requires the client to provide access to the [`BuildAst`]).
+/// A scope guard.
+///
+/// This is constructed by the [`BuildAst::scope`] function to start a scope,
+/// and is closed by the `Scope::close` function (which would be a `Drop`
+/// implementation except that it requires the client to provide access to the
+/// [`BuildAst`]).
 #[derive(Debug)] #[allow(missing_copy_implementations)]
 #[must_use] pub struct Scope(usize);
 
 impl Scope {
-  /// Finish a scope, which drops any variables that have been introduced since `BuildAst::scope`
-  /// was called.
+  /// Finish a scope, which drops any variables that have been introduced since
+  /// `BuildAst::scope` was called.
   pub fn close(self, ba: &mut BuildAst) { ba.drain_to(self.0); }
 }
 
 impl BuildAst {
-  /// Start a new scope. All variables introduced after this point can be popped from the context
-  /// by calling `Scope::close`. Alternatively, one can use the [`with_ctx`](Self::with_ctx)
-  /// function to do scoping from a closure.
+  /// Start a new scope. All variables introduced after this point can be popped
+  /// from the context by calling `Scope::close`. Alternatively, one can use the
+  /// [`with_ctx`](Self::with_ctx) function to do scoping from a closure.
   pub fn scope(&self) -> Scope { Scope(self.ctx.len()) }
 
   fn pop(&mut self) {
@@ -450,6 +453,7 @@ impl<T: BuildMatch> MatchBuilder<T> {
 }
 
 /// A pattern builder, which is used to consume the parts of a match arm pattern.
+///
 /// This implements a coroutine protocol which is mostly but not entirely enforced by the
 /// type system. Individual functions specify when they can be called.
 /// * `Start`: The initial state upon construction by [`MatchBuilder::branch`].
@@ -485,6 +489,7 @@ impl<T> Debug for PatternBuilder<T> {
 
 /// A pattern, which is used in an opaque wrapper here to help guide the transitions of the match
 /// builder.
+///
 /// Concretely, a pattern is the conjunction of all the conditions that need to hold for this
 /// pattern to match. It is an `Option<Expr>` with `None` representing `true` so that we don't
 /// introduce a superfluous `true && ...` conjunct.
@@ -631,7 +636,7 @@ impl<T> Debug for OrBuilder<'_, T> {
   }
 }
 
-impl<'a, T: BuildMatch> OrBuilder<'a, T> {
+impl<T: BuildMatch> OrBuilder<'_, T> {
   /// Start a new or pattern variant `pat | ...`. Transitions the pattern
   /// builder from `Done` to `Start` to accept `pat`.
   pub fn send(&mut self, pb: &mut PatternBuilder<T>) {

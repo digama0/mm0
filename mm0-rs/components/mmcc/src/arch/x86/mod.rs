@@ -469,7 +469,9 @@ impl<N: std::ops::Add<Output = N>> std::ops::Add<N> for Offset<N> {
   }
 }
 
-/// A memory address. This has the form `off+base+si`, where `off` is a base memory location
+/// A memory address.
+///
+/// This has the form `off+base+si`, where `off` is a base memory location
 /// (a 32 bit address, or an offset from a stack slot, named global or named constant),
 /// `base` is a register or 0, and `si` is a shifted register or 0.
 /// Note that `base` must be 0 if `off` is `Spill(..)` because spill slots are RSP-relative,

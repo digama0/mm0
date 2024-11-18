@@ -1146,6 +1146,7 @@ impl<'a> Parser<'a> {
 }
 
 /// Main entry-point. Creates a [`Parser`] and parses a passed file.
+///
 /// `old` contains the last successful parse of the same file, in order to reuse
 /// previous parsing work. The [`Position`] denotes the first byte where the
 /// new file differs from the old one.

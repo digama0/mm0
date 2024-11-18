@@ -39,6 +39,7 @@ use crate::{FileSpan, Symbol, types::indent};
 use super::{Binop, FieldName, ProofId, Mm0Expr, Size, Spanned, Unop, VarId};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
+///
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
 /// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
 /// There is a special lifetime `extern` that represents inputs to the current function.
@@ -388,7 +389,9 @@ pub enum IfKind {
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(IfKind);
 
 /// A label, which is a combination of a label group (which is identified by a `VarId`)
-/// and an index into that group. This is used in the handling of `let rec` jumps, which
+/// and an index into that group.
+///
+/// This is used in the handling of `let rec` jumps, which
 /// introduce a family of labels that can be jumped to within its scope.
 /// Labels for loops just use groups of size 1, so the sub-index is always 0.
 #[derive(Copy, Clone, Debug)]

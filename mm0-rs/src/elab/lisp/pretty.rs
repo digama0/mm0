@@ -17,6 +17,7 @@ use crate::{LispVal, LispKind, Uncons, FormatEnv,
   APP_PREC, ExprNode};
 
 /// The possible annotations around subparts of a pretty printed display.
+///
 /// These are ignored under usual printing settings, but they are used in
 /// HTML printing for coloring and to provide more detailed information.
 #[derive(Clone, Copy, Debug)]
@@ -745,7 +746,7 @@ impl<'a> FormatEnv<'a> {
   }
 }
 
-impl<'a> fmt::Display for PpExpr<'a> {
+impl fmt::Display for PpExpr<'_> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.fe.pretty(|p| p.pp_expr(self.e).1.doc.render_fmt(self.width, f))
   }

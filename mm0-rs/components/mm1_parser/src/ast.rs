@@ -168,6 +168,7 @@ impl Type {
 }
 
 /// A list of variables with a type or formula annotation.
+///
 /// A binder exists in a binder group such as `(ph ps: wff)` or `{x y .z: set}`,
 /// and `bi.span` is the span of the enclosing binder group.
 /// Detailed information about binder syntax can be found in the [declaration grammar].

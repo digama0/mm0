@@ -8,8 +8,9 @@ use crate::{FileSpan, Symbol, types::indent};
 use super::{Mm0Expr, VarId, IntTy, ProofId, ty};
 pub use super::ast::ProcKind;
 
-/// A "generation ID", which tracks the program points where mutation
-/// can occur. The actual set of logical variables is some subset of
+/// A "generation ID", which tracks the program points where mutation can occur.
+///
+/// The actual set of logical variables is some subset of
 /// all `(VarId, GenId)` pairs; one of the roles of the type inference pass
 /// is to determine which variables change across each generation
 /// and which do not.
@@ -37,7 +38,7 @@ pub struct Spanned<'a, T> {
   pub k: T,
 }
 
-impl<'a, T: std::fmt::Debug> std::fmt::Debug for Spanned<'a, T> {
+impl<T: std::fmt::Debug> std::fmt::Debug for Spanned<'_, T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.k.fmt(f) }
 }
 
@@ -257,8 +258,10 @@ pub enum ListKind {
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(ListKind);
 
-/// A while loop expression. An additional field `has_break` is stored in the return type
-/// of the expression: If `cond` is a pure expression and there are no early `break`s inside the
+/// A while loop expression.
+///
+/// An additional field `has_break` is stored in the return type of the expression:
+/// If `cond` is a pure expression and there are no early `break`s inside the
 /// loop, then the return type is `!cond`; otherwise `()`.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]

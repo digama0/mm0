@@ -27,6 +27,8 @@ pub struct QExpr {
   pub k: QExprKind,
 }
 #[derive(Debug)]
+/// A parsed expression tree.
+///
 /// A math expression like `$ 2 + foo (x, y) z $` is parsed by the math parser
 /// into a representation such as `'(add (two (foo (pair x y) z)))`, and these
 /// are mostly interchangeable. The `QExpr` type is slightly different from
@@ -113,7 +115,7 @@ impl<'a> DerefMut for MathParser<'a> {
   fn deref_mut(&mut self) -> &mut Parser<'a> { &mut self.p }
 }
 
-impl<'a> MathParser<'a> {
+impl MathParser<'_> {
   fn ws(&mut self) {
     loop {
       match self.cur() {

@@ -29,7 +29,7 @@ impl<'a, W: Write> HtmlPrinter<'a, W> {
   }
 }
 
-impl<'a, W: Write> pretty::Render for HtmlPrinter<'a, W> {
+impl<W: Write> pretty::Render for HtmlPrinter<'_, W> {
   type Error = std::io::Error;
 
   fn write_str(&mut self, s: &str) -> io::Result<usize> {
@@ -42,7 +42,7 @@ impl<'a, W: Write> pretty::Render for HtmlPrinter<'a, W> {
   }
 }
 
-impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W> {
+impl<'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'_, W> {
   /// Push the close annotation's close tag to the stack for later
   /// and write the open tag representation to the underlying writer
   fn push_annotation(&mut self, ann: &'b Annot) -> io::Result<()> {
@@ -230,7 +230,7 @@ impl LayoutResult {
   }
 }
 
-impl<'a> LayoutProof<'a> {
+impl LayoutProof<'_> {
   fn push_line(&mut self, hyps: Box<[u32]>, kind: LineKind, expr: LispVal) -> u32 {
     let line = self.lines.len().try_into().expect("lines are u32");
     self.lines.push(Line {hyps, kind, expr});
@@ -426,8 +426,7 @@ impl Hash for CaseInsensitiveName {
 impl PartialEq for CaseInsensitiveName {
   fn eq(&self, other: &Self) -> bool {
     self.0.len() == other.0.len() &&
-    self.0.iter().zip(other.0.iter()).all(|(&x, &y)|
-      x.to_ascii_lowercase() == y.to_ascii_lowercase())
+    self.0.iter().zip(other.0.iter()).all(|(&x, &y)| x.eq_ignore_ascii_case(&y))
   }
 }
 impl Eq for CaseInsensitiveName {}
@@ -522,7 +521,7 @@ fn header(w: &mut impl Write,
 }
 const FOOTER: &str = "  </div>\n</body>\n</html>";
 
-fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
+fn render_doc(w: &mut impl Write, doc: Option<&DocComment>) -> io::Result<()> {
   if let Some(doc) = doc {
     use pulldown_cmark::{Parser, html};
     write!(w, r#"      <div class="doc">"#)?;
@@ -541,7 +540,7 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
   }
 }
 
-impl<'a, W: Write> BuildDoc<'a, W> {
+impl<W: Write> BuildDoc<'_, W> {
   fn thm_doc(&mut self,
     prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>
   ) -> io::Result<std::path::PathBuf> {
@@ -591,7 +590,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       &format!("{thmname} - {filename}"),
       &format!(r#"{kind} <a class="{kindclass}" href="">{thmname}</a>"#),
       &nav, &["../proof.js"])?;
-    render_doc(&mut file, &td.doc)?;
+    render_doc(&mut file, td.doc.as_ref())?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
       writeln!(file, "    \
@@ -675,7 +674,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           writeln!(file, "\">")?;
           let sid = ad.sort.expect("wf env");
           let sd = &self.env.sorts[sid];
-          render_doc(&mut file, &sd.doc)?;
+          render_doc(&mut file, sd.doc.as_ref())?;
           writeln!(file, "      <pre>")?;
           let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
           fe.pretty(|pr| pr.sort(sid).render_raw(PP_WIDTH, w))?;
@@ -689,7 +688,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           match ad.decl.expect("wf env") {
             DeclKey::Term(tid) => {
               let td = &self.env.terms[tid];
-              render_doc(&mut file, &td.doc)?;
+              render_doc(&mut file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.term_and_notations(tid, true).render_raw(PP_WIDTH, w))?;
@@ -697,7 +696,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
-              render_doc(&mut file, &td.doc)?;
+              render_doc(&mut file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.thm(tid).render_raw(PP_WIDTH, w))?;

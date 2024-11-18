@@ -797,12 +797,12 @@ enum Value {
   SpillSlot(ProofId),
 }
 
-impl<'a> std::ops::Deref for ProcProver<'a> {
+impl std::ops::Deref for ProcProver<'_> {
   type Target = Ctx;
   fn deref(&self) -> &Self::Target { &self.ctx }
 }
 
-impl<'a> ProcProver<'a> {
+impl ProcProver<'_> {
   fn pp(&mut self, i: ProofId) -> String {
     format_to_string(|s| self.thm.pp(self.elab, i, s))
   }
@@ -1306,7 +1306,7 @@ impl<'a> Deref for BlockProofVisitor<'a, '_> {
   type Target = ProcProver<'a>;
   fn deref(&self) -> &Self::Target { self.proc }
 }
-impl<'a, 'b> DerefMut for BlockProofVisitor<'a, 'b> {
+impl DerefMut for BlockProofVisitor<'_, '_> {
   fn deref_mut(&mut self) -> &mut Self::Target { self.proc }
 }
 
@@ -1335,7 +1335,7 @@ impl<'a> ProcProver<'a> {
   }
 }
 
-impl<'a, 'b> BlockProofVisitor<'a, 'b> {
+impl<'a> BlockProofVisitor<'a, '_> {
   /// Assuming a `|- code1 +asm code2` proof obligation, pops this and
   /// adds two `|- code1`, `|- code2` proof obligations. (See `finish`)
   fn split(&mut self) {

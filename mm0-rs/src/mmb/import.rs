@@ -123,7 +123,7 @@ impl<'a> Iterator for DedupIter<'a> {
   }
 }
 
-impl<'a> ExactSizeIterator for DedupIter<'a> {
+impl ExactSizeIterator for DedupIter<'_> {
   fn len(&self) -> usize { self.0.len() }
 }
 

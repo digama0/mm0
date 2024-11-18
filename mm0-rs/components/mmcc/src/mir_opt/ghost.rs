@@ -257,7 +257,7 @@ impl Cfg {
       }
     }
 
-    impl<'a> Analysis for GhostAnalysis<'a> {
+    impl Analysis for GhostAnalysis<'_> {
       type Dir = Backward;
       type Doms = GhostDoms;
 

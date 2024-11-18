@@ -327,6 +327,8 @@ impl<'a, T> IntoIterator for &'a ArcList<T> {
   fn into_iter(self) -> ArcListIter<'a, T> { ArcListIter(self) }
 }
 
+/// A partially initialized `Box<[T]>`.
+///
 /// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),
 /// initializing the elements in some order, and then using the unsafe function
 /// [`assume_init`] to assert that every element of the array has been initialized and
@@ -490,7 +492,9 @@ struct FileRefInner {
   uri: Option<lsp_types::Uri>,
 }
 
-/// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
+/// A reference to a file.
+///
+/// It wraps an [`Arc`] so it can be cloned thread-safely.
 /// A [`FileRef`] can be constructed either from a [`PathBuf`] or a
 /// (`file://`) [`Uri`](lsp_types::Uri),
 /// and provides (precomputed) access to these views using

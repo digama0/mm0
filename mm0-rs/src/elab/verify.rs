@@ -545,7 +545,7 @@ struct VerifyProof<'a, 'b> {
   bvars: u64,
 }
 
-impl<'a, 'b> VerifyProof<'a, 'b> {
+impl<'a> VerifyProof<'a, '_> {
   fn verify_proof_node(&mut self, node: &'a ProofNode) -> Result<HeapEl<'a>, VerifyError<'a>> {
     Ok(match *node {
       ProofNode::Ref(i) => self.heap[i],

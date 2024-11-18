@@ -20,7 +20,7 @@ impl<'a> std::ops::Deref for BuildAssemblyProc<'a> {
   type Target = ProofDedup<'a>;
   fn deref(&self) -> &Self::Target { &self.thm }
 }
-impl<'a> std::ops::DerefMut for BuildAssemblyProc<'a> {
+impl std::ops::DerefMut for BuildAssemblyProc<'_> {
   fn deref_mut(&mut self) -> &mut Self::Target { &mut self.thm }
 }
 
@@ -1105,7 +1105,7 @@ impl<'a> Deref for BuildAssemblyVisitor<'a, '_> {
   type Target = BuildAssemblyProc<'a>;
   fn deref(&self) -> &Self::Target { self.proc }
 }
-impl<'a, 'b> DerefMut for BuildAssemblyVisitor<'a, 'b> {
+impl DerefMut for BuildAssemblyVisitor<'_, '_> {
   fn deref_mut(&mut self) -> &mut Self::Target { self.proc }
 }
 
@@ -1252,7 +1252,7 @@ impl cl::Visitor<'_> for BuildAssemblyVisitor<'_, '_> {
   ) { self.end_rassoc(true) }
 }
 
-impl<'a> BuildAssemblyProc<'a> {
+impl BuildAssemblyProc<'_> {
   /// Given `x`, proves `(s, y, A, |- localAssemble start s x y A)` where
   /// `s` is generated from the assembly blocks.
   pub(super) fn blocks(&mut self, proc: &Proc<'_>) -> (ProofId, Num, ProofId, ProofId) {

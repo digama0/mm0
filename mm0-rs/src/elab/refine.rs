@@ -406,6 +406,7 @@ impl EnvDisplay for RState {
 
 /// Stores the result of unification, which is ready as soon as we read the first
 /// `n` arguments of the application, if the theorem has `n` arguments.
+///
 /// If there are more arguments in the application, we go into
 /// [`Extra`](RefineHypsResult::Extra) mode
 /// and call the user callback `refine-extra-args` to find out how to deal with it.

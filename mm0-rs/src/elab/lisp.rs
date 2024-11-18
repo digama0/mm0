@@ -264,7 +264,9 @@ impl InferTarget {
   #[must_use] pub fn bound(self) -> bool { matches!(self, InferTarget::Bound(_)) }
 }
 
-/// A lisp value. These are the "values" that are passed around by lisp code.
+/// A lisp value.
+///
+/// These are the "values" that are passed around by lisp code.
 /// See [`LispKind`] for the list of different types of lisp object. This is
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
 #[derive(Default, Debug, EnvDebug, Clone)]
@@ -991,8 +993,9 @@ pub enum Proc {
   Dyn(RefCell<Box<dyn LispProc>>) // TODO: use extern instead
 }
 
-/// A procedure specification, which defines the number of arguments expected
-/// by the call. Individual procedures may have additional rules on top of
+/// A procedure specification, which defines the number of arguments expected by the call.
+///
+/// Individual procedures may have additional rules on top of
 /// this for validity, but every procedure must declare its specification
 /// in [`Proc::spec`].
 #[derive(Copy, Clone, Debug)]
@@ -1475,10 +1478,11 @@ impl Remap for Box<dyn LispProc> {
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.box_remap(r) }
 }
 
-/// An iterator over lisp values, for dealing with lists. Semantically this is
-/// the same as a [`LispVal`], but in order to decrease allocations this allows
-/// holding on to incomplete subparts of the arrays used in [`LispKind::List`]
-/// and [`LispKind::DottedList`].
+/// An iterator over lisp values, for dealing with lists.
+///
+/// Semantically this is the same as a [`LispVal`], but in order to decrease
+/// allocations this allows holding on to incomplete subparts of the arrays
+/// used in [`LispKind::List`] and [`LispKind::DottedList`].
 #[must_use] #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Uncons {

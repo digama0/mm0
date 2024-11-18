@@ -515,7 +515,7 @@ pub enum FrozenUncons<'a> {
   DottedList(&'a [FrozenLispVal], &'a FrozenLispVal),
 }
 
-impl<'a> FrozenUncons<'a> {
+impl FrozenUncons<'_> {
   /// Returns true if this is a proper list of length `n`.
   #[must_use] pub fn exactly(&self, n: usize) -> bool {
     match self {

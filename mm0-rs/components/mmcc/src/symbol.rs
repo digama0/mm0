@@ -6,20 +6,24 @@ use once_cell::sync::Lazy;
 use crate::types::IdxVec;
 
 mk_id! {
-  /// A `Symbol` is an interned string, used to avoid copying strings around everywhere
-  /// in the compiler. These can refer to keywords or operators, function names, variable names
+  /// A `Symbol` is an interned string.
+  ///
+  /// It is used to avoid copying strings around everywhere in the compiler.
+  /// These can refer to keywords or operators, function names, variable names
   /// and any other syntactic entities the compiler needs to refer to.
   ///
-  /// Symbols are interned forever: the interner leaks any string it is given. As a result,
-  /// symbols can be used across compiler invocations in a single execution, although they do not
-  /// have a stable name across executions.
+  /// Symbols are interned forever: the interner leaks any string it is given.
+  /// As a result, symbols can be used across compiler invocations in a single
+  /// execution, although they do not have a stable name across executions.
   Symbol(!Debug)
 }
 
-/// The global symbol interner. You don't normally need to interact directly with this struct,
-/// since the [`intern`] function can be used to intern a string without access to the interner,
-/// but [`Interner::with`] can be used to lock the interner for a time period to avoid the
-/// overhead of repeated locks.
+/// The global symbol interner.
+///
+/// You don't normally need to interact directly with this struct, since the
+/// [`intern`] function can be used to intern a string without access to the interner,
+/// but [`Interner::with`] can be used to lock the interner for a time period
+/// to avoid the overhead of repeated locks.
 #[derive(Debug)]
 pub struct Interner {
   names: HashMap<&'static str, Symbol>,
@@ -78,9 +82,11 @@ impl std::fmt::Debug for Symbol {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{self}") }
 }
 
-/// Initialize a map from symbols to values of type `T`. Note that this will create an array the
-/// same size as all symbols that have ever been interned, so it is best to use this only during
-/// initialization for keyword lists and the like.
+/// Initialize a map from symbols to values of type `T`.
+///
+/// Note that this will create an array the same size as all symbols that have
+/// ever been interned, so it is best to use this only during initialization
+/// for keyword lists and the like.
 pub fn init_dense_symbol_map<T: Clone>(kv: &[(Symbol, T)]) -> Box<[Option<T>]> {
   use crate::types::Idx;
   let mut vec = vec![None; kv.iter().map(|p| p.0).max().map_or(0, |n| n.into_usize() + 1)];

@@ -383,6 +383,7 @@ enum FileCache {
 
 /// A virtual file represents a (possibly) open editor containing (possibly)
 /// edited text associated to a file in a virtual file hierarchy.
+///
 /// `import` statements are relative paths in this hierarchy, and it may
 /// map to the actual file system, to URLs, or to relative paths in memory.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]

@@ -13,9 +13,11 @@ pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
 pub use crate::arch::{self, PReg, PInst as VInst, PRegMem};
 
-/// If true, we are proving total correctness, so all recursions and loops
-/// must come with a variant that decreases on recursive calls.
-/// If false, then we are proving partial correctness, so variants are not required.
+/// A flag to control totality checking.
+///
+/// * If true, we are proving total correctness, so all recursions and loops
+///   must come with a variant that decreases on recursive calls.
+/// * If false, then we are proving partial correctness, so variants are not required.
 pub const VERIFY_TERMINATION: bool = true;
 
 /// A constructed ELF file, which contains functions for extracting theorems about
@@ -758,7 +760,7 @@ impl BlockProofTree<'_> {
   }
 }
 
-impl<'a> BlockProof<'a> {
+impl BlockProof<'_> {
   fn validate(&self, ctx: &im::HashMap<BlockId, bool>) {
     loop {
       match *self.ctx.cfg[self.id].terminator() {

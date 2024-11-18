@@ -381,11 +381,11 @@ struct LispParser<'a> {
   ctx: LocalCtx,
   code: Vec<Ir>,
 }
-impl<'a> Deref for LispParser<'a> {
+impl Deref for LispParser<'_> {
   type Target = Elaborator;
   fn deref(&self) -> &Elaborator { self.elab }
 }
-impl<'a> DerefMut for LispParser<'a> {
+impl DerefMut for LispParser<'_> {
   fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
@@ -537,7 +537,7 @@ impl<'a> LispParser<'a> {
   }
 }
 
-impl<'a> LispParser<'a> {
+impl LispParser<'_> {
   fn pop_builtin(&mut self) -> Option<BuiltinProc> {
     let Some(Ir::Const(v)) = self.code.last() else { return None };
     let p = v.unwrapped(|e|

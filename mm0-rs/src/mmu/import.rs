@@ -205,7 +205,7 @@ impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
   }
 }
 
-impl<'a, H: NodeHash> ExactSizeIterator for DedupIter<'a, H> {
+impl<H: NodeHash> ExactSizeIterator for DedupIter<'_, H> {
   fn len(&self) -> usize { self.0.len() }
 }
 
@@ -221,7 +221,7 @@ impl Dedup<ExprHash> {
   }
 }
 
-impl<'a> Importer<'a> {
+impl Importer<'_> {
   fn run(&mut self) -> Result<()> {
     self.ws();
     while let Some(start) = self.open() {

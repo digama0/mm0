@@ -130,11 +130,11 @@ impl FrozenEnv {
       store: &'a [ProofNode],
       lines: &'a [(Vec<Line>, Line)],
     }
-    impl<'a> Write for State<'a> {
+    impl Write for State<'_> {
       fn write(&mut self, buf: &[u8]) -> io::Result<usize> {self.l.write(buf)}
       fn flush(&mut self) -> io::Result<()> {self.l.flush()}
     }
-    impl<'a> State<'a> {
+    impl State<'_> {
       fn line(&mut self, indent: usize) {
         let l = mem::take(&mut self.l);
         self.w.push((mem::replace(&mut self.i, indent), l));

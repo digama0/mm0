@@ -38,6 +38,7 @@ pub struct Sort {
 }
 
 /// The type of a variable in the binder list of an `axiom`/`term`/`def`/`theorem`.
+///
 /// The variables themselves are not named because their names are derived from their
 /// positions in the binder list (i.e. `{v0 : s} (v1 : t v0) (v2 : t)`)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -140,10 +141,12 @@ pub struct Term {
   pub kind: TermKind,
 }
 
-/// A [`ProofNode`] is a stored proof term. This is an extension of [`ExprNode`] with
-/// more constructors, so a [`ProofNode`] can represent an expr, a proof, or a conversion,
-/// and the typing determines which. A [`ProofNode`] is interpreted in a context of
-/// variables `[Type]`, a heap `[ProofNode]`, and a store `[ProofNode]` for subterms.
+/// A [`ProofNode`] is a stored proof term.
+///
+/// This is an extension of [`ExprNode`] with more constructors, so a [`ProofNode`] can
+/// represent an expr, a proof, or a conversion, and the typing determines which.
+/// A [`ProofNode`] is interpreted in a context of variables `[Type]`, a heap `[ProofNode]`,
+/// and a store `[ProofNode]` for subterms.
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProofNode {
@@ -486,6 +489,7 @@ pub struct ParserEnv {
 
 /// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
 /// with the results being merged according to this strategy.
+///
 /// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
 /// which is to overwrite the original definition.
 #[derive(Clone, Debug, EnvDebug)]
@@ -503,6 +507,7 @@ pub enum MergeStrategyInner {
 
 /// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
 /// with the results being merged according to this strategy.
+///
 /// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
 /// which is to overwrite the original definition.
 pub type MergeStrategy = Option<Rc<MergeStrategyInner>>;
@@ -706,10 +711,11 @@ impl Delims {
   }
 }
 
-/// An auxiliary structure for performing [`Environment`] deep copies. This is needed
-/// because [`AtomId`]s from other, previously elaborated files may not be consistent with
-/// the current file, so we have to remap them to the current file's namespace
-/// during import.
+/// An auxiliary structure for performing [`Environment`] deep copies.
+///
+/// This is needed because [`AtomId`]s from other, previously elaborated files may
+/// not be consistent with the current file, so we have to remap them to the
+/// current file's namespace during import.
 #[derive(Default, Debug)]
 pub struct Remapper {
   /// A mapping of foreign sorts into local sort IDs
@@ -1149,9 +1155,11 @@ impl Environment {
   }
 }
 
-/// Adding an item (sort, term, theorem, atom) can result in a redeclaration error,
-/// or an overflow error (especially for sorts, which can only have 128 due to the
-/// MMB format). The redeclaration case allows returning a value `A`.
+/// An error produced by adding an item (sort, term, theorem, atom).
+///
+/// This can be a redeclaration error, or an overflow error (especially for sorts,
+/// which can only have 128 due to the MMB format).
+/// The redeclaration case allows returning a value `A`.
 #[derive(Debug)]
 pub enum AddItemError<A> {
   /// The declaration overlaps with some previous declaration
@@ -1454,9 +1462,11 @@ impl Environment {
   }
 }
 
-/// An iterator-like interface to environment merging. This is required because
-/// merging can involve calls into lisp when a custom `set-merge-strategy` is used,
-/// but the environment itself doesn't have the context required to perform this evaluation.
+/// An iterator-like interface to environment merging.
+///
+/// This is required because merging can involve calls into lisp when a custom
+/// `set-merge-strategy` is used, but the environment itself doesn't have the context
+/// required to perform this evaluation.
 /// So instead, we poll [`EnvMergeIter::next`], receiving [`AwaitingMerge`] objects
 /// that represent an unevaluated merge request; the request is fulfilled by calling
 /// [`EnvMergeIter::apply_merge`].
@@ -1468,7 +1478,9 @@ pub struct EnvMergeIter<'a> {
   it: std::slice::Iter<'a, StmtTrace>,
 }
 
-/// A lisp merge request. The elaborator receives this struct containing a merge strategy
+/// A lisp merge request.
+///
+/// The elaborator receives this struct containing a merge strategy
 /// and the `old` and `new` values in `val` and `new.val` respectively, and it fills
 /// `val` with the result of the request and completes the request by calling
 /// [`EnvMergeIter::apply_merge`].

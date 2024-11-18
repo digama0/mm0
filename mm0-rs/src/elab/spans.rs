@@ -8,6 +8,8 @@ use crate::AtomId;
 use super::local_context::LocalContext;
 use crate::Span;
 
+/// A structure tracking spans of objects occurring in a declaration.
+///
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
 /// spans of objects occurring in the statement. For example, we might register
 /// spans for variables, theorem references, and function calls, once we have
