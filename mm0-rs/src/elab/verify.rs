@@ -5,8 +5,7 @@ use std::{collections::HashMap, fmt::Write, cell::Cell};
 use mm0_util::{AtomId, Modifiers, SortId, TermId, ThmId, LinedString};
 use mm0b_parser::MAX_BOUND_VARS;
 
-use crate::{DeclKey, Environment, ExprNode, ProofNode, Term, TermKind,
-  Thm, ThmKind, Type, FormatEnv};
+use crate::{DeclKey, Environment, ExprNode, FormatEnv, LispVal, ProofNode, Term, TermKind, Thm, ThmKind, Type};
 use super::proof::Subst;
 
 /// If true, environment additions will be verified before going in the environmenst.
@@ -50,7 +49,7 @@ pub enum VerifyError<'a> {
   /// An error in expression validation.
   ExprVerifyError(&'a [ExprNode], &'a [ExprNode], Option<&'a ExprNode>, ExprVerifyError<'a>),
   /// An error in proof validation.
-  ProofVerifyError(&'a [ProofNode], &'a [ProofNode], Option<&'a ProofNode>, ProofVerifyError<'a>),
+  ProofVerifyError(ProofContext<'a>, Option<&'a ProofNode>, ProofVerifyError<'a>),
   /// The visibility applied to this definition is not valid for the definition.
   InvalidVisibility,
   /// Sort `s` was referenced before it was declared.
@@ -130,18 +129,19 @@ fn proof_head(heap: &[ProofNode], e: &ProofNode) -> Option<DeclKey> {
 
 impl ProofVerifyError<'_> {
   /// Convert this error to an error message.
-  pub fn render<W: Write>(&self, env: &Environment,
-    heap: &[ProofNode], store: &[ProofNode], parent: Option<&ProofNode>, w: &mut W
+  pub fn render<W: Write>(&self,
+    env: &Environment, ctx: &ProofContext<'_>, parent: Option<&ProofNode>, w: &mut W
   ) -> std::fmt::Result {
-    match parent.and_then(|e| proof_head(heap, e)) {
+    match parent.and_then(|e| proof_head(ctx.heap, e)) {
       Some(DeclKey::Thm(thm)) => write!(w, "at {}: ", env.data[env.thms[thm].atom].name)?,
       Some(DeclKey::Term(term)) => write!(w, "at {}: ", env.data[env.terms[term].atom].name)?,
       _ => {}
     }
     let build_heap = || {
-      let mut lisp_heap = vec![];
-      for e in heap {
-        let e = env.proof_node(&[], &lisp_heap, &mut None, store, e);
+      let mut lisp_heap = Vec::with_capacity(ctx.heap.len());
+      lisp_heap.extend(ctx.args.iter().map(|&(a, _)| LispVal::atom(a.unwrap_or(AtomId::UNDER))));
+      for e in &ctx.heap[lisp_heap.len()..] {
+        let e = env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, e);
         lisp_heap.push(e)
       }
       lisp_heap
@@ -162,16 +162,24 @@ impl ProofVerifyError<'_> {
         }
         write!(w, "Expected bound variable, got expression")
       }
-      Self::DisjointVariableViolation => write!(w,
-        "Disjoint variable violation when applying theorem"),
+      Self::DisjointVariableViolation => {
+        // if let Some(e) = parent {
+        //   with_format_env(env, |fe| if let Some(fe) = fe {
+        //     let lisp_heap = build_heap();
+        //     let p = env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, e);
+        //     writeln!(w, "at: {}", fe.pp(&p, 80)).unwrap()
+        //   });
+        // }
+        write!(w, "Disjoint variable violation when applying theorem")
+      },
       Self::UnifyFailure(i, proved) => with_format_env(env, |fe| if let Some(fe) = fe {
         let Some(&ProofNode::Thm(thm, p)) = parent else { unreachable!() };
         let td = &env.thms[thm];
         let lisp_heap = build_heap();
-        let (_, args, _) = td.unpack_thm(&store[p..]);
+        let (_, args, _) = td.unpack_thm(&ctx.store[p..]);
         let lisp_args = args.iter()
-          .map(|e| env.proof_node(&[], &lisp_heap, &mut None, store, e)).collect::<Vec<_>>();
-        let proved = env.proof_node(&[], &lisp_heap, &mut None, store, proved);
+          .map(|e| env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, e)).collect::<Vec<_>>();
+        let proved = env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, proved);
         let mut subst = Subst::new(env, &td.heap, &td.store, lisp_args.clone());
         fe.pretty(|pp| {
           pp.verify_subst_err(i, &lisp_args, &proved, td, |e| subst.subst(e)).render_fmt(80, w)
@@ -186,9 +194,9 @@ impl ProofVerifyError<'_> {
         let lisp_heap = build_heap();
         fe.pretty(|pp| {
           writeln!(w, "Conv proved the wrong thing: expected")?;
-          pp.expr(&env.proof_node(&[], &lisp_heap, &mut None, store, lhs)).render_fmt(80, w)?;
+          pp.expr(&env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, lhs)).render_fmt(80, w)?;
           writeln!(w, "\n  =")?;
-          pp.expr(&env.proof_node(&[], &lisp_heap, &mut None, store, rhs)).render_fmt(80, w)
+          pp.expr(&env.proof_node(ctx.hyps, &lisp_heap, &mut None, ctx.store, rhs)).render_fmt(80, w)
         })
       } else {
         write!(w, "Conv proved the wrong thing")
@@ -203,7 +211,7 @@ impl VerifyError<'_> {
   pub fn render<W: Write>(&self, env: &Environment, w: &mut W) -> std::fmt::Result {
     match *self {
       VerifyError::ExprVerifyError(heap, store, parent, e) => e.render(env, heap, store, parent, w),
-      VerifyError::ProofVerifyError(heap, store, parent, e) => e.render(env, heap, store, parent, w),
+      VerifyError::ProofVerifyError(ref ctx, parent, e) => e.render(env, ctx, parent, w),
       VerifyError::InvalidVisibility => write!(w, "invalid visibility"),
       VerifyError::FwdReferenceSort(s) => write!(w,
         "sort {} was referenced before it was declared", env.data[env.sorts[s].atom].name),
@@ -315,24 +323,23 @@ enum HeapEl<'a> {
 }
 
 impl<'a> HeapEl<'a> {
-  fn as_expr(&self,
-    heap: &'a [ProofNode], store: &'a [ProofNode], parent: Option<&'a ProofNode>
+  fn as_expr(&self, ctx: &ProofContext<'a>, parent: Option<&'a ProofNode>
   ) -> Result<(&'a ProofNode, SortId, bool), VerifyError<'a>> {
     match *self {
       HeapEl::Expr(node, s, bv) => Ok((node, s, bv)),
       HeapEl::Proof(node, _) |
-      HeapEl::Conv(node) => Err(VerifyError::ProofVerifyError(heap, store, parent,
+      HeapEl::Conv(node) => Err(VerifyError::ProofVerifyError(*ctx, parent,
         ProofVerifyError::ExpectedExpr(node))),
     }
   }
 
   fn as_proof(&self,
-    heap: &'a [ProofNode], store: &'a [ProofNode], parent: Option<&'a ProofNode>
+    ctx: &ProofContext<'a>, parent: Option<&'a ProofNode>
   ) -> Result<&'a ProofNode, VerifyError<'a>> {
     match *self {
       HeapEl::Proof(_, e) => Ok(e),
       HeapEl::Expr(node, ..) |
-      HeapEl::Conv(node) => Err(VerifyError::ProofVerifyError(heap, store, parent,
+      HeapEl::Conv(node) => Err(VerifyError::ProofVerifyError(*ctx, parent,
         ProofVerifyError::ExpectedProof(node))),
     }
   }
@@ -448,9 +455,9 @@ enum UnifyExprErr {
 
 impl UnifyExprErr {
   fn into_err<'a>(self, i: Option<usize>, tgt: &'a ProofNode,
-    p_heap: &'a [ProofNode], p_store: &'a [ProofNode], parent: Option<&'a ProofNode>,
+    ctx: &ProofContext<'a>, parent: Option<&'a ProofNode>,
   ) -> VerifyError<'a> {
-    VerifyError::ProofVerifyError(p_heap, p_store, parent, match self {
+    VerifyError::ProofVerifyError(*ctx, parent, match self {
       UnifyExprErr::UnifyFailure => ProofVerifyError::UnifyFailure(i, tgt),
       UnifyExprErr::DisjointVariableViolation => ProofVerifyError::DisjointVariableViolation,
     })
@@ -518,11 +525,18 @@ impl<'a, 'b> Unifier<'a, 'b> {
   }
 }
 
+/// The top level context objects within which a [`ProofNode`] is interpreted.
+#[derive(Clone, Copy, Debug)]
+pub struct ProofContext<'a> {
+  args: &'a [(Option<AtomId>, Type)],
+  hyps: &'a [(Option<AtomId>, ExprNode)],
+  heap: &'a [ProofNode],
+  store: &'a [ProofNode],
+}
 struct VerifyProof<'a, 'b> {
   env: &'b Environment,
   bound: &'b Bound,
-  orig_heap: &'a [ProofNode],
-  store: &'a [ProofNode],
+  ctx: ProofContext<'a>,
   deps: HashMap<*const ProofNode, u64>,
   heap: Vec<HeapEl<'a>>,
   found_hyps: Box<[Option<&'a ProofNode>]>,
@@ -550,24 +564,21 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
       ProofNode::Term(term, p) => {
         self.bound.check_term(term)?;
         let td = &self.env.terms[term];
-        vassert!(p + td.args.len() <= self.store.len(), VerifyError::MalformedStore);
-        let args = td.unpack_term(&self.store[p..]);
+        vassert!(p + td.args.len() <= self.ctx.store.len(), VerifyError::MalformedStore);
+        let args = td.unpack_term(&self.ctx.store[p..]);
         let mut accum = 0;
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
-          let (pr, s, bv) = self.verify_proof_node(e)?.as_expr(
-            self.orig_heap, self.store, Some(node))?;
+          let (pr, s, bv) = self.verify_proof_node(e)?.as_expr(&self.ctx, Some(node))?;
           accum |= self.deps[&std::ptr::from_ref(pr)];
           match *ty {
             Type::Bound(s2) => {
-              vassert!(s == s2, VerifyError::ProofVerifyError(
-                self.orig_heap, self.store, Some(node),
+              vassert!(s == s2, VerifyError::ProofVerifyError(self.ctx, Some(node),
                 ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
-              vassert!(bv, VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+              vassert!(bv, VerifyError::ProofVerifyError(self.ctx, Some(node),
                 ProofVerifyError::BoundError(self.thm_parent, e, i)));
             }
             Type::Reg(s2, _) => {
-              vassert!(s == s2, VerifyError::ProofVerifyError(
-                self.orig_heap, self.store, Some(node),
+              vassert!(s == s2, VerifyError::ProofVerifyError(self.ctx, Some(node),
                 ProofVerifyError::SortError(self.thm_parent, e, i, s2, s)));
             }
           }
@@ -576,69 +587,68 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
         HeapEl::Expr(node, td.ret.0, false)
       }
       ProofNode::Hyp(i, p) => {
-        vassert!(p < self.store.len(), VerifyError::MalformedStore);
-        let e = unref(self.orig_heap, &self.store[p]);
+        vassert!(p < self.ctx.store.len(), VerifyError::MalformedStore);
+        let e = unref(self.ctx.heap, &self.ctx.store[p]);
         vassert!(self.found_hyps[i].replace(e).is_none(), VerifyError::MultipleHyp(i));
         HeapEl::Proof(node, e)
       }
       ProofNode::Thm(thm, p) => {
         self.bound.check_thm(thm)?;
         let td = &self.env.thms[thm];
-        vassert!(p + td.args.len() + td.hyps.len() < self.store.len(), VerifyError::MalformedStore);
-        let (res, args, subproofs) = td.unpack_thm(&self.store[p..]);
+        vassert!(p + td.args.len() + td.hyps.len() < self.ctx.store.len(),
+          VerifyError::MalformedStore);
+        let (res, args, subproofs) = td.unpack_thm(&self.ctx.store[p..]);
         self.thm_parent = Some(thm);
         let mut deps = vec![];
         let mut uheap = vec![];
-        let mut unify = Unifier::new(self.env, &td.heap, &td.store, self.orig_heap, self.store);
+        let mut unify = Unifier::new(self.env, &td.heap, &td.store, self.ctx.heap, self.ctx.store);
         for ((i, e), (_, ty)) in args.iter().enumerate().zip(&*td.args) {
-          let (e2, s, bv) = self.verify_proof_node(e)?.as_expr(
-            self.orig_heap, self.store, Some(node))?;
+          let (e2, s, bv) = self.verify_proof_node(e)?.as_expr(&self.ctx, Some(node))?;
           let d = self.deps[&std::ptr::from_ref(e2)];
           match *ty {
             Type::Bound(s2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
-                self.orig_heap, self.store, Some(node),
+                self.ctx, Some(node),
                 ProofVerifyError::SortError(None, e, i, s2, s)));
               vassert!(bv, VerifyError::ProofVerifyError(
-                self.orig_heap, self.store, Some(node),
+                self.ctx, Some(node),
                 ProofVerifyError::BoundError(None, e, i)));
               for &(_, d2) in &uheap {
-                vassert!(d & d2 == 0, VerifyError::ProofVerifyError(
-                  self.orig_heap, self.store, Some(node),
+                vassert!(d & d2 == 0, VerifyError::ProofVerifyError(self.ctx, Some(node),
                   ProofVerifyError::DisjointVariableViolation));
               }
               deps.push(d);
             }
             Type::Reg(s2, d2) => {
               vassert!(s == s2, VerifyError::ProofVerifyError(
-                self.orig_heap, self.store, Some(node),
+                self.ctx, Some(node),
                 ProofVerifyError::SortError(None, e, i, s2, s)));
               for (i, &dep) in deps.iter().enumerate() {
                 vassert!(d2 & (1 << i) != 0 || dep & d == 0,
-                  VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+                  VerifyError::ProofVerifyError(self.ctx, Some(node),
                     ProofVerifyError::DisjointVariableViolation));
               }
             }
           }
           uheap.push((e2, d));
         }
-        let res = self.verify_proof_node(res)?.as_expr(self.orig_heap, self.store, Some(node))?.0;
+        let res = self.verify_proof_node(res)?.as_expr(&self.ctx, Some(node))?.0;
         for ((e, _), o) in uheap.into_iter().zip(&mut unify.tr) { *o = Some(e) }
         let res = unify.unify_expr(&self.deps, &td.ret, res).map_err(|e| e.into_err(
-          None, res, self.orig_heap, self.store, Some(node)))?;
+          None, res, &self.ctx, Some(node)))?;
         for (i, (arg, (_, tgt))) in subproofs.iter().zip(&*td.hyps).enumerate() {
-          let h = self.verify_proof_node(arg)?.as_proof(self.orig_heap, self.store, Some(node))?;
+          let h = self.verify_proof_node(arg)?.as_proof(&self.ctx, Some(node))?;
           unify.unify_expr(&self.deps, tgt, h).map_err(|e| e.into_err(
-            Some(i), h, self.orig_heap, self.store, Some(node)))?;
+            Some(i), h, &self.ctx, Some(node)))?;
         }
         self.thm_parent = None;
         HeapEl::Proof(node, res)
       }
       ProofNode::Conv(p) => {
-        vassert!(p + 3 <= self.store.len(), VerifyError::MalformedStore);
-        let (tgt, conv, proof) = ProofNode::unpack_conv(&self.store[p..]);
-        let lhs = unref(self.orig_heap, tgt);
-        let rhs = self.verify_proof_node(proof)?.as_proof(self.orig_heap, self.store, Some(node))?;
+        vassert!(p + 3 <= self.ctx.store.len(), VerifyError::MalformedStore);
+        let (tgt, conv, proof) = ProofNode::unpack_conv(&self.ctx.store[p..]);
+        let lhs = unref(self.ctx.heap, tgt);
+        let rhs = self.verify_proof_node(proof)?.as_proof(&self.ctx, Some(node))?;
         self.verify_conv_node(node, conv, lhs, rhs)?;
         HeapEl::Proof(node, tgt)
       }
@@ -654,66 +664,66 @@ impl<'a, 'b> VerifyProof<'a, 'b> {
   ) -> Result<(), VerifyError<'a>> {
     match *node {
       ProofNode::Ref(i) => match self.heap.get(i) {
-        Some(HeapEl::Conv(_)) => self.verify_conv_node(parent, &self.orig_heap[i], lhs, rhs)?,
-        _ => return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(parent),
+        Some(HeapEl::Conv(_)) => self.verify_conv_node(parent, &self.ctx.heap[i], lhs, rhs)?,
+        _ => return Err(VerifyError::ProofVerifyError(self.ctx, Some(parent),
           ProofVerifyError::ExpectedConv(node))),
       },
       ProofNode::Refl(p) => {
-        vassert!(p < self.store.len(), VerifyError::MalformedStore);
-        let e = unref(self.orig_heap, &self.store[p]);
+        vassert!(p < self.ctx.store.len(), VerifyError::MalformedStore);
+        let e = unref(self.ctx.heap, &self.ctx.store[p]);
         vassert!(std::ptr::eq(e, lhs) && std::ptr::eq(e, rhs),
-          VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+          VerifyError::ProofVerifyError(self.ctx, Some(node),
             ProofVerifyError::ExpectedConvSides(lhs, rhs)));
       }
       ProofNode::Sym(p) => {
-        vassert!(p < self.store.len(), VerifyError::MalformedStore);
-        self.verify_conv_node(node, &self.store[p], rhs, lhs)?
+        vassert!(p < self.ctx.store.len(), VerifyError::MalformedStore);
+        self.verify_conv_node(node, &self.ctx.store[p], rhs, lhs)?
       }
       ProofNode::Cong(term, p) => {
         let td = &self.env.terms[term];
-        vassert!(p + td.args.len() <= self.store.len(), VerifyError::MalformedStore);
-        let args = td.unpack_term(&self.store[p..]);
+        vassert!(p + td.args.len() <= self.ctx.store.len(), VerifyError::MalformedStore);
+        let args = td.unpack_term(&self.ctx.store[p..]);
         match (lhs, rhs) {
           (&ProofNode::Term(t1, p1), &ProofNode::Term(t2, p2))
           if term == t1 && term == t2 => {
-            let lhss = td.unpack_term(&self.store[p1..]);
-            let rhss = td.unpack_term(&self.store[p2..]);
+            let lhss = td.unpack_term(&self.ctx.store[p1..]);
+            let rhss = td.unpack_term(&self.ctx.store[p2..]);
             for ((a, l), r) in args.iter().zip(lhss).zip(rhss) {
-              self.verify_conv_node(node, a, unref(self.orig_heap, l), unref(self.orig_heap, r))?
+              self.verify_conv_node(node, a, unref(self.ctx.heap, l), unref(self.ctx.heap, r))?
             }
           }
-          _ => return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+          _ => return Err(VerifyError::ProofVerifyError(self.ctx, Some(node),
             ProofVerifyError::ExpectedConvSides(lhs, rhs)))
         }
       }
       ProofNode::Unfold(term, p) => match *lhs {
         ProofNode::Term(t1, p1) if term == t1 => {
           let td = &self.env.terms[term];
-          vassert!(p + td.args.len() + 2 <= self.store.len(), VerifyError::MalformedStore);
-          let (sub_lhs, c, args) = td.unpack_unfold(&self.store[p..]);
-          let lhss = td.unpack_term(&self.store[p1..]);
+          vassert!(p + td.args.len() + 2 <= self.ctx.store.len(), VerifyError::MalformedStore);
+          let (sub_lhs, c, args) = td.unpack_unfold(&self.ctx.store[p..]);
+          let lhss = td.unpack_term(&self.ctx.store[p1..]);
           if let TermKind::Def(Some(expr)) = &td.kind {
             let mut unify = Unifier::new(self.env,
-              &expr.heap, &expr.store, self.orig_heap, self.store);
+              &expr.heap, &expr.store, self.ctx.heap, self.ctx.store);
             for ((e, e2), o) in args.iter().zip(lhss).zip(&mut unify.tr) {
-              let e = unref(self.orig_heap, e);
-              vassert!(std::ptr::eq(e, unref(self.orig_heap, e2)),
-                VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+              let e = unref(self.ctx.heap, e);
+              vassert!(std::ptr::eq(e, unref(self.ctx.heap, e2)),
+                VerifyError::ProofVerifyError(self.ctx, Some(node),
                   ProofVerifyError::ExpectedConvSides(lhs, rhs)));
               *o = Some(e)
             }
             let sub_lhs = unify.unify_expr(&self.deps, expr.head(), sub_lhs).map_err(|e| e.into_err(
-              None, sub_lhs, self.orig_heap, self.store, Some(node)))?;
+              None, sub_lhs, &self.ctx, Some(node)))?;
             self.verify_conv_node(node, c, sub_lhs, rhs)?
           } else {
-            return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+            return Err(VerifyError::ProofVerifyError(self.ctx, Some(node),
               ProofVerifyError::UnfoldNonDef))
           }
         }
-        _ => return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(node),
+        _ => return Err(VerifyError::ProofVerifyError(self.ctx, Some(node),
           ProofVerifyError::ExpectedConvSides(lhs, rhs)))
       }
-      _ => return Err(VerifyError::ProofVerifyError(self.orig_heap, self.store, Some(parent),
+      _ => return Err(VerifyError::ProofVerifyError(self.ctx, Some(parent),
         ProofVerifyError::ExpectedConv(node))),
     }
     Ok(())
@@ -783,9 +793,8 @@ impl Environment {
         let mut ver = VerifyProof {
           env: self,
           bound,
+          ctx: ProofContext { args: &td.args, hyps: &td.hyps, heap: &pf.heap, store: &pf.store },
           heap: vec![],
-          orig_heap: &pf.heap,
-          store: &pf.store,
           found_hyps: vec![None; td.hyps.len()].into(),
           deps: Default::default(),
           dummies: Default::default(),
@@ -816,7 +825,7 @@ impl Environment {
             _ => return Err(VerifyError::MalformedHyp(i)),
           }
         }
-        let res = ver.verify_proof_node(pf.head())?.as_proof(&pf.heap, &pf.store, None)?;
+        let res = ver.verify_proof_node(pf.head())?.as_proof(&ver.ctx, None)?;
         hyp_unify.unify_expr(&ver.deps, &td.ret, res).map_err(|e| match e {
           UnifyExprErr::UnifyFailure => VerifyError::ThmUnifyFailure(res),
           UnifyExprErr::DisjointVariableViolation => VerifyError::InvalidDummy,
