@@ -72,7 +72,7 @@ theorem lamTR (A B: type) {x: term} (G: wff x) (t: term x):
   $ G |- \ x: A. t: A -> B $ > $ G; x: A |- t: B $;
 
 def bi (a b: term): term = $ =[bool] a = b $;
-infixl bi: $<=>$ prec 20;
+infixl bi: $<=>$ prec 21;
 
 axiom eqmp (G: wff) (A B: term):
   $ G |- A <=> B $ > $ G |- A $ > $ G |- B $;
@@ -90,7 +90,7 @@ axiom inst (G: wff) (A: type) {x: term} (t a: term x):
   $ G |- a: bool $ > $ G |- t: A $ > $ G; =[A] x = t |- a $ > $ G |- a $;
 
 def T: term;
-theorem T_DEF (G: wff): $ G |- T <=> =[bool -> bool] (\ x: bool. x) = (\ x: bool. x) $;
+theorem T_DEF (G: wff) {x: term}: $ G |- T <=> =[bool -> bool] (\ x: bool. x) = (\ x: bool. x) $;
 theorem TT (G: wff): $ G |- T: bool $;
 theorem TRUTH (G: wff): $ G |- T $;
 theorem EQT_ELIM (G: wff) (P: term): $ G |- P <=> T $ > $ G |- P $;
@@ -197,7 +197,7 @@ theorem OR_DEF (G: wff) {p q r: term}:
     (\ p: bool. \ q: bool. !r: bool. (p ==> r) ==> (q ==> r) ==> r) $;
 theorem orT (G: wff): $ G |- or: bool -> bool -> bool $;
 
-def orc (a b: term): term = $ or @ a @ b $; infixl orc: $\/$ prec 30;
+def orc (a b: term): term = $ or @ a @ b $; infixl orc: $\/$ prec 31;
 
 theorem DISJ1 (G: wff) (p q: term): $ G |- p $ > $ G |- q: bool $ > $ G |- p \/ q $;
 theorem DISJ2 (G: wff) (p q: term): $ G |- p: bool $ > $ G |- q $ > $ G |- p \/ q $;
@@ -240,14 +240,14 @@ $ \ t: bool. \ t1: A. \ t2: A. sel A @ (\ x: A.
 
 def one_one: type > type > term;
 theorem one_one_T (G: wff) (A B: type): $ G |- one_one A B: (A -> B) -> bool $;
-theorem ONE_ONE (G: wff) (A B: type) (f: term) {x1 x2 x: term}:
+theorem ONE_ONE (G: wff) (A B: type) (f: term) {x1 x2: term}:
   $ G |- f: A -> B $ >
   $ G |- one_one A B @ f <=> (!x1: A. !x2: A.
     =[B] f @ x1 = f @ x2 ==> =[A] x1 = x2) $;
 
 def onto: type > type > term;
 theorem onto_T (G: wff) (A B: type): $ G |- onto A B: (A -> B) -> bool $;
-theorem ONTO (G: wff) (A B: type) (f: term): $ G |- f: A -> B $ >
+theorem ONTO (G: wff) (A B: type) (f: term) {x y: term}: $ G |- f: A -> B $ >
   $ G |- onto A B @ f <=> (!y: B. ?x: A. =[B] y = f @ x) $;
 
 term ind: type;
