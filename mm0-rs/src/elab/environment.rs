@@ -1197,7 +1197,7 @@ impl AddItemNonFatalError {
 
 /// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
 /// redeclaration case they can still return an `A`, namely the ID of the old declaration
-type AddItemResult<A> = Result<(A, Option<AddItemNonFatalError>), AddItemError<Option<A>>>;
+type AddItemResult<A, B = Option<A>> = Result<(A, Option<AddItemNonFatalError>), AddItemError<B>>;
 
 impl<A> AddItemError<A> {
   /// Convert this error into an [`ElabError`] at the provided location.
@@ -1304,19 +1304,19 @@ impl Environment {
 
   /// Add a theorem declaration to the environment. The [`Thm`] is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn try_add_thm(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
+  pub fn try_add_thm(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId, DeclKey> {
     let new_id = ThmId(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &self.data[a];
     if let Some(key) = data.decl {
-      let (res, sp) = match key {
+      let sp = match key {
         DeclKey::Thm(old_id) => {
           let sp = &self.thms[old_id].span;
           if *sp == *new { return Ok((old_id, None)) }
-          (Some(old_id), sp)
+          sp
         }
-        DeclKey::Term(old_id) => (None, &self.terms[old_id].span)
+        DeclKey::Term(old_id) => &self.terms[old_id].span
       };
-      Err(AddItemError::Redeclaration(res, RedeclarationError {
+      Err(AddItemError::Redeclaration(key, RedeclarationError {
         msg: format!("theorem '{}' redeclared", data.name),
         othermsg: "previously declared here".to_owned(),
         other: sp.clone()
@@ -1345,7 +1345,7 @@ impl Environment {
   }
 
   /// Specialization of [`try_add_thm`](Self::try_add_thm) when the term is constructed already.
-  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId> {
+  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId, DeclKey> {
     let fsp = t.span.clone();
     self.try_add_thm(VERIFY_ON_ADD, t.atom, &fsp, || t)
   }
@@ -1439,7 +1439,10 @@ impl Environment {
                 (otd.span.clone(), r.othermsg.clone().into()),
                 (r.other, r.othermsg.into())
               ]);
-              match id { None => return Err(e), Some(id) => {errors.push(e); id} }
+              match id {
+                DeclKey::Term(_) => return Err(e),
+                DeclKey::Thm(id) => {errors.push(e); id}
+              }
             }
             Err(e) => return Err(e.into_elab_error(sp)),
           };

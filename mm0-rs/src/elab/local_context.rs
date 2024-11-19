@@ -9,7 +9,8 @@ use if_chain::if_chain;
 use debug_derive::EnvDebug;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::elab::verify::{scope_ast_source, VerifyError, VERIFY_ON_ADD};
-use crate::{AtomId, TermKind, ThmKind, Type as EType, Span, FileSpan, BoxError, MAX_BOUND_VARS};
+use crate::{AddItemError, AtomId, BoxError, DeclKey, FileSpan, Span, TermKind, ThmKind,
+  Type as EType, MAX_BOUND_VARS};
 use crate::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
   Expr, Modifiers, ObjectKind, OneOrMore, Proof, Result, SExprKind, SortId, Term, TermId, Thm};
@@ -1030,7 +1031,15 @@ impl Elaborator {
         };
         if atom != AtomId::UNDER {
           let (tid, err) = scope_ast_source(&self.ast.source, || {
-            self.env.add_thm(t).map_err(|e| e.into_elab_error(d.id))
+            self.env.add_thm(t).map_err(|e| {
+              if let AddItemError::Redeclaration(val, _) = e {
+                self.spans.insert(d.id, match val {
+                  DeclKey::Term(tid) => ObjectKind::Term(false, tid),
+                  DeclKey::Thm(tid) => ObjectKind::Thm(false, tid),
+                });
+              }
+              e.into_elab_error(d.id)
+            })
           })?;
           if let Some(e) = err { self.report(e.into_elab_error(d.id)) }
           self.spans.insert(d.id, ObjectKind::Thm(true, tid));
