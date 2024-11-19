@@ -1928,9 +1928,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           TypeTc::Typed(ref tyty) => {
             let TypeTy {tyargs, args, val, ..} = tyty.clone();
             assert_eq!(tys.len(), u32_as_usize(tyargs));
-            let args = args.inst_global(self, tys);
+            let mut gctx = FromGlobalCtx::new(self, tys);
+            let args = args.from_global(&mut gctx);
             debug_assert!(es.len() ==
               args.iter().filter(|&a| matches!(a.k.1, ArgKind::Lam(_))).count());
+            let val = val.from_global(&mut gctx);
             let mut subst = Subst::default();
             let mut es_it = es.iter();
             for &arg in args {
@@ -1945,7 +1947,6 @@ impl<'a, 'n> InferCtx<'a, 'n> {
                 }
               }
             }
-            let val = val.inst_global(self, tys);
             let val = subst.subst_ty(self, sp, val);
             return self.whnf_ty(sp, wty.map(val))
           }
