@@ -1086,7 +1086,7 @@ struct ThmVal {
 }
 
 fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
-  macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+  macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
   let mut dummy = |x: AtomId, es: &LispKind| -> Result<()> {
     let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
     let sort = fe.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
@@ -1118,7 +1118,7 @@ impl Elaborator {
   fn deps(&self,
     fsp: &FileSpan, vars: &HashMap<AtomId, u64>, vs: LispVal
   ) -> Result<(Box<[AtomId]>, u64)> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     let mut n = 0;
     let mut ids = Vec::new();
     for v in Uncons::from(vs) {
@@ -1133,7 +1133,7 @@ impl Elaborator {
   fn binders(&self,
     fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomId, u64>, u64)
   ) -> Result<(LocalContext, Box<[Binder]>)> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     let mut lc = LocalContext::new();
     let mut args = Vec::new();
     for e in u {
@@ -1172,7 +1172,7 @@ impl Elaborator {
   }
 
   fn visibility(&self, fsp: &FileSpan, e: &LispVal) -> Result<Modifiers> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     match e.as_atom() {
       None if e.exactly(0) => Ok(Modifiers::NONE),
       Some(AtomId::PUB) => Ok(Modifiers::PUB),
@@ -1184,7 +1184,7 @@ impl Elaborator {
 
   /// Parse and add a term/def declaration (this is called by the `(add-term!)` lisp function).
   pub fn add_term(&mut self, fsp: &FileSpan, es: &[LispVal]) -> Result<()> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or_else(|| fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     let (x, args, ret, vis, val) = match es {
       [x, args, ret] => (x, args, ret, Modifiers::NONE, None),
       [x, args, ret, vis, ds, val] => {
@@ -1250,7 +1250,7 @@ impl Elaborator {
   pub fn add_thm(&mut self,
     fsp: FileSpan, es: &[LispVal]
   ) -> Result<Result<(), (Box<AwaitingProof>, LispVal)>> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     let (x, args, hyps, ret, vis, proof) = match es {
       [x, args, hyps, ret] => (x, args, hyps, ret, Modifiers::NONE, None),
       [x, args, hyps, ret, vis, vtask] => {
@@ -1332,7 +1332,7 @@ impl Elaborator {
 
   #[allow(clippy::option_option)]
   fn finish_add_thm(&mut self, fsp: &FileSpan, mut t: Thm, res: Option<Option<ThmVal>>) -> Result<()> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    macro_rules! sp {($e:expr) => {try_get_span(&fsp, &$e)}}
     t.kind = match res {
       None => ThmKind::Axiom,
       Some(res) => ThmKind::Thm(res.and_then(|ThmVal {mut de, var_map, mut lc, is: is2, proof: e}| {

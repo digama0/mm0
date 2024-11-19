@@ -476,6 +476,7 @@ fn set_report_mode(fe: FormatEnv<'_>, mode: &mut ReportMode, args: &[LispVal]) -
 
 #[derive(Debug)]
 struct CallStack<'a> {
+  parent_file: FileRef,
   parent_code: &'a [Ir],
   parent_ctx: Vec<LispVal>,
   parent_ip: usize,
@@ -545,9 +546,9 @@ impl<'a> Evaluator<'a> {
 
   fn fspan_base(&self, sp: Span) -> FileSpan {
     if let Some(frame) = self.call_stack.first() {
-      frame.span.clone()
+      self.try_get_fspan(Some(&frame.span))
     } else {
-      self.fspan(sp)
+      self.try_get_fspan(Some(&self.fspan(sp)))
     }
   }
 
@@ -597,11 +598,13 @@ impl<'a> Evaluator<'a> {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
 
-  fn add_thm(&mut self, tail: bool, fsp: FileSpan, args: &[LispVal]) -> Result<()> {
-    match self.elab.add_thm(fsp.clone(), args)? {
+  fn add_thm(&mut self, tail: bool, sp: Span, args: &[LispVal]) -> Result<()> {
+    let fsp = self.fspan(sp);
+    let fsp_base = self.fspan_base(sp);
+    match self.elab.add_thm(fsp_base.clone(), args)? {
       Ok(()) => { self.stack.push(Stack::Undef); Ok(()) }
       Err((ap, proc)) => {
-        let sp = try_get_span(&fsp, &proc);
+        let sp = try_get_span(&fsp_base, &proc);
         self.call(tail, &[Ir::AddThm], None, fsp, ProcPos::Builtin(BuiltinProc::AddThm), vec![]);
         self.stack.push(Stack::AddThmProc(ap));
         self.app(false, &(sp, sp), &proc, vec![])
@@ -1224,10 +1227,12 @@ make_builtins! { self, tail, sp1, sp2, args,
     self.get_decl(args[0].fspan(), x).into()
   },
   AddDecl: AtLeast(4) => {
-    let fsp = self.fspan_base(sp1);
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
-      AtomId::TERM | AtomId::DEF => self.add_term(&fsp, &args[1..])?,
-      AtomId::AXIOM | AtomId::THM => return self.add_thm(tail, fsp, &args[1..]),
+      AtomId::TERM | AtomId::DEF => {
+        let fsp = self.fspan_base(sp1);
+        self.add_term(&fsp, &args[1..])?
+      },
+      AtomId::AXIOM | AtomId::THM => return self.add_thm(tail, sp1, &args[1..]),
       e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
     }
     Stack::Undef
@@ -1238,8 +1243,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     Stack::Undef
   },
   AddThm: AtLeast(4) => {
-    let fsp = self.fspan_base(sp1);
-    return self.add_thm(tail, fsp, &args)
+    return self.add_thm(tail, sp1, &args)
   },
   GetDoc: AtLeast(1) => {
     let (k, a) = match args.len() {
@@ -1379,6 +1383,10 @@ impl<'a> Evaluator<'a> {
     try_get_span_from(&self.orig, fsp)
   }
 
+  fn try_get_fspan(&self, fsp: Option<&FileSpan>) -> FileSpan {
+    FileSpan {file: self.orig.file.clone(), span: self.try_get_span(fsp)}
+  }
+
   #[allow(unused)]
   fn respan(&self, sp: Span) -> Span { self.try_get_span(Some(&self.fspan(sp))) }
 
@@ -1416,21 +1424,21 @@ impl<'a> Evaluator<'a> {
     //   }
     //   println!();
     // }
-    if let Some(fsp) = pos.fspan() { self.file = fsp.file.clone() }
+    let file = pos.fspan().map_or(&self.file, |f| &f.file).clone();
     if tail {
       if let Some(frame) = self.call_stack.last_mut() {
+        self.file = file;
         self.code = code;
         self.ctx = ctx;
         self.ip = 0;
         frame.arc = arc;
-        frame.span = span;
-        frame.pos = pos;
         return
       }
     }
     self.stack.push(Stack::Ret);
     self.call_stack.push(CallStack {
       arc, span, pos,
+      parent_file: mem::replace(&mut self.file, file),
       parent_code: mem::replace(&mut self.code, code),
       parent_ip: mem::take(&mut self.ip),
       parent_ctx: mem::replace(&mut self.ctx, ctx),
@@ -1439,7 +1447,7 @@ impl<'a> Evaluator<'a> {
 
   fn ret(&mut self) {
     let frame = self.call_stack.pop().expect("underflow");
-    self.file = frame.span.file;
+    self.file = frame.parent_file;
     self.code = frame.parent_code;
     self.ctx = frame.parent_ctx;
     self.ip = frame.parent_ip;
@@ -1951,7 +1959,9 @@ impl<'a> Evaluator<'a> {
       //   //   // }
       //   // }
 
-      //   print!("[{}, {}] {}: ", self.stack.len(), self.ctx.len(), self.ip);
+      //   print!("{:?} {}: [{}, {}, {}] {}: ",
+      //     self.call_stack.iter().map(|c| &c.span).collect::<Vec<_>>(), self.file,
+      //     self.stack.len(), self.ctx.len(), self.call_stack.len(), self.ip);
       //   match self.code.get(self.ip) {
       //     Some(ir) => println!("{}\n", self.print(ir)),
       //     None => println!("ret\n"),
