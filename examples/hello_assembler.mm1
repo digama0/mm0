@@ -60,7 +60,7 @@ theorem _: $ sat_CFG_func hello_main ,0x400078
   (refine 'sat_CFG0));
 
 theorem hello_terminates:
-  $ initialConfig hello i k -> terminates_ensuring k (S\ i2, {o |
-      i2 = i /\ o = ,"Hello, World!\n"}) $;
+  $ initialConfig hello k -> terminates_ensuring k (S\ i, {o |
+      i = 0 /\ o = ,"Hello, World!\n"}) $;
 
 output string: $ hello $;

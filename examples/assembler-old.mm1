@@ -243,6 +243,10 @@ theorem assembledOLD_func_bound (h: $ assembledOLD_func c s x y $):
   $ text_start <= x /\ x < text_start + len c $ =
 '(ian (assembledOLD_start @ anl h) @ assembledOLD_func_lt h);
 
+theorem assembledOLD_func_n0 (h: $ assembledOLD_func c s x y $): $ c != 0 $ =
+'(mtbi (bitr3 (eqeq2 add02) @ bitr addcan2 leneq0) @ ltner @
+  lelttr (anli (assembledOLD_func_bound h)) (anri (assembledOLD_func_bound h)));
+
 local def assemblesOLD (c s: string) (start end: nat) (p q: wff): wff =
 $ E. n (start = text_start + n /\ sublistAt n c s) ->
   end = start + len s /\ (text_start + len c e. u64 -> p -> q) $;
@@ -532,25 +536,24 @@ do {
     @ match (to-uNBytes 64 memsz_x) @ (memsz_s memsz_p)
 
     (add-term! base () '(string ()) (if pub () 'local) ()
-      '(ELF_lit ,entry_s ,filesz_s ,memsz_s (,content)))
+      '(ELF_lit ,filesz_s ,memsz_s (,content)))
 
     @ match (mkadd start_x memsz_x) @ (end_x end_p)
     (def parseElf (atom-app pfx 'parseElf))
     (add-tac-thm! parseElf () ()
-      '(ELF_lit_ok (,base) ,entry_x ,bss_x (,content)) () @ fn () @ focus
+      '(ELF_lit_ok (,base) ,bss_x (,content)) () @ fn () @ focus
       '(basicElf_ok
-        ,(verb entry_p)
         ,(verb filesz_p)
         ,(verb memsz_p)
         ,(verb @ nth 1 @ mkadd filesz_x bss_x)
         (anli ,asmd)
         ,(verb end_p)
-        (assembledOLD_func_bound ,(asmd-pf entry_idx '(anri ,asmd)))
+        (assembledOLD_func_n0 ,(asmd-pf entry_idx '(anri ,asmd)))
         ,(verb @ to-elu 64 end_x)))
 
     (add-thm! (atom-app pfx 'basicElf) () ()
       '(isBasicElf (,base)) (if pub 'pub ())
-      '(() (ELF_lit_ok_isBasicElf (,base) ,entry_x ,bss_x (,content)
+      '(() (ELF_lit_ok_isBasicElf (,base) ,bss_x (,content)
         (,parseElf)))))
 
   --| `(assemble base main bss pub xs)` assembles an ELF file, producing the file
@@ -608,7 +611,7 @@ do {
   --|   ```
   --|   This is the complete ELF file string, with visibility `pub`.
   --| * ```
-  --|   theorem (base)_parseElf: $ ELF_lit_ok base entry bss base_content $;
+  --|   theorem (base)_parseElf: $ ELF_lit_ok base bss base_content $;
   --|   ```
   --|   The proof that `base` is an ELF file that parses to `base_content`.
   --| * ```
