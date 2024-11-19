@@ -502,7 +502,7 @@ impl Args {
     if let Some(out) = self.output {
       use {fs::File, io::BufWriter};
       let w = BufWriter::new(File::create(&out)?);
-      if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
+      if out.rsplit('.').next().is_some_and(|ext| ext.eq_ignore_ascii_case("mmu")) {
         env.export_mmu(w)?;
       } else {
         let mut report = |lvl: ErrorLevel, err: &str| {

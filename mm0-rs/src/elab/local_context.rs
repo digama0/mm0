@@ -970,7 +970,7 @@ impl Elaborator {
         let nh = NodeHasher::new(&self.lc, self.format_env(), span.clone());
         let mut is = Vec::new();
         for &(bi, a, ref e) in &e_hyps {
-          if a.map_or(false, |a| self.lc.vars.contains_key(&a)) {
+          if a.is_some_and(|a| self.lc.vars.contains_key(&a)) {
             return Err(ElabError::new_e(bi.span, "hypothesis shadows local variable"))
           }
           is.push((a, de.dedup(&nh, ProofKind::Expr, e)?))

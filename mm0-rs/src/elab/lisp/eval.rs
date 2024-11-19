@@ -1736,7 +1736,7 @@ impl<'a> Evaluator<'a> {
 
   fn heartbeat(&self) -> Result<()> {
     // self.iters = self.iters.wrapping_add(1);
-    if self.cur_timeout.map_or(false, |t| t < Instant::now()) {
+    if self.cur_timeout.is_some_and(|t| t < Instant::now()) {
       return Err(self.err(None, "timeout"))
     }
     if self.cancel.load(Ordering::Relaxed) {

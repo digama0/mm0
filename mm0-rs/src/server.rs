@@ -1839,7 +1839,7 @@ impl Server {
               }
             } else {
               let mut caps = caps.ulock();
-              if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
+              if caps.reg_id.as_ref() == Some(&resp.id) {
                 caps.finish_register(&resp);
               } else {
                 log!("response to unknown request {}", resp.id)

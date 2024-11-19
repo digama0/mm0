@@ -551,7 +551,7 @@ mk_fold! { <'a>
   }
 
   fn before_epilogue, after_epilogue, do_epilogue(self, it) {
-    while self.do_inst(it).map_or(false, |inst| !matches!(inst.inst, PInst::Ret)) {}
+    while self.do_inst(it).is_some_and(|inst| !matches!(inst.inst, PInst::Ret)) {}
   }
 
   fn before_call_arg, after_call_arg, do_call_arg(self, it,

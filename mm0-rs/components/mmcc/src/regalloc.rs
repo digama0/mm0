@@ -199,7 +199,7 @@ impl PCodeBuilder {
     ar: &ApplyRegalloc,
     pt: ProgPoint
   ) {
-    while edits.peek().map_or(false, |p| p.0 == pt) {
+    while edits.peek().is_some_and(|p| p.0 == pt) {
       if let Some((_, Edit::Move { from, to, .. })) = edits.next() {
         match (from.as_reg().map(PReg), to.as_reg().map(PReg)) {
           (Some(src), Some(dst)) => { self.push(PInst::MovRR { sz: Size::S64, dst, src }); }

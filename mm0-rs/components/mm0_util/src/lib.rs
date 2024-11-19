@@ -563,7 +563,7 @@ impl FileRef {
   /// Returns true if this file has the provided extension.
   #[must_use]
   pub fn has_extension(&self, ext: &str) -> bool {
-    self.path().extension().map_or(false, |s| s == ext)
+    self.path().extension().is_some_and(|s| s == ext)
   }
 }
 impl PartialEq for FileRef {

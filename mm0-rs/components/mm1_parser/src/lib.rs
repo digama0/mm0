@@ -394,7 +394,7 @@ impl<'a> Parser<'a> {
     let start = self.idx;
     loop {
       self.idx += 1;
-      if !self.cur_opt().map_or(false, ident_rest) {
+      if !self.cur_opt().is_some_and(ident_rest) {
         let sp = (start..self.idx).into();
         if self.restart_pos.is_none() && CommandKeyword::parse(self.span(sp)).is_some() {
           self.restart_pos = Some(start);

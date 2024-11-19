@@ -521,7 +521,7 @@ impl FrozenUncons<'_> {
     match self {
       FrozenUncons::New(e) => e.exactly(n),
       FrozenUncons::List(es) => es.len() == n,
-      FrozenUncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(false, |i| r.exactly(i)),
+      FrozenUncons::DottedList(es, r) => n.checked_sub(es.len()).is_some_and(|i| r.exactly(i)),
     }
   }
 

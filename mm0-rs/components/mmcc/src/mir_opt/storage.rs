@@ -307,7 +307,7 @@ impl Cfg {
               let mut split = false;
               let mut copy = false;
               for &x in &allocs[a].vars {
-                if last_use.get(&x).map_or(false, |&j| j > i) {
+                if last_use.get(&x).is_some_and(|&j| j > i) {
                   if x == r.from { copy = true } else { split = true }
                 }
               }
@@ -360,7 +360,7 @@ impl Cfg {
               }
             } else {
               tgt = allocs.push(v, || meta(ty));
-              live.retain(|u, _| last_use.get(u).map_or(false, |&j| j > i) && {
+              live.retain(|u, _| last_use.get(u).is_some_and(|&j| j > i) && {
                 // interference.insert(a, allocs.vars[u]);
                 true
               });

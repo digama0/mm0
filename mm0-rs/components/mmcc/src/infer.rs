@@ -2536,7 +2536,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         self.try_check_pure_expr(sp, then, tgt) &&
         self.try_check_pure_expr(sp, els, tgt),
       // TODO: more heuristics?
-      _ => self.expr_type(sp, e).map_or(false, |ty| self.relate_whnf_ty(
+      _ => self.expr_type(sp, e).is_some_and(|ty| self.relate_whnf_ty(
         ty.into(), tgt.into(), Relation::Subtype).is_ok()),
     }
   }
