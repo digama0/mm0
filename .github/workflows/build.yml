@@ -14,23 +14,19 @@ jobs:
     name: mm0-rs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Cache mm0-rs
         id: cache-mm0-rs
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: mm0-rs/target/release/mm0-rs
           key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
       - name: Install stable rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          default: true
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache build mm0-rs
         id: cache-build-mm0-rs
         if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -47,7 +43,7 @@ jobs:
         if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
         working-directory: mm0-rs
         run: cargo test --verbose --release
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: mm0-rs
           path: mm0-rs/target/release/mm0-rs
@@ -56,17 +52,14 @@ jobs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Install nightly rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
-          profile: minimal
           components: clippy
-          default: true
       - name: Cache clippy
         id: cache-nightly-mm0-rs
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -83,9 +76,9 @@ jobs:
     needs: build-mm0-rs
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: mkdir -p "$GITHUB_WORKSPACE/bin"
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: mm0-rs
           path: ./bin
