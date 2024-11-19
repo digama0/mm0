@@ -70,9 +70,14 @@ u32* g_hstack_top = g_hstack;
 u32 g_ustack[UNIFY_STACK_SIZE];
 u32* g_ustack_top = g_ustack;
 
+#define UHEAP_SAVED_TAG ((u32)1<<31)
+
 #define UNIFY_HEAP_SIZE 65536
 u32 g_uheap[UNIFY_HEAP_SIZE];
 u32 g_uheap_size = 0;
+
+// Get the value at index `i` of the unify stack.
+#define get_uheap(i) (g_uheap[i] & ~UHEAP_SAVED_TAG)
 
 /****************
   Parser types

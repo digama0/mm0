@@ -242,7 +242,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       // the head of the unify stack.
       case CMD_UNIFY_REF: {
         ENSURE("bad ref step", data < g_uheap_size);
-        ENSURE("unify failure at ref", g_uheap[data] == pop_ustack());
+        ENSURE("unify failure at ref", get_uheap(data) == pop_ustack());
       } break;
 
       // UTerm t: S, (t e1 ... en) --> S, en, ..., e1
@@ -267,7 +267,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         }
         UPDATE_HIGHWATER(g_ustack_top, g_ustack_highwater)
         if (*cmd & 0x01) // save
-          push_uheap(p);
+          push_uheap(UHEAP_SAVED_TAG | p);
       } break;
 
       // UDummy s: H; S, x --> H, x; S   (where x:s)
@@ -281,10 +281,11 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         u64 type = e->type;
         ENSURE("unify failure at dummy", (type >> 56) == (0x80 | data));
         type &= TYPE_DEPS_MASK;
-        for (int i = 0; i < g_uheap_size; i++) {
-          ENSURE("dummy disjoint variable violation",
-            (get_expr(g_uheap[i])->type & type) == 0);
-        }
+        for (int i = 0; i < g_uheap_size; i++)
+          if ((g_uheap[i] & UHEAP_SAVED_TAG) == 0) {
+            ENSURE("dummy disjoint variable violation",
+              (get_expr(g_uheap[i])->type & type) == 0);
+          }
         push_uheap(p);
       } break;
 
