@@ -26,9 +26,9 @@ pub struct Spans<T> {
   ///
   /// We will always set this value before storing the span in [`Environment.spans`].
   stmt: MaybeUninit<Span>,
-  /// The name of the present declaration. This is left uninitialized for
+  /// The name of the present declaration. This is set to `AtomId::UNDER` for
   /// declarations that don't have names, like [`delimiter`](mm1_parser::ast::Delimiter).
-  decl: MaybeUninit<AtomId>,
+  pub decl: AtomId,
   /// The local context as of the end of the proof. This is used to resolve variables
   /// and subproof names.
   pub lc: Option<LocalContext>,
@@ -61,7 +61,7 @@ impl<T> Spans<T> {
   #[must_use] pub fn new() -> Spans<T> {
     Spans {
       stmt: MaybeUninit::uninit(),
-      decl: MaybeUninit::uninit(),
+      decl: AtomId::UNDER,
       lc: None,
       data: BTreeMap::new()
     }
@@ -69,9 +69,6 @@ impl<T> Spans<T> {
 
   /// Initialize the `stmt` field of a [`Spans`].
   pub fn set_stmt(&mut self, sp: Span) { self.stmt = MaybeUninit::new(sp) }
-
-  /// Initialize the `decl` field of a [`Spans`].
-  pub fn set_decl(&mut self, a: AtomId) { self.decl = MaybeUninit::new(a) }
 
   /// Get the `stmt` field of a [`Spans`].
   ///
@@ -82,18 +79,6 @@ impl<T> Spans<T> {
   #[must_use] pub fn stmt(&self) -> Span {
     // Safety: by assumption
     unsafe { self.stmt.assume_init() }
-  }
-
-  /// Get the `decl` field of a [`Spans`].
-  ///
-  /// # Safety
-  /// This function must only be called if [`set_decl`](Self::set_decl) has previously
-  /// been called. We ensure that this is the case for any [`Spans`] object put into
-  /// [`Environment.spans`], but only for declarations that actually have names.
-  /// (This function is also currently unused.)
-  #[must_use] pub fn decl(&self) -> AtomId {
-    // Safety: by assumption
-    unsafe { self.decl.assume_init() }
   }
 
   /// Insert a new data element at a given span.

@@ -430,8 +430,7 @@ impl<'a> ElabTermMut<'a> {
     self.spans_insert(&t, || ObjectKind::Term(false, tid));
     let mut tdata = &self.env.terms[tid];
     if self.check_vis && tdata.vis.contains(Modifiers::LOCAL) {
-      let msg = format!("{}: using private definition '{}' in a public context",
-        self.env.data[self.spans.decl()].name, self.env.data[a].name);
+      let msg = format!("using private definition '{}' in a public context", self.env.data[a].name);
       self.report(ElabError::warn(sp1, msg));
       tdata = &self.env.terms[tid];
     }
@@ -791,7 +790,7 @@ impl Elaborator {
       }
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
-    self.spans.set_decl(atom);
+    self.spans.decl = atom;
     if self.mm0_mode && atom == AtomId::UNDER {
       self.report(ElabError::warn(d.id, "(MM0 mode) declaration name required"))
     }

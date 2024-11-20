@@ -254,7 +254,7 @@ impl Environment {
           }
           for e in &expr.heap[ns.len()..] {
             let mut w = StringWriter::default();
-            self.write_node(terms, &args, store, e, &mut w)?;
+            self.write_node(terms, &args, &expr.store, e, &mut w)?;
             args.push(w.into());
           }
           self.write_node(terms, &args, &expr.store, expr.head(), w)
