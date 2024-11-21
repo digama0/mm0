@@ -306,3 +306,45 @@ norm_split_bits! {
   fn split_bits_121, fn unsplit_bits_121(Sb121: 1, 2, 1);
   fn split_bits_1111, fn unsplit_bits_1111(Sb1111: 1, 1, 1, 1);
 }
+
+impl ProofDedup<'_> {
+  /// Proves `[k, s, |- parseUBytes k n s]`.
+  pub(super) fn parse_ubytes(&mut self, k: u8, n: ProofId) -> [ProofId; 3] {
+    if k == 0 {
+      let ek = app!(self, (dn[0u8]));
+      app_match!(self, n => {
+        (h2n a0) => {
+          let s = app!(self, (s1 (ch (xn[0u8]) a0)));
+          [ek, s, thm!(self, parseUBytes01(a0): (parseUBytes ek n s))]
+        }
+        (hex (h2n a1) a0) => {
+          let s = app!(self, (s1 (ch a1 a0)));
+          [ek, s, thm!(self, parseUBytes02(a0): (parseUBytes ek n s))]
+        }
+      })
+    } else {
+      app_match!(self, n => {
+        (h2n a0) => {
+          let n2 = app!(self, (h2n (xn[0u8])));
+          let [k2, s2, h] = self.parse_ubytes(k - 1, n2);
+          let ek = app!(self, (suc k2));
+          let s = app!(self, (scons (ch (xn[0u8]) a0) s2));
+          [ek, s, thm!(self, parseUBytesS1(a0, k2, s2, h): (parseUBytes ek n s))]
+        }
+        (hex (h2n a1) a0) => {
+          let n2 = app!(self, (h2n (xn[0u8])));
+          let [k2, s2, h] = self.parse_ubytes(k - 1, n2);
+          let ek = app!(self, (suc k2));
+          let s = app!(self, (scons (ch a1 a0) s2));
+          [ek, s, thm!(self, parseUBytesS2(a0, a1, k2, s2, h): (parseUBytes ek n s))]
+        }
+        (hex (hex n2 a1) a0) => {
+          let [k2, s2, h] = self.parse_ubytes(k - 1, n2);
+          let ek = app!(self, (suc k2));
+          let s = app!(self, (scons (ch a1 a0) s2));
+          [ek, s, thm!(self, parseUBytesS(a0, a1, k2, n2, s2, h): (parseUBytes ek n s))]
+        }
+      })
+    }
+  }
+}

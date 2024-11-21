@@ -2,15 +2,27 @@ import "compiler-new.mm1";
 
 do {
   (def mmc-compiler (ref! (mmc-init)))
+  --| Reset the MMC compiler state (the program to be compiled).
   (def mmc-reset
     (def c mmc-compiler)
     (fn () (set! c (mmc-init))))
+  --| `(mmc-add code ...)` adds `code` (which should be MMC syntax for a list of top level
+  --| declarations) to the MMC compiler state (the program to be compiled).
   (def mmc-add
     (def c mmc-compiler)
     (fn xs (apply c '+ xs)))
+  --| `(mmc->string)` calls `(mmc-finish)` first if necessary, and then returns the completed
+  --| executable file as a string. This can be used as `output string: (mmc->string);` to
+  --| make MM1 output the result to a file via `mm0-rs compile foo.mm1 -o foo`.
   (def mmc->string
     (def c mmc-compiler)
     (fn xs (apply c '->string xs)))
+  --| `(mmc-finish 'foo)` links all the previously added bits of code into a final executable.
+  --| It generates various theorems and definitions with prefix `_mmc_foo*`.
+  --| The main user-facing declarations produced are:
+  --| * `foo: string`: the generated ELF file
+  --| * `foo_ok : $ okProg foo T $`: the correctness theorem for `foo`,
+  --|   where `T` is the type of the `main` function.
   (def mmc-finish
     (def c mmc-compiler)
     (fn xs (apply c 'finish xs)))

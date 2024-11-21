@@ -297,6 +297,11 @@ make_predefs! {
 
   /// `parseUBytes (k n: nat) (s: string): wff`
   parseUBytes: TermId => "parseUBytes";
+  parseUBytesS: ThmId => "parseUBytesS";
+  parseUBytesS1: ThmId => "parseUBytesS1";
+  parseUBytesS2: ThmId => "parseUBytesS2";
+  parseUBytes01: ThmId => "parseUBytes01";
+  parseUBytes02: ThmId => "parseUBytes02";
 
   /// `parseIBytesPos (k n: nat) (s: string): wff`
   parseIBytesPos: TermId => "parseIBytesPos";
@@ -663,6 +668,9 @@ make_predefs! {
   ok_exit: ThmId => "ok_exit";
 
   // basicElf_ok: ThmId => "basicElf_ok";
+  ELF_lit: TermId => "ELF_lit";
+  okProg: TermId => "okProg";
+  okProgI: ThmId => "okProgI";
 
   sorry: ThmId => "sorry"; // delete me
 }

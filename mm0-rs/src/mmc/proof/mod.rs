@@ -4,7 +4,7 @@
 // Lints because of the macro heavy nature of the code
 #![allow(clippy::many_single_char_names, clippy::similar_names,
   clippy::equatable_if_let, clippy::redundant_else,
-  clippy::if_not_else, non_snake_case)]
+  clippy::if_not_else, non_snake_case, clippy::tuple_array_conversions)]
 
 // Lints because the code is not finished
 #![allow(unused, clippy::unused_self, clippy::diverging_sub_expression, clippy::match_same_arms)]
@@ -303,13 +303,15 @@ enum Name {
   ProcAsmThm(Option<Symbol>),
   /// `foo_content: string`: The full machine code string
   Content,
+  /// `(pub) foo: string`: The complete ELF file body
+  Elf,
   /// `foo_gctx: set`: The global context, which includes `content` and the exit proposition
   GCtx,
   /// `foo_asmd: assembled gctx <asm>`: A theorem that asserts that `content` assembles to a list of
   /// procedures, referencing the `ProcAsm` definitions,
   /// for example `assembled foo_gctx (foo_asm +asm bar_asm +asm my_const_asm)`
   AsmdThm,
-  /// `asmd_lem{n}: assembled foo_gctx <asm>`: A conjunct in `AsmdThm` extracted as a lemma
+  /// `foo_asmd_lem{n}: assembled foo_gctx <asm>`: A conjunct in `AsmdThm` extracted as a lemma
   AsmdThmLemma(u32),
   /// `foo_asmd: assembled foo_gctx (asmProc <foo_start> foo_asm)`: the completed assembly proof
   ProcAsmdThm(Option<Symbol>),
@@ -318,6 +320,8 @@ enum Name {
   ProcOkThm(Symbol),
   /// `_start_ok: okStart foo_gctx <foo_start>`: the correctness proof for the `_start` entry point
   StartOkThm,
+  /// `(pub) foo_ok: okProg foo <foo_exit_prop>`: the correctness proof for the program
+  ProgOkThm,
 }
 
 impl Display for Name {
@@ -334,9 +338,11 @@ impl Display for Name {
       Name::ProcOkThm(proc) => write!(f, "{proc}_ok"),
       Name::StartOkThm => write!(f, "_start_ok"),
       Name::Content => write!(f, "content"),
+      Name::Elf => write!(f, "elf"), // unused
       Name::GCtx => write!(f, "gctx"),
       Name::AsmdThm => write!(f, "asmd"),
       Name::AsmdThmLemma(n) => write!(f, "asmd_lem{n}"),
+      Name::ProgOkThm => write!(f, "ok"), // unused
     }
   }
 }
@@ -354,7 +360,11 @@ impl Mangler {
     struct S<'a>(&'a str, Name);
     impl Display for S<'_> {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "_mmc_{}_{}", self.0, self.1)
+        match self.1 {
+          Name::Elf => write!(f, "{}", self.0),
+          Name::ProgOkThm => write!(f, "{}_ok", self.0),
+          _ => write!(f, "_mmc_{}_{}", self.0, self.1),
+        }
       }
     }
     S(self.module.as_str(), name)
@@ -384,10 +394,16 @@ impl Mangler {
 
       Name::Content => "The full machine code string for the executable.".to_owned(),
 
+      Name::Elf => "The completed ELF binary byte string, ready for output.".to_owned(),
+
       Name::GCtx => "The global context, which contains data used by every procedure. \
-        It has the form `mkGCtx content result`, where `content` is the assembled binary and \
-        `result` is the exit proposition, \
-        i.e. the property that must be true on any successful run.".to_owned(),
+        It has the form `mkGCtx content filesz memsz result`, where:\n\
+        \n\
+        * `content` is the assembled binary\n\
+        * `filesz` is the size of `content` on disk\n\
+        * `memsz` is the size of `content` in memory (including the zero section)\n\
+        * `result` is the exit proposition, \
+          i.e. the property that must be true on any successful run.".to_owned(),
 
       Name::AsmdThm => format!("This theorem has the form `assembled gctx asm`, where:\n\n\
         * `gctx` is the global context (`{}` in this case)\n\
@@ -435,6 +451,17 @@ impl Mangler {
         if the program jumps to location `start`, then the program will safely execute \
         and satisfy the global exit proposition (or fail).",
         ProcName(None), self.mangle(Name::GCtx)),
+
+      Name::ProgOkThm => format!("The main correctness theorem for {}. \
+        This theorem has the form `okProg elf prop`, where:\n\
+        \n\
+        * `elf` is the program binary\n\
+        * `prop` is the type of the `main` function, \
+          giving the correctness property deduced from completion.\n\
+        \n\
+        It asserts the program will safely execute \
+        and satisfy the global exit proposition (or fail).",
+        self.module),
     }
   }
 }
@@ -442,19 +469,38 @@ impl Mangler {
 pub(crate) fn render_proof(
   pd: &Predefs, elab: &mut Elaborator, sp: Span,
   name: AtomId, proof: &ElfProof<'_>
-) -> Result<()> {
-  let mangler = Mangler {
-    module: elab.data[name].name.clone(),
-  };
+) -> Result<(TermId, ThmId)> {
+  let mangler = Mangler { module: elab.data[name].name.clone() };
   let fsp = elab.fspan(sp);
   let mut proc_asm = HashMap::new();
-  scope_ast_source(&elab.ast.source.clone(), || {
+  scope_ast_source(&elab.ast.source.clone(), || -> Result<_> {
     let gctx = assembler::assemble_proof(elab, pd, &mut proc_asm, &mangler, proof, &fsp, sp)?;
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let start_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
-      // Ok(())
-    })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))
-  })?;
-  // elab.report(ElabError::info(sp, format!("{:#?}", proof)));
-  Ok(())
+    })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))?;
+    let mut thm = ProofDedup::new(pd, &[]);
+    let u_gctx = thm.get_def0(elab, gctx);
+    app_match!(thm, let (mkGCtx c fs ms ty) = u_gctx);
+    let [_, fss, hfs] = thm.parse_ubytes(7, fs);
+    let [_, mss, hms] = thm.parse_ubytes(7, ms);
+
+    let u_elf = app!(thm, (ELF_lit fss mss c));
+    let (elf, _) = elab.env.add_term({
+      let doc = mangler.as_doc(Name::Elf).into();
+      let mut de = ExprDedup::new(pd, &[]);
+      let e = thm.to_expr(&mut de, u_elf);
+      de.build_def0(name, Modifiers::LOCAL, fsp.clone(), sp, Some(doc), e, pd.string)
+    }).map_err(|e| e.into_elab_error(sp))?;
+
+    let start_ok = thm!(thm, {start_ok}(): (okStart ({gctx}) fs ms));
+    let start_ok = thm!(thm, (okStart[u_gctx, fs, ms]) =>
+      CONV({start_ok} => SYM (okStart (UNFOLD({gctx}); u_gctx) (REFL fs) (REFL ms))));
+    let th = thm!(thm, okProgI(ty, c, fs, fss, ms, mss, start_ok, hfs, hms): okProg[u_elf, ty]);
+    let th = thm!(thm, CONV({th} => (okProg (UNFOLD({elf}); u_elf) ty)): (okProg ({elf}) ty));
+    let (ok_thm, doc) = mangler.get_data(elab, Name::ProgOkThm);
+    let (ok_thm, _) = elab.env
+      .add_thm(thm.build_thm0(ok_thm, Modifiers::empty(), fsp.clone(), sp, Some(doc), th))
+      .map_err(|e| e.into_elab_error(sp))?;
+    Ok((elf, ok_thm))
+  })
 }

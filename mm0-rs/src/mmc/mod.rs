@@ -12,7 +12,7 @@ mod proof;
 
 use std::{collections::HashMap, rc::Rc};
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
-use mmcc::{infer::TypeError, types::{IdxVec, LambdaId, hir, ty::CtxPrint}, LinkedCode, LinkerErr};
+use mmcc::{infer::TypeError, types::{hir, ty::CtxPrint, IdxVec, LambdaId}, LinkedCode, LinkerErr, TermId, ThmId};
 use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv, lisp::ProcSpec, LispProc, EnvDisplay};
@@ -205,7 +205,9 @@ impl Compiler {
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
-  pub fn finish(&mut self, elab: &mut Elaborator, sp: Span, name: AtomId) -> Result<()> {
+  pub fn finish(&mut self,
+    elab: &mut Elaborator, sp: Span, name: AtomId
+  ) -> Result<(TermId, ThmId)> {
     let compiler = Rc::make_mut(&mut self.inner);
     let code = compiler.linked_code(sp)?;
     proof::render_proof(&self.predef, elab, sp, name, &code.proof())

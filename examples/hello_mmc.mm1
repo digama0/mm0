@@ -27,8 +27,14 @@ do {
   (mmc-add '(
     (proc (main))
   ))
-  (mmc-finish 'test)
-  '_mmc_test_main_ok
+  (mmc-finish 'test_inner)
 };
 
--- output string: (mmc->string);
+abstract def test: string = $ test_inner $;
+
+pub theorem test_isBasicElf: $ isBasicElf test $ = (named '(anl test_inner_ok));
+pub theorem test_ok:
+  $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, sn 0)) $ =
+(named '(anr test_inner_ok));
+
+output string: $ test $;

@@ -1206,7 +1206,6 @@ impl ProcProver<'_> {
   /// Proves `|- okProc gctx start args ret clob se`,
   /// or `|- okStart gctx fs ms` for the start procedure
   fn prove_proc(&mut self, root: VCtx) -> ProofId {
-    let name = self.proc.name();
     let (asm, asmd_thm) = self.proc_asm[&self.proc.id];
     let (x, th) = self.thm.thm0(self.elab, asmd_thm);
     app_match!(self.thm, let (assembled g (asmProc p a)) = x);
@@ -1218,8 +1217,8 @@ impl ProcProver<'_> {
     let (a, h1) = self.vblock_asm[&self.proc.vblock_id(BlockId::ENTRY).expect("ghost function")];
     app_match!(self.thm, let (asmEntry start (ASM_A prol code)) = a);
     let bl = self.proc.block(BlockId::ENTRY);
-    if name.is_some() {
-      let abi = self.elf_proof.proc_abi(self.proc.id.expect("not start"));
+    if let Some(proc_id) = self.proc.id {
+      let abi = self.elf_proof.proc_abi(proc_id);
       let mut vctx = root;
       let (args, mut mctx, h2) = self.accum_args(&mut vctx, bl.block().ctx, &abi.args);
       let (vctx1, sz1) = (vctx.e, *vctx.nvars);
@@ -1650,7 +1649,7 @@ pub(super) fn compile_proof(
   span: &FileSpan,
   full: Span,
   gctx: TermId,
-) -> Result<()> {
+) -> Result<ThmId> {
   let mut proc_proof = HashMap::new();
   for proc in proof.proc_proofs() {
     let mut thm = ProofDedup::new(pd, &[]);
@@ -1677,5 +1676,5 @@ pub(super) fn compile_proof(
       .map_err(|e| e.into_elab_error(full))?;
     proc_proof.insert(proc.id, ok_thm);
   }
-  Ok(())
+  Ok(*proc_proof.get(&None).expect("missing start procedure"))
 }

@@ -191,10 +191,6 @@ $ n e. Bits (8 * suc k) /\ s = toBytes (suc k) n $;
 @mmc-th theorem parseUBytes01: $ parseUBytes 0 a0 (s1 (ch x0 a0)) $ =
 '(iani xelBits81 xtoBytes11);
 
-@mmc-th local def parseU64 (n: nat) (s: string): wff = $ parseUBytes ,(sucs 7) n s $;
-
-@mmc-th theorem parseU64_I (h: $ parseUBytes ,(sucs 7) n s $): $ parseU64 n s $ = 'h;
-
 @mmc-th local def parseIBytesPos (k n: nat) (s: string): wff =
 $ n e. Bits (8 * k + 7) /\ s = toBytes (suc k) n $;
 
@@ -882,13 +878,5 @@ $ assembledN (gctx_content G) (gctx_filesz G) (gctx_memsz G) P $;
 @mmc-th theorem assembled_l (h1: $ assembled G (A ++asm B) $): $ assembled G A $ = 'sorry;
 
 @mmc-th theorem assembled_r (h1: $ assembled G (A ++asm B) $): $ assembled G B $ = 'sorry;
-
--- Not used if compiler is enabled, see okProgI
-@mmc-th theorem assembleProg
-  (h1: $ assembled (mkGCtx c fs ms T) P $)
-  (h2: $ fs + bss = ms $)
-  (hfs: $ parseU64 fs fss $)
-  (hms: $ parseU64 ms mss $):
-  $ isBasicElf (ELF_lit fss mss c) $ = 'sorry;
 
 do (warn-unused-vars #t);
