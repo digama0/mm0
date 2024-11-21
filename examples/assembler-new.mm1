@@ -1,6 +1,9 @@
 import "assembler-old.mm1";
 
 axiom sorry (p: wff): $ p $;
+term sorry_nat: nat;
+term sorry_set: set;
+term sorry_wff: wff;
 do (warn-unused-vars #f);
 
 do {

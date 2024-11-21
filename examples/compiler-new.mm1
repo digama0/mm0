@@ -29,10 +29,10 @@ do (warn-unused-vars #f);
 @_ @mmc-th local def eVar (v: nat): set = $ \ vs, vs @ v $;
 
 --| `tyMoved: Ty => Ty`: computes the moved version of a type.
-@_ @mmc-th local def tyMoved (ty moved: set): wff = $ F. $; -- TODO
+@_ @mmc-th local def tyMoved (ty moved: set): wff = $ sorry_wff $; -- TODO
 
 --| A return ABI saying you can't return
-@_ @mmc-th local def noRet: set = $ 0 $; -- TODO
+@_ @mmc-th local def noRet: set = $ sorry_set $; -- TODO
 
 -- inductive epilogue
 -- | free : nat -> epilogue -> epilogue
@@ -75,7 +75,7 @@ theorem pctx_se_PI: $ pctx_se (mkPCtx gctx (mkPCtx1 ret epi se)) <-> se $ =
 '(bitr (trueeq @ eqtr (sndeq @ eqtr (lowereq @
     eqstr (Sndeq @ eqstr (Fsteq SndSum) FstSum) SndSum) lowerns) sndpr) truenat);
 
-@_ local def soReturnType (ret: set): set = $ 0 $; -- TODO
+@_ local def soReturnType (ret: set): set = $ sorry_set $; -- TODO
 
 @_ local def okPCtx (pctx: set): wff = $ epi_ok (pctx_epi pctx) $;
 
@@ -100,8 +100,8 @@ theorem pctx_se_BI: $ pctx_se (mkBCtx (mkPCtx gctx (mkPCtx1 ret epi se)) labs) <
 
 @_ local def okBCtx (bctx: set): wff = $ okPCtx bctx $; -- TODO
 
-@_ local def soLayout (tctx: set): set = $ 0 $; -- TODO
-@_ local def soType (tctx: set): set = $ 0 $; -- TODO
+@_ local def soLayout (tctx: set): set = $ sorry_set $; -- TODO
+@_ local def soType (tctx: set): set = $ sorry_set $; -- TODO
 
 @_ local def frFrame (fr: nat): nat = $ fst fr $;
 @_ local def frRetAddr (fr: nat): nat = $ pi21 fr $;
@@ -240,7 +240,7 @@ theorem mctxA_ass: $ ((A +M B) +M C) == (A +M (B +M C)) $ = 'sorry;
 
 @_ local def bddMCtx_N (mctx: set) (lo hi: nat): wff =
 $ Snd mctx == (S\ vs, L_emp) /\
-  F. $; -- TODO: "Fst mctx is inhabitable and contained in r[lo..hi]"
+  sorry_wff $; -- TODO: "Fst mctx is inhabitable and contained in r[lo..hi]"
 
 @mmc-th local def bddMCtx (mctx: set) (lo hi: hex): wff = $ bddMCtx_N mctx lo hi $;
 theorem bddMCtx_0: $ bddMCtx_N mctx0 0 0 $ = 'sorry;
@@ -357,7 +357,7 @@ theorem okCode_rev:
   $ okCode bctx tctx1 ASM0 tctx3 $ = 'sorry;
 
 @mmc-th local def okPrologue
-  (epi1 sp: nat) (mctx code: set) (epi2: nat) (mctx2: set): wff = $ F. $; -- TODO
+  (epi1 sp: nat) (mctx code: set) (epi2: nat) (mctx2: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem okPrologue_push
   (h: $ sp + x8 = sp2 $)
@@ -388,18 +388,18 @@ $ E. p assembled pctx (code @' p) $;
   (h1: $ okAssembled pctx (code1 +asm code2) $): $ okAssembled pctx code2 $ = 'sorry;
 
 --| `arg0: List Arg`: the empty list of arguments.
-@mmc-th local def arg0: set = $ 0 $; -- TODO
+@mmc-th local def arg0: set = $ sorry_set $; -- TODO
 
 --| `argS: List Arg -> Arg -> List Arg`: append an argument to the end of the list.
 @mmc-th local def argS (args arg: set): set = $ 0 $; -- TODO
 infixl argS: $|>A$ prec 90;
 
 --| `aVar: Ty -> Arg`: A variable declaration (which corresponds to a numbered variable).
-@mmc-th local def aVar (ty: set): set = $ 0 $; -- TODO
+@mmc-th local def aVar (ty: set): set = $ sorry_set $; -- TODO
 --| `aHyp: Ty -> Arg`: A hypothesis declaration (no value, just a propositional assertion).
-@mmc-th local def aHyp (ty: set): set = $ 0 $; -- TODO
+@mmc-th local def aHyp (ty: set): set = $ sorry_set $; -- TODO
 
-@mmc-th local def accumArgs (args vctx: set) (sz: nat): wff = $ F. $; -- TODO
+@mmc-th local def accumArgs (args vctx: set) (sz: nat): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem accumArgs0: $ accumArgs arg0 vctx0 x0 $ = 'sorry;
 
@@ -433,7 +433,7 @@ $ mctx2 == (mctx1 +M S\ vs, Sum (s_clob clob) L_emp) $;
   $ accumClob (r :C clob) mctx1 mctx3 $ = 'sorry;
 
 @mmc-th local def okProc (gctx: set) (start: nat)
-  (args ret: set) (clob: nat) (se: wff): wff = $ F. $; -- TODO
+  (args ret: set) (clob: nat) (se: wff): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem okProcI
   (h1: $ okAssembled (mkPCtx gctx (mkPCtx1 ret epi se)) (asmEntry start (prol +asm code)) $)
@@ -463,7 +463,7 @@ $ gctx_filesz gctx = fs -> gctx_memsz gctx = ms ->
   (h3: $ okCode (mkBCtx pctx LG0) tctx code ok0 $):
   $ okStart gctx fs ms $ = 'sorry;
 
-@mmc-th local def okBlock (bctx: set) (ip: nat) (tctx: set): wff = $ F. $; -- TODO
+@mmc-th local def okBlock (bctx: set) (ip: nat) (tctx: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem okBlock_weak
   (h1: $ okCode bctx tctx1 ASM0 tctx2 $)
@@ -479,7 +479,7 @@ $ gctx_filesz gctx = fs -> gctx_memsz gctx = ms ->
   (h: $ okCode bctx tctx ASM0 ok0 $):
   $ okBlock bctx 0 tctx $ = 'sorry;
 
-@mmc-th local def okPushVariant (v1 v2 tctx1 tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def okPushVariant (v1 v2 tctx1 tctx2: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem okBlock_label
   (h1: $ findLabels L var1 ls $)
@@ -487,14 +487,14 @@ $ gctx_filesz gctx = fs -> gctx_memsz gctx = ms ->
   (h3: $ okPushVariant var1 var2 tctx1 tctx2 $):
   $ okBlock (mkBCtx pctx L) ip tctx2 $ = 'sorry;
 
-@mmc-th local def okLabels (bctx: set) (ls: set): wff = $ F. $; -- TODO
+@mmc-th local def okLabels (bctx: set) (ls: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem okLabels_l (h: $ okLabels bctx (A +L B) $): $ okLabels bctx A $ = 'sorry;
 @mmc-th theorem okLabels_r (h: $ okLabels bctx (A +L B) $): $ okLabels bctx B $ = 'sorry;
 @mmc-th theorem okLabels_1 (h: $ okLabels bctx (label1 ip var tctx) $):
   $ okBlock bctx ip tctx $ = 'sorry;
 
-@mmc-th local def addLabels (bctx: set) (ls1 ls: set): wff = $ F. $; -- TODO
+@mmc-th local def addLabels (bctx: set) (ls1 ls: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem addLabels_A
   (h1: $ addLabels bctx ls A $)
@@ -518,7 +518,7 @@ $ pctx_ret bctx == ret /\ pctx_epi bctx = epi $;
 @mmc-th theorem getEpiI: $ getEpi (mkBCtx (mkPCtx gctx (mkPCtx1 ret epi se)) labs) ret epi $ =
 '(iani pctx_ret_BI pctx_epi_BI);
 
-@_ local def instEpiRegs (regs: nat): set = $ 0 $; -- TODO
+@_ local def instEpiRegs (regs: nat): set = $ sorry_set $; -- TODO
 theorem instEpiRegs0: $ instEpiRegs 0 == instRet $ = 'sorry;
 theorem instEpiRegsS: $ instEpiRegs (r : regs) == instPop r +asm instEpiRegs regs $ = 'sorry;
 
@@ -560,13 +560,13 @@ $ epi_ok epi -> instEpilogue epi == code $;
 
 @mmc-th theorem okEpilogue_ret: $ okEpilogue epiRet instRet $ = 'sorry;
 
-@mmc-th local def Loc_reg (r: hex): nat = $ 0 $; -- TODO
-@mmc-th local def Loc_local (off: nat): nat = $ 0 $; -- TODO
+@mmc-th local def Loc_reg (r: hex): nat = $ sorry_nat $; -- TODO
+@mmc-th local def Loc_local (off: nat): nat = $ sorry_nat $; -- TODO
 
-@mmc-th local def spillslot (v: nat): nat = $ 0 $; -- TODO
+@mmc-th local def spillslot (v: nat): nat = $ sorry_nat $; -- TODO
 
 @mmc-th local def okRead (tctx1: set) (src v: nat): wff = $ F. $; -- TODO
-@mmc-th local def okWrite (tctx1: set) (dst v: nat) (tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def okWrite (tctx1: set) (dst v: nat) (tctx2: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem ok_movRR
   (h1: $ okRead tctx1 (Loc_reg src) v $)
@@ -587,10 +587,10 @@ $ epi_ok epi -> instEpilogue epi == code $;
   (h: $ okBlock bctx (suc tgt) tctx $):
   $ okCode bctx tctx (instJump tgt) ok0 $ = 'sorry;
 
-@mmc-th local def withFlags (f tctx: set): set = $ 0 $; -- TODO
-@mmc-th local def invertCond (c d: hex): wff = $ F. $; -- TODO
-@mmc-th local def flagCond (f: set) (c: hex) (ty: set): wff = $ F. $; -- TODO
-@mmc-th local def ty_not (ty: set): set = $ 0 $; -- TODO
+@mmc-th local def withFlags (f tctx: set): set = $ sorry_set $; -- TODO
+@mmc-th local def invertCond (c d: hex): wff = $ sorry_wff $; -- TODO
+@mmc-th local def flagCond (f: set) (c: hex) (ty: set): wff = $ sorry_wff $; -- TODO
+@mmc-th local def ty_not (ty: set): set = $ sorry_set $; -- TODO
 
 @mmc-th theorem ok_jcc
   (h1: $ flagCond f c ty $)
@@ -615,18 +615,19 @@ $ epi_ok epi -> instEpilogue epi == code $;
   (h3: $ okBlock bctx tgt tctx2 $):
   $ okCode bctx (withFlags f tctx) (instAssert c tgt) ok0 $ = 'sorry;
 
--- @mmc-th local def okDefer (P A: set): set = $ 0 $; -- TODO
+-- @mmc-th local def okDefer (P A: set): set = $ sorry_set $; -- TODO
 
 -- @mmc-th theorem okDeferI:
 --   $ okCode bctx tctx code (okDefer tctx code) $ = 'sorry;
 
-@mmc-th local def subst0: set = $ 0 $; -- TODO
-@mmc-th local def substS (subst e: set): set = $ 0 $; -- TODO
+@mmc-th local def subst0: set = $ sorry_set $; -- TODO
+@mmc-th local def substS (subst e: set): set = $ sorry_set $; -- TODO
 infixl substS: $|>S$ prec 90;
 
-@mmc-th local def substTy (subst ty ty2: set): wff = $ F. $; -- TODO
+@mmc-th local def substTy (subst ty ty2: set): wff = $ sorry_wff $; -- TODO
 
-@mmc-th local def buildSubst (vctx1 subst1 args: set) (vctx2 subst2: set): wff = $ F. $; -- TODO
+@mmc-th local def buildSubst (vctx1 subst1 args: set) (vctx2 subst2: set): wff =
+  $ sorry_wff $; -- TODO
 
 @mmc-th theorem buildSubst_0:
   $ buildSubst vctx subst arg0 vctx subst $ = 'sorry;
@@ -643,7 +644,8 @@ infixl substS: $|>S$ prec 90;
   (h3: $ okVCtxTake vctx2 (isHyp ty2) vctx3 $):
   $ buildSubst vctx1 subst1 (args |>A aHyp ty) vctx3 subst2 $ = 'sorry;
 
-@mmc-th local def applyCall (tctx1 args ret: set) (clob: nat) (tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def applyCall (tctx1 args ret: set) (clob: nat) (tctx2: set): wff =
+  $ sorry_wff $; -- TODO
 
 @mmc-th theorem applyCall_I
   (h1: $ okProc gctx tgt args ret clob F. $)
@@ -652,7 +654,7 @@ infixl substS: $|>S$ prec 90;
   : $ applyCall (mkTCtx vctx1 sz1 mctx1)
       (mkArgs args mctx_a) (mkArgs ret mctx_r) clob tctx2 $ = 'sorry;
 
-@mmc-th local def applyCallG (tctx1 args ret: set) (tctx2: set): wff = $ F. $; -- TODO
+@mmc-th local def applyCallG (tctx1 args ret: set) (tctx2: set): wff = $ sorry_wff $; -- TODO
 
 @mmc-th theorem applyCallG_I
   (h1: $ okProc gctx tgt args ret clob F. $)

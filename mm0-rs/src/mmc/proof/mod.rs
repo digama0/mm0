@@ -478,6 +478,7 @@ pub(crate) fn render_proof(
     let start_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       compiler::compile_proof(elab, pd, &proc_asm, &mangler, proof, &fsp, sp, gctx)
     })).unwrap_or_else(|e| Err(ElabError::new_e(sp, "panicked")))?;
+
     let mut thm = ProofDedup::new(pd, &[]);
     let u_gctx = thm.get_def0(elab, gctx);
     app_match!(thm, let (mkGCtx c fs ms ty) = u_gctx);
