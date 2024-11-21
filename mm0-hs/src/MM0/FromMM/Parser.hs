@@ -4,6 +4,7 @@ import Data.List
 import Data.Char
 import Data.Maybe
 import Data.Default
+import Data.Bifunctor
 import Control.Monad.Trans.State
 import Control.Monad.Except
 import qualified Text.ParserCombinators.ReadP as P
@@ -60,7 +61,7 @@ modifyND :: (MMNatDed -> MMNatDed) -> FromMMM ()
 modifyND f = modifyMeta $ \m -> m {mND = f <$> mND m}
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
-runFromMMM m = (\(a, t) -> (a, mDB t)) <$> runStateT m def
+runFromMMM m = second mDB <$> runStateT m def
 
 addConstant :: Const -> FromMMM ()
 addConstant c = modify $ \s -> s {mSyms = M.insert c (Const c) (mSyms s)}
@@ -94,7 +95,7 @@ scopeOpen ss@((_, _, vs) : _) = ([], [], vs) : ss
 
 scopeClose :: Scope -> Maybe Scope
 scopeClose [] = undefined
-scopeClose (_ : []) = Nothing
+scopeClose [_] = Nothing
 scopeClose (_ : s : ss) = Just (s : ss)
 
 addHyp :: Label -> Hyp -> S.Set Label -> FromMMM ()
@@ -280,7 +281,7 @@ trProof (hs, _) db = \case
     ([(Label, Label)] -> [(Label, Label)]) -> Either String ([(Label, Label)], MMProof)
   processPreloads [] _ _ _ = throwError "unclosed parens in proof"
   processPreloads (")" : blocks) heap _ ds = do
-    pt <- processBlocks (numberize (join (T.unpack <$> blocks)) 0) heap 0 []
+    pt <- processBlocks (numberize (T.unpack =<< blocks) 0) heap 0 []
     return (ds [], pt)
   processPreloads (st : p) heap sz ds = case getStmtM db st of
       Nothing -> throwError ("statement " ++ T.unpack st ++ " not found")
@@ -559,7 +560,7 @@ ptInsert vm x (Const tc : fmla) = insert1 tc fmla where
   insert1 i f = M.alter (Just . insertPT f . fromMaybe ptEmpty) i
   insertPT :: [Sym] -> ParseTrie -> ParseTrie
   insertPT [] (PT cs vs Nothing) = PT cs vs (Just (tc, x))
-  insertPT [] (PT _ _ _) = error "duplicate parser"
+  insertPT [] PT {} = error "duplicate parser"
   insertPT (Const c : f) (PT cs vs d) = PT (insert1 c f cs) vs d
   insertPT (Var v : f) (PT cs vs d) =
     PT cs (insert1 (fst (vm M.! v)) f vs) d
@@ -591,8 +592,7 @@ parseFmla = \case
     parseEOF (_ : es) = parseEOF es
     parse :: Sort -> Parser -> [Sym] -> [(MMExpr, [Sym])]
     parse s q f = (case f of
-      Var v : f' -> let (s', v') = vm M.! v in
-        if s == s' then [(SVar v', f')] else []
+      Var v : f' -> let (s', v') = vm M.! v in [(SVar v', f') | s == s']
       _ -> []) ++ ((\(g, f') -> (g id, f')) <$> parseC s q s f)
     parseC :: Sort -> Parser -> Const -> [Sym] -> ParseResult
     parseC s q c f = parsePT s f (M.findWithDefault ptEmpty c q)

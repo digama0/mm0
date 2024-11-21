@@ -1,4 +1,5 @@
 module MM0.Kernel.Verifier (verify) where
+import Control.Monad
 
 import Control.Monad.Except
 import Control.Monad.RWS.Strict
@@ -58,7 +59,7 @@ runGVerifyM m e = do
   guardError "Not all theorems have been proven" (null (vPos st))
   case f [] of
     [] -> return (a, vOutput st)
-    ss -> throwError ("errors:\n" ++ concatMap (\s -> s ++ "\n") ss)
+    ss -> throwError ("errors:\n" ++ unlines ss)
 
 report :: a -> GVerifyM a -> GVerifyM a
 report a m = catchError m $ \e -> a <$ tell (Endo (e :))
@@ -348,12 +349,12 @@ verifyInputString spectxt = \e -> do
       [e] -> f e
       _ -> \_ -> throwError "invalid args") :
     ("sadd", \f -> \case
-      [e1, e2] -> \s -> f e1 s >>= f e2
+      [e1, e2] -> f e1 >=> f e2
       _ -> \_ -> throwError "invalid args") :
     ("ch", \f -> \case
-      [e1, e2] -> \s -> f e1 s >>= f e2
+      [e1, e2] -> f e1 >=> f e2
       _ -> \_ -> throwError "invalid args") :
-    map (\i -> (T.pack ('x' : toHex i : []),
+    map (\i -> (T.pack ['x', toHex i],
       \_ -> \case
         [] -> \s -> case spUncons s of
           Nothing -> throwError "EOF"
@@ -423,7 +424,7 @@ verifyOutputString = \e -> do
           _ -> throwError "impossible, check axioms"
         _ -> throwError "impossible, check axioms"
       _ -> throwError "invalid args") :
-    map (\i -> (T.pack ('x' : toHex i : []), \_ -> \case
+    map (\i -> (T.pack ['x', toHex i], \_ -> \case
       [] -> return (OHex i)
       _ -> throwError "invalid args")) [0..15]
 

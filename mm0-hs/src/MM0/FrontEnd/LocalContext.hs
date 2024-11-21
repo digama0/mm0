@@ -20,7 +20,7 @@ lookupReg (PReg v' ty : _) v | v == v' = Just ty
 lookupReg (_ : bs) v = lookupReg bs v
 
 lookupLocal :: LCtx -> Ident -> Maybe DepType
-lookupLocal (bs, ds) v = ((\t -> DepType t []) <$> ds M.!? v) <|> lookupReg bs v
+lookupLocal (bs, ds) v = ((`DepType` []) <$> ds M.!? v) <|> lookupReg bs v
 
 lookupBound :: LCtx -> Ident -> Maybe Ident
 lookupBound (bs, ds) v = ds M.!? v <|> lookupBound' bs where
@@ -55,4 +55,4 @@ readPE = snd <$> lift ask
 ensureBound :: Ident -> LocalCtxM ()
 ensureBound v = do
   ctx <- ask
-  () <$ fromJustError ("variable " ++ T.unpack v ++ " not bound") (lookupBound ctx v)
+  void $ fromJustError ("variable " ++ T.unpack v ++ " not bound") (lookupBound ctx v)

@@ -111,7 +111,7 @@ cons l (DottedList r0 rs r) = DottedList l (r0 : rs) r
 cons l r = DottedList l [] r
 
 isMVar :: LispVal -> Bool
-isMVar (MVar _ _ _ _) = True
+isMVar MVar {} = True
 isMVar _ = False
 
 isGoal :: LispVal -> Bool
@@ -378,11 +378,11 @@ withTimeout o m = MaybeT $ RWST $ \r s ->
     0 -> runRWST (runMaybeT m) r s
     n -> timeout n (runRWST (runMaybeT m) r s) >>= \case
       Just ret -> return ret
-      Nothing -> runRWST (runMaybeT (escapeAt o $
+      Nothing -> runRWST (runMaybeT (escapeAt o
         "timeout (use (set-timeout) to increase the timeout)")) r s
 
 resuming :: ElabM () -> Elab ()
-resuming m = () <$ runMaybeT m
+resuming = void . runMaybeT
 
 mkElabError :: ErrorLevel -> Range -> Text -> [(Location, Text)] -> ElabM ElabError
 mkElabError l o msg i = do
@@ -674,7 +674,7 @@ addCoe o t = \s1 s2 -> do
       escapeErr ELError o
         (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
         (toRelated (l ++ l2)))
-    return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
+    return $ M.alter (Just . M.insert s2 c . fromMaybe M.empty) s1 coes
 
   setCoes :: M.Map Sort (M.Map Sort Coe) -> ElabM ()
   setCoes coes = do

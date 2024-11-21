@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, BangPatterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use sortOn" #-}
 module MM0.Compiler.PositionInfo (Lines, Spans, PosInfo(..), PIType(..),
   getLines, offToPos, posToOff, toSpans, getPosInfo, markPosition) where
 
@@ -85,14 +87,14 @@ toSpans env = \st -> runST $ do
     stmt (Annot anno (Span _ st)) = atLisp False anno >> stmt st
     stmt (Do val) = mapM_ (atLisp False) val
     stmt (Import (Span o t)) = push' o t PIFile
-    stmt (Sort _ _ _) = return ()
+    stmt Sort {} = return ()
 
     withBinders :: [Binder] -> MakeSpan s () -> MakeSpan s ()
     withBinders [] m = m
     withBinders (bi@(Binder o l ty) : bis) m = do
       forM_ (localName l) $ \n -> push' o n (PIVar (Just bi))
       mapM_ typ ty
-      local (maybe id (flip H.insert bi) (localName l)) (withBinders bis m)
+      local (maybe id (`H.insert` bi) (localName l)) (withBinders bis m)
 
     typ :: Type -> MakeSpan s ()
     typ (TType (AtDepType (Span o t) vs)) = do

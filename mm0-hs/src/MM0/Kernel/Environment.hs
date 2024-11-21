@@ -27,7 +27,7 @@ data PBinder = PBound VarName Ident | PReg VarName DepType deriving (Eq)
 
 instance Show PBinder where
   showsPrec _ (PBound v t) r = '{' : T.unpack v ++ ": " ++ T.unpack t ++ '}' : r
-  showsPrec _ (PReg v t) r = '(' : T.unpack v ++ ": " ++ showsPrec 0 t (')' : r)
+  showsPrec _ (PReg v t) r = '(' : T.unpack v ++ ": " ++ shows t (')' : r)
 
 binderName :: PBinder -> VarName
 binderName (PBound v _) = v
@@ -38,7 +38,7 @@ binderSort (PBound _ s) = s
 binderSort (PReg _ (DepType s _)) = s
 
 binderType :: PBinder -> DepType
-binderType (PBound _ t) = (DepType t [])
+binderType (PBound _ t) = DepType t []
 binderType (PReg _ ty) = ty
 
 binderBound :: PBinder -> Bool
@@ -112,7 +112,7 @@ getTerm :: Environment -> TermName -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where
   go (DTerm args r) = Just (args, r)
   go (DDef args r _) = Just (args, r)
-  go (DAxiom _ _ _) = Nothing
+  go DAxiom {} = Nothing
 
 getArity :: Environment -> TermName -> Maybe Int
 getArity e v = length . fst <$> getTerm e v

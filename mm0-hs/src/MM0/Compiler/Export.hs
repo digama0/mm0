@@ -1,5 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE DeriveGeneric, DeriveFunctor, DeriveTraversable, TypeFamilies #-}
+{-# LANGUAGE DeriveGeneric, DeriveTraversable, TypeFamilies #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
 module MM0.Compiler.Export (export, exportK, exportKP) where
 
 import GHC.Generics (Generic)
@@ -42,7 +44,7 @@ exportK strip fname pfs =
   exportKP strip fname $ \f -> mapM_ f pfs
 
 exportKP :: Bool -> String -> ((K.WCStmt -> IO ()) -> IO ()) -> IO ()
-exportKP strip fname ppfs = do
+exportKP strip fname ppfs =
   buildTablesK ppfs >>= exportTables strip fname
 
 exportTables :: Bool -> String -> (V.Vector Name, Tables) -> IO ()
@@ -56,7 +58,7 @@ reportErr _ = hPutStrLn stderr . T.unpack
 
 isPublic :: Decl -> Bool
 isPublic (DTerm _ _) = True
-isPublic (DAxiom _ _ _) = True
+isPublic DAxiom {} = True
 isPublic (DDef vis _ _ _) = vis /= Local
 isPublic (DTheorem vis _ _ _ _) = vis == Public
 
@@ -228,7 +230,7 @@ buildTables :: Env -> [Name] -> IO (V.Vector Name, Tables)
 buildTables env ds = buildTablesWith $ \mksort mkterm mkthm ->
   forM_ ds $ \case
     SortName s -> mksort s $ thd3 (eSorts env H.! s)
-    d -> case eDecls env H.! (nIdent d) of
+    d -> case eDecls env H.! nIdent d of
       (_, _, DTerm bis ret, _) ->
         mkterm (nIdent d) $ TermData Public (V.fromList bis) ret Nothing
       (_, _, DDef vis bis ret val, _) ->
@@ -250,7 +252,7 @@ buildTablesK ppfs =
     K.StmtAxiom t bis hs ret -> mkthm t $
       ThmData Public (V.fromList bis) $
         ProofStmt ((Nothing,) <$> hs) ret Nothing
-    K.StmtDef t bis ret ds val st -> mkterm t $
+    K.StmtDef t bis ret ds val st -> mkterm t
       (TermData (if st then Public else Local) (V.fromList bis) ret (Just (ds, val)))
     K.StmtThm t bis hs ret ds pf st -> mkthm t $
       ThmData (if st then Public else Local) (V.fromList bis) $
@@ -284,17 +286,17 @@ writeMM0B strip decls (Tables sorts terms thms) = do
   writeU32 $ fromIntegral $ V.length $ mArr thms    -- num_thms
   fixup32 $ fixup32 $ fixup64 $ fixup64 $ do        -- pTerms, pThms, pProof, pIndex
     forM_ (mArr sorts) $ writeSortData . snd
-    pTerms <- alignTo 8 >> fromIntegral <$> get
+    pTerms <- alignTo 8 >> gets fromIntegral
     revision (mapM_ writeTermHead)
       (8 * fromIntegral (V.length (mArr terms)))
       ((,) () <$> forM (mArr terms) writeTerm)
-    pThms <- alignTo 8 >> fromIntegral <$> get
+    pThms <- alignTo 8 >> gets fromIntegral
     revision (mapM_ writeThmHead)
       (8 * fromIntegral (V.length (mArr thms)))
       ((,) () <$> forM (mArr thms) writeThm)
-    pProof <- fromIntegral <$> get
+    pProof <- gets fromIntegral
     mapM_ writeDecl decls >> writeU8 0
-    pIndex <- if strip then 0 <$ padN 4 else alignTo 8 >> fromIntegral <$> get
+    pIndex <- if strip then 0 <$ padN 4 else alignTo 8 >> gets fromIntegral
     return (((((), pTerms), pThms), pProof), pIndex)
   unless strip writeIndex
   where
@@ -339,7 +341,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
 
   writeTerm :: (Ident, TermData) -> ExportM (TermData, Word32)
   writeTerm (t, td@(TermData _ bis (DepType sret vs) val)) = do
-    pTerm <- alignTo 8 >> fromIntegral <$> get
+    pTerm <- alignTo 8 >> gets fromIntegral
     withContext t $ writeBis bis $ \_ lctx n ctx -> do
       writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
         (shiftL (fromIntegral (mIx sorts M.! sret)) 56) vs
@@ -359,7 +361,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
 
   writeThm :: (Ident, ThmData) -> ExportM (ThmData, Word32)
   writeThm (x, td@(ThmData _ bis (ProofStmt hs ret _))) = do
-    pThm <- alignTo 8 >> fromIntegral <$> get
+    pThm <- alignTo 8 >> gets fromIntegral
     withContext x $ writeBis bis $ \_ _ n ctx -> do
       us <- liftEither $ runUnify (n, ctx, H.empty) $ do
         sExprUnify ret
@@ -417,13 +419,13 @@ writeMM0B strip decls (Tables sorts terms thms) = do
       return n
 
     hashCons :: ProofE -> ExceptT String IO Int
-    hashCons p = H.lookup p <$> lift (readIORef m) >>= \case
+    hashCons p = lift (readIORef m) >>= (\case
       Nothing -> do
         n <- VD.length vec
         VD.pushBack vec (p, False)
         lift $ modifyIORef m (H.insert p n)
         return n
-      Just n -> incRef n
+      Just n -> incRef n) . H.lookup p
 
     substE :: H.HashMap VarName Int -> SExpr -> ExceptT String IO Int
     substE subst (SVar v) = incRef (subst H.! v)
@@ -483,7 +485,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
         n <- toIx p1
         lift $ modifyIORef m (H.insert (PHypE x) n)
         toE p2
-      ProofF _ _ _ _ -> undefined
+      ProofF {} -> undefined
 
   runProof :: (MuRef a, DeRef a ~ ProofF, Show a) =>
     V.Vector PBinder -> [(VarName, Sort)] -> a -> Either String [ProofCmd]
@@ -503,14 +505,14 @@ writeMM0B strip decls (Tables sorts terms thms) = do
       v' <- VD.unsafeFreeze v
       h' <- lift (readIORef h)
       return ((v', h'), bis', pe)
-    (_, Endo f) <- evalRWST (mapM pushHeap bis2 >> mkProof pe2) st (0, I.empty)
+    (_, Endo f) <- evalRWST (mapM_ pushHeap bis2 >> mkProof pe2) st (0, I.empty)
     return (f [])
 
   pushHeap :: Int -> ProofM ()
   pushHeap n = modify $ \(k, heap) -> (k+1, I.insert n k heap)
 
   mkProof :: Int -> ProofM ()
-  mkProof n = I.lookup n . snd <$> get >>= \case
+  mkProof n = gets (I.lookup n . snd) >>= \case
     Just i -> tell $ Endo (PCRef (fromIntegral i) :)
     Nothing -> (V.! n) . fst <$> ask >>= \case
       (SVarE v s, _) -> tell (Endo (PCDummy (fromIntegral s) v :)) >> pushHeap n
@@ -526,7 +528,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
         tell (Endo (PCUnfold :)) >> mkProof c
       (PHypE h, _) -> throwError $ "unknown hypothesis " ++ T.unpack h
       (PThmE t es ps e, save) ->
-        mapM mkProof ps >> mapM mkProof es >> mkProof e >>
+        mapM_ mkProof ps >> mapM_ mkProof es >> mkProof e >>
         if save then do
           tell $ Endo (PCThmSave (fromIntegral t) :)
           pushHeap n
@@ -549,7 +551,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
     revision fixup (fromIntegral headerLen) $
       (,) () <$> runStateT (writeIndex' $ buildIndex [] (M.size nameTree, nameTree)) def
     where
-    fixup (pRoot, (pSorts, pTerms, pIndex)) = do
+    fixup (pRoot, (pSorts, pTerms, pIndex)) =
       writeU64 pRoot >> mapM_ writeU64 pSorts >> mapM_ writeU64 pTerms >> mapM_ writeU64 pIndex
 
     nameTree :: M.Map Ident (NE.NonEmpty Name)
@@ -601,12 +603,12 @@ writeMM0B strip decls (Tables sorts terms thms) = do
         (x, go (mArr terms V.! ix), \(a, b, c) -> (a, I.insert ix p b, c)) where
       go (_, TermData _ _ _ Nothing)              = 0x01
       go (_, TermData Local _ _ _)                = 0x0D
-      go (_, TermData _ _ _ _)                    = 0x05
+      go (_, TermData {})                    = 0x05
     mkKind ix p (ThmName x) =
         (x, go (mArr thms V.! ix), \(a, b, c) -> (a, b, I.insert ix p c)) where
       go (_, ThmData _ _ (ProofStmt _ _ Nothing)) = 0x02
       go (_, ThmData Public _ _)                  = 0x06
-      go (_, ThmData _ _ _)                       = 0x0E
+      go (_, ThmData {})                       = 0x0E
 
 type ExportM = RWST () BB.Builder Word64 (Either String)
 
@@ -679,7 +681,7 @@ writeUnifyCmd UHyp          = writeU8 0x36
 --   traceM ("  " ++ showHex ix (": " ++ show c))
 
 writeUnify :: [UnifyCmd] -> ExportM ()
-writeUnify l = mapM writeUnifyCmd l >> writeU8 0
+writeUnify l = mapM_ writeUnifyCmd l >> writeU8 0
 
 data ProofCmd =
     PCTerm Word32
@@ -722,7 +724,7 @@ writeProofCmd PCConvSave     = writeU8 0x1E
 --   traceM ("  " ++ showHex ix (": " ++ show c))
 
 writeProof :: [ProofCmd] -> ExportM ()
-writeProof l = mapM writeProofCmd l >> writeU8 0
+writeProof l = mapM_ writeProofCmd l >> writeU8 0
 
 data Index = INil | INode IEntry Index Index
 

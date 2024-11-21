@@ -1,4 +1,6 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
+{-# HLINT ignore "Use <&>" #-}
 module MM0.Compiler.Elaborator (elaborate, elabLoad,
   ErrorLevel(..), ElabError(..), ElabConfig(..), toElabError) where
 
@@ -11,7 +13,9 @@ import Data.Bits
 import Data.Word8
 import Data.Maybe
 import Data.Default
+import Data.Functor
 import Data.Foldable
+import Data.Bifunctor
 import System.IO.Error
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
@@ -55,7 +59,7 @@ elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
   Annot e stmt -> do
     ann <- evalAt def e
     lift $ elabStmt stmt
-    () <$ call pos "annotate" [ann, nameOf stmt]
+    void $ call pos "annotate" [ann, nameOf stmt]
   Import (Span _ t) -> loadEnv rd t >>= put -- TODO: this just replaces the current env
   _ -> unimplementedAt pos
 
@@ -111,7 +115,7 @@ inferBinder bi@(Binder os@(o, _) l oty) = case oty of
     locals' <- case localName l of
       Nothing -> do
         when noType $ escapeAt o "cannot infer variable type"
-        return $ locals
+        return locals
       Just n -> do
         p <- asks efName
         ins <- checkNew ELWarning os
@@ -183,7 +187,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
               return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
           Just lv -> do
             when mm0 $ reportSpan rx ELWarning "(MM0 mode) theorem proofs not accepted"
-            check <- eCheckProofs <$> get
+            check <- gets eCheckProofs
             if check then do
               fork <- forkElabM $ withTimeout px $
                 withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> pbs) $ do
@@ -216,7 +220,7 @@ addDelimiters ls rs = modifyPE $ go 2 rs . go 1 ls where
     Delims arr = pDelims pe
     f :: Char -> (Int, Word8)
     f c = let i = fromEnum (toEnum (fromEnum c) :: Word8)
-          in (i, (U.unsafeIndex arr i) .|. w)
+          in (i, U.unsafeIndex arr i .|. w)
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
@@ -282,7 +286,7 @@ addNotation rx@(px, _) x bis = \lits prec1 -> do
         Just (q, _) | q /= p -> escapeAt o "notation precedence must match first constant"
         Just (_, r) -> return (Just r)
       n <- fromJustAt ov "notation variable not found" (H.lookup v binderMap)
-      q <- bump (fromMaybe False r) o p
+      q <- bump (Just True == r) o p
       return (Just (n, q), lits1, r, True, c, p)
   insertPrec c prec
   let
@@ -295,7 +299,7 @@ addNotation rx@(px, _) x bis = \lits prec1 -> do
         [] -> StateT $ \r -> do
           r2 <- fromJustAt px
             "general infix notation requires explicit associativity"
-            (r <|> (snd <$> prec1))
+            (r <|> snd <$> prec1)
           (,Just r2) <$> bump (not r2) o prec
         (AtPos o'' (NConst _ q) : _) -> lift $ bump True o'' q
         (AtPos _ (NVar _) : _) -> return PrecMax
@@ -314,7 +318,7 @@ addNotation rx@(px, _) x bis = \lits prec1 -> do
       go bs (n+1) $ maybe m (\v -> H.insert v n m) (localName l)
 
 addCoercion :: Range -> T.Text -> Sort -> Sort -> ElabM ()
-addCoercion rx@(px, _) x s1 s2 = do
+addCoercion rx@(px, _) x s1 s2 =
   try (now >>= getTerm x) >>= \case
     Nothing -> escapeAt px ("term '" <> x <> "' not declared")
     Just (_, [PReg _ (DepType s1' [])], DepType s2' [], no)
@@ -385,7 +389,7 @@ inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
   let returnVar :: Sort -> Bool -> ElabM a -> ElabM InferResult
       returnVar s bd m = do
         unless (null ts) $ escapeAt o (t <> " is not a function")
-        (IR os (SVar t) s bd) <$ m
+        IR os (SVar t) s bd <$ m
   case (var, tm) of
     (Just (LIOld (Binder _ l (Just (TType (AtDepType (Span _ s) _)))) _), _) ->
       returnVar s (isLCurly l) (return ())
@@ -463,7 +467,7 @@ buildBinders px dum bis fs = do
       bisAdd = sortOn fst (mapMaybe f (H.toList locals)) where
         f (v, LINew o bd s) = Just (v, newvar v o bd s)
         f _ = Nothing
-      bisNew = bisAdd ++ bis1 where
+      bisNew = bisAdd ++ bis1
       bisDum = M.fromList (mapMaybe f bisNew) where
         f (v, Binder _ (LDummy _) (Just (TType (AtDepType (Span _ t) [])))) =
           Just (v, t)
@@ -493,7 +497,7 @@ checkVarRefs :: ElabM ()
 checkVarRefs = do
   ic <- gets eInfer
   let errs = filter (not . (`H.member` icLocals ic) . fst) $ H.toList (icDependents ic)
-  when (not (null errs)) $ do
+  unless (null errs) $ do
     forM_ errs $ \(_, os) -> forM_ os $ \o ->
       reportAt o ELError "undefined variable"
     mzero
@@ -674,7 +678,7 @@ mkLambda ls ctx es (o, _) vs = do
 
 parseDef :: ElabM (Span Ident, LCtx -> ElabM LispVal) ->
   [AtLisp] -> ElabM (Span Ident, LCtx -> ElabM LispVal)
-parseDef _ (Span o (AAtom _ x) : es) = return (Span o x, \ctx -> eval1 ctx es)
+parseDef _ (Span o (AAtom _ x) : es) = return (Span o x, (`eval1` es))
 parseDef _ (Span _ (AList (Span o (AAtom _ x) : xs)) : es) = do
   xs' <- mapM toIdent xs
   return (Span o x, \ctx -> return $ Proc $ mkLambda (LSExactly xs') ctx es)
@@ -698,13 +702,12 @@ parseLetVar (Span (o, _) (AList ls)) = parseDef (escapeAt o "invalid syntax") ls
 parseLetVar (Span (o, _) _) = escapeAt o "invalid syntax"
 
 parseLet :: [AtLisp] -> ElabM ([(Span Ident, LCtx -> ElabM LispVal)], [AtLisp])
-parseLet (Span _ (AList ls) : es) = flip (,) es <$> mapM parseLetVar ls
+parseLet (Span _ (AList ls) : es) = (, es) <$> mapM parseLetVar ls
 parseLet (Span (o, _) _ : _) = escapeAt o "invalid syntax"
 parseLet _ = return ([], [])
 
 runMatch :: [LispVal -> ElabM LispVal -> ElabM LispVal] -> Offset -> LispVal -> ElabM LispVal
-runMatch [] o v = escapeAt o $! "match failed: " <> T.pack (show v)
-runMatch (f : fs) o v = f v (runMatch fs o v)
+runMatch fs o v = foldr ($ v) (escapeAt o $! "match failed: " <> T.pack (show v)) fs
 
 parseMatchBranch :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM LispVal -> ElabM LispVal)
 parseMatchBranch ctx (Span _ (AList (pat :
@@ -867,7 +870,7 @@ inferType o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
       inferBis :: [PBinder] -> [LispVal] ->
         H.HashMap VarName LispVal -> ElabM LispVal
       inferBis (_ : _) [] _ = escapeAt o "not enough arguments"
-      inferBis (bi : bis') (e : es') m = do
+      inferBis (bi : bis') (e : es') m =
         inferBis bis' es' (H.insert (binderName bi) e m)
       inferBis [] _ m = return $ sExprSubst o m ret
     in inferBis bis es H.empty
@@ -905,7 +908,7 @@ truthy (Bool False) = False
 truthy _ = True
 
 isPair :: LispVal -> Bool
-isPair (DottedList _ _ _) = True
+isPair DottedList {} = True
 isPair (List (_:_)) = True
 isPair _ = False
 
@@ -926,7 +929,7 @@ isProc (Proc _) = True
 isProc _ = False
 
 isAtom :: LispVal -> Bool
-isAtom (Atom _ _ _) = True
+isAtom Atom {} = True
 isAtom _ = False
 
 isString :: LispVal -> Bool
@@ -1033,7 +1036,7 @@ initialBindings = [
         let unconses :: [[LispVal]] -> ElabM ([LispVal], [[LispVal]])
             unconses [] = return ([], [])
             unconses ([] : _) = escapeSpan o "mismatched input length"
-            unconses ((a : l1) : ls) = unconses ls <&> \(l', ls') -> (a : l', l1 : ls')
+            unconses ((a : l1) : ls) = unconses ls <&> bimap (a :) (l1 :)
             go :: [LispVal] -> [[LispVal]] -> ElabM [LispVal]
             go [] ls = if all null ls then return [] else escapeSpan o "mismatched input length"
             go (a : l1) ls = unconses ls >>= \(l', ls') -> liftM2 (:) (f o (a:l')) (go l1 ls')
@@ -1224,7 +1227,7 @@ lispThmDecl o [List bis, List hs, ret, vis, val] = do
   hs' <- mapM (cleanHyp o) hs
   ret' <- cleanTerm o ret
   vis' <- cleanVis o vis
-  check <- eCheckProofs <$> get
+  check <- gets eCheckProofs
   if check then
     case val of
       Proc f -> fmap (DTheorem vis' bis' hs' ret') $ forkElabM $
@@ -1270,7 +1273,7 @@ elabLisp t e@(Span os@(o, _) _) = do
   modifyTC $ \tc -> tc {tcGoals = V.singleton g}
   evalAt def e >>= tryRefine o
   gs' <- tcGoals <$> getTC
-  forM_ gs' $ \g' -> getRef g' >>= \case
+  forM_ gs' $ getRef >=> \case
     Goal o' ty -> do
       pp <- ppExpr ty
       reportAt o' ELError $ render' $ "|-" <+> doc pp
@@ -1421,17 +1424,17 @@ unify o v1@(List (a1@(Atom _ _ t1) : es1)) v2@(List (a2@(Atom _ _ t2) : es2)) =
   go [] [] = return (False, [])
   go (e1 : es1') (e2 : es2') = liftM2 unifyCons (unify o e1 e2) (go es1' es2')
   go _ _ = escapeAt o $ "bad terms: " <> T.pack (show (t1, length es1, t2, length es2))
-unify o (Atom _ _ v) e2@(List (Atom _ _ _ : _)) = do
+unify o (Atom _ _ v) e2@(List (Atom {} : _)) = do
   pp <- ppExpr e2
   escapeAt o $ "variable vs term: " <> v <> " != " <> render pp
-unify o e1@(List (Atom _ _ _ : _)) (Atom _ _ v) = do
+unify o e1@(List (Atom {} : _)) (Atom _ _ v) = do
   pp <- ppExpr e1
   escapeAt o $ "term vs variable: " <> render pp <> " != " <> v
 unify o e1 e2 = escapeAt o $ "bad terms: " <> T.pack (show (e1, e2))
 
 assign :: Offset -> Bool -> TVar LispVal -> LispVal -> ElabM UnifyResult
 assign o sym g = \v -> getRef g >>= \case
-  MVar _ _ _ _ -> go v
+  MVar {} -> go v
   v' -> if sym then unify o v v' else unify o v' v
   where
   go (Ref g') | g == g' = return $ UnifyResult False (Ref g)
@@ -1446,7 +1449,7 @@ assign o sym g = \v -> getRef g >>= \case
 occursCheck :: TVar LispVal -> LispVal -> ElabM LispVal
 occursCheck g (Ref g') | g == g' = mzero
 occursCheck g e@(Ref g') = getRef g' >>= \case
-  MVar _ _ _ _ -> return e
+  MVar {} -> return e
   e' -> occursCheck g e'
 occursCheck g (List (t : es)) = List . (t :) <$> mapM (occursCheck g) es
 occursCheck _ e = return e
@@ -1534,7 +1537,7 @@ refine o es = do
     let go :: [LispVal] -> [TVar LispVal] -> ElabM ()
         go [] gs' = setGoals gs'
         go _ [] = setGoals []
-        go es1@(e:es') (g:gs') = do
+        go es1@(e:es') (g:gs') =
           getRef g >>= \case
             Goal _ ty -> do
               parseRefine o e >>= refineProof gv ty >>= setRef g

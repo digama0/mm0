@@ -1,6 +1,7 @@
 module MM0.FromMM.Closure (closure) where
 
 import Control.Monad.State
+import Data.Bifunctor
 import qualified Data.Set as S
 import qualified Data.Text as T
 import MM0.Kernel.Environment (SExpr(..))
@@ -10,10 +11,10 @@ closure :: MMDatabase -> [Label] -> (S.Set Sort, S.Set Label)
 closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
 
   addSort :: Label -> State (S.Set Sort, S.Set Label) ()
-  addSort x = modify $ \(ss, sl) -> (S.insert x ss, sl)
+  addSort x = modify $ first (S.insert x)
 
   addStmt :: Label -> State (S.Set Sort, S.Set Label) ()
-  addStmt x = modify $ \(ss, sl) -> (ss, S.insert x sl)
+  addStmt x = modify $ second (S.insert x)
 
   checkStmt :: Label -> State (S.Set Sort, S.Set Label) ()
   checkStmt x = do

@@ -1,16 +1,13 @@
 module MM0.HOL.ToLisp where
 
-import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, Sort, WithComment(..))
-import MM0.Util
+import MM0.Kernel.Environment (Ident, WithComment(..))
 import MM0.HOL.Types
 
 class ToLisp a where
   toLisp :: a -> ShowS
 
-data Binders a = Binders [(Ident, a)]
+newtype Binders a = Binders [(Ident, a)]
 
 instance ToLisp T.Text where
   toLisp s r = "\"" ++ T.unpack s ++ "\"" ++ r

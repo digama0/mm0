@@ -92,11 +92,10 @@ pushProv x = pushWith (\g -> otProv g M.!? x)
   (\n g -> g {otProv = M.insert x n (otProv g)}) $
   app "constTerm" [
     app "const" [str (x <> ".|-")],
-    () <$ pushSType (SType [x] "bool")]
+    void $ pushSType (SType [x] "bool")]
 
 app :: Monad m => String -> [OTM m a] -> OTM m ()
-app s [] = emit [s]
-app s (m:ms) = m >> app s ms
+app s = foldr (>>) (emit [s])
 
 str :: Monad m => T.Text -> OTM m ()
 str s = emit [show s]
@@ -125,10 +124,10 @@ preamble = do
   ref idb
   emit ["appTerm"] -- term (\(x : bool), x) = (\(x : bool), x)
   --   )
-  th <- emit ["defineConst", "sym"] >> save -- |- ((\x. x) = (\x. x)) = T
+  th <- emit ["defineConst", "sym"] >> save --  |- ((\x. x) = (\x. x)) = T
   ctru <- bool >> emit ["constTerm"] >> save -- T : bool
   -- )
-  tru <- app "eqMp" [ref th, app "refl" [ref idb]] >> save -- |- T
+  tru <- app "eqMp" [ref th, app "refl" [ref idb]] >> save --  |- T
 
   -- (
   str "Data.Bool.!" -- name !
@@ -152,10 +151,10 @@ preamble = do
   --     )
   lam <- emit ["absTerm"] >> def' -- \(P : A -> bool). (P = \(a : A). T)
   --   )
-  emit ["defineConst"] -- |- ! = \(P : A -> bool). (P = \(a : A). T)
+  emit ["defineConst"] --  |- ! = \(P : A -> bool). (P = \(a : A). T)
   -- )
-  alEq <- app "refl" [ref pt] >> emit ["appThm"] >> -- |- ! P = (\P. (P = \a. T)) P
-    app "betaConv" [app "appTerm" [ref lam, ref pt]] >> emit ["trans"] >> save -- |- ! P = (P = \a. T)
+  alEq <- app "refl" [ref pt] >> emit ["appThm"] >> --  |- ! P = (\P. (P = \a. T)) P
+    app "betaConv" [app "appTerm" [ref lam, ref pt]] >> emit ["trans"] >> save --  |- ! P = (P = \a. T)
   al <- save -- const !
   ale <- app "eqMp" [
     app "sym" [app "trans" [
@@ -168,10 +167,10 @@ preamble = do
           ], -- {! P} |- P = \a. T
         app "refl" [app "varTerm" [ref a]]], -- {! P} |- P a = (\a. T) a
       app "betaConv" [
-        app "appTerm" [ref lamt, app "varTerm" [ref a]]] -- |- (\a. T) a = T
+        app "appTerm" [ref lamt, app "varTerm" [ref a]]] --  |- (\a. T) a = T
       ]], -- {! P} |- T = P a
     ref tru] >> save -- {! P} |- P a
-  ali <- app "sym" [ref alEq] >> save -- |- (P = \a. T) = ! P
+  ali <- app "sym" [ref alEq] >> save --  |- (P = \a. T) = ! P
   modify $ \g -> g {otPreamble = OTPreamble tru al ali ale}
 
 pushArrow :: Monad m => OTM m Int
@@ -179,9 +178,9 @@ pushArrow = pushWith otArrow (\n g -> g {otArrow = Just n}) $ do
   app "typeOp" [str "->"]
 
 arrows :: Monad m => [OTM m a] -> OTM m b -> OTM m ()
-arrows [] r = () <$ r
+arrows [] r = void r
 arrows (m : ms) r = app "opType" [
-  () <$ pushArrow, list [() <$ m, () <$ arrows ms r]]
+  void pushArrow, list [void m, void $ arrows ms r]]
 
 pushSType :: Monad m => SType -> OTM m Int
 pushSType s@(SType ss t) = pushWith (\g -> otTypes g M.!? s)
@@ -191,7 +190,10 @@ pushSType s@(SType ss t) = pushWith (\g -> otTypes g M.!? s)
 pushVar :: Monad m => Ident -> SType -> OTM m Int
 pushVar x t = pushWith (\g -> otVars g M.!? (x, t))
   (\n g -> g {otVars = M.insert (x, t) n (otVars g)}) $ do
-  app "var" [str x, () <$ pushSType t]
+  app "var" [str x, void $ pushSType t]
+
+pushVar_ :: Monad m => Ident -> SType -> OTM m ()
+pushVar_ x t = void $ pushVar x t
 
 peekVar :: Monad m => Ident -> SType -> OTM m Int
 peekVar x t = do
@@ -217,9 +219,9 @@ forallElim s pr p a = do
     app "eqMp" [ -- {! P} |- t[a]
       app "betaConv" [app "appTerm" [p, a]],
       app "subst" [ -- {! P} |- (\x:s. t[x]) a
-        list [list [list [str "A", () <$ pushSType (SType [] s)]],
-              list [list [() <$ pushVar "p" (SType [s] "bool"), p],
-                    list [() <$ pushVar "a" (SType [] s), a]]],
+        list [list [list [str "A", void $ pushSType (SType [] s)]],
+              list [list [pushVar_ "p" (SType [s] "bool"), p],
+                    list [pushVar_ "a" (SType [] s), a]]],
         ref (otpAllE otp)]]]
 
 -- var x : s, term t, pr: G |- t[x]
@@ -229,13 +231,13 @@ forallIntro s x t pr = do
   otp <- gets otPreamble
   l <- app "absTerm" [x, t] >> save
   app "eqMp" [ -- G |- ! (\x:s. t[x])
-    app "subst" [ -- |- ((\x:s. t[x]) = (\x:s. T)) = ! (\x:s. t[x])
+    app "subst" [ --  |- ((\x:s. t[x]) = (\x:s. T)) = ! (\x:s. t[x])
       list [
-        list [list [str "A", () <$ pushSType (SType [] s)]],
+        list [list [str "A", void $ pushSType (SType [] s)]],
         list [list [pushVar "p" (SType [s] "bool"), ref' l]]],
       ref (otpAllI otp)],
     app "absThm" [x, app "deductAntisym" [pr, ref (otpTrue otp)]]]
-  return (l, app "appTerm" [() <$ pushAllC s, ref l])
+  return (l, app "appTerm" [void $ pushAllC s, ref l])
 
 type OTCtx m = (M.Map Ident Sort, M.Map Ident (OTM m Int))
 
@@ -258,7 +260,7 @@ pushAppLams m f (l:ls) =
 pushSLam :: Monad m => OTCtx m -> SLam -> OTM m ()
 pushSLam m (SLam ss t) = go m ss where
   go :: Monad m => OTCtx m -> [(Ident, Sort)] -> OTM m ()
-  go m' [] = () <$ pushTerm m' t
+  go m' [] = void $ pushTerm m' t
   go m' ((x, s) : ss') = do
     n <- pushVar x (SType [] s)
     go (otcInsert' x s n m') ss'
@@ -369,9 +371,9 @@ makeSubstList :: forall m. Monad m => OTCtx m -> [((Ident, SType), SLam)] ->
   [((Ident, Sort), Ident)] -> OTM m ()
 makeSubstList ctx es xs = list [list [], list $
   ((\((x, s), e) -> list [
-    () <$ pushVar x s, () <$ pushSLam ctx e]) <$> es) ++
+    pushVar_ x s, void $ pushSLam ctx e]) <$> es) ++
   ((\((x, s), e) -> list [
-    () <$ pushVar x (SType [] s), () <$ pushTerm ctx (LVar e)]) <$> xs)]
+    pushVar_ x (SType [] s), void $ pushTerm ctx (LVar e)]) <$> xs)]
 
 makeSubst :: forall m. Monad m => OTState -> OTCtx m -> [((Ident, SType), SLam)] ->
   [((Ident, Sort), Ident)] -> Term -> (Term, Maybe (OTM m ()))
@@ -395,7 +397,7 @@ makeSubstGType g ctx es (GType vs t) = go ctx M.empty vs where
     v' = variant free v
     (GType ss' t', p) = go (otcInsert v' s ctx') (M.insert v (s, v') vm') vs'
     f pushE = app "appThm" [app "refl" [pushAllC s],
-      app "absThm" [() <$ pushVar v' (SType [] s), pushE]]
+      app "absThm" [pushVar_ v' (SType [] s), pushE]]
 
 makeSubstTerm :: forall m. Monad m => OTState -> OTCtx m ->
   M.Map Ident (Sort, Ident) -> [((Ident, SType), SLam)] ->
@@ -414,7 +416,7 @@ makeSubstTerm g ctx vm es = \t ->
   makeSubstTerm' _ vm' _ (LVar x) = let (s, y) = vm' M.! x in
     (LVar y, s, OTCRefl (app "varTerm" [pushVar y (SType [] s)]))
   makeSubstTerm' ctx' _ _ (RVar v []) =
-    let (SLam [] t, so) = em M.! v in (t, so, OTCRefl (() <$ pushTerm ctx' t))
+    let (SLam [] t, so) = em M.! v in (t, so, OTCRefl (void $ pushTerm ctx' t))
   makeSubstTerm' ctx' vm' _ (RVar v xs) = case go ss ys of
     (pushL, pushE) -> (t', so, OTCEq $ do
       ls <- pushL
@@ -471,8 +473,8 @@ makeSubstTerm g ctx vm es = \t ->
     (SLam ss1 t2, p2) = makeSubstSLam
       (otcInsert v' s ctx') (M.insert v (s, v') vm') (S.insert v' free) (SLam vs t1)
     p3 = case p2 of
-      OTCRefl pushX -> OTCRefl (app "absTerm" [() <$ pushVar v' (SType [] s), pushX])
-      OTCEq pushE -> OTCEq (app "absThm" [() <$ pushVar v' (SType [] s), pushE])
+      OTCRefl pushX -> OTCRefl (app "absTerm" [pushVar_ v' (SType [] s), pushX])
+      OTCEq pushE -> OTCEq (app "absThm" [pushVar_ v' (SType [] s), pushE])
 
 otThm :: Monad m => OTCtx m -> [GType] ->
   Term -> Maybe ([Ident], HProof) -> OTM m (Int, Sort)
@@ -544,11 +546,11 @@ pushProofLam ctx (HProofLam xs p) = do
   go :: Monad m => OTCtx m -> [(Ident, Sort)] -> OTM m (Term, Sort, Int, [Int], OTM m ())
   go ctx' [] = do
     ((t, so), d) <- liftM2 (,) (pushProof ctx' p) def'
-    return (t, so, d, [], app "appTerm" [() <$ pushProv so, () <$ pushTerm ctx' t])
+    return (t, so, d, [], app "appTerm" [void $ pushProv so, void $ pushTerm ctx' t])
   go ctx' ((x, s) : xs') = do
     (t, so, d, ls, pushT) <- go (otcInsert x s ctx') xs'
     pr <- save
-    (l, pushT') <- forallIntro s (() <$ pushVar x (SType [] s)) pushT (ref pr)
+    (l, pushT') <- forallIntro s (pushVar_ x (SType [] s)) pushT (ref pr)
     return (t, so, d, l : ls, pushT')
 
 pushConv :: Monad m => OTCtx m -> HConv -> OTM m (Term, Term)
