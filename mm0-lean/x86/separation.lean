@@ -369,7 +369,7 @@ class type (α : Type*) :=
 (read : α → block → sProp)
 (read_eq : ∀ {{a b s}}, read a b s → b.size.to_nat = size)
 
-instance (α) [value α] : type α :=
+instance inst_type (α) [value α] : type α :=
 ⟨value.size α,
   λ a b, sProp.ex $ λ v,
     (block.read b v).with (value.eval a v),

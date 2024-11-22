@@ -44,12 +44,15 @@ toLean (mmp : rest) = do
   (cs, rest3) <- return $ case rest2 of
     "-c" : n : rest3 -> (read n, rest3)
     _ -> (maxBound, rest2)
-  bn <- case rest3 of
+  (ns, rest4) <- return $ case rest3 of
+    "-n" : n : rest4 -> (n, rest4)
+    _ -> ("mm0", rest3)
+  bn <- case rest4 of
     "-o" : file : _ -> return file
     _ -> die "to-lean: -o FILE.LEAN required"
   pf <- parseProofOrDie <$> B.readFile mmp
   hol <- liftIO' $ toHol pf
-  writeLean nax bn cs hol
+  writeLean nax bn ns cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MMU-FILE [-o out.lean]'"
 
 toLispIO :: [String] -> IO ()

@@ -25,12 +25,12 @@ inductive epilogue
 | pop : regnum → epilogue → epilogue
 | ret : epilogue
 
-axiom prop : Type
+axiom sprop : Type
 axiom expr : Type
 
 structure gctx :=
 (content : string)
-(result : prop)
+(result : sprop)
 
 axiom tctx : Type
 axiom ret_abi : Type

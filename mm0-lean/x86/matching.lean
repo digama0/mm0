@@ -1,6 +1,7 @@
 import x86.lemmas data.set.lattice data.list.basic data.pfun data.list.alist
 
 namespace x86
+namespace matching
 
 inductive flag_place | CFP | ZFP | SFP | OFP
 
@@ -39,8 +40,8 @@ def place.stable (k k' : config) : place → Prop
 | (place.reg r) := k.regs r = k'.regs r
 | place.rip := k.rip = k'.rip
 | (place.mem a) :=
-  roption.mk (k.mem.valid a) (λ h, (k.mem.mem a h, k.mem.perm a h)) =
-  roption.mk (k'.mem.valid a) (λ h, (k'.mem.mem a h, k'.mem.perm a h))
+  part.mk (k.mem.valid a) (λ h, (k.mem.mem a h, k.mem.perm a h)) =
+  part.mk (k'.mem.valid a) (λ h, (k'.mem.mem a h, k'.mem.perm a h))
 
 theorem place.stable.refl (k p) : place.stable k k p :=
 by cases p; exact rfl
@@ -51,7 +52,7 @@ by cases p; exact eq.trans h₁ h₂
 
 theorem mem.read1.stable {k k' a} (s : place.stable k k' (place.mem a))
   {p b} : mem.read1 p k.mem a b → mem.read1 p k'.mem a b :=
-@@eq.subst (λ o : roption (byte × perm),
+@@eq.subst (λ o : part (byte × perm),
   ∃ (h : o.1), b = (o.2 h).1 ∧ p ≤ (o.2 h).2) s
 
 theorem place.read.stable {k k'} : ∀ {p}, place.stable k k' p →
@@ -61,7 +62,7 @@ begin
   { rw show _=_, from s, constructor },
   { rw show _=_, from s, constructor },
   { rw show _=_, from s, constructor },
-  { exact place.read.mem (mem.read1.stable s h_a_1) }
+  { exact place.read.mem (mem.read1.stable s h_ᾰ) }
 end
 
 def stability (k k' : config) : set place := {p | place.stable k k' p}
@@ -323,7 +324,7 @@ class type (α : Type*) :=
 def type.read' {α} [type α] (a : α) (b : block) : sProp :=
 sProp.ex $ type.read a b
 
-instance (α) [value α] : type α :=
+instance inst_type (α) [value α] : type α :=
 ⟨value.size α,
   λ a b s, sProp.ex $ λ v,
     block.read b v ⊓ slift (value.eval a v ∧ s = b.places),
@@ -536,7 +537,7 @@ begin
   { cases list.eq_nil_of_prefix_nil ss, constructor },
   { cases v₁, constructor,
     rcases ss with ⟨_, ⟨⟩⟩,
-    exact mem.read'.cons h_a (h_ih ⟨_, rfl⟩) }
+    exact mem.read'.cons h_ᾰ (h_ih ⟨_, rfl⟩) }
 end
 
 theorem mem.read'_right {m p a v₁ v₂} :
@@ -546,7 +547,7 @@ begin
   intro h, induction h generalizing v₁ v₂,
   { cases list.eq_nil_of_suffix_nil ⟨_, e⟩, constructor },
   { cases v₁; cases e,
-    { simp, exact mem.read'.cons h_a h_a_1 },
+    { simp, exact mem.read'.cons h_ᾰ h_ᾰ_1 },
     { simp [-add_comm], rw [← add_assoc, add_right_comm],
       exact h_ih rfl } }
 end
@@ -659,10 +660,10 @@ mHoareIO.step
     cases h',
     { cases (@list.append_left_inj _ _ [] i).1 ei,
       cases (@list.append_right_inj _ _ [] o).1 (by simpa using eo),
-      exact ⟨(H₂ h h'_a).1,
-        λ i₂ o₂ k₃ h'', ⟨(H₂ h h'_a).2 h''.1, h''.2⟩⟩ },
+      exact ⟨(H₂ h h'_ᾰ).1,
+        λ i₂ o₂ k₃ h'', ⟨(H₂ h h'_ᾰ).2 h''.1, h''.2⟩⟩ },
     { cases H₁ h with k₂ h',
-      cases config.step_noIO h' h'_a }
+      cases config.step_noIO h' h'_ᾰ }
   end)
 
 theorem mHoare.comp {P : sProp} {Q Q' : mProp}
@@ -863,4 +864,5 @@ theorem ret.asm {α A D rip bl} : ret α bl bl A D rip [] :=
 def stmt.asm (s : stmt) (D : set place) := Π A rip, ∃ v, s A D rip v
 
 
+end matching
 end x86

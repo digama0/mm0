@@ -1,10 +1,10 @@
-namespace mm0
+import mm0.mm0
 
-@[derive has_reflect]
-structure sort_data := (pure strict provable free : bool := ff)
+namespace mm0
+namespace «meta»
 
 @[reducible] def ident := string
-def dep_type := ident × list ident
+abbreviation dep_type := ident × list ident
 
 @[derive has_reflect]
 inductive sexpr : Type
@@ -39,4 +39,5 @@ inductive stmt : Type
 
 def env := list stmt
 
+end «meta»
 end mm0
