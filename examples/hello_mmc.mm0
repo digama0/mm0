@@ -1,0 +1,7 @@
+import "compiler.mm0";
+
+def test: string;
+
+theorem test_isBasicElf: $ isBasicElf test $;
+theorem test_ok {k vs x: nat}:
+  $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, sn 0)) $;

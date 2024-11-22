@@ -131,12 +131,15 @@ jobs:
         working-directory: examples
         # run: mm0-c compiler.mmb < x86_join.mm0
         run: mm0-c compiler.mmb < compiler_join.mm0
+      - name: hello_mmc_join.mm0
+        working-directory: examples
+        run: mm0-rs join hello_mmc.mm0 | tee hello_mmc_join.mm0
       - name: hello_mmc.mm1
         working-directory: examples
         run: mm0-rs compile -W hello_mmc.mm1 hello_mmc.mmb
       - name: hello_mmc.mmb
         working-directory: examples
-        run: mm0-c hello_mmc.mmb < compiler_join.mm0
+        run: mm0-c hello_mmc.mmb < hello_mmc_join.mm0
       - name: hol.mm1
         working-directory: examples
         run: mm0-rs compile -W hol.mm1 hol.mmb
