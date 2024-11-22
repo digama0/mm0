@@ -1373,6 +1373,12 @@ str_enum! {
     ///    or atom map of dummy variables, and `proof` is the proof s-expression. `vtask`
     ///    can also have the form `(ds proof)` itself.
     GetDecl: "get-decl",
+    /// `(on-decls f)` calls `f` on every declaration in the environment, in declaration order.
+    /// More precisely, `f` will be called with `('sort x)` for a sort declaration `x`, and
+    /// with the atom `x` if `x` is a regular declaration (term, def, axiom, theorem); one can use
+    /// `(get-decl x)` to get additional information about these declarations. The return value of
+    /// `f` is ignored, and the `on-decls` expression itself returns nothing.
+    OnDecls: "on-decls",
     /// `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem`
     /// declaration was created. This does not do any elaboration - all information is
     /// expected to be fully elaborated. The input format is the same as the output format

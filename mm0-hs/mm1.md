@@ -613,6 +613,8 @@ MM0-specific builtin functions
 
   * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the same format as in `axiom`, `vis` is the visibility in the same format as in `def`, and `vtask` is a thunk that will return a list `(ds proof)` where `ds` is the list or atom map of dummy variables, and `proof` is the proof s-expression. `vtask` can also have the form `(ds proof)` itself.
 
+* `(on-decls f)` calls `f` on every declaration in the environment, in declaration order. More precisely, `f` will be called with `('sort x)` for a sort declaration `x`, and with the atom `x` if `x` is a regular declaration (term, def, axiom, theorem); one can use `(get-decl x)` to get additional information about these declarations. The return value of `f` is ignored, and the `on-decls` expression itself returns nothing.
+
 * `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem` declaration was created. This does not do any elaboration - all information is expected to be fully elaborated. The input format is the same as the output format of `get-decl`. For example, `(add-decl! 'term 'foo '([_ wff ()]) 'wff)` creates a new term `term foo: wff > wff;`.
 
   * `(add-term! x bis ret)` is the same as `(add-decl! 'term x bis ret)`.

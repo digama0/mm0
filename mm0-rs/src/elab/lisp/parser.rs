@@ -142,6 +142,10 @@ pub enum Ir {
   ///   and call `apply_merge(oldv, newv)`, if `it.next() = Some((k, oldv, newv))`
   /// * `[(merge-map {it, k: None, map, ..})] -> [map]` if `it.next() = None`
   MergeMap,
+  /// Implementation of `on-decls` inner loop. `[f, (on-decls i), _] ->`:
+  /// * if `decls(i)` exists, `-> [f, (on-decls (i+1))]` and loop and evaluate `f(decls(i))`
+  /// * otherwise `-> [#undef]`
+  OnDecls,
 
   /// A pattern that always returns the given result.
   /// * `PatternResult(false) := fail`
@@ -272,6 +276,7 @@ impl Ir {
       Ir::RefineResume => write!(f, "refine-resume"),
       Ir::AddThm => write!(f, "add-thm"),
       Ir::MergeMap => write!(f, "merge-map"),
+      Ir::OnDecls => write!(f, "on-decls"),
       Ir::PatternResult(false) => write!(f, "> fail"),
       Ir::PatternResult(true) => write!(f, "> skip"),
       Ir::PatternAtom(n) => write!(f, "> var {n}"),

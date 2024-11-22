@@ -50,6 +50,7 @@ enum Stack {
   AddThmProc(Box<AwaitingProof>),
   Refine(Span, Vec<RStack>),
   Focus(Span, Vec<LispVal>),
+  OnDecls(usize, (Span, Span)),
 }
 
 impl From<bool> for Stack {
@@ -120,6 +121,7 @@ impl crate::EnvDisplay for Stack {
       Stack::AddThmProc(ap) => write!(f, "(add-thm {})", fe.to(&ap.atom())),
       Stack::Refine(_, rs) => write!(f, "(refine {})", fe.to(rs)),
       Stack::Focus(_, es) => write!(f, "(focus {})", fe.to(es)),
+      Stack::OnDecls(i, _) => write!(f, "(on-decls {i})"),
     }
   }
 }
@@ -726,6 +728,29 @@ impl<'a> Evaluator<'a> {
       self.run()
     }
   }
+
+  fn on_decls_resume(&mut self) -> Result<()> {
+    self.stack.pop();
+    stack_match!(let Some(Stack::OnDecls(i, sp)) = self.stack.last_mut());
+    let next = loop {
+      let Some(tr) = self.elab.env.stmts.get(*i) else {
+        self.stack.pop();
+        self.stack.pop();
+        self.stack.push(Stack::Undef);
+        return Ok(())
+      };
+      match *tr {
+        StmtTrace::Sort(a) => break LispVal::list([LispVal::atom(AtomId::SORT), LispVal::atom(a)]),
+        StmtTrace::Decl(a) => break LispVal::atom(a),
+        _ => *i += 1,
+      }
+    };
+    *i += 1;
+    self.ip -= 1;
+    let sp = *sp;
+    let proc = self.stack[self.stack.len() - 2].cloned_lisp();
+    self.app(false, &sp, &proc, vec![next])
+  }
 }
 
 macro_rules! make_builtins {
@@ -1018,8 +1043,7 @@ make_builtins! { self, tail, sp1, sp2, args,
     self.call(tail, &[Ir::Map], None, fsp, ProcPos::Builtin(BuiltinProc::Map), vec![]);
     self.stack.push(proc.into());
     self.stack.push(Stack::MapProc2(vec![]));
-    self.stack.push(Stack::MapProc1(sp1, it.map(Uncons::from).collect()));
-    return Ok(())
+    Stack::MapProc1(sp1, it.map(Uncons::from).collect())
   },
   IsBool: Exact(1) => args[0].is_bool().into(),
   IsAtom: Exact(1) => args[0].is_atom().into(),
@@ -1225,6 +1249,15 @@ make_builtins! { self, tail, sp1, sp2, args,
   GetDecl: Exact(1) => {
     let x = try1!(args[0].as_atom().ok_or("expected an atom"));
     self.get_decl(args[0].fspan(), x).into()
+  },
+  OnDecls: Exact(1) => {
+    let proc = args.pop().unwrap();
+    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
+    let fsp = self.fspan(sp1);
+    self.call(tail, &[Ir::OnDecls], None, fsp, ProcPos::Builtin(BuiltinProc::OnDecls), vec![]);
+    self.stack.push(proc.into());
+    self.stack.push(Stack::OnDecls(0, (sp1, sp)));
+    Stack::Undef
   },
   AddDecl: AtLeast(4) => {
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
@@ -1727,7 +1760,7 @@ impl<'a> Evaluator<'a> {
         Ir::ArityError(..) | Ir::FocusStart(_) | Ir::RefineGoal(_) | Ir::FocusFinish |
         Ir::SetMergeStrategy(..) | Ir::LocalDef(_) | Ir::GlobalDef(..) | Ir::SetDoc(..) |
         Ir::Lambda(..) | Ir::Branch(..) | Ir::TestPatternResume | Ir::BranchFail(_) |
-        Ir::Map | Ir::Have | Ir::RefineResume | Ir::AddThm | Ir::MergeMap
+        Ir::Map | Ir::Have | Ir::RefineResume | Ir::AddThm | Ir::MergeMap | Ir::OnDecls
         => panic!("unexpected in pattern mode"),
       };
       self.ip += 1;
@@ -2058,6 +2091,7 @@ impl<'a> Evaluator<'a> {
           Ir::RefineGoal(ret_val) => self.refine_goal(ret_val)?,
           Ir::AddThm => self.add_thm_resume()?,
           Ir::MergeMap => self.merge_map_resume()?,
+          Ir::OnDecls => self.on_decls_resume()?,
 
           // Listing the instructions explicitly so that we get missing match arm errors
           Ir::PatternResult(_) | Ir::PatternAtom(_) | Ir::PatternQuoteAtom(_) |
