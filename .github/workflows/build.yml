@@ -90,59 +90,42 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: peano.mm1
         working-directory: examples
-        run: mm0-rs compile -W peano.mm1 peano.mmb
-      - name: peano.mmb
-        working-directory: examples
-        run: mm0-c peano.mmb < peano.mm0
-      - name: peano_hex_join.mm0
-        working-directory: examples
-        run: mm0-rs join peano_hex.mm0 | tee peano_hex_join.mm0
+        run: |
+          mm0-rs compile -W peano.mm1 peano.mmb
+          mm0-c peano.mmb < peano.mm0
       - name: peano_hex.mm1
         working-directory: examples
-        run: mm0-rs compile -W peano_hex.mm1 peano_hex.mmb
-      - name: peano_hex.mmb
-        working-directory: examples
-        run: mm0-c peano_hex.mmb < peano_hex_join.mm0
-      - name: mm0_join.mm0
-        working-directory: examples
-        run: mm0-rs join mm0.mm0 | tee mm0_join.mm0
+        run: |
+          mm0-rs join peano_hex.mm0 | tee peano_hex_join.mm0
+          mm0-rs compile -W peano_hex.mm1 peano_hex.mmb
+          mm0-c peano_hex.mmb < peano_hex_join.mm0
       - name: mm0.mm1
         working-directory: examples
-        run: mm0-rs compile -W mm0.mm1 mm0.mmb
-      - name: mm0.mmb
-        working-directory: examples
-        run: mm0-c mm0.mmb < mm0_join.mm0
-      - name: x86_join.mm0
-        working-directory: examples
-        run: mm0-rs join x86.mm0 | tee x86_join.mm0
+        run: |
+          mm0-rs join mm0.mm0 | tee mm0_join.mm0
+          mm0-rs compile -W mm0.mm1 mm0.mmb
+          mm0-c mm0.mmb < mm0_join.mm0
       - name: x86.mm1
         working-directory: examples
-        run: mm0-rs compile -W x86.mm1 x86.mmb
-      - name: x86.mmb
-        working-directory: examples
-        run: mm0-c x86.mmb < x86_join.mm0
-      - name: compiler_join.mm0
-        working-directory: examples
-        run: mm0-rs join compiler.mm0 | tee compiler_join.mm0
+        run: |
+          mm0-rs join x86.mm0 | tee x86_join.mm0
+          mm0-rs compile -W x86.mm1 x86.mmb
+          mm0-c x86.mmb < x86_join.mm0
       - name: compiler.mm1
         working-directory: examples
-        run: mm0-rs compile -W compiler.mm1 compiler.mmb
-      - name: compiler.mmb
-        working-directory: examples
-        # run: mm0-c compiler.mmb < x86_join.mm0
-        run: mm0-c compiler.mmb < compiler_join.mm0
-      - name: hello_mmc_join.mm0
-        working-directory: examples
-        run: mm0-rs join hello_mmc.mm0 | tee hello_mmc_join.mm0
+        run: |
+          mm0-rs join compiler.mm0 | tee compiler_join.mm0
+          mm0-rs compile -W compiler.mm1 compiler.mmb
+          # run: mm0-c compiler.mmb < x86_join.mm0
+          mm0-c compiler.mmb < compiler_join.mm0
       - name: hello_mmc.mm1
         working-directory: examples
-        run: mm0-rs compile -W hello_mmc.mm1 hello_mmc.mmb
-      - name: hello_mmc.mmb
-        working-directory: examples
-        run: mm0-c hello_mmc.mmb < hello_mmc_join.mm0
+        run: |
+          mm0-rs join hello_mmc.mm0 | tee hello_mmc_join.mm0
+          mm0-rs compile -W hello_mmc.mm1 hello_mmc.mmb
+          mm0-c hello_mmc.mmb < hello_mmc_join.mm0
       - name: hol.mm1
         working-directory: examples
-        run: mm0-rs compile -W hol.mm1 hol.mmb
-      - name: hol.mmb
-        working-directory: examples
-        run: mm0-c hol.mmb < hol.mm0
+        run: |
+          mm0-rs compile -W hol.mm1 hol.mmb
+          mm0-c hol.mmb < hol.mm0
