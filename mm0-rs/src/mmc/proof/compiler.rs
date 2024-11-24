@@ -916,38 +916,29 @@ impl ProcProver<'_> {
     th
   }
 
-  /// Returns `(ty, |- okReadHypVCtx vctx ty)`
-  fn read_hyp_vctx_var(&mut self, vctx: &VCtx, v: VarId) -> (ProofId, ProofId) {
+  /// Returns `(ty, |- okReadHyp tctx ty)`
+  fn read_hyp_tctx_var(&mut self, (tctx, l1): P<&TCtx>, v: VarId) -> (ProofId, ProofId) {
     // eprintln!("get {:?} in\n{}", v,
     //   format_to_string(|s| vctx.pp(&self.thm, self.elab, &self.vctxs, s)));
-    let (_, val, h1) = vctx.get(&mut self.thm, &self.vctxs, v);
+    let (_, val, h1) = tctx.vctx.get(&mut self.thm, &self.vctxs, v);
+    app_match!(self.thm, let (mkTCtx vctx n mctx) = l1);
     app_match!(self.thm, val => {
-      (vHyp ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
-        okReadHypVCtxI(ty, vctx.e, h1))),
-      (vVar v ty) => (ty, thm!(self.thm, (okReadHypVCtx[vctx.e, ty]) =>
-        okReadHypVar(ty, v, vctx.e, h1))),
+      (vHyp ty) => (ty, thm!(self.thm, okReadHypHyp(mctx, n, ty, vctx, h1): okReadHyp[l1, ty])),
+      (vVar v ty) =>
+        (ty, thm!(self.thm, okReadHypVar(mctx, n, ty, v, vctx, h1): okReadHyp[l1, ty])),
     })
   }
 
-  /// Returns `(ty, |- okReadHypVCtx vctx ty)`
-  fn read_hyp_vctx_place(&mut self, vctx: &VCtx, p: &Place) -> (ProofId, ProofId) {
+  /// Returns `(ty, |- okReadHyp tctx ty)`
+  fn read_hyp_tctx_place(&mut self, tctx: P<&TCtx>, p: &Place) -> (ProofId, ProofId) {
     assert!(p.proj.is_empty()); // TODO
-    self.read_hyp_vctx_var(vctx, p.local)
-  }
-
-  /// Given `ty`, `|- okReadHypVCtx vctx ty`, returns `|- okReadHyp tctx ty`
-  fn read_hyp_from_vctx(&mut self, tctx: ProofId, ty: ProofId, th: ProofId) -> ProofId {
-    app_match!(self.thm, let (mkTCtx vctx n mctx) = tctx);
-    thm!(self.thm, okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty]) // TODO
+    self.read_hyp_tctx_var(tctx, p.local)
   }
 
   /// Returns `(ty, |- okReadHyp tctx ty)`
   fn read_hyp_operand(&mut self, (tctx, l1): P<&TCtx>, op: &Operand) -> (ProofId, ProofId) {
     match op.place() {
-      Ok(p) => {
-        let (ty, th) = self.read_hyp_vctx_place(&tctx.vctx, p);
-        (ty, self.read_hyp_from_vctx(l1, ty, th))
-      }
+      Ok(p) => self.read_hyp_tctx_place((tctx, l1), p),
       Err(c) => match c.k {
         ConstKind::Unit => {
           let ty = app!(self.thm, (tyUnit));

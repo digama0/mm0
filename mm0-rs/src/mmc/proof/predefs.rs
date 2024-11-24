@@ -575,12 +575,9 @@ make_predefs! {
   okPushHyp: TermId => "okPushHyp";
   okPushHypI: ThmId => "okPushHypI";
 
-  okReadHypVCtx: TermId => "okReadHypVCtx";
-  okReadHypVCtxI: ThmId => "okReadHypVCtxI";
-  okReadHypVar: ThmId => "okReadHypVar";
-
   okReadHyp: TermId => "okReadHyp";
-  okReadHypI: ThmId => "okReadHypI";
+  okReadHypHyp: ThmId => "okReadHypHyp";
+  okReadHypVar: ThmId => "okReadHypVar";
   okReadHyp_unit: ThmId => "okReadHyp_unit";
 
   okAssembled: TermId => "okAssembled";
