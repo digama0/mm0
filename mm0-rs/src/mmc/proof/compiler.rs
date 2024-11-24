@@ -938,7 +938,7 @@ impl ProcProver<'_> {
   /// Given `ty`, `|- okReadHypVCtx vctx ty`, returns `|- okReadHyp tctx ty`
   fn read_hyp_from_vctx(&mut self, tctx: ProofId, ty: ProofId, th: ProofId) -> ProofId {
     app_match!(self.thm, let (mkTCtx vctx n mctx) = tctx);
-    thm!(self.thm, okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty])
+    thm!(self.thm, okReadHypI(mctx, n, ty, vctx, th): okReadHyp[tctx, ty]) // TODO
   }
 
   /// Returns `(ty, |- okReadHyp tctx ty)`

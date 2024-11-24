@@ -1853,20 +1853,20 @@ theorem L_or_sstop: $ L_or L1 L2 C_ L_top $ =
     sylc s_eor ,(f 'lemax1) ,(f 'lemax2)));
 
 --| An overlapping composition of layouts.
-@_ local def stack_layout (sp n: nat) (L: set): set =
+@_ local def stack_layoutOLD (sp n: nat) (L: set): set =
 $ E.s lo e. _V, E.s sz e. _V, (
     ^s (lo + sz e. u64 /\ lo + 2 ^ 12 + n <= lo + sz) /\s
     RSP >->r (lo + sz -_64 sp) *s L_seq L_pad L @' lo @' lo @' sz) $;
 
 --| The portion of the layout that we always want to know in any hoare triple.
---| `main_layout c sp ip` means that the code `c` is at `text_start`,
+--| `main_layoutOLD c sp ip` means that the code `c` is at `text_start`,
 --| the instruction pointer at `ip`, and the flags are assigned to an arbitrary value
 --| (i.e. we are permitted to clobber them).
 --| Additionally, the stack is laid out according to stack layout `L`
 --| (see the `L_*` functions) with at least `n` spare bytes left in the stack frame;
 --| `sp` is the value of the stack pointer relative to the stack layout.
-@_ local def main_layout (c sp ip n L): set =
-$ text_start >=>c c *s RIP>-> ip *s s_OK *s flags>->. *s stack_layout sp n L $;
+@_ local def main_layoutOLD (c sp ip n L): set =
+$ text_start >=>c c *s RIP>-> ip *s s_OK *s flags>->. *s stack_layoutOLD sp n L $;
 
 --| The correctness predicate for a function call.
 --| * `T`: A global parameter, the correctness predicate on final IO
@@ -1882,8 +1882,8 @@ $ text_start >=>c c *s RIP>-> ip *s s_OK *s flags>->. *s stack_layout sp n L $;
 --| Both `P` and `Q` are allowed to depend on common logical variables `vs`.
 @_ local def func_ok (T c ip P Q): wff =
 $ A. vs A. ret (ret e. u64 -> hoare T
-    (main_layout c 8 ip (2 ^ 12) (L_1 (u64Bytes ret)) *s P @' vs)
-    (main_layout c 0 ret 8 L_emp *s Q @' vs)) $;
+    (main_layoutOLD c 8 ip (2 ^ 12) (L_1 (u64Bytes ret)) *s P @' vs)
+    (main_layoutOLD c 0 ret 8 L_emp *s Q @' vs)) $;
 
 --| The correctness predicate for a jump target.
 --| * `T, c`: Global parameters
@@ -1900,7 +1900,7 @@ $ A. vs A. ret (ret e. u64 -> hoare T
 --|
 --| Both `L` and `P` are allowed to depend on common logical variables `vs`.
 @_ local def jump_ok (T c sp fr ip L P): wff =
-$ s_ok (sn fr *s (main_layout c sp ip 8 L *s P)) T $;
+$ s_ok (sn fr *s (main_layoutOLD c sp ip 8 L *s P)) T $;
 
 theorem stack_dealloc
   (h2: $ G -> jump_ok T c sp fr ip L2 P $)
@@ -1916,7 +1916,7 @@ theorem hoareCfg_jump_ok {k}
   (ha: $ G -> decode ast l $)
   (hj: $ G -> jump_ok T c sp2 fr ip3 L2 P2 $)
   (h4: $ G -> hoareCfg k {k2 | execXAST k ast k2}
-    (main_layout c sp ip2 8 L *s P) (main_layout c sp2 ip3 8 L2 *s P2) $):
+    (main_layoutOLD c sp ip2 8 L *s P) (main_layoutOLD c sp2 ip3 8 L2 *s P2) $):
   $ G -> jump_ok T c sp fr ip L P $ =
 (focus
   (have 'H '(s_code_assembledOLD hc))
@@ -2012,7 +2012,7 @@ theorem sub_rsp_ok
 --   (ip: nat) -- the current location of the instruction pointer
 --   (L: set) -- the stack layout at this point
 --   (P: set) = -- the precondition for flow into this point
--- $ s_ok (sn fr *s (main_layout c sp ip 8 L *s P)) T $;
+-- $ s_ok (sn fr *s (main_layoutOLD c sp ip 8 L *s P)) T $;
 
 -- A type ty consists of:
 -- * a separating proposition [v : ty] which gives truth conditions for "v has type ty",
@@ -2121,7 +2121,7 @@ $ S\ vs, (E.s a e. _V, (has_ty a (ty @' vs) *s
 --       vs) $):
 --   $ G -> s_ok
 --     (sn fr *s
---       (main_layout prog 8 adder (2 ^ 12) (L_1 (toBytes 8 ret)) *s
+--       (main_layoutOLD prog 8 adder (2 ^ 12) (L_1 (toBytes 8 ret)) *s
 --         v_sep (v_reg x7 (vn x0) v_ty_u32) (v_reg x6 (vn x1) v_ty_u32) @' vs))
 --     progT $ =
 -- (focus

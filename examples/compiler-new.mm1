@@ -2,6 +2,11 @@ import "compiler-old.mm1";
 
 do (warn-unused-vars #f);
 
+-- `Valuation := Nat -> Nat` (finitely supported)
+-- `VProp := Valuation -> SProp`
+-- `Ty := Valuation -> Nat -> SProp`
+-- `Expr := Valuation -> Nat`
+
 --| `tyUnit: Ty`:
 --| The type `()`, the unit type.
 @_ @mmc-th local def tyUnit: set = $ S\ vs, S\ x, emp $;
@@ -10,15 +15,15 @@ do (warn-unused-vars #f);
 --| The type `F.`, the empty type.
 @_ @mmc-th local def tyFalse: set = $ 0 $;
 
---| `isTyped: Expr -> Ty -> SProp`:
+--| `isTyped: Expr -> Ty -> VProp`:
 --| The assertion `[e: ty]`, which asserts that expression `e` has type `ty`.
 @_ @mmc-th local def isTyped (e ty: set): set = $ S\ vs, ty @' vs @' (e @ vs) $;
 
---| `isHyp: Ty -> SProp`:
+--| `isHyp: Ty -> VProp`:
 --| The assertion `[(): ty]`, which asserts that type `ty` is inhabited.
 @_ @mmc-th local def isHyp (ty: set): set = $ S\ vs, ty @' vs @' 0 $;
 
---| `asTy: SProp -> Ty`: Convert a SProp to a Ty by ignoring the value argument.
+--| `asTy: VProp -> Ty`: Convert a VProp to a Ty by ignoring the value argument.
 @_ @mmc-th local def asTy (P: set): set = $ S\ vs, S\ x, P @' vs $;
 
 --| `tyTyped: Expr -> Ty -> Ty`:
@@ -34,10 +39,10 @@ do (warn-unused-vars #f);
 --| A return ABI saying you can't return
 @_ @mmc-th local def noRet: set = $ sorry_set $; -- TODO
 
--- inductive epilogue
--- | free : nat -> epilogue -> epilogue
--- | pop : regnum -> epilogue -> epilogue
--- | ret : epilogue
+-- inductive Epilogue
+--   | free : Nat → Epilogue → Epilogue
+--   | pop : RegNum → Epilogue → Epilogue
+--   | ret : Epilogue
 
 @_ local def epi_ok (epi: nat): wff = $ epi != 0 $;
 @_ local def epi_regs (epi: nat): nat = $ fst (epi - 1) $;
@@ -49,16 +54,16 @@ $ if (epi_ok epi /\ n != 0 /\ epi_sp epi = 0) (suc (epi_regs epi, n)) 0 $;
 $ if (epi_ok epi /\ epi_sp epi = 0) (suc (reg : epi_regs epi, 0)) 0 $;
 @mmc-th local def epiRet: nat = $ suc (0, 0) $;
 
---| Procedure-global context, constructor for `pctx1` type.
---| * `ret`: the return ABI
---| * `epi: epilogue`: the epilogue sequence
+--| Procedure-global context, constructor for `PCtx1` type.
+--| * `ret: ReturnABI`: the return ABI
+--| * `epi: Epilogue`: the epilogue sequence
 --| * `se: bool`: true if this procedure is allowed to perform side effects
 @mmc-th local def mkPCtx1 (ret: set) (epi: nat) (se: wff): set =
 $ Sum ret (epi, nat se) $;
 
---| Procedure-global context, constructor for `pctx := gctx * pctx1` type.
---| We write it in such a way that `pctx` extends `gctx`,
---| so `gctx` extraction functions also work on `pctx`.
+--| Procedure-global context, constructor for `PCtx := GCtx * PCtx1` type.
+--| We write it in such a way that `PCtx` extends `GCtx`,
+--| so `GCtx` extraction functions also work on `PCtx`.
 @mmc-th local def mkPCtx (gctx pctx1: set): set =
 $ Sum (Fst gctx) (Sum pctx1 0) $;
 
@@ -77,14 +82,19 @@ theorem pctx_se_PI: $ pctx_se (mkPCtx gctx (mkPCtx1 ret epi se)) <-> se $ =
 
 @_ local def soReturnType (ret: set): set = $ sorry_set $; -- TODO
 
-@_ local def okPCtx (pctx: set): wff = $ epi_ok (pctx_epi pctx) $;
+@_ local def okGCtx (gctx: set): wff =
+$ len (gctx_content gctx) = gctx_filesz gctx /\ gctx_filesz gctx <= gctx_memsz gctx /\
+  text_start + gctx_memsz gctx e. u64 $;
+
+@_ local def okPCtx (pctx: set): wff = $ okGCtx pctx /\ epi_ok (pctx_epi pctx) $;
 
 --| Block-local context. In lean:
 --| ```lean
---| structure bctx := (G : pctx) (labs : list label_group)
+--| structure BCtx extends PCtx where
+--|   labelGroups : List (Expr × LabelGroup)
 --| ```
---| We write it in such a way that `bctx` extends `pctx`,
---| so `pctx` extraction functions also work on `bctx`.
+--| We write it in such a way that `BCtx` extends `PCtx`,
+--| so `PCtx` extraction functions also work on `BCtx`.
 @mmc-th local def mkBCtx (pctx labs: set): set = $ Sum (Fst pctx) (Sum (Fst (Snd pctx)) labs) $;
 
 theorem pctx_ret_BI: $ pctx_ret (mkBCtx (mkPCtx gctx (mkPCtx1 ret epi se)) labs) == ret $ =
@@ -100,137 +110,70 @@ theorem pctx_se_BI: $ pctx_se (mkBCtx (mkPCtx gctx (mkPCtx1 ret epi se)) labs) <
 
 @_ local def okBCtx (bctx: set): wff = $ okPCtx bctx $; -- TODO
 
-@_ local def soLayout (tctx: set): set = $ sorry_set $; -- TODO
-@_ local def soType (tctx: set): set = $ sorry_set $; -- TODO
+--| Run time values which are fixed during execution of a function. In lean:
+--| ```lean
+--| structure Frame where
+--|   frame : Heap
+--|   retAddr : UInt64
+--|   pushed : List UInt64
+--|   lo : Nat
+--|   top : Nat
+--| ```
+local def mkFrame (fr ret pushed lo top: nat): nat = $ fr, (ret, pushed), lo, top $;
 
-@_ local def frFrame (fr: nat): nat = $ fst fr $;
-@_ local def frRetAddr (fr: nat): nat = $ pi21 fr $;
-@_ local def frPushed (fr: nat): nat = $ pi22 fr $;
-@_ local def frHeaderLayout (fr: nat): set =
-$ L_1 (map (\ x, u64Bytes x) (frRetAddr fr : rev (frPushed fr))) $;
+@_ local def fr_heap (fr: nat): nat = $ fst fr $;
+@_ local def fr_retAddr (fr: nat): nat = $ fst (pi21 fr) $;
+@_ local def fr_pushed (fr: nat): nat = $ snd (pi21 fr) $;
+@_ local def fr_lo (fr: nat): nat = $ pi221 fr $;
+@_ local def fr_top (fr: nat): nat = $ pi222 fr $;
 
-@_ local def okReturnN (pctx: set) (fr: nat): wff =
-$ s_ok
-  (sn (frFrame fr) *s (
-    main_layout (gctx_content pctx) 0 (frRetAddr fr) 8 L_emp *s
-    soReturnType (pctx_ret pctx)))
-  (gctx_result pctx) $;
+@_ local def okFrame (fr: nat): wff =
+$ isfun (fr_heap fr) /\ (fr_retAddr fr : fr_pushed fr) e. List u64 /\
+  fr_lo fr <= fr_top fr /\ fr_top fr e. u64 $;
 
-@_ local def okCodeN (bctx tctx: set) (fr ip) =
-$ s_ok
-  (sn (frFrame fr) *s (
-    main_layout
-      (gctx_content bctx)
-      (epi_sp (pctx_epi bctx) + 8)
-      (text_start + ip)
-      8
-      (L_seq (frHeaderLayout fr) (soLayout tctx)) *s
-    soType tctx))
-  (gctx_result bctx) $;
+@_ local def okFramePCtx (fr: nat) (pctx: set): wff =
+$ len (fr_pushed fr) = len (epi_regs (pctx_epi pctx)) $;
 
-@mmc-th local def labelGroup0: set = $ 0 $;
-prefix labelGroup0: $LG0$ prec max;
-local def labelGroup1 (var ls: set): set = $ E.s v e. var, ls @' v $;
-@mmc-th local def labelGroup (var ls labs: set): set = $ labs \/s labelGroup1 var ls $;
-notation labelGroup (var ls labs: set): set = ($LG($:85) var ($,$:55) ls ($);$:0) labs;
+@_ local def fr_frame (fr: nat): set =
+$ ^s okFrame fr /\s sn (fr_heap fr) $;
 
-@mmc-th local def findLabels (labs: set) (var ls: set): wff = $ labelGroup1 var ls C_ labs $;
-@mmc-th theorem findLabels1: $ findLabels (LG(var, ls); labs) var ls $ = 'sorry;
-@mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
-  $ findLabels (LG(var, ls1); labs) var ls $ = 'sorry;
+@_ local def stackLayoutG (fr n sz pushed: nat) (L: set): set =
+$ S[fr_top fr - len pushed / sp1] S[sp1 - sz / sp] (
+  ^s (fr_lo fr + 2 ^ 12 + n + sz + len pushed <= fr_top fr) /\s
+  RSP >->r sp *s fr_lo fr >=>.[fr_lo fr] sp *s sp1 >=> pushed *s
+  L @' fr_lo fr @' sp) $;
 
---| `labels.and : labels -> labels -> labels`
-@mmc-th local def labelA (A B: set): set = $ A \/s B $;
-infixl labelA: $+L$ prec 20;
---| `labels.one : block_loc -> expr -> tctx -> labels`
-@mmc-th local def label1 (x: nat) (var tctx: set): set =
-$ S\ v, S\ c, S\ epi, S\ fr, S\ p, (sn (frFrame fr) *s (
-    If (x = 0)
-      (E.s ip e. u64, main_layout c (epi_sp epi + 8) ip 8
-        (L_seq (frHeaderLayout fr) (soLayout tctx)))
-      (main_layout c (epi_sp epi + 8) (text_start + p + (x - 1)) 8
-        (L_seq (frHeaderLayout fr) (soLayout tctx))) *s
-    ^s (v e. var) *s -- TODO, this is incorrect
-    soType tctx)) $;
+@_ local def stackLayout (fr n sz: nat) (L: set): set =
+$ stackLayoutG fr n sz (ljoin (map (\ x, u64Bytes x) (fr_pushed fr |> fr_retAddr fr))) L $;
 
-@mmc-th local def findLabel (ls: set) (x: nat) (var A: set): wff = $ label1 x var A C_ ls $; -- TODO
-@mmc-th theorem findLabel_l (h: $ findLabel A x var P $): $ findLabel (A +L B) x var P $ = 'sorry;
-@mmc-th theorem findLabel_r (h: $ findLabel B x var P $): $ findLabel (A +L B) x var P $ = 'sorry;
-@mmc-th theorem findLabel1: $ findLabel (label1 x var P) x var P $ = 'sorry;
+@_ local def mainLayout (content ip: nat): set =
+$ text_start >=>c content *s RIP>-> ip *s s_OK *s flags>->. $;
 
---| The empty context.
-@_ @mmc-th local def vctx0: set = $ S\ vs, emp $;
+local def SL_0: set = $ S\ lo, S\ sp, emp $;
 
-@_ @mmc-th local def vctxA (A B: set): set = $ S\ vs, (A @' vs *s B @' vs) $;
-infixl vctxA: $*V$ prec 20;
+@_ local def SL_pad (off n: nat): set = $ S\ lo, S\ sp, ((sp + off) >=>.[lo] n) $;
 
---| `vVar: nat -> ty -> vctx`:
---| A variable record in a variable context. This asserts that `v_n: ty`.
-@_ @mmc-th local def vVar (n: nat) (ty: set): set = $ isTyped (eVar n) ty $;
+@_ local def SL_A (A B: set): set = $ S\ lo, S\ sp, (A @' lo @' sp *s B @' lo @' sp) $;
 
---| `vHyp: ty -> vctx`:
---| A hypothesis, or unnamed variable. This asserts that `(): ty`.
-@_ @mmc-th local def vHyp (ty: set): set = $ isHyp ty $;
+--| `mctx0: MCtx`: the empty machine context.
+@mmc-th local def mctx0: set = $ S\ vs, Sum emp SL_0 $;
 
-@_ @mmc-th local def okVCtxPush (vctx1 A vctx2: set): wff = $ vctx2 == (vctx1 *V A) $;
+--| `FREE: RegNum -> MCtx`: indicates that the named register is available for use
+@mmc-th local def FREE (r: hex): set = $ S\ vs, Sum (E.s v e. u64, r >->r v) SL_0 $;
 
-@mmc-th theorem okVCtxPush_1: $ okVCtxPush vctx0 A A $ = 'sorry;
-@mmc-th theorem okVCtxPush_S:
-  $ okVCtxPush vctx A (vctx *V A) $ = 'eqsid;
-@mmc-th theorem okVCtxPush_R
-  (h: $ okVCtxPush vctx ty ((A *V B) *V C) $):
-  $ okVCtxPush vctx ty (A *V (B *V C)) $ = 'sorry;
-
-@_ @mmc-th local def okVCtxGet (vctx A: set): wff = $ A. vs vctx @' vs =>*s A @' vs $;
-
-@mmc-th theorem okVCtxPush_get
-  (h: $ okVCtxPush vctx A vctx2 $):
-  $ okVCtxGet vctx2 A $ = 'sorry;
-
-@mmc-th theorem okVCtxGet_R
-  (h: $ okVCtxGet ((A *V B) *V C) ty $):
-  $ okVCtxGet (A *V (B *V C)) ty $ = 'sorry;
-@mmc-th theorem okVCtxGet_l (h: $ okVCtxGet A ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
-@mmc-th theorem okVCtxGet_r (h: $ okVCtxGet B ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
-
-
-@_ @mmc-th local def okVCtxTake (vctx A vctx2: set): wff =
-$ A. vs vctx @' vs =>*s A @' vs *s vctx2 @' vs $;
-
-@mmc-th theorem okVCtxTake_move_var (h: $ tyMoved ty moved $):
-  $ okVCtxTake (vVar n ty) (vVar n ty) (vVar n moved) $ = 'sorry;
-@mmc-th theorem okVCtxTake_ref_var (h: $ tyMoved ty moved $):
-  $ okVCtxTake (vVar n ty) (vVar n moved) (vVar n ty) $ = 'sorry;
-@mmc-th theorem okVCtxTake_move_Hyp (h: $ tyMoved ty moved $):
-  $ okVCtxTake (vHyp ty) (vHyp ty) (vHyp moved) $ = 'sorry;
-@mmc-th theorem okVCtxTake_ref_Hyp (h: $ tyMoved ty moved $):
-  $ okVCtxTake (vHyp ty) (vHyp moved) (vHyp ty) $ = 'sorry;
-
-@mmc-th theorem okVCtxTake_l (h: $ okVCtxTake A ty A2 $):
-  $ okVCtxTake (A *V B) ty (A2 *V B) $ = 'sorry;
-@mmc-th theorem okVCtxTake_r (h: $ okVCtxTake B ty B2 $):
-  $ okVCtxTake (A *V B) ty (A *V B2) $ = 'sorry;
-
---| `mctx0: mctx`: the empty machine context.
-@mmc-th local def mctx0: set = $ S\ vs, Sum emp L_emp $;
-
---| `FREE: reg -> mctx`: indicates that the named register is available for use
-@mmc-th local def FREE (r: hex): set = $ S\ vs, Sum (E.s v e. u64, r >->r v) L_emp $;
-
---| `stkFREE (off n: nat): mctx`: This represents
+--| `stkFREE (off n: nat): MCtx`: This represents
 --| a piece of free stack space at `[RSP+off..RSP+off+n]`.
-@mmc-th local def stkFREE (off n: nat): set =
--- TODO: `L_at off` is not right here, it should be RSP-relative not an absolute addr
-$ S\ vs, Sum emp (L_at off (L_padn n)) $;
+@mmc-th local def stkFREE (off n: nat): set = $ S\ vs, Sum emp (SL_pad off n) $;
 
-@_ local def REG_N (r: nat) (val: set): set = $ S\ vs, Sum (r >->r val @ vs) L_emp $;
+@_ local def REG_N (r: nat) (val: set): set = $ S\ vs, Sum (r >->r val @ vs) SL_0 $;
 
---| `REG (r: reg) (val: expr): mctx`: This represents a register which holds the given expression.
+--| `REG (r: RegNum) (val: Expr): MCtx`: This represents
+--| a register which holds the given expression.
 @mmc-th local def REG (r: hex) (val: set): set = $ REG_N r val $;
 notation REG (r val): nat = ($r[$:20) r ($]:$:0) val;
 
 @_ @mmc-th local def mctxA (A B: set): set =
-$ S\ vs, Sum (Fst A @' vs *s Fst B @' vs) (L_seq (Snd A @' vs) (Snd B @' vs)) $;
+$ S\ vs, Sum (Fst (A @' vs) *s Fst (B @' vs)) (SL_A (Snd (A @' vs)) (Snd (B @' vs))) $;
 infixl mctxA: $+M$ prec 20;
 
 theorem mctxA_com: $ (A +M B) == (B +M A) $ = 'sorry;
@@ -238,21 +181,22 @@ theorem mctxA_01: $ (mctx0 +M A) == A $ = 'sorry;
 theorem mctxA_02: $ (A +M mctx0) == A $ = '(eqstr mctxA_com mctxA_01);
 theorem mctxA_ass: $ ((A +M B) +M C) == (A +M (B +M C)) $ = 'sorry;
 
-@_ local def bddMCtx_N (mctx: set) (lo hi: nat): wff =
-$ Snd mctx == (S\ vs, L_emp) /\
-  sorry_wff $; -- TODO: "Fst mctx is inhabitable and contained in r[lo..hi]"
+@_ local def bddMCtxN (mctx: set) (lo hi: nat): wff =
+$ A. vs (Snd (mctx @' vs) == SL_0 /\
+    E. f (f e. Arrow {r | r e. Regs /\ lo <= r /\ r <= hi} u64 /\
+      Fst (mctx @' vs) C_ |*|s r e. Dom f, r >->r f @ r)) $;
 
-@mmc-th local def bddMCtx (mctx: set) (lo hi: hex): wff = $ bddMCtx_N mctx lo hi $;
-theorem bddMCtx_0: $ bddMCtx_N mctx0 0 0 $ = 'sorry;
+@mmc-th local def bddMCtx (mctx: set) (lo hi: hex): wff = $ bddMCtxN mctx lo hi $;
+theorem bddMCtx_0: $ bddMCtxN mctx0 0 0 $ = 'sorry;
 @mmc-th theorem bddMCtx_FREE: $ bddMCtx (FREE r) r r $ = 'sorry;
 @mmc-th theorem bddMCtx_REG: $ bddMCtx (r[r]: v) r r $ = 'sorry;
 @mmc-th theorem bddMCtx_A (h1: $ bddMCtx A a b $) (h2: $ bddMCtx B c d $) (h3: $ b < c $):
   $ bddMCtx (A +M B) a d $ = 'sorry;
 
-@mmc-th local def okMCtx (mctx: set): wff = $ E. a E. b bddMCtx_N mctx a b $;
-theorem okMCtx_I (h: $ bddMCtx_N mctx a b $): $ okMCtx mctx $ = '(iexie @ iexde @ mpbiri h ,eqtac);
-@mmc-th theorem okMCtx0: $ okMCtx mctx0 $ = '(okMCtx_I bddMCtx_0);
-@mmc-th theorem okMCtxS (h: $ bddMCtx mctx a b $): $ okMCtx mctx $ = '(okMCtx_I h);
+@mmc-th local def okMCtx (mctx: set): wff = $ E. a E. b bddMCtxN mctx a b $;
+theorem okMCtxI (h: $ bddMCtxN mctx a b $): $ okMCtx mctx $ = '(iexie @ iexde @ mpbiri h ,eqtac);
+@mmc-th theorem okMCtx0: $ okMCtx mctx0 $ = '(okMCtxI bddMCtx_0);
+@mmc-th theorem okMCtxS (h: $ bddMCtx mctx a b $): $ okMCtx mctx $ = '(okMCtxI h);
 
 @_ @mmc-th local def pushMCtx (mctx1 val mctx2: set): wff = $ mctx2 == (mctx1 +M val) $;
 
@@ -279,15 +223,110 @@ theorem okMCtx_I (h: $ bddMCtx_N mctx a b $): $ okMCtx mctx $ = '(iexie @ iexde 
 --| The first part is the logical context, where variables and their types are stored,
 --| and the second part is the machine context where variables are assigned to memory locations.
 @mmc-th local def mkTCtx (vctx: set) (vctx_sz: nat) (mctx: set): set =
-$ Sum vctx_sz (S\ vs, Sum (vctx @' vs *s Fst mctx @' vs) (Snd mctx @' vs)) $;
+$ Sum vctx_sz (S\ vs, Sum (vctx @' vs *s Fst (mctx @' vs)) (Snd (mctx @' vs))) $;
 
 @_ local def tctx_sz (tctx: set): nat = $ lower (Fst tctx) $;
-@_ local def tctx_P (tctx: set) (vs: nat): set = $ Fst (Snd tctx @' vs) $;
-@_ local def tctx_L (tctx: set) (vs: nat): set = $ Snd (Snd tctx @' vs) $;
+@_ local def tctx_type (tctx: set) (vs: nat): set = $ Fst (Snd tctx @' vs) $;
+@_ local def tctx_layout (tctx: set) (vs: nat): set = $ Snd (Snd tctx @' vs) $;
+
+@_ local def okReturn (pctx: set) (fr: nat): wff =
+$ s_ok
+  (fr_frame fr *s (
+    mainLayout (gctx_content pctx) (fr_retAddr fr) *s
+    stackLayoutG fr 8 0 0 SL_0 *s
+    soReturnType (pctx_ret pctx)))
+  (gctx_result pctx) $;
+
+@_ local def okCodeN (bctx tctx: set) (fr ip: nat) =
+$ s_ok
+  (fr_frame fr *s (
+    mainLayout (gctx_content bctx) (text_start + ip) *s
+    E.s vs e. _V, (
+      stackLayout fr 8 (epi_sp (pctx_epi bctx)) (tctx_layout tctx vs) *s
+      tctx_type tctx vs)))
+  (gctx_result bctx) $;
+
+@mmc-th local def labelGroup0: set = $ 0 $;
+prefix labelGroup0: $LG0$ prec max;
+local def labelGroup1 (var ls: set): set = $ E.s vs e. _V, ls @' vs @' (var @ vs) $;
+@mmc-th local def labelGroup (var ls labs: set): set = $ labs \/s labelGroup1 var ls $;
+notation labelGroup (var ls labs: set): set = ($LG($:85) var ($,$:55) ls ($);$:0) labs;
+
+@mmc-th local def findLabels (labs: set) (var ls: set): wff = $ labelGroup1 var ls C_ labs $;
+@mmc-th theorem findLabels1: $ findLabels (LG(var, ls); labs) var ls $ = 'sorry;
+@mmc-th theorem findLabelsS (h: $ findLabels labs var ls $):
+  $ findLabels (LG(var, ls1); labs) var ls $ = 'sorry;
+
+--| `Labels.and : Labels -> Labels -> Labels`
+@mmc-th local def labelA (A B: set): set = $ A \/s B $;
+infixl labelA: $+L$ prec 20;
+--| `Labels.one : BlockLoc -> Expr -> TCtx -> Labels`
+@mmc-th local def label1 (x: nat) (var tctx: set): set =
+$ S\ vs, S\ v, S\ c, S\ epi, S\ fr, S\ p, (fr_frame fr *s (
+    If (x = 0) (E.s ip e. u64, mainLayout c ip) (mainLayout c (text_start + p + (x - 1))) *s
+    ^s (vs, v e. var) *s
+    stackLayout fr 8 (epi_sp epi) (tctx_layout tctx vs) *s
+    tctx_type tctx vs)) $;
+
+@mmc-th local def findLabel (ls: set) (x: nat) (var A: set): wff = $ label1 x var A C_ ls $;
+@mmc-th theorem findLabel_l (h: $ findLabel A x var P $): $ findLabel (A +L B) x var P $ = 'sorry;
+@mmc-th theorem findLabel_r (h: $ findLabel B x var P $): $ findLabel (A +L B) x var P $ = 'sorry;
+@mmc-th theorem findLabel1: $ findLabel (label1 x var P) x var P $ = 'sorry;
+
+--| The empty context.
+@_ @mmc-th local def vctx0: set = $ S\ vs, emp $;
+
+@_ @mmc-th local def vctxA (A B: set): set = $ S\ vs, (A @' vs *s B @' vs) $;
+infixl vctxA: $*V$ prec 20;
+
+--| `vVar: nat -> Ty -> VCtx`:
+--| A variable record in a variable context. This asserts that `v_n: ty`.
+@_ @mmc-th local def vVar (n: nat) (ty: set): set = $ isTyped (eVar n) ty $;
+
+--| `vHyp: Ty -> VCtx`:
+--| A hypothesis, or unnamed variable. This asserts that `(): ty`.
+@_ @mmc-th local def vHyp (ty: set): set = $ isHyp ty $;
+
+@_ @mmc-th local def okVCtxPush (vctx1 A vctx2: set): wff = $ vctx2 == (vctx1 *V A) $;
+
+@mmc-th theorem okVCtxPush_1: $ okVCtxPush vctx0 A A $ = 'sorry;
+@mmc-th theorem okVCtxPush_S:
+  $ okVCtxPush vctx A (vctx *V A) $ = 'eqsid;
+@mmc-th theorem okVCtxPush_R
+  (h: $ okVCtxPush vctx ty ((A *V B) *V C) $):
+  $ okVCtxPush vctx ty (A *V (B *V C)) $ = 'sorry;
+
+@_ @mmc-th local def okVCtxGet (vctx A: set): wff = $ A. vs vctx @' vs =>*s A @' vs $;
+
+@mmc-th theorem okVCtxPush_get
+  (h: $ okVCtxPush vctx A vctx2 $):
+  $ okVCtxGet vctx2 A $ = 'sorry;
+
+@mmc-th theorem okVCtxGet_R
+  (h: $ okVCtxGet ((A *V B) *V C) ty $): $ okVCtxGet (A *V (B *V C)) ty $ = 'sorry;
+@mmc-th theorem okVCtxGet_l (h: $ okVCtxGet A ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
+@mmc-th theorem okVCtxGet_r (h: $ okVCtxGet B ty $): $ okVCtxGet (A *V B) ty $ = 'sorry;
+
+@_ @mmc-th local def okVCtxTake (vctx A vctx2: set): wff =
+$ A. vs vctx @' vs =>*s A @' vs *s vctx2 @' vs $;
+
+@mmc-th theorem okVCtxTake_move_var (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vVar n ty) (vVar n ty) (vVar n moved) $ = 'sorry;
+@mmc-th theorem okVCtxTake_ref_var (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vVar n ty) (vVar n moved) (vVar n ty) $ = 'sorry;
+@mmc-th theorem okVCtxTake_move_Hyp (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vHyp ty) (vHyp ty) (vHyp moved) $ = 'sorry;
+@mmc-th theorem okVCtxTake_ref_Hyp (h: $ tyMoved ty moved $):
+  $ okVCtxTake (vHyp ty) (vHyp moved) (vHyp ty) $ = 'sorry;
+
+@mmc-th theorem okVCtxTake_l (h: $ okVCtxTake A ty A2 $):
+  $ okVCtxTake (A *V B) ty (A2 *V B) $ = 'sorry;
+@mmc-th theorem okVCtxTake_r (h: $ okVCtxTake B ty B2 $):
+  $ okVCtxTake (A *V B) ty (A *V B2) $ = 'sorry;
 
 @_ @mmc-th local def okPushVar (tctx ty tctx2: set): wff =
 $ tctx2 == Sum (suc (tctx_sz tctx))
-    (S\ vs, Sum (tctx_P tctx vs *s ty @' vs @' (vs @ tctx_sz tctx)) (tctx_L tctx vs)) $;
+    (S\ vs, Sum (tctx_type tctx vs *s ty @' vs @' (vs @ tctx_sz tctx)) (tctx_layout tctx vs)) $;
 
 @mmc-th theorem okPushVarI
   (h1: $ okVCtxPush vctx (vVar n ty) vctx2 $)
@@ -295,27 +334,22 @@ $ tctx2 == Sum (suc (tctx_sz tctx))
   $ okPushVar (mkTCtx vctx n mctx) ty (mkTCtx vctx2 n2 mctx) $ = 'sorry;
 
 @mmc-th local def okPushHyp (tctx ty tctx2: set): wff =
-$ tctx2 == Sum (tctx_sz tctx) (S\ vs, Sum (tctx_P tctx vs *s ty @' vs @' 0) (tctx_L tctx vs)) $;
+$ tctx2 == Sum (tctx_sz tctx)
+    (S\ vs, Sum (tctx_type tctx vs *s ty @' vs @' 0) (tctx_layout tctx vs)) $;
 
 @mmc-th theorem okPushHypI
   (h1: $ okVCtxPush vctx (vHyp ty) vctx2 $):
   $ okPushHyp (mkTCtx vctx n mctx) ty (mkTCtx vctx2 n mctx) $ = 'sorry;
 
-@_ @mmc-th local def okReadHypVCtx (vctx ty: set): wff =
-$ A. vs E. n vctx @' vs =>*s ty @' vs @' n $;
+@_ @mmc-th local def okReadHyp (tctx ty: set): wff =
+$ A. vs E. n tctx_type tctx vs =>*s ty @' vs @' n $;
 
-@mmc-th theorem okReadHypVCtxI
+@mmc-th theorem okReadHypHyp
   (h1: $ okVCtxGet vctx (vHyp ty) $):
-  $ okReadHypVCtx vctx ty $ = 'sorry;
+  $ okReadHyp (mkTCtx vctx n mctx) ty $ = 'sorry;
 
 @mmc-th theorem okReadHypVar
   (h1: $ okVCtxGet vctx (vVar v ty) $):
-  $ okReadHypVCtx vctx ty $ = 'sorry;
-
-@_ @mmc-th local def okReadHyp (tctx ty: set): wff = $ okReadHypVCtx (S\ vs, tctx_P tctx vs) ty $;
-
-@mmc-th theorem okReadHypI
-  (h1: $ okVCtxTake vctx ty vctx2 $):
   $ okReadHyp (mkTCtx vctx n mctx) ty $ = 'sorry;
 
 @mmc-th theorem okReadHyp_unit:
@@ -323,18 +357,19 @@ $ A. vs E. n vctx @' vs =>*s ty @' vs @' n $;
 
 @mmc-th local def ok0: set = $ 0 $;
 
-@_ local def okScopeN (bctx: set) (fr p: nat): wff =
-$ okReturnN bctx fr /\ s_ok
+@_ local def okScope (bctx: set) (fr p: nat): wff =
+$ okReturn bctx fr /\ len (epi_regs (pctx_epi bctx)) = len (fr_pushed fr) /\
+  s_ok
     (bctx_labelGroups bctx @' gctx_content bctx @' pctx_epi bctx @' fr @' p)
-    (gctx_result bctx) $; -- TODO
+    (gctx_result bctx) $;
 
 @_ local def okAsmd (bctx code: set) (p x y: nat): wff =
 $ okBCtx bctx /\
   E. s (y = x + len s /\ text_start + p + y e. u64 /\
-  sublistAt (p + x) (gctx_content bctx) s /\ p, s, x e. code) $;
+    sublistAt (p + x) (gctx_content bctx) s /\ p, s, x e. code) $;
 
 @_ @mmc-th local def okCode (bctx tctx1 code tctx2: set): wff =
-$ A. p A. x A. y A. fr (okAsmd bctx code p x y -> okScopeN bctx fr p ->
+$ A. p A. x A. y A. fr (okAsmd bctx code p x y -> okScope bctx fr p ->
   okCodeN bctx tctx2 fr (p + y) -> okCodeN bctx tctx1 fr (p + x)) $;
 
 theorem okCode_rev:
@@ -542,7 +577,7 @@ $ epi_ok epi -> instEpilogue epi == code $;
   (h2: $ checkRet bctx tctx ret $)
   (h3: $ okEpilogue epi code $):
   $ okCode bctx tctx code ok0 $ =
-'(okCode_rev @ mpbid (okCodeeq3d @ mpbir (okEpilogueeq1 @ anr h1) h3) @ a1i @ h2 (anl h1));
+'(okCode_rev @ mpbid (anwr @ okCodeeq3d @ mpbir (okEpilogueeq1 @ anr h1) h3) @ a1i @ h2 (anl h1));
 
 @mmc-th theorem okEpilogue_free
   (h: $ okEpilogue epi code $):

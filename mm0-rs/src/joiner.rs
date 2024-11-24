@@ -87,8 +87,8 @@ impl<W: Write> Joiner<W> {
 }
 
 fn join_with_header(comments: bool, header: bool, mut w: impl Write, file: FileRef) -> io::Result<()> {
-  let mut buf = vec![];
   if comments && header {
+    let mut buf = vec![];
     let mut joiner = Joiner::new(comments, &mut buf);
     joiner.write(file.clone())?;
     writeln!(w, "\

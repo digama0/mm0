@@ -452,7 +452,7 @@ impl Mangler {
         and satisfy the global exit proposition (or fail).",
         ProcName(None), self.mangle(Name::GCtx)),
 
-      Name::ProgOkThm => format!("The main correctness theorem for {}. \
+      Name::ProgOkThm => format!("The main correctness theorem for `{}`. \
         This theorem has the form `okProg elf prop`, where:\n\
         \n\
         * `elf` is the program binary\n\
@@ -482,8 +482,8 @@ pub(crate) fn render_proof(
     let mut thm = ProofDedup::new(pd, &[]);
     let u_gctx = thm.get_def0(elab, gctx);
     app_match!(thm, let (mkGCtx c fs ms ty) = u_gctx);
-    let [_, fss, hfs] = thm.parse_ubytes(7, fs);
-    let [_, mss, hms] = thm.parse_ubytes(7, ms);
+    let [_, fss, hfs] = thm.parse_ubytes(8, fs);
+    let [_, mss, hms] = thm.parse_ubytes(8, ms);
 
     let u_elf = app!(thm, (ELF_lit fss mss c));
     let (elf, _) = elab.env.add_term({

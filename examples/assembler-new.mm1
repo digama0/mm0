@@ -194,6 +194,18 @@ $ n e. Bits (8 * suc k) /\ s = toBytes (suc k) n $;
 @mmc-th theorem parseUBytes01: $ parseUBytes 0 a0 (s1 (ch x0 a0)) $ =
 '(iani xelBits81 xtoBytes11);
 
+theorem parseUBytes_x00xN (h1: $ s = repeat 0 x $) (h2: $ x = suc k $): $ parseUBytes k x0 s $ =
+'(iani xelBits81 @ eqtr h1 @ eqtr4 (repeateq2 h2) @ eqtr (toByteseq2 h2n0) toBytes02);
+do {
+  --| (parseUBytes_x00xn i) proves `|- parseUBytes {i-1} x0 _x00x{i}`
+  (def (parseUBytes_x00xn i) (atom-app 'parseUBytes_x00x i))
+  (scan (range 1 8) @ fn (i)
+    (add-tac-thm! (parseUBytes_x00xn i) () ()
+        $ parseUBytes ,(sucs {i - 1}) x0 ,(_x00xn i) $ () @ fn ()
+      @ refine '(parseUBytes_x00xN (,(_x00xn_eq i)) (,(h2nn i))))
+    (mmc-th (parseUBytes_x00xn i)))
+};
+
 @mmc-th local def parseIBytesPos (k n: nat) (s: string): wff =
 $ n e. Bits (8 * k + 7) /\ s = toBytes (suc k) n $;
 
@@ -808,7 +820,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastCMov (suc c) sz ds) s
 --------------------------------------------
 
 @mmc-th local def asmProc (n: nat) (A: set): set =
-$ S\ s, {p | p = n /\ E. t1 E. t2 E. z (s = t1 ++ t2 /\ t1 != 0 /\ p, t1, 0 e. A)} $;
+$ S\ s, {p | p = n /\ E. t1 E. t2 (s = t1 ++ t2 /\ t1 != 0 /\ p, t1, 0 e. A)} $;
 
 @mmc-th theorem asmProcI (s x n y A)
   (h1: $ localAssemble x s x0 n A $)
@@ -838,7 +850,11 @@ do (ignore @ on-hexstrings @ fn (n)
 
 --| Global context. In lean:
 --| ```lean
---| structure gctx := (content: string) (filesz memsz: nat) (result: prop)
+--| structure GCtx where
+--|   content : String
+--|   fileSz : UInt64
+--|   memSz : UInt64
+--|   result : SProp
 --| ```
 @mmc-th local def mkGCtx (content: string) (filesz memsz: nat) (result: set): set =
 $ Sum (Sum (content, filesz, memsz) result) 0 $;

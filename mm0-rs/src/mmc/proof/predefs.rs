@@ -303,6 +303,8 @@ make_predefs! {
   parseUBytes01: ThmId => "parseUBytes01";
   parseUBytes02: ThmId => "parseUBytes02";
 
+  parseUBytes_x00xn[i: 8]: ThmId if i != 0 => format!("parseUBytes_x00x{i:x}");
+
   /// `parseIBytesPos (k n: nat) (s: string): wff`
   parseIBytesPos: TermId => "parseIBytesPos";
   parseIBytesPosS: ThmId => "parseIBytesPosS";

@@ -4332,7 +4332,7 @@ do (mk-cases-eqns execXAST_clauses @ match-fn* @ (rvars ((name . dummies) stmt) 
     '((k nat ())) (map (fn (x) '(,x nat ())) vars) '((k2 nat ())))
   (def stmt $ execXAST k ,'(,name . ,vars) k2 <-> ,stmt $)
   (add-tac-thm! thname bis () stmt 'pub @ fn ()
-    (named '(trud ,(ctx ,eqtac)))));
+    (named '(trud ,(ctx eqtac)))));
 
 theorem splitSum
   (h0: $ G /\ a // 2 e. A -> a = b0 (a // 2) -> p $)
@@ -4419,7 +4419,7 @@ pub theorem execXAST_T (k ast k2: nat):
     '(iand _ @ sylan destEA_T an4l anlr)
     '(iand _ @ anwr @ rsyl anlr @ anrd readEA_T64)
     '(iand _ @ anwr @ anwll @ anrd readEA_T64)
-    '(iand an3l @ anllr))
+    '(iand an3l anllr))
   (focus -- Mul
     '(eexd @ eexd @ eexd @ impd @ exp @ eord _ _)
     (focus

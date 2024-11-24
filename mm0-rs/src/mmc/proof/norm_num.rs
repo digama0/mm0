@@ -308,9 +308,21 @@ norm_split_bits! {
 }
 
 impl ProofDedup<'_> {
-  /// Proves `[k, s, |- parseUBytes k n s]`.
+  pub(super) fn sucs(&mut self, mut n: u8) -> ProofId {
+    let mut out = app!(self, (d0));
+    for _ in 0..n { out = app!(self, (suc out)) }
+    out
+  }
+
+  /// Proves `[k-1, s, |- parseUBytes (k-1) n s]`.
   pub(super) fn parse_ubytes(&mut self, k: u8, n: ProofId) -> [ProofId; 3] {
-    if k == 0 {
+    if k <= 8 && app_match!(self, n => { (h2n ((xn[0u8]))) => true, _ => false, }) {
+      let ek = self.sucs(k-1);
+      let s = app!(self, (padn[k]));
+      return [ek, s, thm!(self, parseUBytes_x00xn[k](): (parseUBytes ek n s))]
+    }
+    if k <= 1 {
+      debug_assert!(k == 1);
       let ek = app!(self, (dn[0u8]));
       app_match!(self, n => {
         (h2n a0) => {
