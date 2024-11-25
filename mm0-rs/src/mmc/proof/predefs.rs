@@ -525,6 +525,8 @@ make_predefs! {
 
   ok0: TermId => "ok0";
 
+  noRet: TermId => "noRet";
+
   labelGroup0: TermId => "labelGroup0";
   labelGroup: TermId => "labelGroup";
 

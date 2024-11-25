@@ -54,7 +54,7 @@ impl Ctx {
     let ok0 = app!(de, (ok0));
     let asm0 = app!(de, (ASM0));
     let gctx = app!(de, ({t_gctx}));
-    let ret = app!(de, (ok0)); // TODO
+    let ret = app!(de, (noRet)); // TODO
     let se = app!(de, (tru)); // TODO
     let mut epi = app!(de, (epiRet));
     for &reg in proc.saved_regs() {
@@ -1029,40 +1029,35 @@ impl ProcProver<'_> {
     }
   }
 
-  /// Returns `|- okPrologue epiRet x0 mctx1 code epi mctx2`
+  /// Returns `|- okPrologue epiRet mctx1 code epi mctx2`
   fn ok_prologue(&mut self, mctx: &mut P<MCtx>, mut code: ProofId) -> ProofId {
     let mut epi = app!(self.thm, (epiRet));
-    let mut sp = self.hex.h2n(&mut self.thm, 0);
     let mut stack = vec![];
     for &reg in self.proc.saved_regs() {
       let r = reg.index(); let er = self.hex[r];
       app_match!(self.thm, let (ASM_A _ code2) = code);
-      let n = self.hex.h2n(&mut self.thm, 8);
-      let (sp2, h1) = self.hex.add(&mut self.thm, sp, n);
       let mctx1 = mctx.1;
       let t = ((r, MCtxRegValue::Free), app!(self.thm, (FREE er)));
-      let h2 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
-      stack.push([code, code2, epi, mctx1, mctx.1, er, *sp, *sp2, h1, h2]);
+      let h1 = MCtx::push_reg::<PushMCtx>(mctx, &mut self.thm, t);
+      stack.push([code, code2, epi, mctx1, mctx.1, er, h1]);
       epi = app!(self.thm, epiPop[er, epi]);
-      sp = sp2;
       code = code2;
     }
     let h1 = mctx.0.ok(&mut self.thm);
     let mctx1 = mctx.1;
     let mut th = if self.sp_max.val == 0 {
-      thm!(self.thm, (okPrologue[epi, *sp, mctx1, code, epi, mctx1]) =>
-        okPrologue_alloc0(epi, mctx1, *sp, h1))
+      thm!(self.thm, (okPrologue[epi, mctx1, code, epi, mctx1]) =>
+        okPrologue_alloc0(epi, mctx1, h1))
     } else {
       MCtx::add_stack(mctx, &mut self.thm, self.ctx.sp_max);
-      let (m, h2) = self.hex.add(&mut self.thm, sp, self.ctx.sp_max);
-      let max = self.hex.from_u32(&mut self.thm, 1 << 12);
-      let h3 = self.hex.lt(&mut self.thm, m, max);
-      thm!(self.thm, (okPrologue[epi, *sp, mctx1, code, self.epi, mctx.1]) =>
-        okPrologue_alloc(epi, *m, mctx1, *self.sp_max, *sp, h1, h2, h3))
+      let max = self.hex.from_u32(&mut self.thm, (1 << 12) - 8);
+      let h2 = self.hex.le(&mut self.thm, self.ctx.sp_max, max);
+      thm!(self.thm, (okPrologue[epi, mctx1, code, self.epi, mctx.1]) =>
+        okPrologue_alloc(epi, mctx1, *self.sp_max, h1, h2))
     };
-    for [code, code2, epi1, mctx1, mctx2, er, sp, sp2, h1, h2] in stack.into_iter().rev() {
-      th = thm!(self.thm, (okPrologue[epi1, sp, mctx1, code, epi, mctx.1]) =>
-        okPrologue_push(code2, epi1, epi, mctx1, mctx2, mctx.1, er, sp, sp2, h1, h2, th))
+    for [code, code2, epi1, mctx1, mctx2, er, h1] in stack.into_iter().rev() {
+      th = thm!(self.thm, (okPrologue[epi1, mctx1, code, epi, mctx.1]) =>
+        okPrologue_push(code2, epi1, epi, mctx1, mctx2, mctx.1, er, h1, th))
     }
     th
   }
@@ -1084,13 +1079,17 @@ impl ProcProver<'_> {
     })
   }
 
-  /// Returns `(fs, ms, tctx, |- buildStart gctx pctx fs ms tctx)`
-  fn build_start(&mut self, bl: BlockProof<'_>, root: VCtx) -> (Num, Num, PTCtx, ProofId) {
-    let fs = self.hex.from_u64(&mut self.thm, self.elf_proof.p_filesz());
-    let ms = self.hex.from_u64(&mut self.thm, self.elf_proof.p_memsz());
-    let tctx = self.block_tctx(bl, root, CtxId::ROOT);
-    let bproc = app!(self.thm, buildStart[self.gctx, self.pctx, *fs, *ms, tctx.1]);
-    (fs, ms, tctx, thm!(self.thm, sorry(bproc): bproc)) // TODO
+  /// Returns `|- getEpi bctx ret code`
+  fn get_epi(&mut self, code: ProofId) -> ProofId {
+    let h = self.ok_epilogue(self.epi, code);
+    thm!(self.thm, (getEpi[self.bctx, self.ret, code]) =>
+      getEpiI(code, self.epi, self.gctx, self.labs, self.ret, self.se, h))
+  }
+
+  /// Returns `(tctx, |- buildStart gctx pctx tctx)`
+  fn build_start(&mut self, bl: BlockProof<'_>, root: VCtx) -> (PTCtx, ProofId) {
+    let (tctx, l1) = self.block_tctx(bl, root, CtxId::ROOT);
+    ((tctx, l1), thm!(self.thm, buildStartI(self.gctx): buildStart[self.gctx, self.pctx, l1]))
   }
 
   /// Returns `(v, |- okRead tctx loc v)`
@@ -1155,18 +1154,14 @@ impl ProcProver<'_> {
       CONV({th} => (getResult (UNFOLD({self.t_gctx}); u_gctx) ty))))
   }
 
-  /// Returns `|- getEpi bctx ret epi`
-  fn get_epi(&mut self) -> ProofId {
-    thm!(self.thm, (getEpi[self.bctx, self.ret, self.epi]) =>
-      getEpiI(self.epi, self.gctx, self.labs, self.ret, self.se))
-  }
-
   /// Returns `|- checkRet bctx tctx ret`
   fn check_ret(&mut self,
     tctx: &mut P<&mut TCtx>, outs: &[VarId], args: &[(VarId, bool, Operand)]
   ) -> ProofId {
-    let th = thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
-      checkRetI(self.bctx, self.ret, tctx.1));
+    // let th = thm!(self.thm, (checkRet[self.bctx, tctx.1, self.ret]) =>
+    //   checkRetI(self.bctx, self.ret, tctx.1));
+    let ret = app!(self.thm, checkRet[self.bctx, tctx.1, self.ret]);
+    let th = thm!(self.thm, sorry(ret): ret); // TODO
     tctx.1 = self.ok0;
     th
   }
@@ -1226,10 +1221,9 @@ impl ProcProver<'_> {
         okProcI(args, clob, code, self.epi, self.gctx, mctx1, mctx2, mctx3,
           prol, self.ret, self.se, start, sz1, vctx1, h1, h2, h3, h4, h5))
     } else {
-      let (fs, ms, (mut tctx, l1), h2) = self.build_start(bl, root);
+      let ((mut tctx, l1), h2) = self.build_start(bl, root);
       let h3 = self.ok_stmts(bl, code, (&mut *tctx, l1));
-      thm!(self.thm, (okStart[self.gctx, *fs, *ms]) =>
-        okStartI(code, *fs, self.gctx, *ms, self.pctx, l1, h1, h2, h3))
+      thm!(self.thm, okStartI(code, self.gctx, self.pctx, l1, h1, h2, h3): okStart[self.gctx])
     }
   }
 }
@@ -1597,12 +1591,11 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
       Terminator::Return(outs, args) => {
         assert!(!matches!(cl, cl::Terminator::Ghost), "ghost return not allowed, I think");
         self.inst_state = InstState::None;
-        let h1 = self.get_epi();
         let proc = &mut *self.proc;
+        let h1 = proc.get_epi(self.code);
         let h2 = proc.check_ret(&mut self.tctx, outs, args);
-        let h3 = proc.ok_epilogue(proc.epi, self.code);
         let th = thm!(proc.thm, (okCode[proc.bctx, self.lhs_tctx, self.code, proc.ok0]) =>
-          okEpilogue_E(proc.bctx, self.code, proc.epi, proc.ret, self.lhs_tctx, h1, h2, h3));
+          okEpilogue_E(proc.bctx, self.code, proc.ret, self.lhs_tctx, h1, h2));
         self.finish(th)
       }
       Terminator::Unreachable(_) => todo!(),
