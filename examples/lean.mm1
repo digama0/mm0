@@ -1,9 +1,78 @@
-delimiter $ ( [ $ $ ] ) , $;
+delimiter $ ( [ ^ $ $ ] ) , $;
 provable sort prov;
+
+
+--------------------------------------------------------------------------
+------------------------- UTILITIES --------------------------------------
+--------------------------------------------------------------------------
+
+
 term and: prov > prov > prov;
-axiom and_left: $ and p q $ > $ p $;
-axiom and_right: $ and p q $ > $ q $;
-axiom mk_and: $ p $ > $ q $ > $ and p q $;
+infixl and: $/\$ prec 0;
+axiom and_left (p q: prov): $ p /\ q $ > $ p $;
+axiom and_right (p q: prov): $ p /\ q $ > $ q $;
+axiom mk_and (p q: prov): $ p $ > $ q $ > $ p /\ q $;
+
+
+sort element;
+
+sort list;
+
+term empty: list;
+prefix empty: $|.|$ prec 1;
+term list_S: list > element > list;
+infixl list_S: $.$ prec 0;
+
+term find (lst: list) (d: element): prov;
+axiom find_0 (lst: list) (d: element): 
+  $ find (lst . d) d $;
+axiom find_S (lst: list) (d ds: element): 
+  $ find lst d $ > 
+  $ find (lst . ds) d $; 
+
+term insert (ls lsh: list) (in: element): prov;
+
+axiom insert_0: $ insert as (as . in) in $;
+
+axiom insert_S: 
+  $ insert as ash in $ > 
+  $ insert (as . e) (ash . e) in $;
+
+term reorder_list (inds ord: list): prov;
+
+axiom reorder_list_0:
+  $ reorder_list (|.|) (|.|) $;
+
+axiom reorder_list_S:
+  $ insert lss lsh i $ >
+  $ reorder_list ls lss $ > 
+  $ reorder_list (ls . i) lsh $;
+
+
+-- basic bool with an or operation, used for flags
+sort bool;
+term true: bool;
+prefix true: $1b$ prec 2;
+term false: bool;
+prefix false: $0b$ prec 2;
+term bor: bool > bool > bool > prov;
+notation bor (a b c): prov = ($b:$:1) a ($+$:1) b ($=$: 1) c;
+axiom or_nat (b: bool): $ b: 1b + b = 1b $;
+axiom or_r (b: bool): $ b: b + 1b = 1b $;
+axiom or_0: $ b: 0b + 0b = 0b $;
+
+
+
+--------------------------------------------------------------------------
+------------------------ LEAN TERMS --------------------------------------
+--------------------------------------------------------------------------
+
+
+
+-- universe levels
+--------------------------------------------------------------------------
+
+
 
 sort level;
 term l_0: level; prefix l_0: $L0$ prec max;
@@ -31,15 +100,15 @@ axiom l_subst_imax (A B A2 B2 e: level u):
 term l_pl: level > level > level > level > prov;
 notation l_pl (u v a b) = u ($+l$:0) a ($<=$:0) v ($+l$:0) b: 0 lassoc;
 def l_le (a b: level): prov = $ a +l L0 <= b +l L0 $;
-infixl l_le: $<=l$ prec 0;
+infixl l_le: $<=$ prec 0;
 term l_eq: level > level > prov;
 infixl l_eq: $=l$ prec 0;
-axiom l_eq_le: $ u <=l v $ > $ v <=l u $ > $ u =l v $;
+axiom l_eq_le: $ u <= v $ > $ v <= u $ > $ u =l v $;
 axiom l_pl_S_S: $ u +l a <= v +l b $ > $ u +l (l_S a) <= v +l (l_S b) $;
-axiom l_pl_id: $ u <=l v $ > $ u +l a <= v +l a $;
+axiom l_pl_id: $ u <= v $ > $ u +l a <= v +l a $;
 axiom l_pl_0_0: $ L0 +l L0 <= u +l a $;
 axiom l_pl_id_0: $ u +l L0 <= u +l a $;
-theorem l_le_refl: $ u <=l u $ = 'l_pl_id_0;
+theorem l_le_refl: $ u <= u $ = 'l_pl_id_0;
 axiom l_pl_S_left: $ u +l l_S a <= v +l b $ > $ l_S u +l a <= v +l b $;
 axiom l_pl_S_right: $ u +l a <= v +l l_S b $ > $ u +l a <= l_S v +l b $;
 axiom l_pl_max_right_1: $ u +l a <= v +l b $ > $ u +l a <= l_max v w +l b $;
@@ -67,26 +136,89 @@ axiom l_pl_cases (u v u0 v0 uS vS: level x):
   $ l_subst: v [l_S x / x] = vS $ >
   $ uS +l a <= vS +l b $ >
   $ u +l a <= v +l b $;
+  
+
+-- epxressions
+--------------------------------------------------------------------------
+
 
 sort expr;
+
+-- a universe of either types or propositions
 term Sort: level > expr;
+
+-- the proof irrelevant universe of proposition
 def Prop = $ Sort L0 $;
-def Type = $ Sort L1 $;
+
+def Sort_1: expr = $ Sort L1 $;
+
+-- universes of types
+def Type (u: level): expr = $ Sort (l_S u) $;
 
 term app: expr > expr > expr;
 infixl app: $@$ prec 100;
+
 term lambda {x: expr} (t: expr) (e: expr x): expr;
 notation lambda (x t e) = ($\.$:2) x ($:$:1) t ($,$:1) e;
+
 term Pi {x: expr} (t: expr) (e: expr x): expr;
 notation Pi (x t A) = ($A.$:2) x ($:$:1) t ($,$:1) A;
 
 def imp (A B: expr): expr = $ A. x : A, B $;
 infixr imp: $->$ prec 5;
 
+term mu {t: expr} (e: expr t): expr;
+notation mu {t: expr} (e: expr t): expr = ($u.$:2) t ($,$:1) e;
+
+-- generic natural numbers, used for indexing constructors, constructor parameters and for specifying nesting depth of elements within different data structures
+sort nat;
+term n_0: nat; prefix n_0: $0$ prec max;
+term n_S (n: nat): nat; prefix n_S: $^$ prec 10;
+def n_1: nat = $ ^0 $; prefix n_1: $1$ prec max;
+
+
+
 sort ctx;
 term nil: ctx;
 term cons (G: ctx) {x: expr} (t: expr): ctx;
 notation cons (G x t) = G ($,$:1) x ($:$:1) t: 1 lassoc;
+
+-- list of expressions
+sort exprs;
+term K0: exprs; prefix K0: ${}$ prec 0;
+term KS (s: exprs) (e: expr): exprs; 
+infixl KS: $;$ prec 1;
+
+-- the more nested the higher i
+term find_x (lst: exprs) (d: expr) (i: nat): prov;
+axiom find_x_0: $ find_x (lst ; d) d 0 $;
+axiom find_x_S: $ find_x lst d n $ > $ find_x (lst ; ds) d (^n) $; 
+
+term tail_xs: exprs > exprs > prov;
+axiom tail_xs_0: $ tail_xs es es $;
+axiom tail_xs_S: $ tail_xs es ess $ > $ tail_xs (es ; x) ess $; 
+
+-- $ ctx_vars P nil pa $: asserts that pa is a list of expressions containing the bound variables in P,
+-- the less nested in P, the more nested in pa
+term ctx_vars (P Ps: ctx) (pa: exprs): prov;
+axiom ctx_vars_0:
+  $ ctx_vars P P ({}) $;
+axiom ctx_vars_S (P: ctx x): 
+  $ ctx_vars P (Ps, x : A) pa $ > 
+  $ ctx_vars P Ps (pa ; x) $;
+
+-- apply expressions 
+term apply_exprs (e es: expr) (xs: exprs): prov;
+axiom apply_exprs_0:
+  $ apply_exprs e e ({}) $;
+axiom apply_exprs_S:
+  $ apply_exprs e (es @ a) xs $ >
+  $ apply_exprs e es (xs ; a) $;
+ 
+
+-- substitution
+--------------------------------------------------------------------------
+
 
 term subst {x: expr} (A: expr x) (e: expr) (B: expr): prov;
 notation subst (x A e B) = ($subst:$:0) A ($[$:0) e ($/$:0) x ($]$:0) ($=$:1) B;
@@ -123,6 +255,42 @@ theorem subst_imp (A B A2 B2 e: expr x)
   $ subst: (A -> B) [e / x] = (A2 -> B2) $ =
 '(!! subst_Pi _ y h1 h2);
 
+-- perform a list of substitutions on an expression
+term substs_x (es e: expr) (bs: exprs) (Bs: exprs): prov;
+notation substs_x (es e bs Bs) = ($substs_x:$:1) es ($=$:1) e ($[$:0) Bs ($ / $:0) bs ($]$:0);
+axiom substs_x_0:
+  $ substs_x: e = e [({}) / ({})] $;
+axiom substs_x_S (es e: expr b):
+  $ subst: es [bb / b] = ess $ > 
+  $ substs_x: es = e [bss / Bs] $ >
+  $ substs_x: ess = e [(bss ; b) / (Bs ; bb)] $;
+
+-- performs substitution on a list of expressions
+term subst_xs {x: expr} (e: expr) (K: exprs x) (sK: exprs): prov;
+notation subst_xs (x e K sK) = ($subst_xs:$:1) sK ($=$:1) K ($[$:0) e ($ / $:0) x ($]$:0);
+axiom subst_xs_0 {x: expr}: 
+  $ subst_xs: ({}) = ({}) [e / x] $;
+axiom subst_xs_S  (a e: expr x) (K: exprs x): 
+  $ subst: e [a / x] = es $ > 
+  $ subst_xs: Ks = K [a / x] $ >
+  $ subst_xs: (Ks ; es) = (K ; e) [a / x] $;
+  
+-- performs a list of substitutions on a list of expressions
+term substs_xs (sK K: exprs) (bs Bs: exprs): prov;
+notation substs_xs (sK K bs Bs) = ($substs_xs:$:1) sK ($=$:1) K ($[$:0) Bs ($ / $:0) bs ($]$:0);
+axiom substs_xs_0:
+  $ substs_xs: ({}) = ({}) [Bs / bs] $;
+axiom substs_xs_S:
+  $ substs_x: es = e [Bs / bs] $ > 
+  $ substs_xs: sK = K [Bs / bs] $ >
+  $ substs_xs: (sK ; es) = (K ; e) [Bs / bs] $;
+
+
+
+-- type checking 
+--------------------------------------------------------------------------
+
+
 term ty: ctx > expr > expr > prov;
 notation ty (G x t) = G ($|-$:0) x ($:$:1) t: 0 lassoc;
 
@@ -143,6 +311,11 @@ theorem ty_imp
 '(ty_Pi h1 @ !! ty_cons x h2);
 theorem ty_ndapp (h1: $ G |- f : A -> B $) (h2: $ G |- e : A $):
    $ G |- f @ e : B $ = '(ty_app h1 h2 @ !! subst_nf x);
+
+
+-- conversion 
+--------------------------------------------------------------------------
+
 
 term conv: ctx > expr > expr > prov;
 notation conv (G a b) = G ($|=$:0) a ($=$:1) b: 0 lassoc;
@@ -220,6 +393,11 @@ theorem conv_ty_beta (B e e2 e3: expr x)
   $ G |=: (\. x : A, e) @ e2 = e3 : B2 $ =
 '(conv_ty_l (ty_app (ty_lambda h1) h2 h3) @ conv_beta h1 h2 h4);
 
+
+
+-- let binder 
+--------------------------------------------------------------------------
+
 term let {x: expr} (t e: expr) (a: expr x): expr;
 axiom ty_let:
   $ G |- e : A $ >
@@ -232,266 +410,1349 @@ axiom conv_zeta:
   $ G |- e3 : B $ >
   $ G |= let x A e e2 = e3 $;
 
-sort indspec;
-term K0: indspec;
-term KS: expr > indspec > indspec;
-def K1 (e: expr) = $ KS e K0 $;
 
-term substIS {x: expr} (K: indspec x) (e: expr) (B: indspec): prov;
-notation substIS (x K e K2) = ($substIS:$:0) K ($[$:0) e ($/$:0) x ($]$:0) ($=$:1) K2;
 
-axiom substIS_nf (K: indspec) (e: expr x): $ substIS: K [e / x] = K $;
-axiom substIS_KS (A e A2: expr x) (K K2: indspec x):
-  $ subst: A [e / x] = A2 $ >
-  $ substIS: K [e / x] = K2 $ >
-  $ substIS: KS A K [e / x] = (KS A2 K2) $;
-theorem substIS_K0 (e: expr x): $ substIS: K0 [e / x] = K0 $ = 'substIS_nf;
-theorem substIS_K1 (e A A2: expr x) (h: $ subst: A [e / x] = A2 $):
-  $ substIS: K1 A [e / x] = K1 A2 $ = '(substIS_KS h substIS_K0);
 
-term Ind_ty (F: expr) (l: level): prov;
-axiom Ind_ty_0: $ Ind_ty (Sort l) l $;
-axiom Ind_ty_S (A F: expr x): $ Ind_ty F l $ > $ Ind_ty (A. x : A, F) l $;
 
-term ty_app_ts (G: ctx) (t F e: expr): prov;
-axiom ty_app_ts_0: $ ty_app_ts G t (Sort l) t $;
-axiom ty_app_ts_S:
+
+--------------------------------------------------------------------------
+------------------------ INDUCTIVE SPECIFICATION -------------------------
+--------------------------------------------------------------------------
+
+
+
+
+
+-- Mutual and auxilliary specification
+--------------------------------------------------------------------------
+
+
+sort Mutual;
+
+sort aux;
+
+
+-- as is a list<aux>
+-- m is a list<ind>
+term Mutual (as: list) (m: list) (l: level): Mutual;
+
+-- A Mutual spec with a binder, when declaring a mutual specification, the parameters of the context in which the 
+-- nested mutual specifications has been checked to be well formed, should be bound, 
+sort wMutual;
+term wMutual (M: Mutual): wMutual;
+term omega {t: expr} (A: expr) (sp: wMutual t): wMutual;
+notation omega (t A sp) = ($w.$:2) t ($:$:1) A ($,$:1) sp;
+
+-- $ bind_omega oM M P nil $: asserts that oM is M where the parameters in P has been bound
+term bind_omega (wM M: wMutual) (P Ps: ctx): prov;
+axiom bind_omega_0:
+  $ bind_omega (wMutual M) (wMutual M) P P $;
+axiom bind_omega_S (wM M: wMutual x) (P: ctx x):
+  $ bind_omega wM M P (Ps, x : A) $ > 
+  $ bind_omega (w. x : A, wM) M P Ps $;
+
+term aux (N: wMutual) (pc: exprs): aux;
+
+term _aux: aux > element;
+coercion _aux: aux > element;
+
+-- inductive specification
+sort ind;
+
+term ind (K: exprs) (idx: expr) (t: expr): ind;
+term _ind: ind > element;
+coercion _ind: ind > element;
+
+-- data associated with a type checked mutual,
+-- pa is a list<param_data>, (a list of parameter values)
+sort mutual_data;
+term mutual_data (M: Mutual) (L: ctx) (pa: list): mutual_data;
+
+-- contains data associated with an arbitrary inductive, 
+sort ind_data;
+term ind_data (md: mutual_data) (ind: ind): ind_data;
+term _ind_data: ind_data > element;
+coercion _ind_data: ind_data > element;
+
+-- contains data associated with an arbitrary constructor
+sort ctor_data;
+term ctor_data (idd: ind_data) (c: expr): ctor_data;
+term _ctor_data: ctor_data > element;
+coercion _ctor_data: ctor_data > element;
+
+
+-- i is how nested the found ind spec is
+term ind_is_in_spec (M: Mutual) (d: ind) (i: nat): prov;
+
+-- i is how nested the found aux is (always greater that zero)
+term aux_is_in_spec (M: Mutual) (d: aux) (i: nat): prov;
+
+axiom ind_is_in_spec_0:
+ $ find m d $ > $ ind_is_in_spec (Mutual as m l) d 0 $; 
+
+axiom ind_is_in_spec_n:
+ $ bind_omega wMa (wMutual Ma) P nil $ >
+ $ find as (aux wMa xirpa) $ > 
+ $ ind_is_in_spec Ma a i $ > 
+ $ ind_is_in_spec (Mutual as m l) a (^i) $; 
+
+axiom aux_is_in_spec_0:
+ $ find as a $ > $ aux_is_in_spec (Mutual as m l) a 1 $; 
+
+axiom aux_is_in_spec_n:
+ $ bind_omega wMa (wMutual Ma) P nil $ >
+ $ find as (aux wMa xirpa) $ > 
+ $ aux_is_in_spec Ma a i $ >
+ $ aux_is_in_spec (Mutual as m l) a (^i) $;
+
+
+
+
+-- parameters
+--------------------------------------------------------------------------
+
+
+
+-- parameter data for a specific inductive
+sort param_data;
+
+term _param_data: param_data > element;
+coercion _param_data: param_data > element;
+
+-- represents the parameter data for a non-auxilliary inductive, p is the actual parameter as it appears in the spec
+term param (p: expr): param_data;
+
+-- p is the parameter as it appears in the mutual spec (as is non nested), pv is the substitution value, and ps is the substitution value as specified in the spec 
+term aux_param_subst (p pv ps: expr): param_data;
+
+term param_subst (p pv: expr): param_data;
+
+term param_get_subst (ps: param_data) (p pv: expr): prov;
+axiom param_v:
+  $ param_get_subst (param p) p p $;
+axiom param_v_aux:
+  $ param_get_subst (aux_param_subst p pv _) p pv $;
+axiom param_v_subst:
+  $ param_get_subst (param_subst p pv) p pv $;
+
+-- transform between prs and pa and pav substitution maps, this loses some information,
+term collect_params (prs: list) (pa pav: exprs): prov;
+axiom collect_params_0: 
+  $ collect_params (|.|) ({}) ({}) $;
+axiom collect_params_S:
+  $ collect_params prs pa pav $ > 
+  $ param_get_subst pd p pv $ >
+  $ collect_params (prs . pd) (pa ; p) (pav ; pv) $;
+  
+term apply_params (e es: expr) (prs: list): prov;
+axiom apply_params_0:
+  $ collect_params prs pa pav $ > 
+  $ apply_exprs e es pav $ > 
+  $ apply_params e es prs $;
+  
+term subst_params (es e: expr) (prs: list): prov;
+notation subst_params (es e prs) = ($subst_params:$:1) es ($=$:1) e ($[$:0) prs ($]$:0);
+axiom subst_params_0:
+  $ collect_params prs pa pav $ > 
+  $ substs_x: es = e [pav / pa] $ > 
+  $ subst_params: es = e [prs]$;
+  
+term substs_params (sK K: exprs) (prs: list): prov;
+notation substs_params (sK K prs) = ($substs_params:$:1) sK ($=$:1) K ($[$:0) prs ($]$:0);
+axiom substs_params_0:
+  $ collect_params prs pa pav $ > 
+  $ substs_xs: sK = K [pav / pa] $ > 
+  $ substs_params: sK = K [prs] $;
+
+
+--| $ subst_params_act prs act As A $: asserts that As is equal to A when the parameters in prs has been substituted for their
+--| corresponding value, act is a list of the nested parameters expressions (as specified in the spec) that were substituted,
+--| which is used to check if the any nested recursive expressions have been substituted into As
+term subst_params_act (prs: list) (act: exprs) (As A: expr): prov;
+axiom subst_params_act_0:
+  $ subst_params_act (|.|) ({}) A A $;
+axiom subst_params_act_S (pas: list p) (A As: expr p):
+  $ subst: As [pv / p] = Ass $ >
+  $ subst_params_act  pas act As A $ > 
+  $ subst_params_act (pas . (param_subst p pv)) act Ass A $;
+axiom subst_params_act_Sa (pas: list p) (A As: expr p):
+  $ subst: As [pv / p] = Ass $ >
+  $ subst_params_act  pas act As A $ > 
+  $ subst_params_act (pas . (aux_param_subst p pv ps)) (act ; ps) Ass A $;
+axiom subst_params_no_act (A As: expr p):
+  $ subst_params_act pas act As A $ > 
+  $ subst_params_act (pas . (param p)) act Ass A $;
+
+
+
+
+--- strict positivity 
+--------------------------------------------------------------------------
+
+
+--| $ head_x x e $: asserts that e is an application expression with head h, h appears once in e
+term head_x (h: expr) (e: expr): prov;
+
+axiom head_x_0 {x: expr}:
+  $ head_x x x $;
+
+axiom head_x_app_S (e: expr x):
+  $ head_x x e $ >
+  $ head_x x (e @ s) $;
+  
+--| $ pos_x x epi e $: asserts that $ head_x x e $ holds, and epi is some arbitrary type with e as target type
+term pos_x {x: expr} (epi e: expr x) : prov;
+
+axiom pos_x_0:
+  $ head_x x e $ > 
+  $ pos_x x e e $;
+  
+axiom pos_x_imp (e epi: expr x):
+  $ pos_x x epi e $ > 
+  $ pos_x x (a -> epi) e $;
+
+axiom pos_x_pi (e epi: expr a x):
+  $ pos_x x epi e $ > 
+  $ pos_x x (A. a : A, epi) e $;
+
+--| $ pos_imp p ct $: asserts that p appears in ct, and that
+--| it only appears strictly positively... that is it only appears as an antecedent of a non-nested implication
+term pos_imp {p: expr} (ct: expr p): prov;
+
+axiom pos_imp_0 (A: expr p):
+  $ pos_x p Api A $ >
+  $ pos_imp p (Api -> ct) $;
+
+axiom pos_imp_imp (ct A: expr p):
+  $ pos_x p Api A $ >
+  $ pos_imp p ct $ > 
+  $ pos_imp p (Api -> ct) $;
+  
+axiom pos_imp_imp_nf (ct: expr p):
+  $ pos_imp p ct $ > 
+  $ pos_imp p (Api -> ct) $;
+
+axiom pos_imp_pi {p: expr} (cn: expr p x):
+  $ pos_imp p cn $ > 
+  $ pos_imp p (A. x : A, cn) $;
+
+-- a flag stating if this is an active parameter, that is, it's actually used in the mutual spec
+def Passive: bool = $ false $;
+def Active: bool = $ true $;
+
+--| $ pos_M m as _ x $: asserts that, x is only ever strictly positive in the inductives in m,
+--| b is either Passive or Active,
+term pos_m (m: list) (K: exprs) {x: expr} (b: bool): prov;
+
+--| $ pos_aux as Ma pa rpa x $: asserts that, x is only ever strictly positive in all inductives of as (list<aux>),
+--| x is the expression for which we test if it's nested positively in the auxilliaries, 
+--| it may be nested in the parameter values rpa (list<param>),
+--| pa are the parameters of Ma that are to be substituted for the corresponding value in rpa
+term pos_aux (as: list) (mx asx: list) (pa rpa: exprs) {x: expr} (b: bool): prov;
+
+term pos_M (as mx: list) (x: expr) (b: bool): prov;
+
+axiom pos_M_0 (as m: list x):
+  $ pos_m m ({}) x bm $ >
+  $ pos_aux as (|.|) (|.|) ({}) ({}) x ba $ >
+  $ b: bm + ba = bM $ >
+  $ pos_M as m x bM $;
+
+-- ass, rpa are not allowed to depend on x,
+axiom pos_aux_0 (mx asx: list x):
+  $ pos_aux ass mx asx pa rpa x Passive $;
+
+-- x is not present in the parameter value e
+axiom pos_aux_S_p_nf (ass asx: list x) (rpa: exprs x):
+  $ pos_aux ass mx asx pa rpa x b $ > 
+  $ pos_aux ass mx asx (pa ; p) (rpa ; e) x b $;
+
+-- x is strictly positive in e and, the corresponding parameter p is strictly positive in mx and asx
+axiom pos_aux_S_p (ass: list x) (mx: list p) (asx: list p x) (rpa: exprs x) (e epi: expr x):
+  $ pos_x x epi e $ >
+  $ pos_M asx mx p b $ >
+  $ pos_aux ass mx asx pa rpa x ba $ > 
+  $ b: b + ba = bs $ >
+  $ pos_aux ass mx asx (pa ; p) (rpa ; epi) x bs $;
+
+-- x is strictly positive in Ma, go to next auxilliary, rpas must not depend on x,
+axiom pos_aux_S (ass asx asxs: list x) (rpa: exprs x) (oMa: wMutual x):
+  $ bind_omega oMa (wMutual (Mutual mx asx l)) Pa nil $ >
+  $ ctx_vars Pa nil pa $ >
+  $ pos_aux ass mx asx pa rpa x b $ > 
+  $ pos_aux (ass . (aux oMa rpa)) mxs asxs pas rpas x b $;
+
+axiom pos_m_0 {x: expr}:
+  $ pos_m m K x Passive $;
+
+axiom pos_m_S_K {x: expr} (c: expr x) (m: list x) (K: exprs x):
+  $ pos_imp x c $ > 
+  $ pos_m m K x b $ >
+  $ pos_m m (K ; c) x Active $;
+
+axiom pos_m_S {x: expr} (m: list x) (K: exprs x):
+  $ pos_m m K x b $ >
+  $ pos_m (m . (ind K idx t)) Ks x b $;
+
+
+
+
+
+-- positive and passive specification expressions
+--------------------------------------------------------------------------
+
+
+
+--| $ positive M G ex F F idx l h h $: asserts that for the mutual M, in context G, ex is a type application expression with head h,
+--| and h has been applied such that it's indices are specified by idx and its type is F, 
+--| h may be an inductive type variable 
+term positive (M: Mutual) (G: ctx) (ex: expr) (Fh F idx: expr) (l: level) (h e: expr): prov;
+
+--| $ positive_pi M G epi F idx l h $: asserts that epi has some target type, ex, satisfying $ positive M G ex F F idx h h $,
+--| ex may contain recursive applications of M
+--| h may be an inductive type variable
+term positive_pi (M: Mutual) (G: ctx) (epi: expr) (F idx: expr) (l: level) (h: expr): prov;
+
+--| $ passive_expr M G F l ex e $: asserts that  for the mutual M, in context G, ex is a type application expression with head h,
+--| and h has been applied such that its type is F,
+--| h may be an inductive type variable
+--| in the case that it isn't, it may be applied to inductive variables in M in an arbitrary fashion 
+term passive_expr (M: Mutual) (G: ctx) (F: expr) (l: level) (ex h: expr): prov;
+
+-- $ passive_expr_pi M G l epi $: asserts that for mutual spec M, in context G, epi is a valid passive expression of type (Sort l)
+term passive_expr_pi (M: Mutual) (G: ctx) (l: level) (epi: expr): prov;
+
+
+axiom positive_0:
+  $ positive M G e Fh (Sort l) (Sort l) l h e $;
+
+axiom positive_idx (idx: expr x):
+  $ G |- e : A  $ >
+  $ subst: idx [e / x] = idx_app $ >
+  $ positive M G e2 Fh idx_app idx_app l h (t @ e) $ >
+  $ positive M G e2 Fh (A. x : A, idx) (A. x : A, idx) l h t $;
+  
+axiom positive_param (idx: expr x):
+  $ G |- e : A  $ >
+  $ subst: idx [e / x] = idx_app $ >
+  $ subst: Fs [e / x] = Fs_app $ >
+  $ positive M G e2 Fh Fs_app idx_app l h (t @ e) $ >
+  $ positive M G e2 Fh  (A. x : A, Fs) idx l h t $;
+  
+axiom positive_param_passive (idx: expr x):
+  $ G |- h : Fh $ >
+  $ pos_M as m x Passive $ >
+  $ subst: idx [e / x] = idx_app $ >
+  $ subst: Fs [e / x] = Fs_app $ >
+  $ passive_expr_pi (Mutual as m l) G l epi $ >
+  $ positive (Mutual as m l) G e2 Fh Fs_app idx_app l h (t @ epi) $ >
+  $ positive (Mutual as m l) G e2 Fh (A. x : A, Fs) idx l h t $;
+
+axiom positive_pi_0:
+  $ G |- h : Fh $ >
+  $ positive M G e Fh Fh idx l h h $ > 
+  $ positive_pi M G e Fh idx l h $;
+  
+axiom positive_pi_0_rec:
+  $ find m (ind K idx t) $ >
+  $ positive (Mutual as m l) G ti idx idx idx l t t $ >
+  $ positive_pi (Mutual as m l) G ti idx idx l t $;
+
+axiom positive_pi_S (epi: expr x):
+  $ G |- A : Sort l2  $ >
+  $ l_imax l2 l <= l $ >
+  $ positive_pi M (G, x : A) epi F idx l h $ >
+  $ positive_pi M G (A. x : A, epi) F idx l h $;
+  
+axiom positive_pi_imp:
+  $ G |- A : Sort l2  $ >
+  $ l_imax l2 l <= l $ >
+  $ positive_pi M G epi F idx l h $ >
+  $ positive_pi M G (A -> epi) F idx l h $;
+  
+
+axiom passive_expr_0: 
+  $ passive_expr M G (Sort l) l e e $;
+
+axiom passive_expr_app: 
+  $ subst: Fs [v / x] = Fs_app $ >
+  $ G |- v : B $ > 
+  $ passive_expr M G Fs_app l ex (e @ v) $ >
+  $ passive_expr M G (A. x : B, Fs) l ex e  $;
+  
+axiom passive_expr_app_n: 
+  $ subst: Fs [enpi / x] = Fs_app $ >
+  $ passive_expr_pi (Mutual as m l) G l enpi $ > 
+  $ passive_expr (Mutual as m l) G Fs_app l ex (e @ enpi) $ >
+  $ passive_expr (Mutual as m l) G (A. x : Sort l, Fs) l ex e $;
+
+axiom passive_expr_pi_0:
+  $ G |- nla : Fp $ >
+  $ passive_expr M G Fp l ex nla $ >
+  $ passive_expr_pi M G l ex $;
+  
+axiom passive_expr_pi_rec_0: 
+  $ find m (ind K idx t) $ >
+  $ positive (Mutual as m l) G ti idx idx idx l t t $ > 
+  $ passive_expr_pi (Mutual as m l) G l ti $;
+  
+axiom passive_expr_pi_S:
+  $ l_imax l2 l <= l $ >
+  $ G |- nepi : Sort l2 $ >
+  $ passive_expr_pi M (G, x : nepi) l epi $ >
+  $ passive_expr_pi M G l (A. x : nepi, epi) $;
+
+axiom passive_expr_pi_S_imp:
+  $ l_imax l2 l <= l $ >
+  $ G |- nepi : Sort l2 $ >
+  $ passive_expr_pi M G l epi $ >
+  $ passive_expr_pi M G l (nepi -> epi) $;
+  
+
+
+  
+-- nested application specification 
+--------------------------------------------------------------------------
+
+
+
+sort aux_unfold;
+
+--| $ aux_unfold a M Mx L Px xpa i $: asserts that a is an auxilliary specification nested at a depth specified by i in M,
+--| Mx is the auxilliary mutual, and Mx has been declared to be well formed in context Px, 
+--| xpa are the parameters of the auxilliary inductives in this mutual, 
+term aux_unfold (a: aux) (M Mx: Mutual) (Px: ctx) (xpa: exprs) (i: nat): prov;
+
+axiom aux_unfold_0:
+  $ bind_omega oMs (wMutual Mx) Px nil $ >
+  $ aux_is_in_spec M (aux oMs spa) i $ > 
+  $ aux_unfold (aux oMs spa) M Mx Px spa i $;
+
+--| $ WF_aux M P Mx Px pax ax $: asserts that, in context P, ax is a well formed auxilliary mutual specification Mx, 
+--| Mx is a well formed mutual specification in context Px, pax are the parameters of the auxilliary inductives
+term WF_aux (M: Mutual) (P: ctx) (Mx: Mutual) (Px: ctx) (pax: exprs) (ax: aux): prov;
+
+--| $ n_params M G pa l pav ptys $: asserts that, in context G, for mutual M, pav are valid subsitutions for the parameters pa,
+--| ptys are the types of pav
+term n_params (M: Mutual) (G: ctx) (pa: exprs) (l: level) (pav ptys: exprs): prov;
+
+
+--| $ ctx_values P nil pa spatys spa $: asserts that if pa, a container with the parameter variables in P, 
+--| are to be substituted for the values in spa, then the values in spa must be of the types specified in spatys
+term ctx_values (P Ps: ctx) (pa spa spatys: exprs): prov;
+axiom ctx_values_0:
+  $ ctx_values P P ({}) ({}) ({}) $;
+axiom ctx_values_S (P: ctx x) (ptys: exprs x):
+  $ ctx_values P (Ps, x : A) pa pas ptys $ > 
+  $ subst_xs: ptyss = ptys [v / x]  $ >
+  $ ctx_values P Ps (pa ; x) (pas ; v) (ptyss ; A) $;
+
+-- nested expressions are currently not allowed to depend on the local context specified by the contructor in which the nested expression appears
+axiom WF_aux_0:
+  $ aux_unfold a M Mx Ps spa 1 $ >
+  $ ctx_values Ps nil spa sprs sptys $ >
+  $ n_params M P spa l sprs sptys $ >
+  $ WF_aux M P Mx Ps sprs a $;
+
+axiom n_app_0: 
+  $ n_params M G ({}) l ({}) ({}) $;
+
+axiom n_app_S_prm_n (as m: list x) (G: ctx x): 
+  $ pos_M as m x b $ >
+  $ ind_is_in_spec (Mutual as m l) (ind Kx idx s) (^i) $ >
+  $ positive_pi (Mutual as m l) G sx idx idx l s $ >
+  $ n_params (Mutual as m l) G pas l spas sptys $ >
+  $ n_params (Mutual as m l) G (pas ; x) l (spas ; sx) (sptys ; Sort l) $;
+  
+axiom n_app_S_prm_m (as m: list x) (G: ctx x) (K: exprs x): 
+  $ pos_M as m x b $ >
+  $ ind_is_in_spec (Mutual as m l) (ind K idx t) 0 $ >
+  $ positive_pi (Mutual as m l) G tpi idx idx l t $ >
+  $ n_params (Mutual as m l) G pas l spas sptys $ >
+  $ n_params (Mutual as m l) G (pas ; x) l (spas ; tpi) (sptys ; Sort l) $;
+
+axiom n_app_prm_passive:
+  $ subst: Fs [e / x] = Fs_app $ >
+  $ pos_M as m x Passive $ >
+  $ passive_expr_pi M G l2 epi $ >
+  $ n_params (Mutual as m l) G pas l spas ptys $ >
+  $ n_params (Mutual as m l) G (pas ; x) l (spas ; epi) (ptys ; Sort l) $;
+
+axiom n_app_S_prm {x: expr}: 
   $ G |- e : A $ >
-  $ subst: F [e / x] = F2 $ >
-  $ ty_app_ts G (t @ e) F2 e2 $ >
-  $ ty_app_ts G t (A. x : A, F) e2 $;
+  $ subst: Fs [e / x] = Fs_app $ >
+  $ n_params (Mutual as m l) G pas l spas ptys $ >
+  $ n_params (Mutual as m l) G (pas ; x) l (spas ; e) (ptys ; A) $;
+  
 
-term ctorR (G: ctx) (t F A: expr): prov;
-axiom ctorR_0: $ ty_app_ts G t F A $ > $ ctorR G t F A $;
-axiom ctorR_S (F B: expr x):
-  $ Ind_ty F l $ >
-  $ G |- A : Sort l2 $ >
-  $ l_imax l2 l <=l l $ >
-  $ ctorR (G, x : A) t F B $ >
-  $ ctorR G t F (A. x : A, B) $;
 
-term ctor (G: ctx) (t F A: expr): prov;
-axiom ctor_app: $ ty_app_ts G t F e $ > $ ctor G t F e $;
-axiom ctor_Pi:
-  $ Ind_ty F l $ >
-  $ G |- A : Sort l2 $ >
-  $ l2 <=l l $ >
-  $ ctor (G, x : A) t F B $ >
-  $ ctor G t F (A. x : A, B) $;
+
+
+-- constructor specification 
+--------------------------------------------------------------------------
+
+
+--| $ ctor M P P idx l A t $: asserts that for the inductive variable t in M, belonging to a type family idx ranging over (Sort l), 
+--| in context P, A is a valid costructor specification,  
+term ctor (M: Mutual) (G P: ctx) (idx: expr) (l: level) (ct: expr) (t: expr): prov;
+
+
+axiom ctor_app:
+  $ ind_is_in_spec M (ind K idx t) 0 $ >
+  $ positive_pi M G epi idx idx l t $ > 
+  $ ctor M G P idx l epi t $;
+
+axiom ctor_Pi (B: expr x) (G: ctx x):
+  $ G |- la : F $ >
+  $ positive_pi M G A F idx l2 la $ >
+  $ l_imax l2 l <= l $ >
+  $ ctor M (G, x : A) P idx l B t $ >
+  $ ctor M G P idx l (A. x : A, B) t $;
+
+axiom ctor_imp:
+  $ G |- la : F $ >
+  $ positive_pi M G A F idx l2 la $ >
+  $ l_imax l2 l <= l $ >
+  $ ctor M G P idx l B t $ >
+  $ ctor M G P idx l (A -> B) t $;
+
 axiom ctor_rec:
-  $ ctorR G t F A $ >
-  $ ctor G t F B $ >
-  $ ctor G t F (A -> B) $;
+  $ positive_pi M G er idxr idxr l r $ > 
+  $ ind_is_in_spec M (ind Kr idxr r) 0 $ >
+  $ ctor M G P idx l e t $ >
+  $ ctor M G P idx l (er -> e) t $;
 
-term spec (G: ctx) (t F: expr) (K: indspec): prov;
-axiom spec_K0: $ Ind_ty F u $ > $ spec G t F K0 $;
+--| $ ctorN M G P l w $: asserts that in context G, en may be a valid constructor specification expression with nested inductives, 
+term ctorN (M: Mutual) (G P: ctx) (l: level) (w: expr): prov;
+
+axiom ctorN_0:
+  $ aux_unfold a M Ms Ps spa (^i) $ >
+  $ ind_is_in_spec Ms (ind Ks idxs s) 0 $ >
+  $ positive_pi M G en idxs idxs l s $ >
+  $ ctorN M G P l en $;
+
+axiom ctor_nested:
+  $ ctorN M G P l en $ >
+  $ ctor M G P idx l e t $ >
+  $ ctor M G P idx l (en -> e) t $;
+
+
+--| $ ctor_non_rec M P P idx l A t $: asserts that for the inductive variable t in M, belonging to a type family idx ranging over (Sort l), 
+--| in context P, A is a valid non recursive costructor specification
+term ctor_non_rec (M: Mutual) (G P: ctx) (idx: expr) (l: level) (A t: expr): prov;
+
+axiom ctor_app_non_rec:
+  $ positive M G ti idx idx idx l t t $ > 
+  $ ind_is_in_spec M (ind K idx t) 0 $ >
+  $ ctor_non_rec M G P idx l ti t $;
+
+-- TODO: fix dependencies
+axiom ctor_Pi_non_rec (B: expr x):
+  $ G |- A : Sort l2 $ >
+  $ l_imax l2 l <= l $ >
+  $ ctor_non_rec M (G, x : A) P idx l B t $ >
+  $ ctor_non_rec M G P idx l (A. x : A, B) t $;
+
+axiom ctor_imp_non_rec:
+  $ G |- A : Sort l2 $ >
+  $ l_imax l2 l <= l $ >
+  $ ctor_non_rec M G P idx l B t $ >
+  $ ctor_non_rec M G P idx l (A -> B) t $;
+
+
+
+
+-- parameter dependency dag 
+--------------------------------------------------------------------------
+
+ 
+--| $ WF_auxes md l (|.|) (|.|) ash (|.|) $ asserts that the auxilliaries in md are well formed with universe level l, 
+--| This implies that the dependencies of the parameters of the auxilliary types on other inductive types forms a dag.
+--| ash (list<ind_data>) contains all inductives of md, in the order of such a dag.
+--| the less nested an inductive is in the dag the more nested in ash, 
+--| ash is used for substituting nested inductive type variables in the right order (and for ensuring that no inductive type variables remain in the result),
+term WF_dag (md: mutual_data) (l: level) (m as ash ashs: list): prov;
+
+
+def Insert: bool =  $ true $;
+def Hold: bool = $ false $;
+
+term to_params (pa: exprs) (prs: list): prov;
+axiom to_params_0:
+  $ to_params ({}) (|.|) $;
+axiom to_params_S:
+  $ to_params pa prs $ > 
+  $ to_params (pa ; p) (prs . (param p))  $;
+
+
+--| $ dag_add in as ash $ asserts that ash contains in and all inductives in as, ash is a dag like in WF_auxes
+term dag_add (in: ind_data) (as ash: list) (fn: bool): prov;
+
+axiom WF_auxes_0:
+  $ WF_dag (mutual_data (Mutual as m l) P pa) l m as ashs ashs $;
+
+axiom WF_auxes_S:
+  $ dag_add (ind_data md in) ash ashh Insert $ >
+  $ WF_dag md l (m . in) as ash ashs $ > 
+  $ WF_dag md l m as ashh ashs $;
+
+axiom WF_auxes_S_aux:
+  $ WF_aux M P Ma Pa rpa a $ >
+  $ to_params rpa rprs $ >
+  $ WF_dag (mutual_data Ma Pa rprs) l (|.|) (|.|) ashh ash $ >
+  $ WF_dag (mutual_data M P prs) l (|.|) (as . a) ash ashs $ >
+  $ WF_dag (mutual_data M P prs) l (|.|) as ashh ashs $;
+
+--| $ dag_order itv itv2 $: asserts that the internal order between itv and itv2 satisfies the dependency constrains
+term dag_order (itv itv2: ind_data): prov;
+
+-- r and t may belong to different mutual specs, Mr may be nested in Mt though, 
+-- so rpa may depend on t while Mr and Kr must not, pa must not depend on r, while Mt and K may depend on r
+axiom dag_order_0 {t: expr} {r: expr} (Kt: exprs t r) (Mt: Mutual t r) (Mr: Mutual r) (rpa: list t) (Kr: exprs r):
+  $ dag_order (ind_data (mutual_data Mt Pt tpa) (ind Kt idx t)) (ind_data (mutual_data Mr Pr rpa) (ind Kr idxr r)) $;
+
+--| $ dag_leveled itv itv2 $: asserts that two different inductives belonging to the same mutual specification satisfies the dependency constrains
+term dag_leveled (itv itv2: ind_data): prov;
+
+axiom dag_leveled_0 {r: expr} {t: expr} (Kr Kt: exprs r t) (M: Mutual r t): 
+  $ dag_leveled (ind_data (mutual_data M Pt tpa) (ind Kr idxr r)) (ind_data (mutual_data M P tpa) (ind Kt idx t)) $;
+
+-- r should not appear nested anywhere in ash
+axiom dag_add_0 (md: mutual_data r) (Kr: exprs r): 
+  $ dag_add (ind_data md (ind Kr idxr r)) ash ash Hold $;
+
+axiom dag_add_S_HOLD: 
+  $ dag_add idr as as Hold $ > 
+  $ dag_order idt idr $ >
+  $ dag_add idr (as . idt) (as . idt) Hold $;
+
+axiom dag_add_insert: 
+  $ dag_add id as as Hold $ > 
+  $ dag_add id as (as . id) Insert $;
+
+axiom dag_add_S: 
+  $ dag_add idt as ash Insert $ > 
+  $ dag_order idt idr $ >
+  $ dag_add idt (as . idr) (ash . idr) Insert $;
+
+axiom dag_add_S_leveled: 
+  $ dag_add ida as ash fl $ > 
+  $ dag_leveled ida idb $ >
+  $ dag_add ida (as . idb) (ash . idb) fl $;
+
+
+
+
+
+
+--  well formedness of mutual spec
+--------------------------------------------------------------------------
+
+
+
+--| $ unique_bvars inds bs $: asserts that all the inductive type variables in inds are unique, 
+--| and associated to one inductive spec only
+term unique_bvars (inds: list) (bs: exprs): prov;
+
+axiom unique_bvars_0:
+  $ unique_bvars (|.|) ({}) $;
+
+axiom unique_bvars_S (inds: list t) (K: exprs t):
+  $ unique_bvars inds bss $ > 
+  $ unique_bvars (inds . (ind_data md (ind K idx t))) (bs ; t) $;
+
+--| $ spec M P K idx l t $: asserts that, in context P, for a mutual M, K is a valid list of constructor specification expressions for a inductive type variable t belonging to
+--| the inductive family idx
+term spec (M: Mutual) (P: ctx) (K: exprs) (idx: expr) (u: level) (t: expr): prov;
+
+axiom spec_0:
+  $ spec (Mutual as m l) P ({}) idx l t $;
+
 axiom spec_KS:
-  $ ctor G t F A $ > $ spec G t F K $ >
-  $ spec G t F (KS A K) $;
-theorem spec_K1 (h1: $ ctor G t F A $) (h2: $ Ind_ty F u $):
-  $ spec G t F (K1 A) $ = '(spec_KS h1 @ spec_K0 h2);
+  $ ctor M P P idx l c t $ > 
+  $ spec M P Kv idx l t $ > 
+  $ spec M P (Kv ; c) idx l t $;
 
-term Ind {x: expr} (e: expr) (K: indspec x): expr;
-sort cidx;
-term c0: cidx;
-term cS: cidx > cidx;
-term Ctor (c: cidx) {x: expr} (e: expr) (K: indspec x): expr;
-term Rec (l: level) {x: expr} (e: expr) (K: indspec x): expr;
+--| $ MB M P (|.|) l $: asserts that, in context P, for Mutual M, the list of non-nested mutual inductive specifications in M is well formed
+term MB (M: Mutual) (P: ctx) (m: list) (l: level): prov;
 
-axiom subst_Ind (A e A2: expr x t) (K K2: indspec x t):
-  $ subst: A [e / x] = A2 $ >
-  $ substIS: K [e / x] = K2 $ >
-  $ subst: Ind t A K [e / x] = (Ind t A2 K2) $;
-axiom subst_Ctor (A e A2: expr x t) (K K2: indspec x t):
-  $ subst: A [e / x] = A2 $ >
-  $ substIS: K [e / x] = K2 $ >
-  $ subst: Ctor c t A K [e / x] = (Ctor c t A2 K2) $;
-axiom subst_Rec (A e A2: expr x t) (K K2: indspec x t):
-  $ subst: A [e / x] = A2 $ >
-  $ substIS: K [e / x] = K2 $ >
-  $ subst: Rec l t A K [e / x] = (Rec l t A2 K2) $;
+axiom MB_0:
+  $ MB (Mutual as m l) P m l $;
 
-term cty: cidx > indspec > expr > prov;
-axiom cty_0: $ cty c0 (KS e K) e $;
-axiom cty_S: $ cty c K e $ > $ cty (cS c) (KS a K) e $;
+axiom MB_S_m:
+  $ spec M P K idx l t $ > 
+  $ MB M P (ms . (ind K idx t)) l $ > 
+  $ MB M P ms l $;
 
-axiom ty_Ind (K: indspec t): $ spec G t F K $ > $ G |- Ind t F K : F $;
-axiom ty_Ctor (A: expr t) (K: indspec t):
-  $ spec G t F K $ >
-  $ cty c K A $ >
-  $ subst: A [Ind t F K / t] = B $ >
-  $ G |- Ctor c t e K : B $;
+--| $ WFM M P l $: asserts that, in context P, M is a well formed mutual specification where all inductives belong to types ranging over universe l
+term WFM (M: Mutual) (P: ctx) (l: level): prov;
 
+axiom declare_M: 
+  $ ctx_vars P nil pa $ >
+  $ to_params pa prs $ >
+  $ WF_dag (mutual_data M P prs) l (|.|) (|.|) inds (|.|) $ > 
+  $ MB M P (|.|) l $ > 
+  $ unique_bvars inds bs $ >
+  $ WFM M P l $; 
+  
+
+
+-- type check well formed inductives and constructors
+--------------------------------------------------------------------------
+
+
+--| $ bind_mu M (|.|) (|.|) tm T $: asserts that tm is the expression T where all inductive type variables in M have been bound by a mu term,
+term bind_mu (M: Mutual) (as m: list) (tm T: expr): prov;
+
+axiom bind_mu_0:
+  $ bind_mu (Mutual as m l) as m T T $;
+
+axiom bind_mu_Sa:
+  $ bind_mu Ma (|.|) (|.|) tms tm $ >
+  $ bind_omega oM (wMutual Ma) Pa nil $ >
+  $ bind_mu M (ass . (aux oM xirpa)) m tm T $ > 
+  $ bind_mu M ass m tms T $;
+
+axiom bind_mu_Sm (idx: expr) {t: expr} (T tm: expr t) (K: exprs t) (M: Mutual t) (ms: list t):
+  $ bind_mu M (|.|) (ms . (ind K idx t)) tm T $ > 
+  $ bind_mu M (|.|) ms (u. t, tm) T $;
+
+
+
+--| $ bind_mu M P nil la F mued idx T $: asserts $ bind_mu M (|.|) (|.|) mued T $, and it asserts that 
+--| la is the lambda term you get when binding the parameters of P over mued, using lambda terms,
+--| F is the Pi type you get when binding the parameters of P over idx, using Pi terms 
+term bind_ctx_mu (M: Mutual) (P Ps: ctx) (la F mued idx T: expr): prov;
+
+axiom bind_ctx_mu_0:
+  $ bind_mu M (|.|) (|.|) mued T $ >
+  $ bind_ctx_mu M P P mued idx mued idx T $;
+
+axiom bind_ctx_mu_S (M: Mutual x) (P: ctx x) (la: expr x):
+  $ bind_ctx_mu M P (Ps, x : A) la Fs mued idx T $ > 
+  $ bind_ctx_mu M P Ps (\. x : A, la) (A. x : A, Fs) mued idx T $;
+
+
+-- An instance of a indutive type
+term Ind (M: Mutual) (idx: expr) (x: expr): expr;
+
+-- An instance of a constructor for some inductive type
+term Ctor (M: Mutual) (c t: expr) (i: nat): expr;
+
+sort ctor_spec;
+term ctor_spec (C: expr) (c: nat): ctor_spec;
+term _ctor_spec: ctor_spec > element;
+coercion _ctor_spec: ctor_spec > element;
+
+
+
+--| $ subst_M md es e (|.|) $: asserts that es is equal to e over the substitutions specified by md
+term subst_M (md: mutual_data) (es e: expr) (inds: list): prov;
+
+axiom subst_M_0: 
+  $ WF_dag md l (|.|) (|.|) inds (|.|) $ >
+  $ subst_M md e e inds $;
+
+axiom subst_M_S (M: Mutual t) (inds: list t) (md: mutual_data t) (e es ess la lap: expr t) (K: exprs t):  
+  $ bind_ctx_mu M Pa nil la F mued idx (Ind M idx t) $ >
+  $ apply_params lap la prs $ >
+  $ subst: es [lap / t] = ess $ >
+  $ subst_M md es e (inds . (ind_data (mutual_data Ma Pa prs) (ind K idx t))) $ > 
+  $ subst_M md ess e inds $;
+
+axiom subst_M_nf (md mda: mutual_data t) (inds: list t) (K: exprs t):  
+  $ subst_M md es e (inds . (ind_data mda (ind K idx t))) $ > 
+  $ subst_M md es e inds $;
+
+axiom ty_Ind:
+  $ WFM M P l $ > 
+  $ ind_is_in_spec M (ind K idx t) 0 $ > 
+  $ bind_mu M (|.|) (|.|) mued (Ind M idx t) $ >
+  $ P |- mued : idx $;
+
+axiom ty_Ctor:
+  $ WFM M P l $ > 
+  $ ind_is_in_spec M (ind K idx t) 0 $ > 
+  $ find_x K c n $ >
+  $ bind_mu M (|.|) (|.|) mued (Ctor M c t n) $ >
+  $ ctx_vars P nil pa $ >
+  $ to_params pa prs $ >
+  $ subst_M (mutual_data M P prs) C c (|.|) $ >
+  $ P |- mued : C $;
+
+
+term type_context (M: Mutual) (J Js: prov) (T: expr): prov;
+
+axiom type_context_0:
+  $ bind_mu M (|.|) (|.|) mued T $ >
+  $ P |- mued : A $ >
+  $ type_context M (P |- mued : A) (P |- mued : A) T $;
+
+axiom type_context_S (M: Mutual x) (P Ps: ctx x) (T mued la As A: expr x):
+  $ type_context M (Ps, x : B |- la : As) (P |- mued : A) T $ > 
+  $ type_context M (Ps |- \. x : B, la : A. x : B, As) (P |- mued : A) T $;
+  
+--| $ type_judgement M P la F mued idx T $: asserts $ bind_mu M (|.|) (|.|) mued T $, and it asserts (nil |- la : F) (P |- mued : A)
+def type_judgement (M: Mutual) (P: ctx) (F la A mued T: expr): prov = $ type_context M (nil |- la : F) (P |- mued : A) T $;
+
+
+
+-- large elimination
+-----------------------------------------------------------------------------------
+
+
+--| $ LE_mem x e $: asserts that e is some application expression in which x appears as an argument
 term LE_mem {x: expr} (e: expr): prov;
-axiom LE_mem_0 (f: expr x): $ LE_mem x (f @ x) $;
-axiom LE_mem_S (f: expr x): $ LE_mem x f $ > $ LE_mem x (f @ e) $;
+
+axiom LE_mem_0 (f: expr x): 
+  $ LE_mem x (f @ x) $;
+
+axiom LE_mem_S (f: expr x): 
+  $ LE_mem x f $ > $ LE_mem x (f @ e) $;
+
+--| $ LE_mem_Pi x e $: asserts that e is some type whose target type is some application expression in which x appears as an argument
 term LE_mem_Pi {x: expr} (e: expr): prov;
-axiom LE_mem_Pi_0: $ LE_mem x e $ > $ LE_mem_Pi x e $;
-axiom LE_mem_Pi_S (A B: expr x y): $ LE_mem_Pi x B $ > $ LE_mem_Pi x (A. y : A, B) $;
 
-term LE_ctor (G: ctx) (t F e: expr): prov;
-axiom LE_ctor_app: $ ty_app_ts G t F e $ > $ LE_ctor G t F e $;
-axiom LE_ctor_Pi_Prop:
+axiom LE_mem_Pi_0:
+  $ LE_mem x e $ > $ LE_mem_Pi x e $;
+
+axiom LE_mem_Pi_S (A B: expr x y): 
+  $ LE_mem_Pi x B $ > $ LE_mem_Pi x (A. y : A, B) $;
+
+--| $ LE_ctor M P P t l a a $: asserts that the inductive type specified by t in M, is subjectible to subsingleton elimination,
+term LE_ctor (M: Mutual) (G P: ctx) (t: expr) (l: level) (a e: expr): prov;
+
+axiom LE_ctor_app (e: expr t):
+  $ positive (Mutual (|.|) (|.| . (ind ({} ; a) idx t)) l) G e idx idx idx l t t $ > 
+  $ LE_ctor (Mutual (|.|) (|.| . (ind ({} ; a) idx t)) l) G P t l a e $;
+
+axiom LE_ctor_Pi_Prop (B: expr x):
   $ G |- A : Prop $ >
-  $ LE_ctor (G, x : A) t F B $ >
-  $ LE_ctor G t F (A. x : A, B) $;
-axiom LE_ctor_rec:
-  $ ctorR G t F A $ >
-  $ LE_ctor G t F B $ >
-  $ LE_ctor G t F (A -> B) $;
-axiom LE_ctor_Pi_mem:
+  $ LE_ctor M (G, x : A) P t l a B $ >
+  $ LE_ctor M G P t l a (A. x : A, B) $;
+
+axiom LE_ctor_rec (A B: expr t):
+  $ positive M G A idx idx idx l t t $ > 
+  $ ind_is_in_spec M (ind K idx t) 0 $ >
+  $ LE_ctor M G P t l a B $ >
+  $ LE_ctor M G P t l a (A -> B) $;
+
+axiom LE_ctor_Pi_mem (B: expr x):
   $ LE_mem_Pi x B $ >
-  $ LE_ctor (G, x : A) t F B $ >
-  $ LE_ctor G t F (A. x : A, B) $;
-axiom LE_ctor_mem:
-  $ ctorR G t F A $ >
-  $ LE_ctor G t F B $ >
-  $ LE_ctor G t F (A -> B) $;
+  $ LE_ctor M (G, x : A) P t l a B $ >
+  $ LE_ctor M G P t l a (A. x : A, B) $;
+ 
 
-term LE (G: ctx) (t F: expr) (K: indspec) (l: level): prov;
-axiom LE_Prop: $ LE G t F K L0 $;
-axiom LE_0: $ LE G t F K0 u $;
-axiom LE_Type: $ Ind_ty F l $ > $ L1 <=l l $ > $ LE G t F K u $;
-axiom LE_1: $ LE_ctor G t F e $ > $ LE G t F (K1 e) u $;
+--| $ LE M P t l u $: asserts that, in context P, a elimination motive can be constructed such that, for values of the inductive types in M, all being types ranging over universe l,
+--| may be eliminated to values of types belonging to a universe u
+term LE (M: Mutual) (P: ctx) (l: level) (u: level): prov;
 
-term Rec_kappa (u: level) (t F e: expr): prov;
-axiom Rec_kappa_0: $ Rec_kappa u P (Sort l) (P -> Sort u) $;
-axiom Rec_kappa_S (B e: expr x):
-  $ Rec_kappa u (P @ x) B e $ >
-  $ Rec_kappa u P (A. x : A, B) (A. x : A, e) $;
+axiom LE_Prop:
+  $ LE M P l L0 $;
 
-term Rec_app (t C A e: expr): prov;
-axiom Rec_app_0: $ Rec_app t C t C $;
-axiom Rec_app_S:
-  $ Rec_app t C A e $ >
-  $ Rec_app t C (A @ x) (e @ x) $;
+axiom LE_Type:
+  $ L1 <= l $ > 
+  $ LE M P l u $;
 
-term Rec_delta (t C u A e: expr): prov;
-axiom Rec_delta_0:
-  $ Rec_app t C A e $ >
-  $ Rec_delta t C u A (e @ u) $;
-axiom Rec_delta_S (C u B e: expr x):
-  $ Rec_delta t C (u @ x) B e $ >
-  $ Rec_delta t C u (A. x : A, B) (A. x : A, e) $;
+axiom LE_1:
+  $ LE_ctor M P P t l e e $ > 
+  $ LE M P l u $;
 
-term Rec_beta {t: expr} (T C c A e1 e2 e3: expr t): prov;
-axiom Rec_beta_app (T C c A A2 e1 e: expr t):
-  $ Rec_app T C A2 e $ >
-  $ subst: A [T / t] = A2 $ >
-  $ Rec_beta t T C c A e1 e1 (e @ c) $;
-axiom Rec_beta_Pi (T A A2 C c B e1 e2 e3: expr x t):
-  $ subst: A [T / t] = A2 $ >
-  $ Rec_beta t T C (c @ x) B e1 e2 e3 $ >
-  $ Rec_beta t T C c (A. x : A, B) (A. x : A2, e1) e2 e3 $;
-axiom Rec_beta_rec (T A A2 C c D B e1 e2 e3: expr u t):
-  $ Rec_delta T C u A2 D $ >
-  $ subst: A [T / t] = A2 $ >
-  $ Rec_beta t T C (c @ u) B e1 e2 e3 $ >
-  $ Rec_beta t T C c (A -> B) (A. u : A2, e1) e2 (D -> e3) $;
 
-term Rec_alpha (t F C e: expr): prov;
-axiom Rec_alpha_0: $ Rec_alpha P (Sort l) C (A. z : P, C @ z) $;
-axiom Rec_alpha_S (B e: expr x):
-  $ Rec_alpha (P @ x) B (C @ x) e $ >
-  $ Rec_alpha P (A. x : A, B) C (A. x : A, e) $;
 
-term Rec_epsilon {t: expr} (F: expr) (L: indspec t)
-  (C: expr t) (c: cidx) (K: indspec t) (e: expr t): prov;
-axiom Rec_epsilon_0 (F C e: expr t) (L: indspec t):
-  $ Rec_alpha (Ind t F L) F C e $ >
-  $ Rec_epsilon t F L C c K0 e $;
-axiom Rec_epsilon_S (A F C a e e2: expr t) (K L: indspec t):
-  $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A e2 e2 $ >
-  $ Rec_epsilon t F L C (cS c) K e $ >
-  $ Rec_epsilon t F L C c (KS a K) (A -> e) $;
+-- Minor premise
+-----------------------------------------------------------------------------------
 
-axiom ty_Rec (K: indspec t) (e: expr C):
-  $ spec G t F K $ >
-  $ LE G t F K u $ >
-  $ Rec_kappa u (Ind t F K) F ka $ >
-  $ Rec_epsilon t F K C c0 K e $ >
-  $ G |- Rec u t F K : A. C : ka, e $;
 
-term iota_delta (t C u A e: expr): prov;
-axiom iota_delta_0:
-  $ Rec_app t C A e $ >
-  $ iota_delta t C u A (e @ u) $;
-axiom iota_delta_S (C u B e: expr x):
-  $ iota_delta t C (u @ x) B e $ >
-  $ iota_delta t C u (A. x : A, B) (\. x : A, e) $;
+--| $ same_args t ti mt mti $: asserts that mti and ti are expressions where mt and t respectively are applied to the same arguments
+term same_app (t ti mt mti: expr): prov;
+axiom same_args_0:
+  $ same_app t t mt mt $;
+axiom same_args_S:
+  $ same_app t ti mt mti $ >
+  $ same_app t (ti @ i) mt (mti @ i) $;
 
-term iota_beta (G: ctx) {t: expr} (C c A e r1 r2 v1 v2: expr t): prov;
-axiom iota_beta_app (A C c e r v: expr t):
-  $ Rec_app t C A e $ >
-  $ iota_beta G t C c A (e @ c) r r v v $;
-axiom iota_beta_Pi (C c B e r1 r2 v1 v2: expr x t):
-  $ iota_beta G t C (c @ x) B e (r1 @ x) r2 v1 v2 $ >
-  $ iota_beta G t C c (A. x : A, B) e r1 r2 v1 v2 $;
-axiom iota_beta_rec (A C c B e r1 r2 v1 v2: expr t):
-  $ iota_delta t C u A v $ >
-  $ iota_beta G t C (c @ u) B e (r1 @ u) r2 (v1 @ v) v2 $ >
-  $ iota_beta G t C c (A -> B) e r1 r2 v1 v2 $;
+--| $ mtv_type l u t idx e $: asserts that e is a function type that for all indices specified by idx, 
+--| returns some an implication that takes an instance of an inductive type in that family of sorts and returns a type in universe u
+--| a value of the motive type hence specifies what the target type of the recursor is
+term mtv_type (l u: level) (t: expr) (idx e: expr): prov;
 
-term iota_epsilon2 (G: ctx) {t: expr} (F: expr) (L: indspec t)
-  (C: expr) (c: cidx) (K: indspec) (R e: expr): prov;
-axiom iota_epsilon2_0 (K0 L: indspec t) (F C R: expr t) :
-  $ iota_epsilon2 G t F L C c K0 R R $;
-axiom iota_epsilon2_S (K L: indspec t) (A C F R a e r x: expr t):
-  $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
-  $ G |- x : A $ >
-  $ iota_epsilon2 G t F L C (cS c) K (R @ x) e $ >
-  $ iota_epsilon2 G t F L C c (KS a K) R e $;
-theorem iota_epsilon2_1 (L: indspec t) (A C F R a r x: expr t)
-  (h1: $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $)
-  (h2: $ G |- x : A $):
-  $ iota_epsilon2 G t F L C c (K1 a) R (R @ x) $ =
-'(iota_epsilon2_S h1 h2 iota_epsilon2_0);
+axiom mtv_type_0:
+  $ mtv_type l u t (Sort l) (t -> Sort u) $;
 
-term iota_epsilon (G: ctx) {t: expr} (F: expr) (L: indspec t)
-  (C: expr) (c: cidx) (K: indspec) (R e1 e2: expr): prov;
-axiom iota_epsilon_0 (K L: indspec t) (A C F R R2 a e e1 e2 r x v: expr t):
-  $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
-  $ G |- e : A $ >
-  $ iota_beta G t R2 (Ctor c t F L) a e1 e v v e2 $ >
-  $ iota_epsilon2 G t F L C (cS c) K (R @ x) R2 $ >
-  $ iota_epsilon G t F L C c (KS a K) R e1 e2 $;
-axiom iota_epsilon_S (K L: indspec t) (A C F R a e1 e2 r x: expr t):
-  $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
-  $ G |- x : A $ >
-  $ iota_epsilon G t F L C (cS c) K (R @ x) e1 e2 $ >
-  $ iota_epsilon G t F L C c (KS a K) R e1 e2 $;
+axiom mtv_type_S:
+   $ mtv_type l u (t @ x) idx e $ >
+   $ mtv_type l u t (A. x : A, idx) (A. x : A, e) $;
 
-axiom conv_iota (K: indspec t) (C F ka e1 e2: expr t):
-  $ spec G t F K $ >
-  $ LE G t F K u $ >
-  $ Rec_kappa u (Ind t F K) F ka $ >
-  $ G |- C : ka $ >
-  $ iota_epsilon G t F K C c0 K (Rec u t F K @ C) e1 e2 $ >
-  $ G |= e1 = e2 $;
+--| $ mtv_app idx l mp mti mt cvab $: asserts that mti is an expression where head mt has been applied the some index values, the number of which is specified by idx, 
+--| mp is mti applied to cvab, 
+--| used to represent the target type of the minor premise, 
+--| the index values in mti will be constrained by the target type of the constructor of this minor premise,
+--| cvab will be constrained such that it's the constructor of this minor premise applied to its parameters and the arguments quantified by the minor premise,
+--| that is... it's the expression that we want to eliminate in this minor premise
+--| mt will be constrained to be the motive for the inductive type of this minor premise, as bound in the recursor
+term mtv_app (idx: expr) (l: level) (mp mti mt cvab: expr): prov;
 
-def eq (u: level) = $ \. A : Sort u, \. a : A, Ind t (A -> Prop)
-  (K1 (t @ a)) $;
+axiom mtv_app_0:
+  $ mtv_app (Sort l) l (mti @ cvab) mti mti cvab $;
 
-term quot: level > expr;
-axiom ty_quot: $ nil |- quot u : A. A : Sort u, (A -> A -> Prop) -> Sort u $;
+axiom mtv_app_S (idx: expr x):
+  $ mtv_app idx l mp mti (mt @ ib) cvab $ > 
+  $ mtv_app (A. x : i, idx) l mp mti mt cvab $;
 
-term quot_mk: level > expr;
-axiom ty_quot_mk: $ nil |- quot_mk u :
-  A. A : Sort u, A. r : A -> A -> Prop, A -> quot u @ A @ r $;
+--| $ recursive_hyp ut umtixb umt utixbpi utixb rh u idx $: asserts that umtixb and utixb is umt and ut applied to the same arguments, the number of which is specified by idx,
+--| the actual argument values will later be constrained by the corresponding recursive argument in the constructor of this minor premise,
+--| u will be constrained to be the recursive argument as quantified in this minor premise, applied to it's own bound arguments,
+--| rh is the recursive hypothesis
+--| ut is the inductive type variable of the recursive argument and utixbpi is hence the recursive argument as it appears in the spec of the constructor
+term recursive_hyp (ut umtixb umt utixbpi utixb rh ux idx: expr): prov;
+
+axiom recursive_hyp_0:
+  $ recursive_hyp utixb umtixb umtixb utixb utixb (umtixb @ ux) ux (Sort l) $;
+
+axiom recursive_hyp_idx (idxs: expr b):
+  $ recursive_hyp (ut @ ixb) umtixb (umt @ ixb) utixb utixb rh ux idxs $ > 
+  $ recursive_hyp ut umtixb umt utixb utixb rh ux (A. b : i, idxs) $;
+
+-- missing dependencies
+axiom recursive_hyp_Pi:
+  $ recursive_hyp ut umtixb umt utixbpi utixb rh (ux @ x) idx $ > 
+  $ recursive_hyp ut umtixb umt (A. x : A, utixbpi) utixb (A. x : A, rh) ux idx $;
+  
+axiom recursive_hyp_imp:
+  $ recursive_hyp ut umtixb umt utixbpi utixb rh (ux @ x) idx $ > 
+  $ recursive_hyp ut umtixb umt (A -> utixbpi) utixb (A -> rh) ux idx $;
+
+sort hyp;
+--| a recursive hypothesis... 
+--| u is the recursive argument as it appears bound in the minor premise,
+--| utixbpi, is the 
+term hyp (u utixbpi utixb umtixb umt: expr): hyp;
+term _hyp: hyp > element;
+coercion _hyp: hyp > element;
+
+--| $ minor_premise r ord dss idx l ri mp mti mt cvab $: asserts that mp is a minor premise with the recursive hypothesis specified by ds,
+--| dss will be constrained by the actual constructor specification,
+--| ri and mti is r and mt respectively, applied to the same arguments, the number of which is specified by idx, mt is the motive and r the inductive type variable for this minor premise,
+--| cvab will be constrained such that it's the constructor of this minor premise applied to the parameters quantified by the recursor and the arguments quantified by the minor premise,
+--| ord is the ordered list containing data associated with the inductives of this recursor
+term minor_premise (r: expr) (ord dss: list) (idx: expr) (l: level) (ri mp mti mt cvab: expr): prov;
+
+axiom minor_premise_0:
+  $ find ord (ind_data (mutual_data Mr Pr rpa) (ind K idx r)) $ >
+  $ mtv_app idx l mp mti mt cvab $ > 
+  $ same_app r ri mt mti $ >
+  $ minor_premise r ord (|.|) idx l ri mp mti mt cvab $;
+
+axiom minor_premise_S:
+  $ recursive_hyp ut umtixb umt utixbpi utixb vt u uidx $ >
+  $ find ord (ind_data (mutual_data Mr Pu uprms) (ind K uidx ut)) $ >
+  $ minor_premise r ord dss idx l ri mp mti mt cvab $ >
+  $ minor_premise r ord (dss . (hyp u utixbpi utixb umtixb umt)) idx l ri (vt -> mp) mti mt cvab $;
+
+
+--| $ non_rec ord A $: asserts that, given ord, a list of inductives, A is not recursive
+term non_rec (ord: list) (A: expr): prov;
+
+axiom non_rec_0 (A: expr): 
+  $ non_rec (|.|) A $;
+
+axiom non_rec_S (Mr: Mutual r) (ords: list r) (K: exprs r):
+  $ non_rec ords A $ > 
+  $ non_rec (ords . (ind_data (mutual_data Mr P prms) (ind K idx r))) A $;
+  
+--| $ non_rec_app Mh ord F F l h A $: asserts that, given ord, a list of inductives, A is a non recursive application expression with head h, 
+--| h is an inductive type variable specified in Mh, h is of type F, ranging over universe l,
+term non_rec_app (Mh: Mutual) (ord: list) (Fh F: expr) (l: level) (h A: expr): prov;
+  
+-- indexes cannot contain any inductive type variables, this has already been checked when constructing and type checking ctor_spec
+axiom non_rec_app_0: 
+  $ non_rec ord h $ >
+  $ type_judgement Mh P Fh h idx mued (Ind Mh idx s) $ >
+  $ non_rec_app Mh ord Fh idx l h A $;
+
+axiom non_rec_app_S: 
+  $ non_rec ord v $ >
+  $ non_rec_app Mh ord (A. x : B, Fs) idx l h A $ >
+  $ non_rec_app Mh ord Fs idx l h (A @ v) $;
+
+axiom non_rec_app_passive_S: 
+  $ pos_M ash mh x Passive $ >
+  $ non_rec_app (Mutual ash mh l) ord (A. x : B, Fs) idx l h A $ >
+  $ non_rec_app (Mutual ash mh l) ord Fs idx l h (A @ v) $;
+  
+axiom non_rec_app_F:
+  $ non_rec_app Mh ord F F l h A $ > 
+  $ non_rec ord A $;
+
+axiom non_rec_pi:
+  $ non_rec ord B $ >
+  $ non_rec ord A $ >
+  $ non_rec ord (A. x : B, A)$;
+  
+axiom non_rec_imp:
+  $ non_rec ord B $ >
+  $ non_rec ord A $ >
+  $ non_rec ord (B -> A) $;
+
+--| $ non_rec_exprs ord es $: asserts that, given the inductives specified in the ord list, es are all non-recursive expressions
+term non_rec_exprs (ord: list) (es: exprs): prov;
+
+axiom non_rec_exprs_0:
+  $ non_rec_exprs ord ({}) $;
+
+axiom non_rec_exprs_S:
+  $ non_rec_exprs ord es $ >
+  $ non_rec ord e $ >
+  $ non_rec_exprs ord (es ; e) $;
+
+--| $ arg_spec_type ord Pr rprs sai av $: asserts that, given ord, a list specifying substitutions for inductive type variables,
+--| and rprs, a list specifying substitutions for parameters,
+--| the value given by av corresponds to the expression sai in the constructor specification
+term arg_spec_type (ord: list) (rprs: list) (sai av: expr): prov;
+
+-- TODO: dependencies
+-- this is for handling the normal recursive case
+axiom arg_spec_type_rec:
+  $ find ord (ind_data (mutual_data Ms Ps prs) (ind K sidx s))$ >
+  $ type_judgement Ms Ps F la sidx mued (Ind Ms sidx s) $ >
+  $ apply_params laa la prs $ >
+  $ pos_x s spos si $ >
+  $ subst: spos [laa / s] = laapos $ >
+  $ subst_params mpA laapos prs $ >
+  $ arg_spec_type ord rprs mpA spos $;
+
+-- TODO: dependencies 
+-- this is for the case where a constructor argument becomes recursive due to a parameter for a nested inductive being substituted for a recursive expression
+axiom arg_spec_type_rec_p:
+  $ find rprs (aux_param_subst p pv ps) $ > 
+  $ find ord (ind_data md (ind K idx t)) $ >
+  $ pos_x t pv pvs $ >
+  $ arg_spec_type ord rprs mpA p $;
+
+--| $ minor_premise_pi t ord P prms ds ds idx l cse mp mt cva $: asserts that, 
+--| in context P, given ord and prms, lists specifying substitutions for inductive type variables and parameters respectively,
+--| mp is a valid minor premise for a constructor, cse, of the inductive type variable t,   
+--| idx are the indices of t, and mt is the motive,
+--| cva is the constructor value of this constructor applied to the parameters of t,
+--| ds are the recursive hypothesis of this minor premise
+term minor_premise_pi (t: expr) (ord: list) (P: ctx) (prms: list) (ds dss: list) (idx: expr) (l: level) (cse mp mti mt cvab: expr): prov;
+
+axiom minor_premise_pi_0:
+  $ minor_premise r ord ds idx l ri mp mti mt cvab $ >
+  $ minor_premise_pi r ord P prms ds (|.|) idx l ri mp mti mt cvab $;
+
+axiom minor_premise_pi_S (ds dss: list b) (cse mp mt: expr b):
+  $ subst_params_act prms act As A $ >
+  $ non_rec_exprs ord act $ >
+  $ non_rec ord As $ >
+  $ minor_premise_pi r ord Pr prms ds dss idx l cse mp mti mt (cva @ b) $ >
+  $ minor_premise_pi r ord Pr prms ds dss idx l (A. b : A, cse) (A. b : As, mp) mti mt cva $;
+
+axiom minor_premise_pi_S_imp (ds dss: list b) (cse mp mt: expr b):
+  $ subst_params_act prms act As A $ >
+  $ non_rec_exprs ord act $ >
+  $ non_rec ord A $ >
+  $ minor_premise_pi r ord Pr prms ds dss idx l cse mp mti mt (cva @ b) $ >
+  $ minor_premise_pi r ord Pr prms ds dss idx l (A -> cse) (A. b : As, mp) mti mt cva $;
+
+axiom minor_premise_pi_S_rec (ds: list u) (mp: expr u):
+  $ arg_spec_type ord prms mpA recpos $ >
+  $ minor_premise_pi r ord Pr prms ds dss idx l cse mp mti mt (cva @ u) $ >
+  $ minor_premise_pi r ord Pr prms ds (dss . (hyp u recpos utixb umtixb umt)) idx l (recpos -> cse) (A. u : mpA, mp) mti mt cva $;
+  
+  
+ -- recursor 
+-----------------------------------------------------------------------------------
+
+ 
+--| $ Major_premise t idx l mt Mp $: asserts that Mp is the major premise for the inductive type variable specified by t, idx is the family of sorts of t and
+--| mt is the motive of t, The major premise is the target type of the entire recursor type, 
+--| the target type is a function type, the values of which are functions that given arbitrary index values and an arbitrary inductive instance of that family, returns a instance of the type
+--| specified by the motive value
+term Major_premise (ti: expr) (idx: expr) (l: level) (mt Mp: expr): prov;
+
+axiom Major_premise_0:
+  $ Major_premise ti (Sort l) l mti (A. z : ti, mti @ z) $;
+
+axiom Major_premise_S_idx (idx e: expr x):
+   $ Major_premise (t @ x) idx l (mti @ x) e $ >
+   $ Major_premise t (A. x : A, idx) l mti (A. x : A, e) $;
+
+--| $ Rec_mp_chain _ ord (|.|) mts l e0 ({}) eps $: asserts that eps is a chain of implications with target type eps and where all direct antecedents
+--| are the minor premises for the inductive types specified in ord, 
+--| the target type of eps is e0
+--| mts are the motives that are assumed to be in scope. These will later be constrained to be the bound motives quantified in the recursor
+term Rec_mp_chain (ivd: ind_data) (ord ords: list) (mts: exprs) (l: level) (e0: expr) (K: exprs) (e: expr): prov;
+
+axiom Rec_mp_chain_S_0:
+  $ Rec_mp_chain (ind_data md (ind Lr ridx r)) (ords . (ind_data md (ind Lr ridx r))) ords ({} ; mtr) l e Lr e $;
+
+axiom Rec_mp_chain_S_K:
+  $ apply_params cva la rprs $ >
+  $ type_judgement Mr Pr F la C mued (Ctor Mr a r n) $ >
+  $ minor_premise_pi r ord Pr rprs ds ds ridx l a mp mtri mtr cva $ >
+  $ Rec_mp_chain (ind_data (mutual_data Mr Pr rprs) (ind Lr ridx r)) ord ords (mts ; mtr) l e0 (Ka ; a) e $ >
+  $ Rec_mp_chain (ind_data (mutual_data Mr Pr rprs) (ind Lr ridx r)) ord ords (mts ; mtr) l e0 Ka (mp -> e) $;
+  
+axiom Rec_mp_chain_S:
+  $ Rec_mp_chain ivdr ord (ords . (ind_data md (ind Ls sidx s))) mts l e0 ({}) e $ >
+  $ Rec_mp_chain (ind_data md (ind Ls sidx s)) ord ords (mts ; mt) l e0 Ls e $;
+
+
+--| $ Rec_forall_mtvs ord (|.|) l u mts epi e $: asserts that epi is e with all the motives
+--| in mts are bound by a forall quantifier, the type of the motive is constrained by the corresponding inductive in ord
+term Rec_forall_mtvs (ord ords: list) (l u: level) (mts: exprs) (epi e: expr): prov;
+
+axiom Rec_forall_mtvs_0:
+  $ Rec_forall_mtvs ord ord l u ({}) e e $;
+
+axiom Rec_forall_mtvs_S (mued: expr r) (Mr: Mutual r) (ord ords: list r) (epi e: expr mtr):
+  $ mtv_type l u laa idxr kapi $ >
+  $ type_judgement Mr P F la idxr mued (Ind Mr idxr r) $ >
+  $ apply_params laa la rprs $ >
+  $ Rec_forall_mtvs ord (ords . (ind_data (mutual_data Mr P rprs) (ind K idxr r))) l u mts epi e $ >
+  $ Rec_forall_mtvs ord ords l u (mts ; mtr) (A. mtr : kapi, epi) e $;
+
+--| $ constrained_rec md ord u t e $: asserts that given the mutual data md and the ordered inductive data ord, 
+--| and given t, an inductive type variable refering to a well formed and type checked inductive in md (which implies that the mutual in md is also well formed), 
+--| e is the recursor type for that recursor,
+term constrained_rec (md: mutual_data) (ord: list) (u: level) (t: expr) (e: expr): prov;
+
+axiom constrained_rec_0:
+  $ type_judgement (Mutual as m l) P F la tidx mued (Ind (Mutual as m l) tidx t) $ >
+  $ apply_params lap la prs $ >
+  $ Major_premise lap tidx l mt Mp $ >
+  $ Rec_forall_mtvs ord (|.|) l u mts epi e $ > 
+  $ Rec_mp_chain mdr ord (|.|) mts l Mp ({}) e $ >
+  $ constrained_rec (mutual_data (Mutual as m l) P prs) ord u t epi $;
+
+-- the recursive is parameterized by an arbitrary order of all of the inductives in M, 
+term Rec (u: level) (ord: exprs) (x: expr) (M: Mutual): expr;
+
+
+term ord_to_exprs (ord: list) (es: exprs): prov;
+
+axiom ord_to_exprs_0:
+  $ ord_to_exprs (|.|) ({}) $;
+  
+axiom ord_to_exprs_S:
+  $ ord_to_exprs ord es $ > 
+  $ ord_to_exprs (ord . (ind_data md (ind K idx t))) (es ; t) $;
+
+-- can reuse WF_dag computation here to flatten the mutual, should hence be declared as its own theorem when used in WFM_declare,
+--| $ P |- mued :: e $: asserts that in context P, mued is a well formed recursor of recursor type e,
+axiom ty_Rec:
+  $ LE M P l u $ >
+  $ bind_mu (Mutual as m l) (|.|) (|.|) mued (Rec u es t (Mutual as m l)) $ >
+  $ ctx_vars P nil pa $ >
+  $ to_params pa prs $ >
+  $ WF_dag (mutual_data (Mutual as m l) P prs) l (|.|) (|.|) inds (|.|)$ >
+  $ reorder_list inds ord $ >
+  $ ord_to_exprs ord es $ >
+  $ constrained_rec (mutual_data (Mutual as m l) P prs) ord u t e $ >
+  $ P |- mued : e $;
+  
+
+
+
+
+
+-- iota reduction
+-----------------------------------------------------------------------------------
+
+ 
+-- left-hand side
+
+sort case;
+-- e is the evidence value, a is the constructor of the minor premise, cva is the constructor value of a applied to specified parameter values,
+-- mti is the motive, mt applied to the indexes specified in the target type of a,
+-- pa contains the parameter values that the recursor has been applied to
+-- hyps is a list of recursive hypothesis in the minor premise,
+-- this hence cover all the data that is used to constrain the conversion of a recursor application by case,
+term case (e a cva mti mt: expr) (pa: exprs) (hyps: list): case;
+term _case: case > element;
+coercion _case: case > element;
+
+-- $ iota_evds_nf ord mts K evds evdss $: asserts that: the list corresponding to the difference between evds and evdss, and the motives in mts, are the given evidences and motives  
+-- for all cases specified by the inductives in ord and the constructor types in K
+-- specified in ord and K, 
+term iota_evds_nf (ord: list) (mts: exprs) (K: exprs) (evds evdss: exprs): prov;
+axiom iota_evds_nf_0:
+  $ iota_evds_nf (|.|) ({}) ({}) evds evds $;
+axiom iota_evds_nf_S_K:
+  $ iota_evds_nf ords mts Ks evds (evdss ; v) $ > 
+  $ iota_evds_nf ords mts (Ks ; a) evds evdss $;
+axiom iota_dvs_nf_S:
+  $ iota_evds_nf ords mts L evds evdss $ >
+  $ iota_evds_nf (ords . (ind_data md (ind L idx t))) (mts ; mt) ({}) evds evdss $;
+
+-- $ iota_evds ord id mts K evds (|.|) evd $: the same thing as iota_evds_nf while additionally asserting that the inductive id is in ord and 
+-- the minor premise case for that inductive, are given by evd
+term iota_evds (ord: list) (id: ind_data) (mts: exprs) (K: exprs) (evds evdss: exprs) (evd: case): prov;
+axiom iota_evds_0:
+  $ collect_params rprs rpa rpa $ >
+  $ apply_params cva la rprs $ >
+  $ type_judgement Mr Pr F la CT mued (Ctor Mr a r n) $ >
+  $ minor_premise_pi r ord Pr rprs ds ds ridx l a mpr mti mt cva $ >
+  $ iota_evds_nf ords mts ks evds (evdss ; v) $ >
+  $ iota_evds ords (ind_data (mutual_data Mr Pr rprs) (ind K ridx r)) mts (ks ; a) evds evdss (case v a cva mti mt rpa ds) $; 
+axiom iota_evds_S_K:
+  $ iota_evds ords id mts Ks evds (evdss ; v) evd $ > 
+  $ iota_evds ords id mts (Ks ; a) evds evdss evd $;
+axiom iota_evds_S:
+  $ iota_evds ords (ind_data md (ind L idx t)) mts L evds evdss evd $ >
+  $ iota_evds (ords . (ind_data md (ind L idx t))) (ind_data ms (ind K sidx s)) (mts ; mt) ({}) evds evdss evd $;
+
+-- $ iota_ctor_args ord cvab cva ds asv bs bsv rsv a t $: asserts that given ord, cvab is cva applied to arguments specified by type a,
+-- a has a target type with head t, cva will be constrained to be a constructor applied to parameters while a will be constrained to match the constructor specification specified by cva. 
+-- ds will be constrained to be the list of minor premises, (makes sure that the correct amount of recursive arguments are given),
+-- while asv and rsv represents the argument values, and the recursive arguments values respectively
+term iota_ctor_args (ord: list) (cvab cva: expr) (ds: list) (asv rsv: exprs) (a: expr) (t: expr): prov;
+
+axiom iota_ctor_args_0:
+  $ head_x t ti $ >
+  $ iota_ctor_args ord cvab cvab (|.|) ({}) ({}) a t $;
+
+axiom iota_ctor_args_Pi_S:
+  $ non_rec ord A $ > 
+  $ iota_ctor_args ord cvab (cva @ v) dss asv rsv a t $ >
+  $ iota_ctor_args ord cvab cva dss (asv ; v) rsv (A. b : A, a) t $;
+
+axiom iota_ctor_args_imp_S:
+  $ non_rec ord A $ >
+  $ iota_ctor_args ord cvab (cva @ r) dss asv rsv a t $ >
+  $ iota_ctor_args ord cvab cva dss (asv ; r) rsv (A -> a) t $;
+
+-- dss is later constrained so that the number of recursive arguments matches that given by minor_premse axiom in iota_evds_0
+axiom iota_ctor_args_rec:
+  $ iota_ctor_args ord cvab (cva @ r) dss asv rsv a t $ >
+  $ iota_ctor_args ord cvab cva (dss . d) (asv ; r) (rsv ; r) (A -> a) t $;
+
+--| $ iota_rec_app rpa mts evds reca rec $: asserts that reca is rec applied to the parameter values, motives and evidences in order, specified in rpa, mts, evds respectively.
+--| The less nested in an expression list the less nested in reca
+term iota_rec_app (rpa: exprs) (mtss: exprs) (evdss: exprs) (reca rec: expr): prov;
+
+axiom iota_rec_app_0:
+  $ apply_exprs reca e evds $ >
+  $ apply_exprs e es mts $ >
+  $ apply_exprs es rec rpa $ >
+  $ iota_rec_app rpa mts evds reca rec $;
+
+-- right-hand side
+
+-- $ iota_hyp d umt umt ux u recaiu reca $: asserts that recaiu is reca applied to the indexes of the recursive hypothesis specified by d,
+-- recai is then further applied to ux, where ux is an instance of a recursive argument u, bound in the minor premise, possibly applied to 
+-- it's own arguments 
+term iota_hyp (d: hyp) (umt umtixb: expr) (ux u recaiu recai: expr): prov;
+
+axiom iota_hyp_0:
+  $ iota_hyp (hyp u utixbpi utixb umtixb umt) umt umtixb ux u (recai @ ux) recai $;
+
+axiom iota_hyp_S:
+  $ iota_hyp d umt (umtixb @ ixb) ux u recaiu (reca @ ixb) $ > 
+  $ iota_hyp d umt umtixb ux u recaiu reca $;
+
+-- $ iota_hyp_pi d utixbpi utixbpi u u dlau reca $: asserts that dlau is a lambda with a binder spcified by the pi type utixbpi, the body of dlau is 
+-- reca applied to indexes specified by d, and additionally applied to u applied to the arguments bound in the lambda
+term iota_hyp_pi (d: hyp) (utixbpi utixb: expr) (ux u recaiu reca: expr): prov;
+
+axiom iota_hyp_pi_0:
+  $ iota_hyp (hyp u utixbpi utixb umtixb umt) umt umt ux u recaiu reca $ >
+  $ iota_hyp_pi (hyp u utixbpi utixb umtixb umt) utixbpi utixb ux u recaiu reca $;
+
+axiom iota_hyp_pi_S:
+  $ iota_hyp_pi d utixbpi utixb (ux @ x) u dlau reca $ >
+  $ iota_hyp_pi d utixbpi (A. x : A, utixb) ux u (\. x : A, dlau) reca $;
+
+-- $ iota_rhs ds asv rsv rhs e reca $: asserts that given the recursor applied to parameters, motives and evidences specified by reca,
+-- e will be constrained to be the evidence for the case in question, rhs is e applied to the specific arguments, asv of which rsv are recursive and
+-- further applied to the recursive hypothesis specified in ds
+term iota_rhs (ds: list) (asv rsv: exprs) (rhs rh reca: expr): prov;
+
+axiom iota_rhs_0:
+  $ iota_rhs (|.|) ({}) ({}) rhs rhs reca $;
+
+axiom iota_rhs_S_hyp:
+  $ iota_hyp_pi d utixbpi utixbpi u u v reca $ > 
+  $ iota_rhs ds ({}) rsv rhs (rh @ v) reca $ > 
+  $ iota_rhs (ds . d) ({}) (rsv ; u) rhs rh reca $;
+
+axiom iota_rhs_S_arg:
+  $ iota_rhs ds asvs rsv rhs (rh @ b) reca $ >
+  $ iota_rhs ds (asvs ; b) rsv rhs rh reca $;
+
+term iota_cva (M: Mutual) (P: ctx) (t a: expr) (rpa: exprs) (cva: expr): prov;
+
+axiom iota_cva_0:
+  $ apply_exprs cva la rpa $ >
+  $ type_judgement M P F la CT mued (Ctor M a t n) $ >
+  $ iota_cva M P t a rpa cva $;
+
+-- $ iota_case M ord evds (case e a  cva mti mmt rpa ds) reca lhs rhs t $: asserts that lhs and rhs may be converted to one another via iota conversion,
+-- M, ords, evds, case, specifies the Mutual, inductive, evidences and case associated with this iota reduction,
+term iota_case (M: Mutual) (ord: list) (evds: exprs) (evd: case) (reca lhs rhs: expr) (t: expr): prov;
+
+axiom iota_case_0:
+  $ iota_ctor_args ord cvab cva ds asv rsv a t $ >
+  $ iota_evds ord _ mts ({}) evds ({}) (case e a cva mti mt rpa ds) $ >
+  $ iota_rhs ds asv rsv rhs e reca $ >
+  $ same_app recai reca mti mt $ >
+  $ iota_cva M P t a rpa cva $ >
+  $ iota_case M ord evds (case e a cva mti mt rpa ds) reca (recai @ cvab) rhs t $;
+
+term iota_finalize (ord: list) (prs: exprs) (mts: exprs) (evds: exprs) (reca: expr): prov;
+
+axiom iota_finalize_0:  
+  $ WF_dag (mutual_data (Mutual as m l) P prs) l (|.|) (|.|) inds (|.|)$ >
+  $ reorder_list inds ord $ >
+  $ ord_to_exprs ord es $ >
+  $ type_judgement M P F rla T rmued (Rec u es t M) $ > 
+  $ iota_rec_app pa mts evds reca rla $ > 
+  $ iota_finalize ord pa mts evds reca $;
+
+-- When realizing the iota reduction with ty_l_conv or any of its derivatives, we must type check either lhs or rhs in the context G,
+-- This axiom hence only asserts that lhs and rhs are constrained correctly relative to eachother to be eligeble for such a reduction
+axiom iota_reduction:
+  $ iota_finalize ord prs mts evds reca $ >
+  $ iota_case M ord evds evd reca lhs rhs t $ >
+  $ G |= lhs = rhs $;
+
+
+
+
+-----------------------------------------------------------------------------------
+----------------------------- NON PRIMITIVE AXIOMS --------------------------------
+-----------------------------------------------------------------------------------
+
+
+def eq (l: level) {.a .A .t: expr}: expr = $ \. A : Sort l, u. t, 
+  (Ind (Mutual (|.|) (|.| . (ind ({} ; (A. a : A, t @ a @ a)) (A -> A -> Prop) t)) L0) (A -> A -> Prop) t) $;
+
+term quot (u: level): expr;
+
+axiom ty_quot:
+  $ nil |- quot u : A. A : Sort u, (A -> A -> Prop) -> Sort u $;
+
+term quot_mk (u: level): expr;
+
+axiom ty_quot_mk:
+  $ nil |- quot_mk u :
+    A. A : Sort u, A. r : A -> A -> Prop, A -> quot u @ A @ r $;
 
 term quot_sound: level > expr;
-axiom ty_quot_sound: $ nil |- quot_sound u :
-  A. A : Sort u, A. r : A -> A -> Prop, A. a : A, A. b : A,
-  r @ a @ b ->
-  eq u @ (quot u @ A @ r)
-    @ (quot_mk u @ A @ r @ a)
-    @ (quot_mk u @ A @ r @ b) $;
+
+axiom ty_quot_sound:
+  $ nil |- quot_sound u :
+    A. A : Sort u, A. r : A -> A -> Prop, A. a : A, A. b : A, r @ a @ b -> eq u @ (quot u @ A @ r) @ (quot_mk u @ A @ r @ a) @ (quot_mk u @ A @ r @ b) $;
 
 term quot_lift: level > level > expr;
-axiom ty_quot_lift: $ nil |- quot_lift u v :
-  A. A : Sort u, A. r : A -> A -> Prop, A. B : Sort v, A. f : A -> B,
-  (A. a : A, A. b : A, r @ a @ b -> eq v @ B @ (f @ a) @ (f @ b)) ->
-  quot u @ A @ r -> B $;
+
+axiom ty_quot_lift:
+  $ nil |- quot_lift u v :
+    A. A : Sort u, A. r : A -> A -> Prop, A. B : Sort v, A. f : A -> B,
+    (A. a : A, A. b : A, r @ a @ b -> eq v @ B @ (f @ a) @ (f @ b)) ->
+    quot u @ A @ r -> B $;
 
 axiom quot_iota:
   $ G |- A : Sort u $ >
@@ -501,274 +1762,213 @@ axiom quot_iota:
   $ G |- H : A. a : A, A. b : A, r @ a @ b -> eq v @ B @ (f @ a) @ (f @ b) $ >
   $ G |= quot_lift u v @ A @ r @ B @ f @ H @ (quot_mk u @ A @ r @ a) = f @ a $;
 
-def iff (p q: expr): expr = $ Ind t Prop
-  (K1 ((p -> q) -> (q -> p) -> t)) $;
+def iff (p q: expr) {.t: expr}: expr = $ u. t, Ind  (Mutual (|.|) (|.| . (ind ({} ; (p -> q) -> (q -> p) -> t) Prop t )) L0) Prop t $;
 infixl iff: $<->$ prec 6;
 
 term propext: expr;
 axiom ty_propext:
   $ nil |- propext : A. p : Prop, A. q : Prop, (p <-> q) -> eq L1 @ Prop @ p @ q $;
 
-def nonempty (u: level): expr = $ \. A : Sort u, Ind t Prop
-  (K1 (A -> t)) $;
+def nonempty (l: level) {.A .t: expr}: expr = $ \. A : Sort l, u. t, Ind (Mutual (|.|) (|.| . (ind ({} ; A -> t) Prop t)) l) Prop t $;
 
 term choice: level > expr;
-axiom ty_choice: $ nil |- choice u : A. A : Sort u, nonempty u @ A -> A $;
 
--- ---------------------------
--- inductive Nat : Type
---   | zero : Nat
---   | succ : Nat → Nat
+axiom ty_choice:
+  $ nil |- choice u : A. A : Sort u, nonempty u @ A -> A $;
+  
 
-def nat_spec (t: expr) = $ KS t (K1 (t -> t)) $;
-def nat = $ Ind t Type (nat_spec t) $;
-def nat_zero = $ Ctor c0 t Type (nat_spec t) $;
-def nat_succ = $ Ctor (cS c0) t Type (nat_spec t) $;
-def nat_rec (u: level) = $ Rec u t Type (nat_spec t) $;
 
-theorem nat_spec_spec: $ spec G t Type (nat_spec t) $ =
-'(spec_KS (ctor_app ty_app_ts_0) @
-  spec_KS (ctor_rec (ctorR_0 ty_app_ts_0) (ctor_app ty_app_ts_0)) @
-  spec_K0 Ind_ty_0);
 
-theorem ty_nat: $ nil |- nat : Type $ =
-'(ty_Ind @ ! nat_spec_spec _ t);
 
-theorem ty_nat_zero: $ nil |- nat_zero : nat $ =
-'(ty_Ctor (! nat_spec_spec _ t) cty_0 subst_var);
+-----------------------------------------------------------------------------------
+----------------------------- STRUCTURE PROJECTIONS -------------------------------
+-----------------------------------------------------------------------------------
 
-theorem ty_nat_succ: $ nil |- nat_succ : nat -> nat $ =
-'(ty_Ctor (! nat_spec_spec _ t) (cty_S cty_0) @
-  subst_imp subst_var subst_var);
 
-theorem ty_nat_rec: $ nil |- nat_rec u : A. C : nat -> Sort u,
-  C @ nat_zero ->
-  (A. n : nat, C @ n -> C @ (nat_succ @ n)) ->
-  (A. x : nat, C @ x) $ =
-'(ty_Rec (! nat_spec_spec _ t) (LE_Type Ind_ty_0 l_le_refl)
-  Rec_kappa_0 @
-  Rec_epsilon_S (Rec_beta_app Rec_app_0 subst_var) @
-  Rec_epsilon_S (Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-    Rec_beta_app Rec_app_0 subst_var) @
-  Rec_epsilon_0 Rec_alpha_0);
 
-theorem nat_zero_iota
-  (h1: $ G |- C : nat -> Sort u $)
-  (h2: $ G |- z : C @ nat_zero $)
-  (h3: $ G |- s : A. n : nat, C @ n -> C @ (nat_succ @ n) $):
-  $ G |= nat_rec u @ C @ z @ s @ nat_zero = z $ =
-'(conv_iota (! nat_spec_spec _ t) (LE_Type Ind_ty_0 l_le_refl)
-  Rec_kappa_0 h1 @
-  iota_epsilon_0 (Rec_beta_app Rec_app_0 subst_var) h2
-    (iota_beta_app Rec_app_0) @
-  iota_epsilon2_1 (Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-    Rec_beta_app Rec_app_0 subst_var) @
-  h3);
+-- $ find_pi c cs A i $: asserts that the argument to constructor c given by index i, has type A
+term find_pi (c cs A: expr) (i: nat): prov;
 
-theorem nat_succ_iota
-  (h1: $ G |- C : nat -> Sort u $)
-  (h2: $ G |- z : C @ nat_zero $)
-  (h3: $ G |- s : A. n : nat, C @ n -> C @ (nat_succ @ n) $):
-  $ G |= nat_rec u @ C @ z @ s @ (nat_succ @ x) =
-         s @ x @ (nat_rec u @ C @ z @ s @ x) $ =
-'(conv_iota (! nat_spec_spec _ t) (LE_Type Ind_ty_0 l_le_refl)
-  Rec_kappa_0 h1 @
-  iota_epsilon_S (Rec_beta_app Rec_app_0 subst_var) h2 @
-  iota_epsilon_0 (Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-    Rec_beta_app Rec_app_0 subst_var) h3
-  (iota_beta_rec (iota_delta_0 Rec_app_0)
-    (iota_beta_app Rec_app_0))
-  iota_epsilon2_0);
+axiom find_pi_0 (e: expr b): 
+  $ find_pi (A. b : A, e) (A. b : A, e) A 0 $;
 
--- ---------------------------
--- inductive List (α : Type u) where
---   | nil : List α
---   | cons : α → List α → List α
+axiom find_pi_S (e A: expr bs):
+  $ find_pi C (A. bs : As, e) A i $ > $ find_pi C e A (^i) $;
 
-def list_spec (t: expr) (A: expr) = $ KS t (K1 (A -> t -> t)) $;
-def list_ind (l: level) (A: expr) = $ Ind t (Sort (l_S l)) (list_spec t A) $;
-def list (l: level) = $ \. A : Sort (l_S l), list_ind l A $;
-def list_ctor (c: cidx) (l: level) (A: expr) = $ Ctor c t (Sort (l_S l)) (list_spec t A) $;
-def list_nil (l: level) = $ \. A : Sort (l_S l), list_ctor c0 l A $;
-def list_cons (l: level) = $ \. A : Sort (l_S l), list_ctor (cS c0) l A $;
-def list_rec2 (u l: level) (A: expr) = $ Rec u t (Sort (l_S l)) (list_spec t A) $;
-def list_rec (u l: level) = $ \. A : Sort (l_S l), list_rec2 u l A $;
+-- $ find_app h c v i $: asserts that c in an application expression with head c, c is h applied to arguments where the last argument applied, v, has index i
+term find_app (h c v: expr) (i: nat): prov;
 
-theorem list_spec_spec (h1: $ G |- A : Sort (l_S l) $): $ spec G t (Sort (l_S l)) (list_spec t A) $ =
-'(spec_KS (ctor_app ty_app_ts_0) @
-  spec_KS (!! ctor_Pi a Ind_ty_0 h1 l_le_refl @
-    ctor_rec (ctorR_0 ty_app_ts_0) @
-    ctor_app ty_app_ts_0) @
-  spec_K0 Ind_ty_0);
+axiom find_app_0:
+  $ find_app T (T @ v) v 0 $;
 
-theorem ty_list_ind (h: $ G |- A : Sort (l_S l) $): $ G |- list_ind l A : Sort (l_S l) $ =
-'(!! ty_Ind t @ list_spec_spec h);
+axiom find_app_S:
+  $ find_app T Tv v n $ > 
+  $ find_app T (Tv @ vs) vs (^n) $;
 
-theorem ty_list: $ G |- list l : A. A : Sort (l_S l), Sort (l_S l) $ =
-'(ty_lambda @ ty_list_ind ty_var);
+term proj (P: expr) (i: nat): expr;
 
-theorem subst_list_spec (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
-  $ substIS: list_spec t A [e / x] = list_spec t A2 $ =
-'(substIS_KS subst_nf @ substIS_K1 @ subst_imp h subst_nf);
+term proj_sub (j i: nat) (Cs: expr) (T: expr) (C z B Bs: expr): prov;
 
-theorem subst_list_ind (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
-  $ subst: list_ind l A [e / x] = list_ind l A2 $ =
-'(!! subst_Ind t _ subst_nf @ subst_list_spec h);
+axiom proj_sub_0:
+  $ find_pi C C A i $ > 
+  $ proj_sub 0 i C T C z A A $;
 
-theorem subst_list_ctor (A e A2: expr x) (h: $ subst: A [e / x] = A2 $):
-  $ subst: list_ctor c l A [e / x] = list_ctor c l A2 $ =
-'(!! subst_Ctor t _ subst_nf @ subst_list_spec h);
+axiom proj_sub_S (As Cs: expr b):
+  $ proj_sub j i (A. b : B, Cs) T C z A As $ > 
+  $ subst: As [(proj T j) @ z / b] = Ass $ > 
+  $ proj_sub (^j) i Cs T C z A Ass $;
 
-theorem conv_list_ind (h: $ G |- A : Sort (l_S l) $): $ G |= list l @ A = list_ind l A $ =
-'(!! conv_beta a (ty_list_ind ty_var) h @ subst_list_ind subst_var);
+def structure (t: expr) (l: level) (c: expr): Mutual = $ (Mutual (|.|) (|.| . (ind ({} ; c) (Sort l) t)) l) $;
+def unitlike_spec (t: expr) (l: level): Mutual = $ (Mutual (|.|) (|.| . (ind ({}) (Sort l) t)) l) $;
 
-theorem ty_list_nil_core (h: $ G |- A : Sort (l_S l) $): $ G |- list_ctor c0 l A : list l @ A $ =
-'(ty_conv_r (ty_Ctor (list_spec_spec h) cty_0
-  {(!! subst_var a) : $ subst: _ [ list_ind / _ ] = _ $}) @ conv_list_ind h);
+term proj_type_checked (P: ctx) (T: expr) (Tlaa C B: expr) (l: level) (i: nat): prov;
 
-theorem ty_list_nil: $ G |- list_nil l : A. A : Sort (l_S l), list l @ A $ =
-'(ty_lambda @ ty_list_nil_core ty_var);
+axiom proj_type_check:
+  $ ctor_non_rec (structure t l c) P P (Sort l) l c t $ >
+  $ type_judgement (structure t l c) P F la (Sort l) mued  (Ind (structure t l c) (Sort l) t) $ >
+  $ type_judgement (structure t l c) P cF cla C cmued  (Ctor (structure t l c) c t n)$ >
+  $ apply_params lap la pa $ >
+  $ proj_sub i i T mued C z A As $ >
+  $ proj_type_checked P mued lap C As l i $;
 
-theorem conv_ty_list_nil (h: $ G |- A : Sort (l_S l) $):
-  $ G |=: list_nil l @ A = list_ctor c0 l A : list l @ A $ =
-'(conv_ty_r (ty_list_nil_core h) @
-  conv_beta (ty_list_nil_core ty_var) h @ subst_list_ctor @ !! subst_var a);
+axiom proj_type_u:
+  $ L1 <= l $ >
+  $ proj_type_checked P mued laa C As l i $ >
+  $ P |- proj mued i : A. z : laa, As $;
 
-theorem ty_list_cons_core (h: $ G |- A : Sort (l_S l) $):
-  $ G |- list_ctor (cS c0) l A : A -> list l @ A -> list l @ A $ =
-'(ty_conv_r (ty_Ctor (list_spec_spec h) (cty_S cty_0)
-  {(!! subst_imp t subst_nf @ subst_imp subst_var subst_var)
-    : $ subst: _ [ list_ind / _ ] = _ $}) @
-  conv_imp (conv_refl h) (conv_imp (conv_list_ind h) (conv_list_ind h)));
+axiom proj_type_P:
+  $ proj_type_checked P mued laa C As L0 i $ >
+  $ P |- As : Prop $ >
+  $ P |- proj mued i : A. v : laa, As $;
 
-theorem ty_list_cons: $ G |- list_cons l : A. A : Sort (l_S l), A -> list l @ A -> list l @ A $ =
-'(ty_lambda @ ty_list_cons_core ty_var);
+term proj_la (P Ps: ctx) (ela e: expr): prov;
 
-theorem conv_ty_list_cons (h: $ G |- A : Sort (l_S l) $):
-  $ G |=: list_cons l @ A = list_ctor (cS c0) l A : A -> list l @ A -> list l @ A $ =
-'(conv_ty_r (ty_list_cons_core h) @
-  conv_beta (ty_list_cons_core ty_var) h @ subst_list_ctor @ !! subst_var a);
+axiom la_param_0:
+  $ proj_la P P e e $;
 
-theorem ty_list_rec_core (h: $ G |- A : Sort (l_S l) $):
-  $ G |- list_rec2 u l A : A. C : (list l @ A -> Sort u),
-    (C @ (list_nil l @ A)) ->
-    (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
-    (A. z : list l @ A, C @ z) $ =
-'(ty_conv_r (ty_Rec (list_spec_spec h)
-      (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
-      {Rec_kappa_0 : $ Rec_kappa _ list_ind $} @
-    Rec_epsilon_S {(Rec_beta_app Rec_app_0 subst_var)
-      : $ Rec_beta _ list_ind _ list_ctor $} @
-    Rec_epsilon_S {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-      Rec_beta_app Rec_app_0 subst_var)
-      : $ Rec_beta _ list_ind _ list_ctor $} @
-    !! Rec_epsilon_0 t {Rec_alpha_0 : $ Rec_alpha list_ind $}) @
-  conv_Pi (conv_imp (conv_list_ind h) (conv_refl ty_univ)) @
-  conv_imp (!! conv_app t (conv_ty_refl ty_var) @ conv_ty_list_nil @ ty_cons h) @
-  conv_imp (conv_Pi (conv_refl @ ty_cons h) @
-    conv_Pi (conv_list_ind @ ty_cons @ ty_cons h) @
-    conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons ty_var) ty_var) @
-    !! conv_app t (conv_ty_refl @ ty_cons @ ty_cons ty_var) @
-    conv_ty_ndapp (conv_ty_cons @
-      conv_ty_ndapp (conv_ty_cons @ conv_ty_list_cons @ ty_cons h)
-      (conv_ty_refl ty_var))
-    (conv_ty_refl ty_var)) @
-  conv_Pi (conv_list_ind @ ty_cons h) @ conv_refl @ ty_ndapp (ty_cons ty_var) ty_var);
+axiom la_param_S (A: expr) (Ps: ctx) {x: expr} (P: ctx x) (ela e: expr x):
+  $ proj_la P (Ps, x : A) ela e $ > 
+  $ proj_la P Ps (\. x : A, ela) e $;
 
-theorem ty_list_rec:
-  $ G |- list_rec u l : A. A : Sort (l_S l), A. C : (list l @ A -> Sort u),
-    (C @ (list_nil l @ A)) ->
-    (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
-    (A. z : list l @ A, C @ z) $ =
-'(ty_lambda @ ty_list_rec_core ty_var);
+axiom conv_eta_proj: 
+  $ P |- proj mued i : A. v : laa, As $ >
+  $ type_judgement (structure t (l_S l) c) P F la (Type l) mued (Ind (structure t (l_S l) c) (Sort (l_S l)) t )$ >
+  $ type_judgement (structure t (l_S l) c) P cF cla C cmued (Ctor (structure t (l_S l) c) c t 0) $ >
+  $ proj_la P nil pla (proj mued i) $ >
+  $ ctx_vars P nil pa $ >
+  $ collect_params prs pa pa $ >
+  $ apply_params plaa pla prs $ >
+  $ apply_params laa la prs $ >
+  $ G |- cabs : laa $ > 
+  $ G |- plaa @ cabs : E $ > 
+  $ find_app cabs cbss b i $ >
+  $ G |= plaa @ cabs = b $; 
 
-theorem conv_ty_list_rec (h: $ G |- A : Sort (l_S l) $):
-  $ G |=: list_rec u l @ A = list_rec2 u l A :
-    A. C : (list l @ A -> Sort u),
-      (C @ (list_nil l @ A)) ->
-      (A. head : A, A. tail : list l @ A, C @ tail -> C @ (list_cons l @ A @ head @ tail)) ->
-      (A. z : list l @ A, C @ z) $ =
-'(conv_ty_beta (ty_list_rec_core ty_var) h
-  (subst_Pi (subst_imp (subst_app subst_nf subst_var) subst_nf) @
-    subst_imp (subst_app subst_nf @ subst_app subst_nf subst_var) @
-    subst_imp (subst_Pi subst_var @ subst_Pi (subst_app subst_nf subst_var) @
-      subst_imp subst_nf @ subst_app subst_nf @
-      subst_app (subst_app (subst_app subst_nf subst_var) subst_nf) subst_nf) @
-    subst_Pi (subst_app subst_nf subst_var) subst_nf) @
-  !! subst_Rec t _ subst_nf @ subst_list_spec @ !! subst_var a);
+axiom conv_proj_app:
+  $ G |=: e1 = e2 : laa $ >
+  $ P |- proj mued i : A. v : laa, As $ >
+  $ type_judgement (structure t (l_S l) c) P F la (Type l) mued  (Ind (structure t (l_S l) c) (Sort (l_S l)) t )$ >
+  $ type_judgement (structure t (l_S l) c) P cF cla C cmued  (Ctor (structure t (l_S l) c) c t 0)$ >
+  $ proj_la P nil pla (proj mued i) $ >
+  $ ctx_vars P nil pa $ >
+  $ collect_params prs pa pa $ >
+  $ apply_params laa la prs $ >
+  $ apply_params plaa pla prs $ >
+  $ G |= plaa @ e1 = plaa @ e2 $;
 
-theorem list_nil_iota
-  (h1: $ G |- A : Sort (l_S l) $)
-  (h2: $ G |- C : list l @ A -> Sort u $)
-  (h3: $ G |- z : C @ (list_nil l @ A) $)
-  (h4: $ G |- s : A. head : A, A. tail : list l @ A,
-    C @ tail -> C @ (list_cons l @ A @ head @ tail) $):
-  $ G |= list_rec u l @ A @ C @ z @ s @ (list_nil l @ A) = z $ =
-'(conv_trans (conv_app (conv_ty_ndapp (conv_ty_ndapp
-    (conv_ty_app (conv_ty_list_rec h1) (conv_ty_refl h2) @
-      subst_imp (subst_app subst_var subst_nf) @
-      subst_imp (subst_Pi subst_nf @ subst_Pi subst_nf @
-        subst_imp (subst_app subst_var subst_nf) (subst_app subst_var subst_nf)) @
-      !! subst_Pi c x subst_nf @ subst_app subst_var subst_nf) @
-    conv_ty_refl h3) @ conv_ty_refl h4) @ conv_ty_list_nil h1) @
-  conv_iota (list_spec_spec h1) (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
-    {Rec_kappa_0 : $ Rec_kappa _ list_ind $}
-    (ty_conv h2 (conv_imp (conv_list_ind h1) (conv_refl ty_univ))) @
-  iota_epsilon_0
-    {(Rec_beta_app Rec_app_0 subst_var) : $ Rec_beta _ list_ind _ list_ctor $}
-    (ty_conv h3 (!! conv_app x (conv_ty_refl h2) (conv_ty_list_nil h1)))
-    {(iota_beta_app Rec_app_0) : $ iota_beta _ _ _ list_ctor $} @
-  iota_epsilon2_1 {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-    Rec_beta_app Rec_app_0 @ !! subst_var t) : $ Rec_beta _ list_ind _ list_ctor $} @
-  ty_conv h4 @ conv_Pi (conv_refl h1) @ conv_Pi (conv_list_ind @ ty_cons h1) @
-  conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons h2) ty_var) @
-  !! conv_app x (conv_ty_refl @ ty_cons @ ty_cons h2) @
-  conv_ty_ndapp (conv_ty_ndapp (conv_ty_list_cons @ ty_cons @ ty_cons h1) @
-    conv_ty_refl @ ty_cons ty_var) @ conv_ty_refl ty_var);
+term b_projs (mued: expr) (z la laa claa claabs0 claabs: expr) (prs: list) (i: nat) (G P: ctx): prov;
 
-theorem list_cons_iota {hd tl}
-  (h1: $ G |- A : Sort (l_S l) $)
-  (h2: $ G |- C : list l @ A -> Sort u $)
-  (h3: $ G |- z : C @ (list_nil l @ A) $)
-  (h4: $ G |- s : A. head : A, A. tail : list l @ A,
-    C @ tail -> C @ (list_cons l @ A @ head @ tail) $)
-  (h5: $ G |- hd : A $)
-  (h6: $ G |- tl : list l @ A $):
-  $ G |= list_rec u l @ A @ C @ z @ s @ (list_cons l @ A @ hd @ tl) =
-    s @ hd @ tl @ (list_rec u l @ A @ C @ z @ s @ tl) $ =
-(focus
-  (have 'h7 '(conv_ty_ndapp (conv_ty_ndapp (conv_ty_app (conv_ty_list_rec h1) (conv_ty_refl h2) @
-      subst_imp (subst_app subst_var subst_nf) @
-      subst_imp (subst_Pi subst_nf @ subst_Pi subst_nf @
-        subst_imp (subst_app subst_var subst_nf) (subst_app subst_var subst_nf)) @
-      !! subst_Pi c x subst_nf @ subst_app subst_var subst_nf) @
-    conv_ty_refl h3) @ conv_ty_refl h4))
-'(conv_trans (conv_app h7 @
-    conv_ty_ndapp (conv_ty_ndapp (conv_ty_list_cons h1) @ conv_ty_refl h5) @
-    conv_ty_refl h6) @ conv_symm @
-  conv_trans (
-    !! conv_app a (conv_ty_refl @
-      ty_app (ty_app h4 h5 @
-        subst_Pi subst_nf @ subst_imp subst_nf @ subst_app subst_nf @
-        subst_app (subst_app subst_nf subst_var) subst_nf) h6 @
-      subst_imp (subst_app subst_nf subst_var) @
-      subst_app subst_nf @ subst_app subst_nf subst_var) @
-    conv_ty_app h7 (conv_ty_refl h6) @ subst_app subst_nf subst_var) @ conv_symm @
-  conv_iota (list_spec_spec h1) (LE_Type Ind_ty_0 @ l_pl_S_left @ l_pl_S_right @ l_pl_id l_pl_0_0)
-    {Rec_kappa_0 : $ Rec_kappa _ list_ind $}
-    (ty_conv h2 (conv_imp (conv_list_ind h1) (conv_refl ty_univ))) @
-  iota_epsilon_S
-    {(Rec_beta_app Rec_app_0 subst_var) : $ Rec_beta _ list_ind _ list_ctor $}
-    (ty_conv h3 (!! conv_app x (conv_ty_refl h2) (conv_ty_list_nil h1))) @
-  iota_epsilon_0
-    {(Rec_beta_Pi subst_nf @ Rec_beta_rec (Rec_delta_0 Rec_app_0) subst_var @
-      Rec_beta_app Rec_app_0 @ !! subst_var t) : $ Rec_beta _ list_ind _ list_ctor $}
-    (ty_conv h4 @ conv_Pi (conv_refl h1) @ conv_Pi (conv_list_ind @ ty_cons h1) @
-      conv_imp (conv_refl @ ty_ndapp (ty_cons @ ty_cons h2) ty_var) @
-      !! conv_app b (conv_ty_refl @ ty_cons @ ty_cons h2) @
-      conv_ty_ndapp (conv_ty_cons @
-        conv_ty_ndapp (conv_ty_cons @ conv_ty_list_cons h1) @ conv_ty_refl ty_var) @
-      conv_ty_refl ty_var)
-    {(iota_beta_Pi @ iota_beta_rec (iota_delta_0 Rec_app_0) @
-      iota_beta_app Rec_app_0) : $ iota_beta _ _ _ list_ctor $}
-    iota_epsilon2_0));
+axiom b_projs_0:
+  $ type_judgement (structure t (l_S l) c) P F la (Type l) mued  (Ind (structure t (l_S l) c) (Sort (l_S l)) t )$ >
+  $ type_judgement (structure t (l_S l) c) P cF cla C cmued  (Ctor (structure t (l_S l) c) c t 0)$ >
+  $ ctx_vars P nil pa $ >
+  $ collect_params prs pa pa $ >
+  $ apply_params laa la prs $ >
+  $ apply_params claa cla prs $ >
+  $ G |- z : laa $ >
+  $ b_projs mued z la laa claa claabs claabs prs i G P $;
+
+axiom b_projs_S:
+  $ proj_la P nil pla (proj mued i) $ >
+  $ G |- pla : A. v : laa, As $ >
+  $ apply_params plaa pla prs $ >
+  $ G |= (plaa @ z) = b $ >
+  $ b_projs mued z la laa claa claabs0 (claabs @ b) prs (^i) G P $ > 
+  $ b_projs mued z la laa claa claabs0 claabs prs i G P $;
+
+axiom b_projs_F:
+  $ b_projs mued z la laa claa claabs0 claa pa n_0 G P $ >
+  $ G |= claabs0 = z $;
+
+axiom b_projs_unit:
+  $ type_judgement (structure t (l_S l) c) P F la (Type l) mued  (Ind (structure t (l_S l) c) (Sort (l_S l)) t )$ >
+  $ ctx_vars P nil pa $ >
+  $ collect_params prs pa pa $ >
+  $ apply_params laa la prs $ >
+  $ G |- u : laa $ >
+  $ G |- v : laa $ >
+  $ G |= v = u $;
+
+
+
+
+
+------------------------------ thms
+
+theorem ty_univ_0: $ nil |- Sort L0 : Sort L1 $ = 'ty_univ;
+
+-- some expression examples
+
+def nat_K (t: expr) = $ ({} ; t ; (t -> t)) $;
+def nat_m (t: expr) = $ |.| . (ind (nat_K t) Sort_1 t) $;
+def nat_spec (t: expr) = $ Mutual (|.|) (nat_m t) L1 $;
+def _nat (t: expr) = $ Ind (nat_spec t) Sort_1 t $;
+def nat = $ u. t, Ind (nat_spec t) Sort_1 t $;
+def nat_zero = $ u. t, (Ctor (nat_spec t) t t 1) $;
+def nat_succ = $ u. t, (Ctor (nat_spec t) (t -> t) t 0) $;
+def nat_rec (u: level) = $ u. t, Rec u ({} ; t) t (nat_spec t) $;
+
+def vec_cons_spec (t e: expr) = $ A. n : nat, e -> t @ n -> t @ (nat_succ @ n) $;
+def vec_nil_spec (t: expr) = $ t @ nat_zero $;
+def vec_K (t e: expr) = $ ({} ; (vec_nil_spec t) ; (vec_cons_spec t e)) $;
+def vec_fam (l: level) = $ A. n : nat, Type l $;
+def m_vec_spec (l: level) (t e: expr) = $ |.| . (ind (vec_K t e) (vec_fam l) t) $;
+def vec_spec (l: level) (t: expr) (e: expr) = $ Mutual (|.|) (m_vec_spec l t e) (l_S l) $;
+def _vec (l: level) (t: expr) (e: expr) = $ Ind (vec_spec l t e) (vec_fam l) t $;
+def vec (l: level) = $ \. e : Type l, u. t, _vec l t e $;
+def _vec_nil (l: level) (t e: expr) = $ Ctor (vec_spec l t e) (vec_nil_spec t) t 1 $;
+def vec_nil (l: level) = $ \. e : Type l, (u. t, _vec_nil l t e) $ ;
+def _vec_cons (l: level) (t e: expr) = $ Ctor (vec_spec l t e) (vec_cons_spec t e) t 0 $;
+def vec_cons (l: level) = $ \. e : Type l, u. t, _vec_cons l t e $;
+def _vec_rec (l: level) (e: expr) (u: level) = $ u. t, Rec u ({} ; t) t (vec_spec l t e) $;
+def vec_rec (l: level) (u: level) = $ \. e : Type l, _vec_rec l e u $;
+
+def _w_vec_spec (l: level) (t: expr) = $ w. e : Type l, wMutual (vec_spec l t e) $;
+
+def vec_tree_cons_spec (t r e: expr) = $ A. n : nat, e -> r @ n -> t @ (nat_succ @ n) $;
+def vec_tree_nil_spec (t: expr) = $ t @ nat_zero $;
+def vec_tree_K (t r e: expr) = $ {} ; (vec_tree_nil_spec t) ; (vec_tree_cons_spec t r e) $;
+def m_vec_tree_spec (l: level) (t r e: expr) = $ |.| . (ind (vec_tree_K t r e) (vec_fam l) t) $;
+-- nat_zero here is nonsensical but besides the point
+def aux_vec_tree_spec (l: level) (t r: expr): list = $ |.| . (aux (_w_vec_spec l r) ({} ; t @ nat_zero)) $;
+def vec_tree_spec (l: level) (t: expr) (r: expr) (e: expr) = 
+  $ Mutual (aux_vec_tree_spec l t r) (m_vec_tree_spec l t r e) (l_S l) $;
+def _vec_tree (l: level) (t r: expr) (e: expr) = $ Ind (vec_tree_spec l t r e) (vec_fam l) t $;
+def vec_tree (l: level) = $ \. e : Type l, u. t, u. r, _vec_tree l t r e $;
+def _vec_tree_nil (l: level) (t r: expr) (e: expr) = $  Ctor (vec_tree_spec l t r e) (vec_tree_nil_spec t) t 1 $ ;
+def vec_tree_nil (l: level) = $ \. e : Type l, u. t, u. r, _vec_tree_nil l t r e $ ;
+def _vec_tree_cons (l: level) (t r: expr) (e: expr) = $ Ctor (vec_tree_spec l t r e) (vec_tree_cons_spec t r e) t 0 $;
+def vec_tree_cons (l: level) = $ \. e : Type l, u. t, u. r, _vec_tree_cons l t r e $;
+def _vec_tree_rec (l: level) (e: expr) (u: level) = $ u. t, u. r, Rec u ({} ; t ; r) t (vec_tree_spec l t r e) $;
+def vec_tree_rec (l: level) (u: level) = $ \. e : Type l, _vec_tree_rec l e u $;
+
+theorem ty_vec_tree_rec: $ nil, e : Type l |- _vec_tree_rec l e u  : 
+  A. C_1 : A. i : nat, vec_tree l @ e @ i -> Sort u,
+  A. C_2 : A. i : nat, vec l @ (vec_tree l @ e @ nat_zero) @ i -> Sort u,
+    C_1 @ nat_zero @ (vec_tree_nil l @ e) ->
+    (A. n : nat, A. head : e, A. ta : vec l @ (vec_tree l @ e @ nat_zero) @ n, C_2 @ n @ ta -> C_1 @ (nat_succ @ n) @ (vec_tree_cons l @ e @ n @ head @ ta)) ->
+    C_2 @ nat_zero @ (vec_nil l @ (vec_tree l @ e @ nat_zero)) -> 
+    (A. n : nat, A. head : (vec_tree l @ e @ nat_zero), A. ta : vec l @ (vec_tree l @ e @ nat_zero) @ n, 
+      C_1 @ nat_zero @ head -> C_2 @ n @ ta -> C_2 @ (nat_succ @ n) @ (vec_cons l @ (vec_tree l @ e @ nat_zero) @ n @ head @ ta)) ->
+  (A. i : nat, A. z : vec_tree l @ e @ i, C_1 @ i @ z) $;
+
