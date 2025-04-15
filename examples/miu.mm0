@@ -26,7 +26,7 @@ term Z: str;
 axiom rfl (a: str): $ a = a $;
 axiom sym (a b: str): $ a = b $ > $ b = a $;
 axiom tr (a b c: str): $ a = b $ > $ b = c $ > $ a = c $;
-axiom catl (a b c: str): $ a = b $ > $ a.b = a.c $;
+axiom catl (a b c: str): $ b = c $ > $ a.b = a.c $;
 axiom catr (a b c: str): $ a = b $ > $ a.c = b.c $;
 axiom zl (a: str): $ Z.a = a $;
 axiom zr (a: str): $ a.Z = a $;
