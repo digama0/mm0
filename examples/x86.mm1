@@ -4685,7 +4685,7 @@ pub theorem execOpenT (k ret: nat):
 (named '(anim anl @ eex @ eex anr));
 
 --| If `fd` is the tracked file descriptor, reading/writing `l1` from `fd`
---| results in the accumulated input.output `l2`.
+--| results in the accumulated input/output `l2`.
 @_ def extendIfFD (tgt fd l l1 l2: nat): wff =
 $ l e. List u8 /\ l1 e. List u8 /\ l2 = if (fd = tgt) (l ++ l1) l $;
 pub theorem extendIfFD_T (tgt fd l l1 l2: nat):
@@ -4700,7 +4700,8 @@ $ l e. List u8 /\ readReg k RAX = sys_read /\
     count = readReg k RDX /\
     ifp (isIOError ret)
       (l2 = l /\ k2 = k)
-      (ret <= count /\ E. l1 (extendIfFD stdin fd l l1 l2 /\
+      (ret <= count /\ E. l1 (len l1 = ret /\
+        extendIfFD stdin fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
 theorem execReadT2 (l k l2 k2 ret: nat):
   $ execRead l k l2 k2 ret ->
@@ -4716,7 +4717,7 @@ theorem execReadT2 (l k l2 k2 ret: nat):
     iand (mpbird (eleq1d @ anrd anrr) @ anwl h1) @
     iand (rsyl anrl isIOErrorT) @
     syl eqssr @ PageMappingeqd @ getMemoryeqd @ anrd anrr))
-  (focus '(syl5 anr @ impd @ exp @ eexda @ iand (rsyl anrl @ anrd extendIfFD_T) @
+  (focus '(syl5 anr @ impd @ exp @ eexda @ iand (rsyl anrl @ anwr @ anrd extendIfFD_T) @
     iand (rsyl anrr @ anrd writeMemT) @
     iand (sylc Bitsle1 anlr @ mpbird (eleq1d @ anrd anllr) @
       sylan readRegT (anwll h1) @ a1i RDX_T) @
@@ -4738,7 +4739,8 @@ $ l e. List u8 /\ readReg k RAX = sys_write /\
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (isIOError ret) (l2 = l)
-      (ret <= count /\ E. l1 (extendIfFD stdout fd l l1 l2 /\
+      (ret <= count /\ E. l1 (len l1 = ret /\
+        extendIfFD stdout fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
 pub theorem execWriteT (l k l2 ret: nat):
   $ execWrite l k l2 ret -> l e. List u8 /\ k e. Config /\ l2 e. List u8 /\ ret e. u64 $ =
@@ -4748,7 +4750,7 @@ pub theorem execWriteT (l k l2 ret: nat):
   (have 'h '(anwr @ rsyl anlr @ rsyl readMemT anll))
   '(iand (anwl h) @ imp @ eorda
     (iand (mpbird (eleq1d anrr) anll) @ rsyl anrl isIOErrorT)
-    (iand (anwr @ anwr @ anwr @ eex @ anwl @ anrd extendIfFD_T) @
+    (iand (anwr @ anwr @ anwr @ eex @ anwl @ anwr @ anrd extendIfFD_T) @
       sylc Bitsle1 (anwr anrl) @ mpbird (eleq1d @ rsyl anlr anllr) @
       sylan readRegT (anwl h) @ a1i RDX_T)));
 

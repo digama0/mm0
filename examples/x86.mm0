@@ -1353,7 +1353,7 @@ theorem execOpenT (k ret: nat):
   $ execOpen k ret -> k e. Config /\ ret e. u64 $;
 
 --| If `fd` is the tracked file descriptor, reading/writing `l1` from `fd`
---| results in the accumulated input.output `l2`.
+--| results in the accumulated input/output `l2`.
 def extendIfFD (tgt fd l l1 l2: nat): wff =
 $ l e. List u8 /\ l1 e. List u8 /\ l2 = if (fd = tgt) (l ++ l1) l $;
 theorem extendIfFD_T (tgt fd l l1 l2: nat):
@@ -1367,7 +1367,8 @@ $ l e. List u8 /\ readReg k RAX = sys_read /\
     count = readReg k RDX /\
     ifp (isIOError ret)
       (l2 = l /\ k2 = k)
-      (ret <= count /\ E. l1 (extendIfFD stdin fd l l1 l2 /\
+      (ret <= count /\ E. l1 (len l1 = ret /\
+        extendIfFD stdin fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
 theorem execReadT (l k l2 k2 ret: nat):
   $ execRead l k l2 k2 ret ->
@@ -1384,7 +1385,8 @@ $ l e. List u8 /\ readReg k RAX = sys_write /\
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (isIOError ret) (l2 = l)
-      (ret <= count /\ E. l1 (extendIfFD stdout fd l l1 l2 /\
+      (ret <= count /\ E. l1 (len l1 = ret /\
+        extendIfFD stdout fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
 theorem execWriteT (l k l2 ret: nat):
   $ execWrite l k l2 ret ->
