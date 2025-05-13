@@ -23,7 +23,11 @@ use crate::types::vcode::{self, IsReg, InstId, ProcAbi, SpillId, BlockId, ChunkV
 
 impl<I: vcode::Inst> vcode::VCode<I> {
   fn do_regalloc(&self) -> regalloc2::Output {
-    let opts = regalloc2::RegallocOptions { verbose_log: true, validate_ssa: true };
+    let opts = regalloc2::RegallocOptions {
+      verbose_log: true,
+      validate_ssa: true,
+      algorithm: regalloc2::Algorithm::Ion
+    };
     regalloc2::run(self, &MACHINE_ENV, &opts).expect("fatal regalloc error")
   }
 }

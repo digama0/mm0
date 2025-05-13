@@ -356,7 +356,7 @@ impl<I: Inst> regalloc2::Function for VCode<I> {
 
   fn block_insns(&self, block: BlockId) -> InstRange {
     let (_, from, to) = self.blocks[block];
-    InstRange::forward(from, to)
+    InstRange::new(from, to)
   }
 
   fn block_succs(&self, block: BlockId) -> &[BlockId] { &self.block_succs[block] }
