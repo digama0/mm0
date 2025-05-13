@@ -1,5 +1,5 @@
 brace_style = "SameLineWhere"
-fn_args_layout = "Compressed"
+fn_params_layout = "Compressed"
 fn_single_line = true
 match_arm_blocks = false
 trailing_semicolon = false
