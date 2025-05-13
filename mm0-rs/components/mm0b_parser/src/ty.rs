@@ -1,8 +1,7 @@
 //! Basic types involved in MMB file parsing.
 
-use byteorder::LE;
 use mm0_util::SortId;
-use zerocopy::{AsBytes, FromZeroes, FromBytes, Unaligned, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes, LE, U64, Unaligned};
 
 /// bound mask: `10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
 pub const TYPE_BOUND_MASK: u64 = 1 << 63;
@@ -22,7 +21,7 @@ pub const TYPE_DEPS_MASK: u64 = (1 << 55) - 1;
 /// * Bits 0-55 (the low 7 bytes) are a bitset giving the set of bound variables
 ///   earlier in the list that this variable is allowed to depend on.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromZeroes, FromBytes, AsBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, Unaligned)]
 pub struct Type(U64<LE>);
 
 /// Newtype for `Type` that makes some situations easier to read.
@@ -47,13 +46,7 @@ impl Type {
 
   /// A brand new `Type`; bool indicates whether it's bound.
   #[must_use]
-  pub fn new(bound: bool) -> Self {
-    if bound {
-      Type::from(1 << 63)
-    } else {
-      Type::from(0)
-    }
-  }
+  pub fn new(bound: bool) -> Self { if bound { Type::from(1 << 63) } else { Type::from(0) } }
 
   /// Annotate a `Type` with a sort.
   ///
@@ -93,11 +86,7 @@ impl Type {
   #[inline]
   #[must_use]
   pub fn bound_digit(self) -> Option<u64> {
-    if self.bound() {
-      Some(self.0.get() & !(0xFF << 56))
-    } else {
-      None
-    }
+    if self.bound() { Some(self.0.get() & !(0xFF << 56)) } else { None }
   }
 
   /// The POSITION (1 - 55) of this bound variable, NOT the literal u64.
@@ -119,11 +108,7 @@ impl Type {
   #[inline]
   #[must_use]
   pub fn has_deps(self) -> bool {
-    if self.bound() {
-      false
-    } else {
-      (self.0.get() & TYPE_DEPS_MASK) > 0
-    }
+    if self.bound() { false } else { (self.0.get() & TYPE_DEPS_MASK) > 0 }
   }
 
   /// If this is a regular/not-bound variable, return a u64
@@ -131,13 +116,7 @@ impl Type {
   /// on which it depends.
   #[inline]
   #[must_use]
-  pub fn deps(self) -> Option<u64> {
-    if self.bound() {
-      None
-    } else {
-      Some(self.deps_unchecked())
-    }
-  }
+  pub fn deps(self) -> Option<u64> { if self.bound() { None } else { Some(self.deps_unchecked()) } }
 
   /// Assuming this is a regular/not-bound variable, return a u64
   /// whose only activated bits are the ones marking the bvs

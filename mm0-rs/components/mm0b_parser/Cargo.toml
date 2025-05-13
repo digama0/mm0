@@ -15,6 +15,6 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 byteorder = "1.5"
-zerocopy = { version = "0.7", features = ["derive"] }
+zerocopy = { version = "0.8", features = ["derive"] }
 memchr = "2.7"
 mm0_util = { version = "0.1.4", path = "../mm0_util", default-features = false }

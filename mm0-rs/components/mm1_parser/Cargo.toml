@@ -17,8 +17,7 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 mm0_util = { path = "../mm0_util" }
 num = "0.4"
 annotate-snippets = "0.11"
-byteorder = "1.5"
-zerocopy = "0.7"
+zerocopy = "0.8"
 
 # optional dependencies
 mm0_deepsize = { path = "../mm0_deepsize", optional = true }

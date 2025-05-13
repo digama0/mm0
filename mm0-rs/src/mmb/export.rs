@@ -4,7 +4,7 @@ use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use mm0b_parser::MAX_BOUND_VARS;
-use zerocopy::{AsBytes, U32, U64};
+use zerocopy::{IntoBytes, LE as ZLE, U32, U64};
 use crate::{
   Type, SortId, AtomId, AtomVec, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers,
@@ -74,9 +74,9 @@ impl<W: std::fmt::Debug> std::fmt::Debug for Exporter<'_, W> {
 #[derive(Debug)]
 enum Value {
   /// A (little endian) 32 bit value
-  U32(U32<LE>),
+  U32(U32<ZLE>),
   /// A (little endian) 64 bit value
-  U64(U64<LE>),
+  U64(U64<ZLE>),
   /// An arbitrary length byte slice. (We could store everything like this but
   /// the `U32` and `U64` cases are common and this avoids some allocation.)
   Box(Box<[u8]>),

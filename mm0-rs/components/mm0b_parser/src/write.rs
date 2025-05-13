@@ -4,10 +4,10 @@ use crate::{
   Arg, HasSymbolNames, Header, MmbFile, NameEntryRef, ProofCmd, SortData, TableEntry, TermEntry,
   ThmEntry, UnifyCmd,
 };
-use byteorder::{WriteBytesExt, LE};
-use mm0_util::{u32_as_usize, SortId, SortVec, TermId, TermVec, ThmId, ThmVec};
+use byteorder::{LE, WriteBytesExt};
+use mm0_util::{SortId, SortVec, TermId, TermVec, ThmId, ThmVec, u32_as_usize};
 use std::io::{self, Cursor, Read, Write};
-use zerocopy::{AsBytes, U32};
+use zerocopy::{IntoBytes, U32};
 
 /// Encode the command `cmd` (one of the `STMT_*`, `PROOF_*` or `UNIFY_*` commands
 /// in this module, which are all 6 bit numbers) with the given `data` field

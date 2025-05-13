@@ -1,14 +1,13 @@
 //! Parser for MMB binary proof files.
 use crate::{
-  cmd, cstr_from_bytes_prefix, exhausted, u32_as_usize, u64_as_usize, Arg, Header, NameEntry,
-  NumdStmtCmd, ProofCmd, SortData, StmtCmd, TableEntry, TermEntry, ThmEntry, UnifyCmd,
+  Arg, Header, NameEntry, NumdStmtCmd, ProofCmd, SortData, StmtCmd, TableEntry, TermEntry,
+  ThmEntry, UnifyCmd, cmd, cstr_from_bytes_prefix, exhausted, u32_as_usize, u64_as_usize,
 };
-use byteorder::LE;
 use mm0_util::{SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::ops::Range;
 use std::{io, mem, mem::size_of};
-use zerocopy::{FromBytes, Ref, U16, U32, U64};
+use zerocopy::{FromBytes, Immutable, LE, Ref, U16, U32, U64};
 
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
@@ -249,7 +248,7 @@ pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usiz
 /// For [`DeclIter`], the `u8` is a [`StmtCmd`], and the `u32` is the length of the proof iterator
 /// that should be constructed for that statement.
 pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), ParseError> {
-  use super::cmd::{DATA_16, DATA_32, DATA_8, DATA_MASK};
+  use super::cmd::{DATA_8, DATA_16, DATA_32, DATA_MASK};
   match mmb.get(starts_at..) {
     None | Some([]) => Err(exhausted!()),
     Some([cmd, tl @ ..]) => {
@@ -261,12 +260,12 @@ pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), Parse
           .first()
           .map(|&n| (val, n.into(), starts_at + size_of::<u8>() + size_of::<u8>()))
           .ok_or_else(|| exhausted!()),
-        DATA_16 => Ref::<_, U16<LE>>::new_from_prefix(tl)
+        DATA_16 => Ref::<_, U16<LE>>::from_prefix(tl)
           .map(|(n, _)| (val, n.get().into(), starts_at + size_of::<u8>() + size_of::<u16>()))
-          .ok_or_else(|| exhausted!()),
-        DATA_32 => Ref::<_, U32<LE>>::new_from_prefix(tl)
+          .map_err(|_| exhausted!()),
+        DATA_32 => Ref::<_, U32<LE>>::from_prefix(tl)
           .map(|(n, _)| (val, n.get(), starts_at + size_of::<u8>() + size_of::<u32>()))
-          .ok_or_else(|| exhausted!()),
+          .map_err(|_| exhausted!()),
         _ => unreachable!(),
       }
     }
@@ -592,11 +591,11 @@ impl From<io::Error> for ParseError {
 }
 
 #[inline]
-fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8])> {
+fn new_slice_prefix<T: FromBytes + Immutable>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8])> {
   let mid = mem::size_of::<T>().checked_mul(n)?;
   if mid <= bytes.len() {
     let (left, right) = bytes.split_at(mid);
-    Some((Ref::new_slice(left)?.into_slice(), right))
+    Some((Ref::into_ref(Ref::from_bytes(left).ok()?), right))
   } else {
     None
   }
@@ -613,11 +612,7 @@ impl<X> MmbFile<'_, X> {
   #[must_use]
   pub fn p_index(&self) -> Option<usize> {
     let n = u64_as_usize(self.header.p_index);
-    if n == 0 {
-      None
-    } else {
-      Some(n)
-    }
+    if n == 0 { None } else { Some(n) }
   }
 
   /// Returns a bad index parse error, for error reporting during index parsing.
@@ -633,19 +628,20 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
   pub fn parse(buf: &'a [u8]) -> Result<Self, ParseError> {
     use ParseError::{BadIndexParse, BadSorts, BadTerms, BadThms};
     let (zc_header, sorts) =
-      Ref::<_, Header>::new_from_prefix(buf).ok_or_else(|| find_header_error(buf))?;
+      Ref::<_, Header>::from_prefix(buf).map_err(|_| find_header_error(buf))?;
     // For potential error reporting
-    let p_sorts = zc_header.bytes().len();
-    let header = zc_header.into_ref();
+    let p_sorts = Ref::bytes(&zc_header).len();
+    let header = Ref::into_ref(zc_header);
     header.check(buf)?;
     // This only parses a newtyped &[u8] that hasn't done any validation
     // wrt whether the contents are valid sets of sort modifiers,
     // so if this fails, it's a size issue.
-    let sorts = sorts
-      .get(..header.num_sorts.into())
-      .and_then(Ref::new_slice_unaligned)
-      .ok_or_else(|| BadSorts(p_sorts..u32_as_usize(header.p_terms.get())))?
-      .into_slice();
+    let sorts = Ref::into_ref(
+      sorts
+        .get(..header.num_sorts.into())
+        .and_then(|r| Ref::<_, [_]>::from_bytes(r).ok())
+        .ok_or_else(|| BadSorts(p_sorts..u32_as_usize(header.p_terms.get())))?,
+    );
     let terms = buf
       .get(u32_as_usize(header.p_terms.get())..)
       .and_then(|s| new_slice_prefix(s, u32_as_usize(header.num_terms.get())))
@@ -664,7 +660,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
     let n = u64_as_usize(header.p_index);
     if n != 0 {
       let (entries, _) = (|| -> Option<_> {
-        let (num_entries, rest) = Ref::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
+        let (num_entries, rest) = Ref::<_, U64<LE>>::from_prefix(buf.get(n..)?).ok()?;
         new_slice_prefix(rest, num_entries.get().try_into().ok()?)
       })()
       .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
@@ -961,7 +957,7 @@ str_list_wrapper! {
 impl<'a, X> MmbFile<'a, X> {
   fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
     let (num_vars, rest) =
-      Ref::<_, U64<LE>>::new_unaligned_from_prefix(self.buf.get(u64_as_usize(p_vars)..)?)?;
+      Ref::<_, U64<LE>>::from_prefix(self.buf.get(u64_as_usize(p_vars)..)?).ok()?;
     Some(StrListRef {
       buf: self.buf,
       strs: new_slice_prefix(rest, num_vars.get().try_into().ok()?)?.0,
