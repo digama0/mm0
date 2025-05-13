@@ -20,16 +20,15 @@ bitflags = "2.6"
 # optional dependencies
 mm0_deepsize = { version = "0.1.0", path = "../mm0_deepsize", optional = true }
 mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", optional = true }
-once_cell = { version = "1.19", optional = true }
 pathdiff = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.97", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = { version = "0.16", optional = true }
+procfs = { version = "0.17", optional = true }
 
 [features]
 default = ["lined_string"]
 memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procfs"]
 server = ["lsp-types", "mm0_deepsize/lsp-types"]
-lined_string = ["once_cell", "pathdiff"]
+lined_string = ["pathdiff"]
