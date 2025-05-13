@@ -364,7 +364,7 @@ mod test {
     let mut cfg = Cfg::default();
 
     let bl1 = cfg.new_block(CtxId::ROOT, 0);
-    let [x1, x2] = [(); 2].map(|_| {
+    let [x1, x2] = [(); 2].map(|()| {
       let x = fresh_var.fresh();
       cfg[bl1].stmts.push(Statement::Let(
         LetKind::Let(Spanned::dummy(x), None), true,

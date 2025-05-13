@@ -227,7 +227,7 @@ impl VCtx {
         th = thm!(de, okVCtxPush_R(a, b, c, v, old): (okVCtxPush old v new));
       }
       self.e = new;
-    };
+    }
     self.access_cache.get_mut().insert(var, (self.base + len, vec![
       (self.base + len, thm!(de, okVCtxPush_get(v, old, new): (okVCtxGet new v)))
     ]));

@@ -1,7 +1,7 @@
 //! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
 
 use std::{fs, io};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, LazyLock};
 use std::collections::{VecDeque, HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
 use std::thread::{ThreadId, self};
@@ -11,7 +11,6 @@ use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::lock::Mutex as FMutex;
 use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
   Request, RequestId, Response, ResponseError};
-use once_cell::sync::Lazy;
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
@@ -102,10 +101,11 @@ impl std::fmt::Display for MemoryData {
 
 type LogMessage = (Instant, ThreadId, MemoryData, String);
 
-static LOGGER: Lazy<(Mutex<Vec<LogMessage>>, Condvar)> = Lazy::new(Default::default);
+static LOGGER: LazyLock<(Mutex<Vec<LogMessage>>, Condvar)> = LazyLock::new(Default::default);
 
 /// The global server singleton.
-pub static SERVER: Lazy<Server> = Lazy::new(|| Server::new().expect("Initialization failed"));
+pub static SERVER: LazyLock<Server> = LazyLock::new(||
+  Server::new().expect("Initialization failed"));
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
@@ -125,6 +125,7 @@ impl Logger {
       let mut now = Instant::now();
       let messages = &mut vec![];
       while !cancel.load(Ordering::Acquire) {
+        #[allow(clippy::swap_with_temporary)]
         std::mem::swap(messages, &mut LOGGER.1.uwait(LOGGER.0.ulock()));
         for (i, id, mem, s) in messages.drain(..) {
           let d = i.saturating_duration_since(now).as_millis();
@@ -1640,7 +1641,7 @@ impl Job {
       fut.await;
       let (m, cvar) = &*SERVER.threads;
       let mut vec = m.ulock();
-      let a: *const AtomicBool = &*cancel;
+      let a = &raw const *cancel;
       let i = vec.iter().enumerate().find(|&(_, (_, b))| a == &**b).expect("my job is missing").0;
       vec.swap_remove_front(i);
       drop(vec);

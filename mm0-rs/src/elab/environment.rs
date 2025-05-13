@@ -69,8 +69,8 @@ impl Type {
   #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
-/// An [`ExprNode`] is interpreted inside a context containing the `[`[`Type`]`]`
-/// args, the `[ExprNode]` heap and the `[ExprNode]` store for subterms.
+/// An [`ExprNode`] is interpreted inside a context containing the <code>[[Type]]</code>
+/// args, the <code>[[ExprNode]]</code> heap and the <code>[[ExprNode]]</code> store for subterms.
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprNode {
@@ -145,8 +145,8 @@ pub struct Term {
 ///
 /// This is an extension of [`ExprNode`] with more constructors, so a [`ProofNode`] can
 /// represent an expr, a proof, or a conversion, and the typing determines which.
-/// A [`ProofNode`] is interpreted in a context of variables `[Type]`, a heap `[ProofNode]`,
-/// and a store `[ProofNode]` for subterms.
+/// A [`ProofNode`] is interpreted in a context of variables <code>[[Type]]</code>,
+/// a heap <code>[[ProofNode]]</code>, and a store <code>[[ProofNode]]</code> for subterms.
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProofNode {
@@ -245,7 +245,7 @@ pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ProofNode]>,
-  /// The hypotheses, where `hyps[i]` points to [`Hyp`]`(i, e)`. Because these terms
+  /// The hypotheses, where `hyps[i]` points to <code>[Hyp](i, e)</code>. Because these terms
   /// are deduplicated with everything else, the [`Hyp`] itself will probably be
   /// on the heap (unless it is never used), and then a [`Ref`] will be stored
   /// in the `hyps` array.
@@ -1195,8 +1195,9 @@ impl AddItemNonFatalError {
   }
 }
 
-/// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
-/// redeclaration case they can still return an `A`, namely the ID of the old declaration
+/// Most add item functions return <code>[AddItemError]&lt;Option&lt;A&gt;&gt;</code>,
+/// meaning that in the redeclaration case they can still return an `A`,
+/// namely the ID of the old declaration.
 type AddItemResult<A, B = Option<A>> = Result<(A, Option<AddItemNonFatalError>), AddItemError<B>>;
 
 impl<A> AddItemError<A> {

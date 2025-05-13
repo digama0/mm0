@@ -404,6 +404,8 @@ impl EnvDisplay for RState {
   }
 }
 
+/// The state carried from [`RState::RefineBis`] to [`RState::RefineHyps`].
+///
 /// Stores the result of unification, which is ready as soon as we read the first
 /// `n` arguments of the application, if the theorem has `n` arguments.
 ///

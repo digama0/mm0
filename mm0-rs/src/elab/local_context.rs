@@ -87,7 +87,7 @@ impl InferSort {
         let mut res = None;
         for s in sorts.keys() {
           if let VarContext::Sort(s) = *s {
-            if mem::replace(&mut res, Some(s)).is_some() {return None}
+            if res.replace(s).is_some() {return None}
           }
         }
         res

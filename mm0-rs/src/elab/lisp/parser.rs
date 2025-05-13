@@ -1154,7 +1154,7 @@ impl LispParser<'_> {
               }
             } else {
               self.code.push(Ir::App(ctx.tail, Box::new((e.span, es[0].span)), n));
-            };
+            }
             self.spans.insert(es[0].span, if local {
               ObjectKind::LispVar(false, true, x)
             } else {
@@ -1278,7 +1278,7 @@ impl LispParser<'_> {
         let q = self.parse_formula(f)?;
         self.qexpr(ctx.keep, q)?
       }
-    };
+    }
     self.restore(restore);
     Ok(true)
   }

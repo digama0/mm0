@@ -217,13 +217,14 @@ impl NoHypNames for Option<VarNames<'_>> {}
 /// A basic index, usable for getting names of declarations and variables.
 pub type BasicIndex<'a> = (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
 
-/// Return the raw command data (a pair `[(u8, u32)]`)
+/// Parse a single command.
+///
+/// Returns the raw command data (a pair `[(u8, u32)]`)
 /// while ensuring that an iterator which is literally empty
 /// has terminated at the correct location, where the correct
 /// location is signalled by the presence of a `0` command.
 //
-// IMO extracting this logic into parse_cmd would make it too noisy.
-#[allow(clippy::too_long_first_doc_paragraph)]
+// IMO extracting this logic into `parse_cmd` would make it too noisy.
 pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usize)>, ParseError> {
   let (cmd, data, new_start_at) = parse_cmd(mmb, start_at)?;
   if cmd == 0 {
@@ -234,6 +235,8 @@ pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usiz
   Ok(Some((cmd, data, new_start_at)))
 }
 
+/// Parse a single command.
+///
 /// From a (full) mmb file and a start position, parse the raw data
 /// for a command, which is a `[(u8, u32)]` pair of `(cmd, data)`.
 ///
@@ -241,7 +244,7 @@ pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usiz
 /// plus the size of `cmd`, and the size of `data` _which varies_
 /// despite ending up as a `u32`.
 ///
-/// For `UnifyCmd` and `ProofCmd`, the `(u8, u32)` pair is used to make the corresponding cmd.
+/// For [`UnifyCmd`] and [`ProofCmd`], the `(u8, u32)` pair is used to make the corresponding cmd.
 ///
 /// For [`DeclIter`], the `u8` is a [`StmtCmd`], and the `u32` is the length of the proof iterator
 /// that should be constructed for that statement.
@@ -661,8 +664,7 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
     let n = u64_as_usize(header.p_index);
     if n != 0 {
       let (entries, _) = (|| -> Option<_> {
-        let (num_entries, rest) =
-          Ref::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
+        let (num_entries, rest) = Ref::<_, U64<LE>>::new_unaligned_from_prefix(buf.get(n..)?)?;
         new_slice_prefix(rest, num_entries.get().try_into().ok()?)
       })()
       .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
@@ -958,9 +960,8 @@ str_list_wrapper! {
 
 impl<'a, X> MmbFile<'a, X> {
   fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
-    let (num_vars, rest) = Ref::<_, U64<LE>>::new_unaligned_from_prefix(
-      self.buf.get(u64_as_usize(p_vars)..)?,
-    )?;
+    let (num_vars, rest) =
+      Ref::<_, U64<LE>>::new_unaligned_from_prefix(self.buf.get(u64_as_usize(p_vars)..)?)?;
     Some(StrListRef {
       buf: self.buf,
       strs: new_slice_prefix(rest, num_vars.get().try_into().ok()?)?.0,

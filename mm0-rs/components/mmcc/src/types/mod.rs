@@ -238,10 +238,11 @@ impl Size {
   }
 }
 
-/// The set of integral types, `N_s` and `Z_s`, representing the signed and unsigned integers
+/// The set of integral types.
+///
+/// These include `N_s` and `Z_s`, representing the signed and unsigned integers
 /// of various bit widths, plus the computationally unrepresentable types of
 /// unbounded natural numbers and unbounded integers.
-#[allow(clippy::too_long_first_doc_paragraph)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum IntTy {
   /// The type of signed integers of given bit width, or all integers.

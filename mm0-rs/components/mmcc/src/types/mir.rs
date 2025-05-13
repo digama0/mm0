@@ -1,7 +1,6 @@
 //! The mid level IR, a basic block based representation used for most optimizations.
 
 use std::{collections::HashMap, ops::{Index, IndexMut, Range, RangeTo}, rc::Rc};
-use std::mem;
 use bit_vec::BitVec;
 use if_chain::if_chain;
 use mm0_util::FileSpan;
@@ -1982,7 +1981,7 @@ impl BasicBlock {
   /// Finish this basic block by adding the terminator.
   /// It is a bug to terminate a basic block that is already terminated.
   pub fn terminate(&mut self, term: Terminator) {
-    assert!(mem::replace(&mut self.term, Some(term)).is_none())
+    assert!(self.term.replace(term).is_none())
   }
 
   /// Get the terminator for this block.

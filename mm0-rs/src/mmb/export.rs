@@ -189,8 +189,8 @@ fn write_expr_proof(
   })
 }
 
-/// A wrapper around a writer that implements [`Write`]` + `[`Seek`] by internally buffering
-/// all writes, writing to the underlying writer only once on [`Drop`].
+/// A wrapper around a writer that implements <code>[Write] + [Seek]</code>
+/// by internally buffering all writes, writing to the underlying writer only once on [`Drop`].
 #[derive(Debug)]
 pub struct BigBuffer<W: Write> {
   buffer: io::Cursor<Vec<u8>>,
@@ -445,7 +445,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
               reorder.map[i] = Some(reorder.idx);
               reorder.idx += 1;
             }
-          };
+          }
         }
         Some(n) => ProofCmd::Ref(n).write_to(w)?,
       }

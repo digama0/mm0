@@ -175,22 +175,22 @@ impl<'a> Iterator for AssemblyItemIter<'a> {
         AssemblyItemState::Init => {
           self.state = AssemblyItemState::Proc(ProcId(0));
           return Some(AssemblyItem::Proc(Proc {
-            code: self.code, cfg: &self.code.init.0, proc: &self.code.init.1,
+            code: self.code, cfg: &self.code.init.0, pcode: &self.code.init.1,
             id: None,
             start,
             content: self.padded_content(self.code.init.1.len),
           }))
         }
         AssemblyItemState::Proc(n) => {
-          if let Some((_, proc)) = self.code.funcs.get(n) {
+          if let Some((_, pcode)) = self.code.funcs.get(n) {
             self.state = AssemblyItemState::Proc(ProcId(n.0 + 1));
             return Some(AssemblyItem::Proc(Proc {
               code: self.code,
               cfg: &self.code.mir[&self.code.func_names.1[n]].body,
-              proc,
+              pcode,
               id: Some(n),
               start,
-              content: self.padded_content(proc.len),
+              content: self.padded_content(pcode.len),
             }))
           }
           self.state = AssemblyItemState::Const(self.code.consts.ordered.iter())
@@ -270,7 +270,7 @@ pub struct Proc<'a> {
   code: &'a LinkedCode,
   /// The corresponding CFG object in the MIR.
   pub cfg: &'a Cfg,
-  proc: &'a PCode,
+  pcode: &'a PCode,
   /// The function being proven, or `None` for the init function.
   pub id: Option<ProcId>,
   /// The starting virtual address for the function.
@@ -281,7 +281,7 @@ pub struct Proc<'a> {
 
 impl LinkedCode {
   fn proc_proof<'a>(&'a self, content: &'a [u8], id: Option<ProcId>) -> Proc<'a> {
-    let (start, cfg, proc) = match id {
+    let (start, cfg, pcode) = match id {
       Some(f) => {
         let (start, ref pc) = self.funcs[f];
         (start, &self.mir[&self.func_names.1[f]].body, pc)
@@ -289,8 +289,8 @@ impl LinkedCode {
       None => (TEXT_START, &self.init.0, &self.init.1)
     };
     Proc {
-      code: self, cfg, proc, id, start,
-      content: &content[(start - TEXT_START) as usize..][..proc.len as usize],
+      code: self, cfg, pcode, id, start,
+      content: &content[(start - TEXT_START) as usize..][..pcode.len as usize],
     }
   }
 }
@@ -302,7 +302,7 @@ impl<'a> Proc<'a> {
   }
 
   /// The size of the procedure with padding omitted.
-  #[must_use] pub fn len_no_padding(&self) -> u32 { self.proc.len }
+  #[must_use] pub fn len_no_padding(&self) -> u32 { self.pcode.len }
 
   /// The trailing padding of the procedure.
   #[must_use] pub fn trailing_padding(&self) -> &'a [u8] {
@@ -312,20 +312,20 @@ impl<'a> Proc<'a> {
   /// The list of callee-saved regs that were pushed in the function prologue,
   /// and popped in the epilogue in reverse order.
   #[must_use] pub fn saved_regs(&self) -> &'a [PReg] {
-    &self.proc.saved_regs
+    &self.pcode.saved_regs
   }
 
   /// The stack size for the function, i.e. the number of bytes allocated for the local variables.
   /// Does not include the stack space for the return or the callee-saved regs.
   #[must_use] pub fn stack_size(&self) -> u32 {
-    self.proc.stack_size
+    self.pcode.stack_size
   }
 
   /// An iterator over the blocks of the procedure in assembly order.
   #[must_use] pub fn assembly_blocks(&self) -> AssemblyBlocks<'_> {
     AssemblyBlocks {
       ctx: self,
-      iter: 0..self.proc.blocks.len(),
+      iter: 0..self.pcode.blocks.len(),
     }
   }
   /// Get the block by ID.
@@ -335,7 +335,7 @@ impl<'a> Proc<'a> {
 
   /// Get the physical block ID for a virtual block, or `None` for a pure virtual block.
   #[must_use] pub fn vblock_id(&self, id: BlockId) -> Option<VBlockId> {
-    self.proc.block_map.get(&id).copied()
+    self.pcode.block_map.get(&id).copied()
   }
 
   /// Get a (physical) block by block ID.
@@ -388,17 +388,17 @@ pub struct VBlock<'a> {
 
 impl<'a> VBlock<'a> {
   fn new(ctx: &'a Proc<'a>, id: usize) -> Self {
-    let start = ctx.proc.block_addr.0[id];
-    let end = ctx.proc.block_addr.0.get(id+1).copied().unwrap_or(ctx.proc.len);
+    let start = ctx.pcode.block_addr.0[id];
+    let end = ctx.pcode.block_addr.0.get(id+1).copied().unwrap_or(ctx.pcode.len);
     let id = VBlockId::from_usize(id);
     Self {
       ctx,
-      mir_id: ctx.proc.blocks[id].0,
+      mir_id: ctx.pcode.blocks[id].0,
       id,
       start,
       content: &ctx.content[start as usize..end as usize],
-      block_params: &ctx.proc.block_params[id],
-      insts: ctx.proc.block_insts(id),
+      block_params: &ctx.pcode.block_params[id],
+      insts: ctx.pcode.block_insts(id),
     }
   }
 
@@ -421,12 +421,12 @@ impl<'a> VBlock<'a> {
       Some(func) => (&*func.args, func.reach.then_some(&*func.rets)),
       None => (&[][..], None)
     };
-    let (mut iter, term) = self.ctx.proc.trace.iter(self.id, self.insts());
+    let (mut iter, term) = self.ctx.pcode.trace.iter(self.id, self.insts());
     let bl = self.mir_block();
     if self.mir_id == BlockId::ENTRY {
       v.do_prologue(self.ctx.saved_regs(), self.ctx.stack_size(), abi_args, abi_rets, &mut iter);
     }
-    for (stmt, cl) in bl.stmts.iter().zip(&self.ctx.proc.trace.stmts[self.id]) {
+    for (stmt, cl) in bl.stmts.iter().zip(&self.ctx.pcode.trace.stmts[self.id]) {
       v.do_stmt(stmt, cl, &mut iter);
     }
     v.do_terminator(funcs, abi_rets, bl.terminator(), term, &mut iter);

@@ -8,7 +8,7 @@
 //!
 //! [`mm0_rs::server`]: crate::server
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering, AtomicU8}};
+use std::sync::{atomic::{AtomicBool, AtomicU8, Ordering}, Arc, LazyLock, Mutex};
 use std::collections::{HashMap, hash_map::Entry};
 use std::{io, fs};
 use futures::{FutureExt, future::BoxFuture};
@@ -16,7 +16,6 @@ use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::{ThreadPool, block_on};
 use futures::lock::Mutex as FMutex;
 use annotate_snippets::{Message, Snippet, Level, Renderer};
-use once_cell::sync::Lazy;
 use typed_arena::Arena;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use mm1_parser::{parse, ErrorLevel, ParseError};
@@ -27,10 +26,11 @@ use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MmbExporter;
 
 /// The thread pool (used for running MM1 files in parallel, when possible)
-static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new().expect("could not start thread pool"));
+static POOL: LazyLock<ThreadPool> = LazyLock::new(||
+  ThreadPool::new().expect("could not start thread pool"));
 /// The virtual file system of files that have been included via
 /// transitive imports, protected for concurrent access by a mutex.
-static VFS: Lazy<Vfs> = Lazy::new(|| Vfs(Mutex::new(HashMap::new())));
+static VFS: LazyLock<Vfs> = LazyLock::new(|| Vfs(Mutex::new(HashMap::new())));
 
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MAX_EMITTED_ERROR: AtomicU8 = AtomicU8::new(0);

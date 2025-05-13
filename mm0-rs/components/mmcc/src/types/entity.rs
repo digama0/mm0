@@ -33,8 +33,8 @@ macro_rules! make_prims {
 
         /// Get the MMC keyword for a symbol.
         #[must_use] pub fn from_symbol(s: Symbol) -> Option<Self> {
-          use once_cell::sync::Lazy;
-          static SYMBOL_MAP: Lazy<Box<[Option<$name>]>> = Lazy::new(|| {
+          use std::sync::LazyLock;
+          static SYMBOL_MAP: LazyLock<Box<[Option<$name>]>> = LazyLock::new(|| {
             init_dense_symbol_map(&[$((intern($e), $name::$x)),*])
           });
           SYMBOL_MAP.get(s.into_usize()).map_or(None, |x| *x)
@@ -42,9 +42,9 @@ macro_rules! make_prims {
 
         /// Get the symbol for this primitive.
         #[must_use] pub fn as_symbol(self) -> Symbol {
-          use once_cell::sync::Lazy;
-          static INTERNED: Lazy<[Symbol; <[()]>::len(&[$(() $($mark)?),*])]> =
-            Lazy::new(|| [$(intern($e)),*]);
+          use std::sync::LazyLock;
+          static INTERNED: LazyLock<[Symbol; <[()]>::len(&[$(() $($mark)?),*])]> =
+            LazyLock::new(|| [$(intern($e)),*]);
           INTERNED[self as usize]
         }
 

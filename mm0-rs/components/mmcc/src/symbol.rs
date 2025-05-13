@@ -1,8 +1,7 @@
 //! A simple string interner.
 
-use std::{collections::HashMap, fmt::Display, sync::Mutex};
+use std::{collections::HashMap, fmt::Display, sync::{Mutex, LazyLock}};
 use mm0_util::MutexExt;
-use once_cell::sync::Lazy;
 use crate::types::IdxVec;
 
 mk_id! {
@@ -30,7 +29,7 @@ pub struct Interner {
   strings: IdxVec<Symbol, &'static str>,
 }
 
-static INTERNER: Lazy<Mutex<Interner>> = Lazy::new(|| {
+static INTERNER: LazyLock<Mutex<Interner>> = LazyLock::new(|| {
   let mut i = Interner {
     names: HashMap::new(),
     strings: IdxVec::new(),

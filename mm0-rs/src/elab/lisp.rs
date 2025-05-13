@@ -617,7 +617,7 @@ impl LispRef {
     }
     // Safety: This ties us to the representation of RefCell, but I don't think
     // that is going to change.
-    unsafe { &*<*const _>::cast::<RefCell2<LispWeak>>(&self.0) }.borrow.get() > 30
+    unsafe { &*(&raw const self.0).cast::<RefCell2<LispWeak>>() }.borrow.get() > 30
   }
 
   /// Get the value of this reference without changing the reference count.
@@ -1558,7 +1558,7 @@ impl Uncons {
     n == 0 || match &*self.e {
       LispKind::List(es) => es.len() >= n + self.offset as usize,
       LispKind::DottedList(es, r) =>
-        (n + self.offset as usize).checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
+        (n + self.offset as usize).checked_sub(es.len()).is_none_or(|i| r.at_least(i)),
       _ => self.e.at_least(n),
     }
   }
@@ -1568,7 +1568,7 @@ impl Uncons {
     n == 0 || match &*self.e {
       LispKind::List(es) => es.len() >= n + self.offset as usize,
       LispKind::DottedList(es, r) =>
-        (n + self.offset as usize).checked_sub(es.len()).map_or(true, |i| r.list_at_least(i)),
+        (n + self.offset as usize).checked_sub(es.len()).is_none_or(|i| r.list_at_least(i)),
       _ => self.e.list_at_least(n),
     }
   }

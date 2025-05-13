@@ -11,10 +11,12 @@ use crate::Span;
 /// A structure tracking spans of objects occurring in a declaration.
 ///
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
-/// spans of objects occurring in the statement. For example, we might register
-/// spans for variables, theorem references, and function calls, once we have
-/// resolved them, with enough data attached to the span so that we can render
-/// a useful hover if the user asks for information at a location in that span.
+/// spans of objects occurring in the statement.
+///
+/// For example, we might register spans for variables, theorem references,
+/// and function calls, once we have resolved them, with enough data attached
+/// to the span so that we can render a useful hover if the user asks for
+/// information at a location in that span.
 ///
 /// We leave `T` generic here because it isn't important in this file, but we
 /// are only going to instantiate it with

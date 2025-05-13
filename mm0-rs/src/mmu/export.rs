@@ -91,7 +91,7 @@ impl FrozenEnv {
       match *node {
         ExprNode::Ref(i) => w.extend_from_slice(&heap[i]),
         ExprNode::Dummy(a, s) => {
-          assert!(dummies.insert(a, s).map_or(true, |s2| s == s2));
+          assert!(dummies.insert(a, s).is_none_or(|s2| s == s2));
           w.extend_from_slice(env.data()[a].name());
         }
         ExprNode::App(t, p) => {
@@ -157,7 +157,7 @@ impl FrozenEnv {
             }
           }
           ProofNode::Dummy(a, s) => {
-            assert!(self.dummies.insert(a, s).map_or(true, |s2| s == s2));
+            assert!(self.dummies.insert(a, s).is_none_or(|s2| s == s2));
             self.l.extend_from_slice(self.env.data()[a].name());
           }
           ProofNode::Hyp(i, _) =>

@@ -457,9 +457,9 @@ impl<T: BuildMatch> MatchBuilder<T> {
 /// This implements a coroutine protocol which is mostly but not entirely enforced by the
 /// type system. Individual functions specify when they can be called.
 /// * `Start`: The initial state upon construction by [`MatchBuilder::branch`].
-///    Awaiting a pattern.
+///   Awaiting a pattern.
 /// * `Done`: A pattern has been matched. `prepare_rhs` can be used to set up the context
-///    for parsing the RHS of the pattern, and `finish` will return to the `MatchBuilder` context.
+///   for parsing the RHS of the pattern, and `finish` will return to the `MatchBuilder` context.
 pub struct PatternBuilder<T> {
   hyp: [Spanned<VarId>; 2],
   pos: Option<Box<dyn Fn() -> ast::Expr>>,

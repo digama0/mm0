@@ -52,8 +52,8 @@ impl<'a> NodeHasher<'a> {
 ///
 /// Because the s-expr representation of proof terms is ambiguous between terms,
 /// proofs and conversions, we have to know up front what kind of object we are looking
-/// at. This enum is used to prevent the Dedup from mixing up identical lisp expressions
-/// of different kinds.
+/// at. This enum is used to prevent the [`Dedup`] from mixing up identical lisp
+/// expressions of different kinds.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ProofKind {
   /// This is an expr, for example [`ProofNode::Term`] or [`ProofNode::Ref`]
@@ -203,7 +203,7 @@ impl<H: NodeHash> Dedup<H> {
   /// into the [`Dedup`], returning the allocated index.
   pub fn add(&mut self, kind: ProofKind, p: LispVal, v: H) -> usize {
     let n = self.add_direct(v);
-    self.prev.get_mut(kind).insert(&*p, Some((p, n)));
+    self.prev.get_mut(kind).insert(&raw const *p, Some((p, n)));
     n
   }
 
@@ -211,7 +211,7 @@ impl<H: NodeHash> Dedup<H> {
   /// into the [`Dedup`], returning the allocated index.
   pub fn dedup(&mut self, nh: &NodeHasher<'_>, kind: ProofKind, e: &LispVal) -> Result<usize> {
     let arc = e.unwrapped_arc();
-    let ptr: *const _ = &*arc;
+    let ptr = &raw const *arc;
     Ok(match self.prev.get_mut(kind).entry(ptr) {
       Entry::Occupied(o) => match o.get() {
         &Some((_, n)) => self.reuse(n),
@@ -407,13 +407,15 @@ impl<T: Node> Val<T> {
   pub fn is_unshared(&self) -> bool { matches!(self, Val::Built(_)) }
 }
 
+/// Main function for building results from a [`Dedup`].
+///
 /// Given a [`Dedup`] (or something that looks like one), consume it
 /// and produce a pair `(ids, heap)` where `ids` is a set of
 /// `Val<T>` nodes and `heap` is a list of shared values,
 /// using the sharing annotations to determine whether to put the
 /// values directly in [`Built`](Val::Built) nodes (for unshared nodes) or in
 /// the `heap` with [`Ref`](Val::Ref) nodes in the `ids`.
-#[allow(clippy::too_long_first_doc_paragraph, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>, Vec<T>)
 where
   T::Hash: 'a,
@@ -1054,7 +1056,7 @@ pub struct Subst<'a> {
   store: &'a [ExprNode],
   /// The already computed substitutions for elements of the heap, with unknown
   /// values set to `#undef`.
-  subst: Vec<LispVal>,
+  result: Vec<LispVal>,
 }
 
 impl<'a> Subst<'a> {
@@ -1064,7 +1066,7 @@ impl<'a> Subst<'a> {
     heap: &'a [ExprNode], store: &'a [ExprNode], mut args: Vec<LispVal>
   ) -> Subst<'a> {
     args.resize(heap.len(), LispVal::undef());
-    Subst {env, heap, store, subst: args}
+    Subst {env, heap, store, result: args}
   }
 
   /// Substitute in an [`ExprNode`]. This version does not support dummy variables,
@@ -1072,10 +1074,10 @@ impl<'a> Subst<'a> {
   pub fn subst(&mut self, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(i) => {
-        let e = &self.subst[i];
+        let e = &self.result[i];
         if e.is_def() {return e.clone()}
         let e = self.subst(&self.heap[i]);
-        self.subst[i] = e.clone();
+        self.result[i] = e.clone();
         e
       }
       ExprNode::Dummy(_, _) => unreachable!(),
@@ -1093,10 +1095,10 @@ impl<'a> Subst<'a> {
   pub fn subst_mut(&mut self, lc: &mut LocalContext, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(i) => {
-        let e = &self.subst[i];
+        let e = &self.result[i];
         if e.is_def() {return e.clone()}
         let e = self.subst_mut(lc, &self.heap[i]);
-        self.subst[i] = e.clone();
+        self.result[i] = e.clone();
         e
       }
       ExprNode::Dummy(_, s) => lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom), None),

@@ -1,11 +1,9 @@
 //! x86-specific parts of the compiler.
 
 use std::fmt::{Debug, Display};
-
+use std::sync::LazyLock;
 use num::Zero;
-use once_cell::sync::Lazy;
 use regalloc2::{MachineEnv, Operand};
-
 use crate::codegen::InstSink;
 use crate::types::{classify as cl, mir, Size,
   vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg, IsReg, Inst as VInst, VCode}};
@@ -84,7 +82,7 @@ pub(crate) fn caller_saved() -> impl DoubleEndedIterator<Item=PReg> + Clone {
   CALLER_SAVED.iter().copied()
 }
 
-pub(crate) static MACHINE_ENV: Lazy<MachineEnv> = Lazy::new(|| MachineEnv {
+pub(crate) static MACHINE_ENV: LazyLock<MachineEnv> = LazyLock::new(|| MachineEnv {
   preferred_regs_by_class: [CALLER_SAVED.map(|r| r.0).into(), vec![], vec![]],
   non_preferred_regs_by_class: [CALLEE_SAVED.map(|r| r.0).into(), vec![], vec![]],
   scratch_by_class: [None; 3],

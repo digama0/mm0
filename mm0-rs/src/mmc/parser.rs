@@ -2,7 +2,7 @@
 use std::mem;
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use if_chain::if_chain;
 use debug_derive::EnvDebug;
 use crate::{Elaborator, FileSpan, AtomId, Type as EType, elab::Result, Environment, ElabError,
@@ -29,14 +29,15 @@ macro_rules! make_keywords {
     pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
     crate::deep_size_0!(Keyword);
 
-    static SYNTAX_MAP: Lazy<Box<[Option<Keyword>]>> = Lazy::new(|| {
+    static SYNTAX_MAP: LazyLock<Box<[Option<Keyword>]>> = LazyLock::new(|| {
       let mut vec = vec![];
       Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
       vec.into()
     });
 
-    static INTERNED: Lazy<[Symbol; [$(Keyword::$x),*].len()]> = Lazy::new(|| [$(intern($e)),*]);
-    static SYMBOL_MAP: Lazy<Box<[Option<Keyword>]>> = Lazy::new(|| {
+    static INTERNED: LazyLock<[Symbol; [$(Keyword::$x),*].len()]> =
+      LazyLock::new(|| [$(intern($e)),*]);
+    static SYMBOL_MAP: LazyLock<Box<[Option<Keyword>]>> = LazyLock::new(|| {
       init_dense_symbol_map(&[$((intern($e), Keyword::$x)),*])
     });
 
@@ -268,7 +269,7 @@ pub(crate) struct Parser<'a, C> {
   FileSpan { file: fsp.file.clone(), span: try_get_span(fsp, e) }
 }
 
-/// Uses the span of the [`LispVal`] to construct a [`Spanned`]`<T>`.
+/// Uses the span of the [`LispVal`] to construct a <code>[Spanned]&lt;T&gt;</code>.
 #[must_use] fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
   Spanned {span: try_get_fspan(fsp, e), k}
 }
@@ -770,7 +771,7 @@ impl<'a, C> Parser<'a, C> {
           let mut muts = Vec::new();
           while let Some(e) = u.head() {
             if let Some(v) = self.parse_variant(&span, &e)? {
-              if mem::replace(&mut var, Some(v)).is_some() {
+              if var.replace(v).is_some() {
                 return Err(ElabError::new_e(&span, "while: two variants"))
               }
             } else if let Some((Keyword::Mut, u)) = self.head_keyword(&e) {
@@ -822,7 +823,7 @@ impl<'a, C> Parser<'a, C> {
               for e in u {
                 if let Some((Keyword::Variant, mut u)) = self.head_keyword(&e) {
                   if let (Some(v), true) = (u.next(), u.is_empty()) {
-                    if mem::replace(&mut variant, Some(v)).is_some() {
+                    if variant.replace(v).is_some() {
                       return Err(ElabError::new_e(&span, "call: two variants"))
                     }
                   } else {
@@ -851,7 +852,7 @@ impl<'a, C> Parser<'a, C> {
         let mut variant = None;
         for e in u1 {
           if let Some(v) = this.parse_variant(&span, &e)? {
-            if mem::replace(&mut variant, Some(v)).is_some() {
+            if variant.replace(v).is_some() {
               return Err(ElabError::new_e(&span, "label: two variants"))
             }
           } else {

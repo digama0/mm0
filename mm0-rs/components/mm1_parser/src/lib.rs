@@ -318,10 +318,7 @@ impl<'a> Parser<'a> {
     while self.idx < self.source.len() {
       let c = self.cur();
       match c {
-        b' ' | b'\n' => {
-          self.idx += 1;
-          continue
-        }
+        b' ' | b'\n' => self.idx += 1,
         b'\t' => {
           let start = self.idx;
           self.idx += 1;

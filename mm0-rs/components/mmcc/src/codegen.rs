@@ -13,7 +13,9 @@ fn function_pad(pos: u64) -> &'static [u8] {
 }
 
 impl LinkedCode {
-  /// Write this code object to an `impl `[`Write`] (such as a file), as a complete ELF file.
+  /// Write this code object to an <code>impl [Write]</code> (such as a file),
+  /// as a complete ELF file.
+  ///
   /// This can then be executed to run the compiled program.
   #[allow(clippy::cast_lossless)]
   pub fn write_elf(&self, w: &mut impl Write) -> io::Result<()> {

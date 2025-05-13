@@ -246,7 +246,7 @@ impl<'a> Pretty<'a> {
       if let Some((last, most)) = info.lits[2..].split_last() {
         for lit in most {doc = self.append(doc, self.group(self.lit(lit, args)))}
         doc = self.append_with(doc, Self::line(), self.group(self.lit(last, args)))
-      };
+      }
       Some(doc)
     } else {None}
   }
@@ -280,7 +280,7 @@ impl<'a> Pretty<'a> {
   /// Pretty-prints a math formula, returning the highest precedence
   /// for which this expression would not need brackets.
   pub(crate) fn pp_expr(&'a self, e: &LispVal) -> (Prec, Pp<'a>) {
-    let p: *const LispKind = &**e;
+    let p = &raw const **e;
     if let Some(&(_, v1)) = self.hash.borrow().get(&p) { return v1 }
     let v = (|| Some({
       let env = self.fe.env;

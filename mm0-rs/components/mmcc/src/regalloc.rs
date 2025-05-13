@@ -349,7 +349,7 @@ impl VCode {
         bb.finish_block(&mut code);
         code.block_params.push_new();
         code.code.block_addr.push(code.len);
-      };
+      }
       code.apply_edits(&mut edits, &ar, ProgPoint::before(i));
       match *inst {
         Inst::Fallthrough { dst } => {

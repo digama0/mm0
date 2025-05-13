@@ -1701,8 +1701,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       } else { None }
     {
       mem::swap(&mut self.dc, dc);
-      return self.dc.gen_vars.iter().filter_map(|(&v, &(gen, _, _))| {
-        if matches!(dc.gen_vars.get(&v), Some(&(old_gen, _, _)) if gen != old_gen) { Some(v) }
+      return self.dc.gen_vars.iter().filter_map(|(&v, &(gen_, _, _))| {
+        if matches!(dc.gen_vars.get(&v), Some(&(old_gen, _, _)) if gen_ != old_gen) { Some(v) }
         else { None }
       }).collect()
     }
@@ -2967,8 +2967,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     self.alloc.alloc_slice_fill_iter(args)
   }
 
-  fn lower_variant(&mut self, variant: Option<&'a ast::Variant>) -> Option<hir::Variant<'a>> {
-    variant.map(|Spanned {k: (e, vt), ..}| match vt {
+  fn lower_variant(&mut self, Spanned {k: (e, vt), ..}: &'a ast::Variant) -> hir::Variant<'a> {
+    match vt {
       ast::VariantType::Down => {
         let e = self.check_pure_expr(e, self.common.nat());
         hir::Variant(e, hir::VariantType::Down)
@@ -2983,7 +2983,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let e2 = self.check_pure_expr(e2, self.common.int());
         hir::Variant(e, hir::VariantType::UpLe(e2))
       }
-    })
+    }
   }
 
   fn check_array(&mut self, span: &'a FileSpan,
@@ -3529,7 +3529,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
                 self.equate_expr(v, pe).unwrap_or_else(|()| {
                   self.errors.push(hir::Spanned {span, k: TypeError::IAndUnify(v, pe)});
                 });
-              } else { val = Some(pe) };
+              } else { val = Some(pe) }
               e
             }).collect();
             if let Some(val) = val {
@@ -3891,7 +3891,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let missing = || self.dc.gen_vars.iter()
           .chain(dcs.iter().flat_map(|dc| dc.gen_vars.iter()))
           .filter(|&(v, &(gen, _, _))| {
-            base.gen_vars.get(v).map_or(true, |&(gen2, _, _)| gen != gen2) &&
+            !base.gen_vars.get(v).is_some_and(|&(gen2, _, _)| gen == gen2) &&
             !muts.contains(v)
           });
         if missing().next().is_some() {
@@ -4297,7 +4297,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let labs2 = labs.iter().map(|ast::Label {args, variant, body}| {
           let args = args.iter()
             .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
-          let variant = self.lower_variant(variant.as_deref());
+          let variant = variant.as_deref().map(|v| self.lower_variant(v));
           let ctx = self.dc.context;
           let args = self.finish_args(args);
           let args2 = self.args_to_ty_args(&args);
@@ -4427,7 +4427,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let t_rets = self.args_to_ty_args(&rets);
         self.returns = Some(t_rets);
         let ctx = self.dc.context;
-        let variant = self.lower_variant(variant.as_deref());
+        let variant = variant.as_deref().map(|v| self.lower_variant(v));
         let args = self.finish_args(args2);
         let t_args = self.args_to_ty_args(&args);
         let mut gctx = self.to_global_ctx();

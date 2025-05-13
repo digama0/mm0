@@ -15,10 +15,9 @@ use std::sync::Arc;
 
 /// User-supplied delimiter characters.
 ///
-/// A delimiter-stmt with only one math string is parsed
-/// as [`Delimiter::Both`]`(..)`, and the contents are put in the environment as both left and right
-/// delimiters. delimiter-stmts with two math strings are parsed as [`Delimiter::LeftRight`]`(s1, s2)`.
-///
+/// A delimiter-stmt with only one math string is parsed as <code>[Delimiter::Both](..)</code>,
+/// and the contents are put in the environment as both left and right delimiters.
+/// Delimiter-stmts with two math strings are parsed as <code>[Delimiter::LeftRight](s1, s2)</code>.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Clone, Debug)]
 pub enum Delimiter {

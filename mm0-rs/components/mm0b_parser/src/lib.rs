@@ -64,7 +64,7 @@ use std::mem::size_of;
 
 use byteorder::LE;
 use mm0_util::{Modifiers, SortId, TermId, ThmId};
-use zerocopy::{AsBytes, FromZeroes, FromBytes, Unaligned, U16, U32, U64};
+use zerocopy::{AsBytes, FromBytes, FromZeroes, Unaligned, U16, U32, U64};
 
 pub use mm0_util::u32_as_usize;
 pub use {parser::*, ty::*, write::*};
@@ -165,7 +165,7 @@ fn u64_as_usize(n: U64<LE>) -> usize {
   n.get().try_into().expect("here's a nickel, get a better computer")
 }
 
-/// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
+/// Construct a <code>&amp;[CStr]</code> from a prefix byte slice, by terminating at
 /// the first nul character. The second output is the remainder of the slice.
 #[must_use]
 pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
@@ -513,7 +513,7 @@ impl TryFrom<(u8, u32)> for UnifyCmd {
 }
 
 /// The header of an MMB file, which is always in the first bytes of the file.
-/// It is followed by a `sorts: [`[`SortData`]`; num_sorts]` array
+/// It is followed by a <code>sorts: [[SortData]; num_sorts]</code> array
 /// (which we keep separate because of the dependency).
 #[repr(C, align(8))]
 #[derive(Debug, Clone, Copy, Default, FromZeroes, FromBytes, AsBytes)]
@@ -531,9 +531,9 @@ pub struct Header {
   pub num_terms: U32<LE>,
   /// The number of axioms and theorems in the file.
   pub num_thms: U32<LE>,
-  /// The pointer to the term table of type `[`[`TermEntry`]`; num_terms]`.
+  /// The pointer to the term table of type <code>[[TermEntry]; num_terms]</code>.
   pub p_terms: U32<LE>,
-  /// The pointer to the theorem table of type `[`[`ThmEntry`]`; num_thms]`.
+  /// The pointer to the theorem table of type <code>[[ThmEntry]; num_thms]</code>.
   pub p_thms: U32<LE>,
   /// The pointer to the declaration stream.
   pub p_proof: U32<LE>,
@@ -616,7 +616,7 @@ pub struct TermEntry {
   pub sort: u8,
   /// Padding.
   pub reserved: u8,
-  /// The pointer to an `args: [`[`Arg`]`; num_args + 1]` array, followed by the
+  /// The pointer to an <code>args: [[Arg]; num_args + 1]</code> array, followed by the
   /// term's unify command sequence. `args[num_args]` is the return type and dependencies,
   /// and `args[..num_args]` are the actual arguments.
   pub p_args: U32<LE>,
@@ -631,7 +631,7 @@ pub struct ThmEntry {
   pub num_args: U16<LE>,
   /// Padding.
   pub reserved: [u8; 2],
-  /// The pointer to an `args: [`[`Arg`]`; num_args]` array, followed by the
+  /// The pointer to an <code>args: [[Arg]; num_args]</code> array, followed by the
   /// theorem's unify command sequence.
   pub p_args: U32<LE>,
 }

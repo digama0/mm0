@@ -244,7 +244,7 @@ impl LinedString {
     let mut first_change = None;
     for e in changes {
       if let Some(Range { start, end }) = e.range {
-        if first_change.map_or(true, |c| start < c) {
+        if first_change.is_none_or(|c| start < c) {
           first_change = Some(start)
         }
         if out.end() > start {

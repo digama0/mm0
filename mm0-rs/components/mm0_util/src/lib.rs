@@ -93,7 +93,7 @@ impl<T> SliceExt<T> for [T] {
   }
 }
 
-/// Extension trait for [`HashMap`]`<K, V>`.
+/// Extension trait for <code>[HashMap]&lt;K, V&gt;</code>.
 pub trait HashMapExt<K, V> {
   /// Like `insert`, but if the insertion fails then it returns the value
   /// that it attempted to insert, as well as an [`OccupiedEntry`] containing
@@ -114,7 +114,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
-/// Extension trait for [`HashMap`]`<K, V>`.
+/// Extension trait for <code>[HashMap]&lt;K, V&gt;</code>.
 pub trait RcExt<T> {
   /// Extract `T` from `Rc<T>` by cloning the inner data unless it is unshared.
   fn unwrap(this: Self) -> T
@@ -161,7 +161,7 @@ pub fn alphanumber(n: usize) -> String {
   unsafe { String::from_utf8_unchecked(out) }
 }
 
-/// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
+/// Extension trait for <code>[Mutex](std::sync::Mutex)&lt;T&gt;</code>.
 pub trait MutexExt<T> {
   /// Like `lock`, but propagates instead of catches panics.
   fn ulock(&self) -> std::sync::MutexGuard<'_, T>;
@@ -458,7 +458,7 @@ pub struct Range {
 
 #[cfg(feature = "lined_string")]
 /// A [`PathBuf`] lazily initialized to a canonicalized "."
-static CURRENT_DIR: once_cell::sync::Lazy<PathBuf> = once_cell::sync::Lazy::new(|| {
+static CURRENT_DIR: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
   #[cfg(target_arch = "wasm32")]
   let buf = PathBuf::from(".");
   #[cfg(not(target_arch = "wasm32"))]
@@ -507,6 +507,7 @@ pub struct FileRef(Arc<FileRefInner>);
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
   fn from(path: PathBuf) -> FileRef {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
     fn from_file_path(path: &std::path::Path) -> Option<lsp_types::Uri> {
       std::str::FromStr::from_str(&format!("file://{}", path.to_str()?)).ok()
     }
@@ -516,8 +517,8 @@ impl From<PathBuf> for FileRef {
       uri: from_file_path(&path),
       #[cfg(all(target_arch = "wasm32", feature = "server"))]
       uri: lsp_types::Uri::from_str(&format!("wasm:/{rel}")).ok(),
-      rel,
       path,
+      rel,
     }))
   }
 }
@@ -526,7 +527,9 @@ impl From<PathBuf> for FileRef {
 impl From<lsp_types::Uri> for FileRef {
   fn from(uri: lsp_types::Uri) -> FileRef {
     fn to_file_path(uri: &lsp_types::Uri) -> Option<PathBuf> {
-      if uri.scheme()?.as_str() != "file" || !uri.authority()?.as_str().is_empty() { return None }
+      if uri.scheme()?.as_str() != "file" || !uri.authority()?.as_str().is_empty() {
+        return None
+      }
       Some(PathBuf::from(uri.path().as_str()))
     }
     #[cfg(not(target_arch = "wasm32"))]

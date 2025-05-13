@@ -90,7 +90,7 @@ impl FrozenEnv {
   /// Accessor for [`Environment::data`]
   #[must_use] pub fn data(&self) -> &AtomVec<FrozenAtomData> {
     // Safety: Data is re-frozen, and the cast is safe because FrozenAtomData is repr(transparent)
-    unsafe { &*<*const _>::cast(&self.thaw().data) }
+    unsafe { &*(&raw const self.thaw().data).cast() }
   }
 
   /// Accessor for [`Environment::sorts`]
@@ -147,7 +147,7 @@ impl FrozenAtomData {
   /// Accessor for [`AtomData::lisp`]
   #[must_use] pub fn lisp(&self) -> &Option<FrozenLispData> {
     // Safety: Data is re-frozen, and the cast is safe because FrozenLispData is repr(transparent)
-    unsafe { &*<*const _>::cast(&self.0.lisp) }
+    unsafe { &*(&raw const self.0.lisp).cast() }
   }
   /// Accessor for [`AtomData::graveyard`]
   #[must_use] pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
