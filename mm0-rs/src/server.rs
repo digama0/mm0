@@ -1950,7 +1950,8 @@ impl Args {
   pub fn main(self) {
     if self.debug {
       use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};
-      std::env::set_var("RUST_BACKTRACE", "1");
+      // SAFETY: The access is single-threaded
+      unsafe { std::env::set_var("RUST_BACKTRACE", "1") }
       if let Ok(f) = File::create("lsp.log") {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), f);
       }

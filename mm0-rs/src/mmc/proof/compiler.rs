@@ -172,7 +172,7 @@ impl VCtx {
   }
 
   /// Build the root context. Note that variables can be added to the root context with `add`
-  fn root(de: &mut ProofDedup<'_>, hex: &HexCache) -> impl Fn() -> Self + Copy {
+  fn root(de: &mut ProofDedup<'_>, hex: &HexCache) -> impl Fn() -> Self + Copy + use<> {
     let e = app!(de, (vctx0));
     let nvars = hex.h2n(de, 0);
     move || Self {
@@ -188,7 +188,7 @@ impl VCtx {
   /// Allocate a new context ID for this context, and store it in the context list.
   /// `self` is modified to derive from the new context. This is roughly equivalent to
   /// `clone()`, but it moves the data into `vctxs` instead of doing a deep copy.
-  fn share(&mut self, vctxs: &mut IdxVec<VCtxId, VCtx>) -> impl Fn() -> Self + Copy {
+  fn share(&mut self, vctxs: &mut IdxVec<VCtxId, VCtx>) -> impl Fn() -> Self + Copy + use<> {
     let Self { e, base, ref vars, nvars, parent, .. } = *self;
     let (push, parent, base) = match vars.len() as u32 {
       0 => (false, parent, base),

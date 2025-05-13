@@ -136,7 +136,7 @@ struct ContextNext<'a> {
   /// The variable name.
   var: VarId,
   /// The variable's generation ID.
-  gen: GenId,
+  gen_: GenId,
   /// The variable's value.
   val: Expr<'a>,
   /// The variable's type.
@@ -228,9 +228,9 @@ impl<'a> ContextNext<'a> {
   /// Create a new `ContextNext`, automatically filling the `len` field.
   #[must_use] fn new(
     parent: Context<'a>, v: VarId,
-    gen: GenId, val: Expr<'a>, ty: Ty<'a>
+    gen_: GenId, val: Expr<'a>, ty: Ty<'a>
   ) -> Self {
-    Self {len: parent.len() + 1, var: v, gen, val, ty, parent}
+    Self {len: parent.len() + 1, var: v, gen_, val, ty, parent}
   }
 }
 
@@ -1051,8 +1051,8 @@ impl<'a> DynContext<'a> {
 
   fn get_var(&self, v: VarId) -> (GenId, Expr<'a>, Ty<'a>) {
     let c = self.context.find(v).expect("variables should be well scoped");
-    let val = if c.gen == GenId::LATEST {self.gen_vars.get(&v)} else {None};
-    val.copied().unwrap_or((c.gen, c.val, c.ty))
+    let val = if c.gen_ == GenId::LATEST {self.gen_vars.get(&v)} else {None};
+    val.copied().unwrap_or((c.gen_, c.val, c.ty))
   }
 }
 
@@ -1060,7 +1060,7 @@ impl<'a, C: DisplayCtx<'a>> CtxDisplay<C> for DynContext<'a> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     for &c in self.context.into_iter().collect::<Vec<_>>().iter().rev() {
       let (val, ty) = if_chain! {
-        if c.gen == GenId::LATEST;
+        if c.gen_ == GenId::LATEST;
         if let Some(&(_, val, ty)) = self.gen_vars.get(&c.var);
         then { (val, ty) }
         else { (c.val, c.ty) }
@@ -1709,16 +1709,16 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let mut newdc = self.dc.clone();
     newdc.generation = self.new_generation();
     let mut vars = HashSet::new();
-    for c in self.dc.context.into_iter().filter(|c| c.gen == GenId::LATEST) {
+    for c in self.dc.context.into_iter().filter(|c| c.gen_ == GenId::LATEST) {
       let v = c.var;
       let (old_gen, old_e, old_ty) =
-        self.dc.gen_vars.get(&v).copied().unwrap_or((c.gen, c.val, c.ty));
+        self.dc.gen_vars.get(&v).copied().unwrap_or((c.gen_, c.val, c.ty));
       let mut new_e = Some(old_e);
       let mut modified = false;
       for dc in &*contexts {
         if !dc.diverged {
-          if let Some(&(gen, e, ty)) = dc.gen_vars.get(&v) {
-            if gen != old_gen {
+          if let Some(&(gen_, e, ty)) = dc.gen_vars.get(&v) {
+            if gen_ != old_gen {
               new_e = new_e.filter(|new_e| self.equate_expr(new_e, e).is_ok());
               self.relate_ty(span, Some(e), ty, old_ty, Relation::Subtype).expect("todo");
               modified = true;
@@ -3058,7 +3058,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       for (&i, ret) in outs.iter().zip(&*rets) {
         let ret = ret.from_global(&mut gctx);
         let ret = subst.subst_arg(gctx.ic, span, ret);
-        let Some(Ok(&WithMeta {k: ExprKind::Ref(arg), ..})) = pes.get(u32_as_usize(i))
+        let Some(&Ok(WithMeta {k: ExprKind::Ref(arg), ..})) = pes.get(u32_as_usize(i))
         else { unreachable!() };
         let w = ret.k.1.var().k.var;
         let (origin, lens) = Self::build_lens(arg)?;
@@ -3073,7 +3073,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       }
       gctx.ic.dc.generation = newgen;
     }
-    let gen = gctx.ic.dc.generation;
+    let gen_ = gctx.ic.dc.generation;
     let rets = rets[outs.len()..].iter().map(|arg| {
       let arg = arg.from_global(&mut gctx);
       subst.subst_arg(gctx.ic, span, arg)
@@ -3102,7 +3102,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     };
     let call = hir::Call {
       f: hir::Spanned {span, k: f},
-      side_effect, tys, args: es, variant, gen, rk,
+      side_effect, tys, args: es, variant, gen_, rk,
     };
     Some((call, (pe, ret)))
   }
@@ -3218,8 +3218,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
       ast::ExprKind::Unit => ret![Unit, Ok(unit!()), self.common.t_unit],
 
       &ast::ExprKind::Var(v) => {
-        let (gen, val, ty) = self.dc.get_var(v);
-        ret![Var(v, gen), Ok(val), ty]
+        let (gen_, val, ty) = self.dc.get_var(v);
+        ret![Var(v, gen_), Ok(val), ty]
       }
 
       &ast::ExprKind::Const(c) => {
@@ -3738,7 +3738,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           lhs: Box::new(lhs),
           rhs: Box::new(rhs),
           map: Box::new([(v, old.as_ref(), (Some(val), ty))]),
-          gen: newgen,
+          gen_: newgen,
         };
         ret![e, Ok(unit!()), self.common.t_unit]
       }
@@ -3829,7 +3829,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         }));
         ret![If {
           hyp, cond: Box::new(cond), cases,
-          gen: self.dc.generation, muts, trivial
+          gen_: self.dc.generation, muts, trivial
         }, pe, tgt]
       }
 
@@ -3890,8 +3890,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         // TODO: remove this when the typechecker is complete, this isn't needed for inference
         let missing = || self.dc.gen_vars.iter()
           .chain(dcs.iter().flat_map(|dc| dc.gen_vars.iter()))
-          .filter(|&(v, &(gen, _, _))| {
-            !base.gen_vars.get(v).is_some_and(|&(gen2, _, _)| gen == gen2) &&
+          .filter(|&(v, &(gen_, _, _))| {
+            !base.gen_vars.get(v).is_some_and(|&(gen2, _, _)| gen_ == gen2) &&
             !muts.contains(v)
           });
         if missing().next().is_some() {
@@ -3903,7 +3903,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         ret![
           While(Box::new(hir::While {
             label, has_break, hyp, cond: Box::new(cond), variant, body,
-            gen: self.dc.generation, muts: muts.clone(), trivial
+            gen_: self.dc.generation, muts: muts.clone(), trivial
           })),
           Ok(unit!()), ret]
       }
@@ -3988,8 +3988,8 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let (k, ty) = match e.k {
       ExprKind::Unit => (hir::ExprKind::Unit, self.common.t_unit),
       ExprKind::Var(v) => {
-        let (gen, _, ty) = self.dc.get_var(v);
-        (hir::ExprKind::Var(v, gen), ty)
+        let (gen_, _, ty) = self.dc.get_var(v);
+        (hir::ExprKind::Var(v, gen_), ty)
       }
       ExprKind::Const(c) => {
         let Some(Entity::Const(tc)) = self.names.get(&c) else { unreachable!() };
@@ -4049,7 +4049,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
           else { None }
         };
         (hir::ExprKind::If {
-          hyp: None, cond, cases, gen: self.dc.generation, muts: vec![], trivial
+          hyp: None, cond, cases, gen_: self.dc.generation, muts: vec![], trivial
         }, ty1)
       }
       ExprKind::Index(_, _) |
@@ -4378,7 +4378,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     let n = breaks.len() - 1;
     breaks.swap(0, n);
     let muts = self.merge(sp, &mut {breaks});
-    (hir::Block {stmts, expr, gen: self.dc.generation, muts}, ety)
+    (hir::Block {stmts, expr, gen_: self.dc.generation, muts}, ety)
   }
 
   fn check_block(&mut self, span: &'a FileSpan, bl: &'a ast::Block, tgt: Ty<'a>) -> (hir::Block<'a>, RExpr<'a>) {
@@ -4402,7 +4402,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         let args2 = args.iter()
           .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
         let mut subst = Subst::default();
-        let gen = self.new_generation();
+        let gen_ = self.new_generation();
         let mut rets2 = vec![];
         let outs = outs.iter().map(|out| {
           let i_usize = u32_as_usize(out.input);
@@ -4474,7 +4474,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
         };
         body.expr = Some(Box::new(hir::Spanned {span, k:
           (k, (Some(self.common.e_unit), self.common.t_false))}));
-        hir::ItemKind::Proc {kind, name, tyargs, args, gen, outs, rets, variant, body}
+        hir::ItemKind::Proc {kind, name, tyargs, args, gen_, outs, rets, variant, body}
       }
       ast::ItemKind::Global(intrinsic, lhs, rhs) => {
         if let Some(intrinsic) = intrinsic { match *intrinsic {} }

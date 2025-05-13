@@ -2,7 +2,7 @@
 name = "mmcc"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "Metamath C proof producing compiler"
 repository = "https://github.com/digama0/mm0"
 readme = "README.md"

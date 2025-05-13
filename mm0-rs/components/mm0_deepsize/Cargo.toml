@@ -2,7 +2,7 @@
 name = "mm0_deepsize"
 version = "0.1.3"
 authors = ["Aeledfyr <aeledfyr@gmail.com>", "Mario Carneiro <di.gama@gmail.com>"]
-edition = "2018"
+edition = "2024"
 include = ["Cargo.toml", "src/**/*.rs", "LICENSE", "README.md"]
 description = "MM0 port of deepsize crate"
 readme = "README.md"

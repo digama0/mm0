@@ -400,8 +400,8 @@ struct StmtBuilder<'a, W> {
 
 impl<'a, W: Reopen> StmtBuilder<'a, W> {
   fn new(w: &'a mut Mm0Writer<W>, cmd: u8) -> Self { Self { w, cmd, buf: vec![] } }
-  fn unify(&mut self) -> &mut impl Write { &mut self.w.term_thm_buf }
-  fn proof(&mut self) -> &mut impl Write { &mut self.buf }
+  fn unify(&mut self) -> &mut (impl Write + use<W>) { &mut self.w.term_thm_buf }
+  fn proof(&mut self) -> &mut (impl Write + use<W>) { &mut self.buf }
   fn finish(self) -> io::Result<()> { write_cmd_bytes(&mut self.w.proof, self.cmd, &self.buf) }
 }
 
@@ -414,14 +414,14 @@ impl<'a, W: Reopen> StmtBuilder<'a, W> {
 #[must_use = "discarding a DefBuilder will result in a corrupted file"]
 pub struct DefBuilder<'a, W>(StmtBuilder<'a, W>, TermId);
 
-impl<'a, W: Reopen> DefBuilder<'a, W> {
+impl<W: Reopen> DefBuilder<'_, W> {
   /// A reference to the unify stream for this definition. Use [`UnifyCmd::write_to`] to add
   /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
-  pub fn unify(&mut self) -> &mut (impl Write + 'a) { self.0.unify() }
+  pub fn unify(&mut self) -> &mut (impl Write + use<W>) { self.0.unify() }
 
   /// A reference to the proof stream for this definition. Use [`ProofCmd::write_to`] to add
   /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
-  pub fn proof(&mut self) -> &mut (impl Write + 'a) { self.0.proof() }
+  pub fn proof(&mut self) -> &mut (impl Write + use<W>) { self.0.proof() }
 
   /// Finish the unify and proof streams for this definition, and finalize the term addition.
   /// Returns the ID of the newly created term.

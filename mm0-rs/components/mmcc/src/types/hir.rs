@@ -160,7 +160,7 @@ pub struct Block<'a> {
   /// The optional last statement, or `()` if not specified.
   pub expr: Option<Box<Expr<'a>>>,
   /// The generation after the block,
-  pub gen: GenId,
+  pub gen_: GenId,
   /// The variables modified by the block.
   pub muts: Vec<VarId>,
 }
@@ -279,7 +279,7 @@ pub struct While<'a> {
   /// The body of the loop.
   pub body: Box<Block<'a>>,
   /// The generation after the loop.
-  pub gen: GenId,
+  pub gen_: GenId,
   /// The variables that were modified by the loop.
   pub muts: Box<[VarId]>,
   /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the loop
@@ -317,7 +317,7 @@ pub struct Call<'a> {
   pub variant: Option<Box<Expr<'a>>>,
   /// The generation after the function call (the same as the current generation if this function
   /// does not mutate any variables)
-  pub gen: GenId,
+  pub gen_: GenId,
   /// Categorizes the way the returns are packed.
   pub rk: ReturnKind,
 }
@@ -609,7 +609,7 @@ pub enum ExprKind<'a> {
     /// The type `ty` is the type of `new` after the mutation.
     map: Box<[(Spanned<'a, VarId>, Spanned<'a, VarId>, ty::ExprTy<'a>)]>,
     /// The generation after the mutation.
-    gen: GenId,
+    gen_: GenId,
   },
   /// A function call (or something that looks like one at parse time).
   Call(Call<'a>),
@@ -627,7 +627,7 @@ pub enum ExprKind<'a> {
     /// The then/else cases.
     cases: Box<[Expr<'a>; 2]>,
     /// The generation at the join point,
-    gen: GenId,
+    gen_: GenId,
     /// The variables that were modified by the if statement.
     muts: Vec<VarId>,
     /// If this is `Some(b)` then `cond` reduces to `Bool(b)` and so the branch trivializes.
@@ -922,7 +922,7 @@ pub enum ItemKind<'a> {
     /// The arguments of the procedure.
     args: Box<[Arg<'a>]>,
     /// The generation for the return values.
-    gen: GenId,
+    gen_: GenId,
     /// The out parameter origin variables. `outs.len() <= rets.len()` and the first
     /// `outs.len()` arguments in `rets` correspond to the out arguments.
     outs: Box<[u32]>,

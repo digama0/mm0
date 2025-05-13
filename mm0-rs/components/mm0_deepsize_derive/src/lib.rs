@@ -53,7 +53,7 @@ fn add_trait_bounds(mut generics: Generics) -> Generics {
 
 fn match_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
     match fields {
-        Fields::Named(ref fields) => {
+        Fields::Named(fields) => {
             let recurse = fields.named.iter().map(|f| {
                 let name = &f.ident;
                 quote_spanned! {f.span()=>
@@ -64,7 +64,7 @@ fn match_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
                 0 #(+ #recurse)*
             }
         }
-        Fields::Unnamed(ref fields) => {
+        Fields::Unnamed(fields) => {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
                 let index = Index::from(i);
                 quote_spanned! {f.span()=>
@@ -84,7 +84,7 @@ fn match_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
 
 fn match_enum_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream {
     match fields {
-        Fields::Named(ref fields) => {
+        Fields::Named(fields) => {
             let recurse = fields.named.iter().map(|f| {
                 let name = &f.ident;
                 quote_spanned! {f.span()=>
@@ -95,7 +95,7 @@ fn match_enum_fields(fields: &syn::Fields, context: &TokenStream) -> TokenStream
                 0 #(+ #recurse)*
             }
         }
-        Fields::Unnamed(ref fields) => {
+        Fields::Unnamed(fields) => {
             let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
                 let i = syn::Ident::new(&format!("_{i}"), proc_macro2::Span::call_site());
                 quote_spanned! {f.span()=>

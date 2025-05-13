@@ -336,7 +336,7 @@ impl Cfg {
               allocs.insert(a, r.to.k, meta(&r.ety.1));
             }
           }
-          Statement::Let(ref lk, r, ref ty, rv) => {
+          &mut Statement::Let(ref lk, ref mut r, ref ty, ref mut rv) => {
             let (v, ty) = match lk {
               LetKind::Let(v, _) => (v.k, ty),
               LetKind::Ptr([_, (v, ty)]) => (v.k, ty),

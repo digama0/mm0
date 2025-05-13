@@ -159,23 +159,23 @@ impl<'a, T: TranslateBase<'a>> Translate<'a> for &'a ty::WithMeta<T> {
   type Output = Rc<T::Output>;
   fn tr(self, tr: &mut Translator<'a, '_>) -> Rc<T::Output> {
     if tr.subst.is_empty() {
-      let gen = tr.cur_gen;
+      let gen_ = tr.cur_gen;
       if let Some(v) = T::get_mut(tr).get(self) {
         match v {
           Ok(r) => return r.clone(),
-          Err(m) => if let Some(r) = m.get(&gen) { return r.clone() }
+          Err(m) => if let Some(r) = m.get(&gen_) { return r.clone() }
         }
       }
       let r = T::make(&self.k, tr);
       match T::get_mut(tr).entry(self) {
         Entry::Occupied(mut e) => match e.get_mut() {
           Ok(_) => unreachable!(),
-          Err(m) => { m.insert(gen, r.clone()); }
+          Err(m) => { m.insert(gen_, r.clone()); }
         }
         Entry::Vacant(e) => {
           e.insert(if self.flags.contains(ty::Flags::HAS_VAR) {
             let mut m = HashMap::new();
-            m.insert(gen, r.clone());
+            m.insert(gen_, r.clone());
             Err(m)
           } else {
             Ok(r.clone())
@@ -259,14 +259,14 @@ impl ty::TyS<'_> {
 impl<'a> Translator<'a, '_> {
   #[must_use] fn fresh_var(&mut self) -> VarId { self.next_var.fresh() }
 
-  fn tr_var(&mut self, v: HVarId, gen: GenId) -> VarId {
-    let gm = self.gen_vars.get(&gen).expect("unknown generation");
+  fn tr_var(&mut self, v: HVarId, gen_: GenId) -> VarId {
+    let gm = self.gen_vars.get(&gen_).expect("unknown generation");
     if let Some(&val) = gm.cache.get(&v) { return val }
     let val =
       if let Some(&val) = gm.value.get(&v) { val }
-      else if gen == GenId::ROOT { self.next_var.fresh() }
+      else if gen_ == GenId::ROOT { self.next_var.fresh() }
       else { let dom = gm.dominator; self.tr_var(v, dom) };
-    self.gen_vars.get_mut(&gen).expect("unknown generation").cache.insert(v, val);
+    self.gen_vars.get_mut(&gen_).expect("unknown generation").cache.insert(v, val);
     match self.locations.entry(v) {
       Entry::Occupied(e) => { let root = *e.get(); self.locate(root).push(val) }
       Entry::Vacant(e) => { e.insert(val); }
@@ -282,21 +282,21 @@ impl<'a> Translator<'a, '_> {
     self.located.entry(var).or_default()
   }
 
-  fn add_gen(&mut self, dominator: GenId, gen: GenId, value: HashMap<HVarId, VarId>) {
-    assert!(self.gen_vars.insert(gen,
+  fn add_gen(&mut self, dominator: GenId, gen_: GenId, value: HashMap<HVarId, VarId>) {
+    assert!(self.gen_vars.insert(gen_,
       GenMap { dominator, value, cache: Default::default() }).is_none())
   }
 
-  fn try_add_gen(&mut self, dominator: GenId, gen: GenId) {
-    if let Entry::Vacant(e) = self.gen_vars.entry(gen) {
+  fn try_add_gen(&mut self, dominator: GenId, gen_: GenId) {
+    if let Entry::Vacant(e) = self.gen_vars.entry(gen_) {
       e.insert(GenMap { dominator, value: Default::default(), cache: Default::default() });
     }
   }
 
-  fn with_gen<R>(&mut self, mut gen: GenId, f: impl FnOnce(&mut Self) -> R) -> R {
-    mem::swap(&mut self.cur_gen, &mut gen);
+  fn with_gen<R>(&mut self, mut gen_: GenId, f: impl FnOnce(&mut Self) -> R) -> R {
+    mem::swap(&mut self.cur_gen, &mut gen_);
     let r = f(self);
-    self.cur_gen = gen;
+    self.cur_gen = gen_;
     r
   }
 
@@ -412,7 +412,7 @@ type BlockDest<'a> = Option<(hir::Spanned<'a, VarId>, ty::ExprTy<'a>)>;
 
 /// A `JoinBlock` represents a potential jump location, together with the information needed to
 /// correctly pass all the updated values of mutable variables from the current context.
-/// * `gen`: The generation on entry to the target
+/// * `gen_`: The generation on entry to the target
 /// * `muts`: The variables that could potentially have been mutated between when this `JoinBlock`
 ///   was created and the context we are jumping from. These lists are calculated during type
 ///   inference and are mostly syntax directed.
@@ -428,7 +428,7 @@ type LabelData = (BlockId, Rc<[(VarId, bool)]>);
 
 #[derive(Debug)]
 struct LabelGroupData<'a> {
-  /// This is `Some(((gen, muts), labs))` if jumping to this label is valid. `gen, muts` are
+  /// This is `Some(((gen_, muts), labs))` if jumping to this label is valid. `gen_, muts` are
   /// parameters to the [`JoinBlock`] (which are shared between all labels), and
   /// `labs[i] = (tgt, args)` give the target block and the list of variable names to pass
   jumps: Option<(JoinPoint, Rc<[LabelData]>)>,
@@ -561,8 +561,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     (self.cur_block, self.cur_ctx, self.tr.cur_gen)
   }
 
-  #[inline] fn set(&mut self, (block, ctx, gen): (BlockId, CtxId, GenId)) {
-    self.cur_block = block; self.cur_ctx = ctx; self.tr.cur_gen = gen;
+  #[inline] fn set(&mut self, (block, ctx, gen_): (BlockId, CtxId, GenId)) {
+    self.cur_block = block; self.cur_ctx = ctx; self.tr.cur_gen = gen_;
   }
 
   fn cur_block(&mut self) -> &mut BasicBlock { &mut self.cfg[self.cur_block] }
@@ -600,8 +600,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn tr<T: Translate<'a>>(&mut self, t: T) -> T::Output { t.tr(&mut self.tr) }
 
-  fn tr_gen<T: Translate<'a>>(&mut self, t: T, gen: GenId) -> T::Output {
-    self.tr.with_gen(gen, |tr| t.tr(tr))
+  fn tr_gen<T: Translate<'a>>(&mut self, t: T, gen_: GenId) -> T::Output {
+    self.tr.with_gen(gen_, |tr| t.tr(tr))
   }
 
   fn as_temp(&mut self, e: hir::Expr<'a>) -> Block<VarId> {
@@ -723,8 +723,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn expr_place(&mut self, e: hir::Expr<'a>) -> Block<Place> {
     Ok(match e.k.0 {
-      hir::ExprKind::Var(v, gen) => {
-        let v = self.tr_gen(v, gen);
+      hir::ExprKind::Var(v, gen_) => {
+        let v = self.tr_gen(v, gen_);
         self.tr.vars.get(&v).map_or_else(|| v.into(), |p| p.1.clone())
       }
       hir::ExprKind::Index(args) => {
@@ -933,8 +933,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   fn expr(&mut self, e: hir::Expr<'a>, dest: Dest<'a>) -> Block<()> {
     self.fulfill_unit_dest(e.k.1, dest, |this, dest| {
       match e.k.0 {
-        hir::ExprKind::If { hyp, cond, cases, gen, muts, trivial } =>
-          return this.expr_if(e.k.1, hyp, *cond, *cases, gen, muts, trivial, dest),
+        hir::ExprKind::If { hyp, cond, cases, gen_, muts, trivial } =>
+          return this.expr_if(e.k.1, hyp, *cond, *cases, gen_, muts, trivial, dest),
         hir::ExprKind::Call(ref call) if matches!(call.rk, hir::ReturnKind::One) => {
           let hir::ExprKind::Call(call) = e.k.0 else { unreachable!() };
           return this.expr_call(e.span, call, e.k.1.1,
@@ -991,21 +991,21 @@ impl<'a, 'n> BuildMir<'a, 'n> {
             let span = dest.map_or(e.span, |v| v.span);
             this.expr(e, Some(hir::Spanned { span, k: PreVar::Fresh }))?
           }
-          hir::ExprKind::Assign {lhs, rhs, map, gen} => {
+          hir::ExprKind::Assign {lhs, rhs, map, gen_} => {
             let ty = lhs.ty();
             let lhs = this.place(*lhs)?;
             let rhs = this.operand(*rhs)?;
             let ty = this.tr(ty);
             let varmap = map.iter()
               .map(|(new, old, _)| (old.k, this.tr(new.k))).collect::<HashMap<_, _>>();
-            this.tr.add_gen(this.tr.cur_gen, gen, varmap);
+            this.tr.add_gen(this.tr.cur_gen, gen_, varmap);
             let vars = map.into_vec().into_iter().map(|(new, _, ety)| Rename {
               from: this.tr(new.k),
-              to: Spanned { span: new.span.clone(), k: this.tr_gen(new.k, gen) },
+              to: Spanned { span: new.span.clone(), k: this.tr_gen(new.k, gen_) },
               rel: true,
-              ety: this.tr_gen(ety, gen)
+              ety: this.tr_gen(ety, gen_)
             }).collect::<Box<[_]>>();
-            this.tr.cur_gen = gen;
+            this.tr.cur_gen = gen_;
             this.push_stmt(Statement::Assign(lhs, ty, rhs, vars))
           }
           hir::ExprKind::Mm0Proof(_) |
@@ -1184,12 +1184,12 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     (bl, vs.into())
   }
 
-  fn join_args(&mut self, ctx: CtxId, &(gen, ref muts): &JoinPoint,
+  fn join_args(&mut self, ctx: CtxId, &(gen_, ref muts): &JoinPoint,
     args: &mut Vec<(VarId, bool, Operand)>
   ) {
     args.extend(muts.iter().filter_map(|&v| {
       let from = self.tr(v);
-      let to = self.tr_gen(v, gen);
+      let to = self.tr_gen(v, gen_);
       if from == to {return None}
       let r = self.cfg.ctxs.rev_iter(ctx).find(|(u, _, _)| from == u.k)?.1;
       Some((to, r, from.into()))
@@ -1295,22 +1295,22 @@ impl<'a, 'n> BuildMir<'a, 'n> {
 
   fn rvalue_block(&mut self,
     span: &'a FileSpan,
-    hir::Block {stmts, expr, gen, muts}: hir::Block<'a>,
+    hir::Block {stmts, expr, gen_, muts}: hir::Block<'a>,
     ret_ety: Option<ty::ExprTy<'a>>,
   ) -> Block<RValue> {
     let reset = (self.labels.len(), self.tree.groups.len());
-    self.tr.try_add_gen(self.tr.cur_gen, gen);
+    self.tr.try_add_gen(self.tr.cur_gen, gen_);
     let base_ctx = self.cur_ctx;
     let mut after_ctx = base_ctx;
     let jb = if stmts.iter().any(|s| matches!(s.k, hir::StmtKind::Label(..))) {
       let dest = ret_ety.map(|ety| {
         let v = self.fresh_var();
         let rel = !ety.1.ghostly();
-        let ety2 = self.tr_gen(ety, gen);
+        let ety2 = self.tr_gen(ety, gen_);
         self.extend_ctx(Spanned { span: span.clone(), k: v }, rel, ety2);
         (hir::Spanned { span, k: v }, ety)
       });
-      let join = JoinBlock(self.dominated_block(base_ctx), (gen, muts.into()));
+      let join = JoinBlock(self.dominated_block(base_ctx), (gen_, muts.into()));
       after_ctx = self.cur_ctx;
       self.cur_ctx = base_ctx;
       Some((join, dest))
@@ -1337,7 +1337,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         };
         self.join(&join, args, None);
       }
-      self.set((join.0, after_ctx, gen));
+      self.set((join.0, after_ctx, gen_));
       Ok(match dest { None => Constant::unit().into(), Some((v, _)) => v.k.into() })
     } else {
       r.map(|v| v.expect("impossible"))
@@ -1350,7 +1350,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     hyp: Option<[hir::Spanned<'a, HVarId>; 2]>,
     cond: hir::Expr<'a>,
     [e_tru, e_fal]: [hir::Expr<'a>; 2],
-    gen: GenId,
+    gen_: GenId,
     muts: Vec<HVarId>,
     trivial: Option<bool>,
     dest: Dest<'a>,
@@ -1390,7 +1390,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     };
     let (vh1, vh2) = (vh1_s.k, vh2_s.k);
     let base@(_, base_ctx, base_gen) = self.cur();
-    self.tr.try_add_gen(base_gen, gen);
+    self.tr.try_add_gen(base_gen, gen_);
     let base_len = self.cfg.ctxs.len(base_ctx);
     // tru_ctx is the current context with `vh: cond`
     let tru_ctx = self.cfg.ctxs.extend(base_ctx, vh1_s, false,
@@ -1406,7 +1406,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let (trans, dest) = match dest {
       None => (None, None),
       Some(v) => {
-        let x = self.tr_gen(v.k, gen);
+        let x = self.tr_gen(v.k, gen_);
         (Some(v.map_into(|_| x)), Some(v.map_into(|_| PreVar::Ok(x))))
       }
     };
@@ -1438,11 +1438,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         // If neither diverges, we put `goto after` at the end of each block
         self.set(base);
         if let Some(v) = trans {
-          let ety = self.tr_gen(ety, gen);
+          let ety = self.tr_gen(ety, gen_);
           self.extend_ctx(v.cloned(), true, ety)
         }
         let after_ctx = self.cur_ctx;
-        let join = JoinBlock(self.dominated_block(base_ctx), (gen, muts.into()));
+        let join = JoinBlock(self.dominated_block(base_ctx), (gen_, muts.into()));
         self.set(tru);
         let args = match trans { None => vec![], Some(v) => vec![(v.k, true, v.k.into())] };
         self.join(&join, args.clone(), None);
@@ -1450,7 +1450,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
         self.join(&join, args, None);
         // And the after block is the end of the statement
         self.tree.push(join.0);
-        self.set((join.0, after_ctx, gen));
+        self.set((join.0, after_ctx, gen_));
       }
     }
     Ok(())
@@ -1461,7 +1461,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     span: &'a FileSpan,
     hir::While {
       label, has_break, hyp, cond,
-      variant: _, body, gen, muts, trivial
+      variant: _, body, gen_, muts, trivial
     }: hir::While<'a>,
   ) -> Block<RValue> {
     // If `has_break` is true, then this looks like
@@ -1515,7 +1515,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     let muts: Rc<[HVarId]> = muts.into();
     // if `has_break` then we need to be prepared to jump to `after` from inside the loop.
     let brk = if has_break {
-      Some((JoinBlock(self.dominated_block(base_ctx), (gen, muts.clone())), None))
+      Some((JoinBlock(self.dominated_block(base_ctx), (gen_, muts.clone())), None))
     } else { None };
 
     self.cur_block().stmts.push(
@@ -1525,7 +1525,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     self.cur_block().terminate(Terminator::Jump(base_bl, Box::new([]), None));
     self.cur_block = base_bl;
     let base_gen = self.tr.cur_gen;
-    self.tr.try_add_gen(base_gen, gen);
+    self.tr.try_add_gen(base_gen, gen_);
 
     // Set things up so that `(continue label)` jumps to `base`,
     // and `(break label)` jumps to `after`
@@ -1617,11 +1617,11 @@ impl<'a, 'n> BuildMir<'a, 'n> {
     })().expect_err("it's a loop");
 
     self.tree.pop();
-    if let Some((JoinBlock(tgt, (gen, _)), _)) = self.labels.pop().expect("underflow").1.brk {
+    if let Some((JoinBlock(tgt, (gen_, _)), _)) = self.labels.pop().expect("underflow").1.brk {
       // If `has_break` is true, then the final location after the while loop is the join point
       // `after`, and the context is `base_ctx` because the while loop doesn't add any bindings
       self.tree.push(tgt);
-      self.set((tgt, base_ctx, gen));
+      self.set((tgt, base_ctx, gen_));
       // We return `()` from the loop expression
       Ok(Constant::unit().into())
     } else {
@@ -1637,7 +1637,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   }
 
   fn expr_call(&mut self, span: &'a FileSpan,
-    hir::Call {f, side_effect: se, tys, args, variant, gen, rk}: hir::Call<'a>,
+    hir::Call {f, side_effect: se, tys, args, variant, gen_, rk}: hir::Call<'a>,
     tgt: ty::Ty<'a>,
     dest: &[hir::Spanned<'a, PreVar>],
   ) -> Block<()> {
@@ -1649,8 +1649,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       .collect::<Block<Box<[_]>>>()?;
     let base_ctx = self.cur_ctx;
     let base_len = self.cfg.ctxs.len(base_ctx);
-    self.tr.try_add_gen(self.tr.cur_gen, gen);
-    self.tr.cur_gen = gen;
+    self.tr.try_add_gen(self.tr.cur_gen, gen_);
+    self.tr.cur_gen = gen_;
     let vars: Box<[_]> = match rk {
       hir::ReturnKind::Unreachable => {
         let v_s = self.fresh_var_span(span.clone());
@@ -1716,7 +1716,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
   ) -> Option<Symbol> {
     self.cfg.span = it.span.clone();
     match it.k {
-      hir::ItemKind::Proc { kind, name, tyargs, args, gen, outs, rets, variant, body } => {
+      hir::ItemKind::Proc { kind, name, tyargs, args, gen_, outs, rets, variant, body } => {
         fn tr_attr(attr: ty::ArgAttr) -> ArgAttr {
           let mut out = ArgAttr::empty();
           if attr.contains(ty::ArgAttr::NONDEP) { out |= ArgAttr::NONDEP }
@@ -1733,8 +1733,8 @@ impl<'a, 'n> BuildMir<'a, 'n> {
           args2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
         }).0, BlockId::ENTRY);
         let base_ctx = self.cur_ctx;
-        self.tr.try_add_gen(GenId::ROOT, gen);
-        self.tr.cur_gen = gen;
+        self.tr.try_add_gen(GenId::ROOT, gen_);
+        self.tr.cur_gen = gen_;
         let mut rets2 = Vec::with_capacity(rets.len());
         let ret_vs = self.push_args_raw(&rets, |attr, var, ty| {
           rets2.push(Arg {attr: tr_attr(attr), var, ty: ty.clone()})
