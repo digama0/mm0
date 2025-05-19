@@ -4621,6 +4621,8 @@ theorem writeMapping_val:
 $ writeMapping ks k2 m2 ks2 <->
   ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
   ks2 = setMapping ks k2 m2 $ = 'biid;
+theorem fin_writeMapping: $ finite {ks2 | writeMapping ks k2 m2 ks2} $ =
+'(finss (mpbi ssab1 @ ax_gen @ anwr @ bi2i elsn) finns);
 
 @_ local def setCfg (ks k2: nat): nat = $ setMapping ks k2 (ksMapping ks) $;
 theorem setCfg_mk: $ setCfg (mkKS i o k m) k2 = mkKS i o k2 m $ =
@@ -4650,6 +4652,7 @@ theorem writeCfg_val:
 $ writeCfg ks k2 ks2 <->
   ks e. KernelState /\ k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2) /\
   ks2 = setCfg ks k2 $ = 'writeMapping_val;
+theorem fin_writeCfg: $ finite {ks2 | writeCfg ks k2 ks2} $ = 'fin_writeMapping;
 
 @(add-eval) def stdin: nat = $ 0 $;
 @(add-eval) def stdout: nat = $ 1 $;
@@ -4710,7 +4713,7 @@ theorem execReadT2 (l k l2 k2 ret: nat):
     PageMapping (getMemory k) C_ PageMapping (getMemory k2) $ =
 (named @ focus
   '(sylibr anass @ sylibr anass @ sylibr anass @ sylibr anass @
-    sylbi anass @ anim2a @ syl5 anr @ eexd @ eexd @ eexda @ sylbir anass @ _)
+    sylbi anass @ anim2a @ syl5 anr @ eexd @ eexd @ eexda @ sylbir anass _)
   (have 'h1 '(anwr @ rsyl anllr @ rsyl readMemT anll))
   '(iand (anwl h1) @ imp @ eord _ _)
   (focus '(exp @ iand (mpbird (eleq1d @ anld anrr) anll) @
@@ -4930,6 +4933,106 @@ pub theorem execIO_T (ks ks2: nat):
   (f 'eexda '(anwl execMMapT) 'anr '(anwll @ rsyl hs anll)
     '(anwr anllr) '(anwr anlr)));
 
+theorem fin_execIO (ks: nat): $ finite {ks2 | execIO ks ks2} $ =
+(focus
+  (have 'h $ finite (X\ n e. u64, Array u8 n) $
+    '(xabfini finns @ a1i @ Arrayfin finns))
+  '(finss (mpbi ssab1 @ ax_gen @ sylibr ellamima _) @ finlamima @ xpfin
+    (xabfini (unfin finiteConfig finns) @ a1i @ unfin finPageMapping finns)
+    @ xpfin h h)
+  '{_ : $ _ -> E. p (
+    p e. Xp (X\ z e. Config u. sn (ksCfg ks), (PageMapping (getMemory z) u. sn (ksMapping ks))) _ /\
+    _ = mkKS (ksIn ks ++ pi12 (snd p)) (ksOut ks ++ pi22 (snd p)) (pi11 p) (pi12 p)) $}
+  '(!! eex i @ !! eex o @ !! eex k @ !! eex m @ !! eex ret @ mpd _
+    {_ : $ _ -> E. k2 E. m2 E. i2 E. o2 (
+      (k2 e. Config \/ k2 = k) /\
+      (m2 e. PageMapping (getMemory k2) \/ m2 = m) /\
+      (i2 e. List u8 /\ len i2 e. u64) /\
+      (o2 e. List u8 /\ len o2 e. u64) /\
+      ks2 = mkKS (i ++ i2) (o ++ o2) k2 m2) -> _ $})
+  (have 'h0 $ _ /\ len 0 e. u64 $ '(iani elList0 @ mpbir (eleq1 len0) elBits01))
+  (have 'hi $ i2 = 0 -> i2 e. List u8 /\ len i2 e. u64 $ '(mpbiri h0 ,eqtac))
+  (have 'ho $ o2 = 0 -> o2 e. List u8 /\ len o2 e. u64 $ '(mpbiri h0 ,eqtac))
+  (have 'hk $ k3 e. Config /\ ret e. u64 /\
+      k4 = setException (setReg k3 RAX ret) 0 -> k4 e. Config $
+    '(mpbird ,eqtac @ sylan setExceptionT
+      (sylan setRegT (iand (mpbird ,eqtac anll) @ a1i RAX_T) anlr) (a1i opt0)))
+  (focus
+    '(imp @ !! eexd k3 @ !! eexda k4 @ sylbir anass @ imp @
+      eord (eord (eord (eord _ _) _) _) _)
+    (def (split i o)
+      '(iand (iand (iand (iand _ _)
+        ,(if i 'anrl '(rsyl anlr hi)))
+        ,(if o 'anrl (if i '(rsyl anlr ho) '(anwr ho)))) @ eqtr4d ,eqtac @ mkKSeqd
+        ,(if i eqtac '(syl6eq append02 ,eqtac))
+        ,(if o eqtac '(syl6eq append02 ,eqtac)) ,eqtac ,eqtac))
+    (focus -- Open
+      '(exp @ iexde @ iexde @ iexde @ iexde ,(split #f #f))
+      '(orld @ mpbird ,eqtac @ anw4l @
+        sylan hk (rsyl anrl @ rsyl (anim1 execOpenT) @ iand (mpbird ,eqtac anll) anlr) anlr)
+      '(orrd anllr))
+    (focus -- Read
+      '(!! eexda i3 @ mpd (rsyl anrl
+        {_ : $ _ -> E. i2 (i2 e. List u8 /\ len i2 e. u64 /\ i ++ i2 = i3) $}) _)
+      (focus
+        '(imp @ !! eexd fd @ !! eexd buf @ !! eexda count @ sylbir anass @ imp @ eorda _ _)
+        '(iexde @ iand (anwr hi) (syl6eq append02 @ appendeqd (eqcomd @ rsyl anlr anrl) ,eqtac))
+        '(sylbir anass @ sylbir anass @ imp @ !! eexda l1 @ casesda _ _)
+        '(iexde @ mpbird ,eqtac @ iand (iand (rsyl anllr @ rsyl anlr anlr) @
+            mpbird ,eqtac @ sylc Bitsle1 an3lr @ mpbird ,eqtac @
+            sylan readRegT (rsyl an5lr @ rsyl anllr @ rsyl readMemT anll) @ a1i RDX_T) @
+          eqtr2d (rsyl anllr @ anrd anlr) @ syl ifpos anlr)
+        '(iexde @ mpbird ,eqtac @ iand (a1i h0) @
+          eqtr2d (rsyl anllr @ anrd anlr) @ syl6eqr append02 @ syl ifneg anlr))
+      '(iexdde @ iexdde @ eximd @ iexdde @ exp ,(split #t #f))
+      '(orld @ mpbird ,eqtac @ anw4l @ sylan hk (rsyl anrl @ rsyl execReadT @ anim1 anr) anlr)
+      '(orrd anllr))
+    (focus -- Write
+      '(!! eexda o3 @ mpd (anwr @ anwll
+        {_ : $ _ -> E. o2 (o2 e. List u8 /\ len o2 e. u64 /\ o ++ o2 = o3) $}) _)
+      (focus
+        '(imp @ !! eexd fd @ !! eexd buf @ !! eexda count @ sylbir anass @ imp @ eorda _ _)
+        '(iexde @ iand (anwr ho) (syl6eq append02 @ appendeqd (eqcomd @ anrd anlr) ,eqtac))
+        '(sylbir anass @ sylbir anass @ imp @ !! eexda l1 @ casesda _ _)
+        '(iexde @ mpbird ,eqtac @ iand (iand (rsyl anllr @ rsyl anlr anlr) @
+            mpbird ,eqtac @ sylc Bitsle1 an3lr @ mpbird ,eqtac @
+            sylan readRegT (rsyl anllr @ anwr @ rsyl readMemT anll) @ a1i RDX_T) @
+          eqtr2d (rsyl anllr @ anrd anlr) @ syl ifpos anlr)
+        '(iexde @ mpbird ,eqtac @ iand (a1i h0) @
+          eqtr2d (rsyl anllr @ rsyl anlr anr) @ syl6eqr append02 @ syl ifneg anlr))
+      '(iexdde @ iexdde @ iexdde @ eximd @ exp ,(split #f #t))
+      '(orld @ mpbird ,eqtac @ anw4l @
+        sylan hk (rsyl anrl @ rsyl (anim1 execWriteT) @ iand (mpbird ,eqtac an3lr) anlr) anlr)
+      '(orrd anllr))
+    (focus -- FStat
+      '(exp @ iexde @ iexde @ iexde @ iexde ,(split #f #f))
+      '(orld @ mpbird ,eqtac @ anw4l @ sylan hk (rsyl anrl execFStatT) anlr)
+      '(orrd anllr))
+    (focus -- MMap
+      '(iexdde @ eximd @ exp @ iexde @ iexde ,(split #f #f))
+      '(orld @ mpbird ,eqtac @ anwll @ sylan hk (rsyl anrl @ rsyl execMMapT @ anim1 anlr) anllr)
+      '(orld @ mpbird (eleq2d @ PageMappingeqd @
+          syl6eq getMemory_setReg @ syl6eq getMemory_setException @
+          getMemoryeqd @ eqtrd an3lr an4lr) @
+        rsyl anllr @ anwl @ rsyl execMMapT anlr)))
+  (focus
+    '(anwll @ eexd @ eexd @ eexd @ eexda @ iexde @ iand (mpbird (eleq1d anr) _) @
+      eqtr4d (anwl anrr) @ mkKSeqd
+        (appendeqd
+          (syl6eq ksIn_mk @ ksIneqd anll)
+          (syl6eq pi12pr @ pi12eqd @ syl6eq sndpr @ sndeqd anr))
+        (appendeqd
+          (syl6eq ksOut_mk @ ksOuteqd anll)
+          (syl6eq pi22pr @ pi22eqd @ syl6eq sndpr @ sndeqd anr))
+        (syl6eq pi11pr @ pi11eqd anr)
+        (syl6eq pi12pr @ pi12eqd anr))
+    '(anwl @ mpbird (anwl @ syl5bb prelxp @ syl6bbr anass @ aneqd _ _) @ anrl)
+    '(syl5bb (elxab ,eqtac) @ aneqd
+      (syl5bb elun @ oreq2d @ syl5bb elsn @ eqeq2d @ syl6eq ksCfg_mk ksCfgeq)
+      (syl5bb elun @ oreq2d @ syl5bb elsn @ eqeq2d @ syl6eq ksMapping_mk ksMappingeq))
+    (def h '(bitr (elxabe ,eqtac) @ bitr ancomb @ aneq1i @ bitr elArray @ bian2 eqid))
+    '(a1i @ bitr prelxp @ aneq ,h ,h)));
+
 @_ def sys_exit: nat = $ ch x3 xc $;
 --| We consider protection faults as a valid way to exit with a nonzero exit code
 --| (usually `0xD` or `0xE` but often reported as `0x8D` and `0x8E` by shells).
@@ -4959,6 +5062,14 @@ $ ks e. KernelState /\ (
 pub theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
 (named '(anim2a @ eord (a1i @ eex @ anrd @ anwr writeCfgT) @ exp execIO_T));
+
+theorem fin_ksStep (ks: nat): $ finite {ks2 | ksStep ks ks2} $ =
+(named @ focus
+  '(finss {_ : $ _ C_ Ran (X\ z e. Config, {y | writeCfg ks z y}) u. {y | execIO ks y} $} @
+    unfin (rnfin @ xabfini finiteConfig @ a1i fin_writeCfg) fin_execIO)
+  '(mpbi ssab1 @ ax_gen @ anwr @ sylibr elun @ orim _ @ bi2i @ elabe ,eqtac)
+  '(eex @ syl prelrn @ sylibr (elxabe ,eqtac) @
+    iand (anwl @ anrd stepT) @ sylibr (elabe writeCfgeq3) anr));
 
 theorem ksStep_no_exit: $ ksStep ks ks2 -> ~execExit (ksCfg ks) ret $ =
 (named @ focus

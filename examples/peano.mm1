@@ -5452,6 +5452,9 @@ theorem xabfin (B: set x) (h: $ G -> finite A $) (h2: $ G /\ x e. A -> finite B 
     iexe (eqeq2d @ preqd id @ lowereqd @ sbseq1d id) eqid)
   (sylc xpfin h @ syl finuni @ syl finlamima h)));
 
+theorem xabfini (B: set x) (h: $ finite A $) (h2: $ x e. A -> finite B $):
+  $ finite (X\ x e. A, B) $ = '(trud @ xabfin (a1i h) (anwr h2));
+
 theorem sabfin {x y} (B: set x) (h: $ G -> y e. B -> x e. A $)
   (hA: $ G -> finite A $) (hB: $ G /\ x e. A -> finite B $): $ G -> finite (S\ x, B) $ =
 '(mpbird (fineqd @ sabxab h) (xabfin hA hB));
