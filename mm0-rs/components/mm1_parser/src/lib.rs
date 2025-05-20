@@ -40,6 +40,7 @@
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
   clippy::comparison_chain,
   clippy::default_trait_access,
   clippy::inline_always,
@@ -64,8 +65,8 @@ use ast::{
   SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
 };
 use mm0_util::{BoxError, LinedString, Modifiers, Position, Prec, Span};
-use num::cast::ToPrimitive;
 use num::BigUint;
+use num::cast::ToPrimitive;
 use std::mem;
 use std::sync::Arc;
 
@@ -817,18 +818,10 @@ impl<'a> Parser<'a> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
     for i in trim.into_iter().rev() {
-      if whitespace(self.source[i]) {
-        trim.end -= 1
-      } else {
-        break
-      }
+      if whitespace(self.source[i]) { trim.end -= 1 } else { break }
     }
     for i in trim {
-      if whitespace(self.source[i]) {
-        trim.start += 1
-      } else {
-        break
-      }
+      if whitespace(self.source[i]) { trim.start += 1 } else { break }
     }
     if { trim }.any(|i| whitespace(self.source[i])) {
       return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))

@@ -36,6 +36,7 @@
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
   clippy::comparison_chain,
   clippy::default_trait_access,
   clippy::inline_always,
@@ -58,8 +59,8 @@
 use mm0_deepsize_derive::DeepSizeOf;
 use std::borrow::Borrow;
 use std::collections::{
-  hash_map::{Entry, OccupiedEntry},
   HashMap,
+  hash_map::{Entry, OccupiedEntry},
 };
 use std::error::Error;
 use std::fmt;
@@ -315,7 +316,7 @@ pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 impl<'a, T> Iterator for ArcListIter<'a, T> {
   type Item = &'a T;
   fn next(&mut self) -> Option<&'a T> {
-    let (l, t) = &**self.0 .0.as_ref()?;
+    let (l, t) = &**self.0.0.as_ref()?;
     self.0 = l;
     Some(t)
   }

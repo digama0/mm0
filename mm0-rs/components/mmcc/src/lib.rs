@@ -39,6 +39,7 @@
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
   clippy::comparison_chain,
   clippy::default_trait_access,
   clippy::enum_glob_use,

@@ -166,7 +166,7 @@ impl FrozenEnv {
             ].name()),
           ProofNode::Term(term, p) => {
             let td = self.env.term(term);
-            write!(self, "({}", self.env.data()[td.atom].name()).unwrap();
+            write!(self, "({}", self.env.data()[td.atom].name())?;
             for e in td.unpack_term(&self.store[p..]) {
               self.l.push(b' ');
               self.go(e, indent)?;

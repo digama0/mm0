@@ -313,11 +313,11 @@ impl Elaborator {
     use std::fmt::Write;
     let mut s = String::new();
     for (a, e, _) in &self.lc.proof_order {
-      writeln!(s, "{}: {}", self.print(a), self.format_env().pp(e, 80)).unwrap()
+      writeln!(s, "{}: {}", self.print(a), self.format_env().pp(e, 80)).expect("unreachable")
     }
     for e in &self.lc.goals {
       e.unwrapped(|r| if let LispKind::Goal(e) = r {
-        writeln!(s, "|- {}", self.format_env().pp(e, 80)).unwrap()
+        writeln!(s, "|- {}", self.format_env().pp(e, 80)).expect("unreachable")
       })
     }
     s

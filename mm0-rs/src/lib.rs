@@ -35,7 +35,9 @@
 // all the clippy lints we don't want
 #![allow(
   clippy::blocks_in_conditions,
-  clippy::cognitive_complexity, clippy::comparison_chain,
+  clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
+  clippy::comparison_chain,
   clippy::default_trait_access, clippy::enum_glob_use, clippy::inline_always,
   clippy::manual_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,

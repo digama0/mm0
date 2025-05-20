@@ -868,7 +868,7 @@ impl NodeHash for ProofHash {
                     write!(err, "\n  ({}, {}) -> ({}, {})",
                       nh.fe.to(&td.args[i].0.unwrap_or(AtomId::UNDER)),
                       nh.fe.to(&td.args[j].0.unwrap_or(AtomId::UNDER)),
-                      nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
+                      nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).expect("unreachable");
                   }
                 }
                 return Err(nh.err(&th_head, err))

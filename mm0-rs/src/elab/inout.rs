@@ -183,9 +183,9 @@ impl Environment {
       use std::fmt::Write;
       let mut s = format!("term '{s}' has incorrect type, expected: ");
       for &i in args {
-        write!(s, "{} > ", self.data[self.sorts[i].atom].name).unwrap();
+        write!(s, "{} > ", self.data[self.sorts[i].atom].name).expect("unreachable");
       }
-      write!(s, "{}", self.data[self.sorts[ret].atom].name).unwrap();
+      write!(s, "{}", self.data[self.sorts[ret].atom].name).expect("unreachable");
       return Err(s)
     }
     Ok(t)
