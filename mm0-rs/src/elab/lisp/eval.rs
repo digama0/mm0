@@ -13,7 +13,7 @@ use instant::Instant;
 use num::{BigInt, Signed, ToPrimitive, Zero};
 use crate::{ast::SExpr, ArcString, AtomData, AtomId, BoxError, DeclKey, ElabError,
   Elaborator, Environment, ErrorLevel, FileRef, FileSpan, LispData,
-  MergeStrategy, MergeStrategyInner, ObjectKind, SliceExt, Span, StmtTrace,
+  MergeStrategy, MergeStrategyInner, ObjectKind, Span, StmtTrace,
   TermKind, ThmKind, ThmId};
 use crate::elab::local_context::{try_get_span, try_get_span_from, AwaitingProof, InferSort};
 use crate::elab::{
@@ -334,10 +334,10 @@ impl Elaborator {
   }
 
   fn tail(&self, e: &LispKind) -> SResult<LispVal> {
-    fn exponential_backoff(es: &[LispVal], i: usize, r: impl FnOnce(Vec<LispVal>) -> LispVal) -> LispVal {
+    fn exponential_backoff(es: &[LispVal], i: usize, r: impl FnOnce(Box<[LispVal]>) -> LispVal) -> LispVal {
       let j = 2 * i;
       if j >= es.len() { r(es[i..].into()) }
-      else { LispVal::dotted_list(es[i..j].cloned_box(), exponential_backoff(es, j, r)) }
+      else { LispVal::dotted_list(&es[i..j], exponential_backoff(es, j, r)) }
     }
     e.unwrapped(|e| match e {
       LispKind::List(es) if es.is_empty() => Err("evaluating 'tl ()'".into()),

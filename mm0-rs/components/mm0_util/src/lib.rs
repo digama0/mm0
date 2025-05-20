@@ -90,7 +90,7 @@ pub trait SliceExt<T> {
 impl<T> SliceExt<T> for [T] {
   fn cloned_box(&self) -> Box<[T]>
   where T: Clone {
-    self.to_vec().into()
+    self.into()
   }
 }
 

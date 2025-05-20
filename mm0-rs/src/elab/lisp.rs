@@ -20,7 +20,7 @@ use num::BigInt;
 use debug_derive::EnvDebug;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::{ast::Atom, ArcString, AtomId, FileSpan, MergeStrategy, MergeStrategyInner, Modifiers,
-  MutexExt, Remap, Remapper, SliceExt, Span, StackList};
+  MutexExt, Remap, Remapper, Span, StackList};
 use parser::Ir;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -1541,10 +1541,10 @@ impl Uncons {
     if self.offset == 0 { return self.e.clone() }
     match &*self.e {
       LispKind::List(es) =>
-        LispKind::List(es[self.offset as usize..].cloned_box()).decorate_span(&self.fspan()),
+        LispKind::List(es[self.offset as usize..].into()).decorate_span(&self.fspan()),
       LispKind::DottedList(es, r) if es.len() == self.offset as usize => r.clone(),
       LispKind::DottedList(es, r) =>
-        LispKind::DottedList(es[self.offset as usize..].cloned_box(), r.clone())
+        LispKind::DottedList(es[self.offset as usize..].into(), r.clone())
           .decorate_span(&self.fspan()),
       _ => self.e.clone(),
     }
