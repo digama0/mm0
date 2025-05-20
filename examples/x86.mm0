@@ -1501,19 +1501,40 @@ theorem ksReachableInd {ks1 ks2: nat} (ks ks3: nat) (A: set):
 theorem ksReachableT (ks ks2: nat):
   $ ksReachable ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
+--| `isGoodExit k P` asserts `k` is an exit state which is either
+--| a well behaved error exit or a success satisfying `P`.
+def isGoodExit (k .exit_code: nat) (P: set): wff =
+$ k e. KernelState /\
+  E. exit_code (execExit (ksCfg k) exit_code /\
+    (exit_code = 0 -> ksIn k, ksOut k e. P)) $;
+theorem isGoodExitT (k: nat) (P: set):
+  $ isGoodExit k P -> k e. KernelState $;
+
 --| `terminates_ensuring k P` asserts that starting from initial configuration `k`
 --| containing the value on input, with the ability to read more files as
 --| necessary, the program always reaches the exit point and returns a value,
 --| and moreover, if it returns `0`, then the relation `P` holds of the final
 --| input and output.
-def terminates_ensuring (k .k2 .k3 .exit_code: nat) (P: set): wff =
-$ k e. KernelState /\
-  A. k2 (ksReachable k k2 ->
-    E. k3 E. exit_code (ksReachable k2 k3 /\
-      execExit (ksCfg k3) exit_code /\
-      (exit_code = 0 -> ksIn k3, ksOut k3 e. P))) $;
+def terminates_ensuring (k: nat) (P: set): wff;
 theorem terminates_ensuringT (k: nat) (P: set):
   $ terminates_ensuring k P -> k e. KernelState $;
+--| The base case of `terminates_ensuring`: an exit state which is either
+--| a well behaved error exit or a success satisfying `P` is a terminating state.
+theorem terminates_ensuring_base (k: nat) (P: set):
+  $ isGoodExit k P -> terminates_ensuring k P $;
+--| The inductive case of `terminates_ensuring`: if a state is not stuck
+--| (it has at least one next state) and all possible next states are terminating,
+--| then this state is also terminating.
+theorem terminates_ensuring_unstep (k: nat) {k2: nat} (P: set):
+  $ E. k2 ksStep k k2 /\
+    A. k2 (ksStep k k2 -> terminates_ensuring k2 P) ->
+    terminates_ensuring k P $;
+--| `terminates_ensuring` is inductively generated from its constructors
+--| `terminates_ensuring_base` and `terminates_ensuring_unstep`.
+theorem terminates_ensuring_ind {k k2: nat} (P A: set):
+  $ A. k (isGoodExit k P -> k e. A) /\
+    A. k (E. k2 ksStep k k2 /\ A. k2 (ksStep k k2 -> k2 e. A) -> k e. A) ->
+    A. k (terminates_ensuring k P -> k e. A) $;
 
 --| `succeeds k i o` asserts that starting from initial configuration `k`,
 --| the program reaches the exit point and returns success (exit code 0), and

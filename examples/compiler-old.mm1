@@ -377,15 +377,8 @@ theorem hoare_ksStep {k fr}
   (h1: $ G /\ k |=s sn fr *s P ->
          (P. k2 ksStep k k2 -> k2 |=s sn fr *s Q) $)
   : $ G -> hoare T P Q $ =
-'(ialda @ ialda @
-  sylibr (!! terminates_ensuring_val k3) @ iand (syl s_sat_ks anr) @
-  iald @ syl5bi ksReachable_hd @ sylbi anrass @
-  eord (syl5ibrcom (anwr @ rsyl eqcom ,eqtac) @
-    imp @ mpd (syl pimex12 h1) @ eexd @ impd @ exp @ expd @ syl5 (impcom s_ok_E) @
-    syl5 terminates_ensuring_can @ syl can_terminate_ensuring_R @
-    anwr ksReachable1) @
-  imp @ com23 @ eexda @ syl5 s_ok_E @ eimd (imp @ syl5 anl @ syl eal @ anrd h1) @
-  syl6 terminates_ensuring_can @ syl terminates_ensuring_R anrr);
+'(ialda @ ialda @ anrasss @ syl terminates_ensuring_pim @
+  impcom @ syl5 h1 @ pimim2d eal);
 
 theorem hoare_step {k fr}
   (h1: $ G /\ k |=s sn fr *s P ->

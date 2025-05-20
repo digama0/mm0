@@ -5195,82 +5195,195 @@ theorem ksReachable_tr: $ ksReachable ks ks2 ->
   ksReachable ks2 ks3 -> ksReachable ks ks3 $ =
 (named '(exp ,(induct '(ksReachable_rind anl) _ 'anr '(imp @ anwr ksReachableS))));
 
-theorem ksReachable_exit:
+theorem execExit_ksReachable:
   $ execExit (ksCfg ks) ret -> ksReachable ks ks2 -> ks2 = ks $ =
 (named '(exp @ sylib elsn @ syl ksReachableInd @ anim1 @
   iand (sylibr elsn eqidd) @ iald @ iald @ com23 @
   syl5ibrcom (imeq1d @ sylbi elsn ksStepeq1) @
   com12 @ syl absurd ksStep_no_exit));
 
+--| `isGoodExit k P` asserts `k` is an exit state which is either
+--| a well behaved error exit or a success satisfying `P`.
+@_ def isGoodExit (k .exit_code: nat) (P: set): wff =
+$ k e. KernelState /\
+  E. exit_code (execExit (ksCfg k) exit_code /\
+    (exit_code = 0 -> ksIn k, ksOut k e. P)) $;
+pub theorem isGoodExitT (k: nat) (P: set):
+  $ isGoodExit k P -> k e. KernelState $ = (named 'anl);
+
+theorem isGoodExit_ksStep:
+  $ isGoodExit ks P -> ~ksStep ks ks2 $ =
+(named '(anwr @ eex @ anwl @ con2 ksStep_no_exit));
+
+theorem isGoodExit_ksPath:
+  $ isGoodExit ks P /\ ksPath ks l ks2 -> l = 0 /\ ks2 = ks $ =
+(named (induct '(listind) 'l
+  '(anwr @ sylbi ksPath0 @ anim1 eqidd)
+  '(a1i @ imp @ syl5bi ksPathS @ syl5 anl @ syl absurd isGoodExit_ksStep)));
+
+theorem isGoodExit_ksReachable:
+  $ isGoodExit ks P /\ ksReachable ks ks2 -> ks2 = ks $ =
+(named '(imp @ eexda @ anrd isGoodExit_ksPath));
+
+theorem isGoodExit_no_step (k: nat) (P: set):
+  $ isGoodExit k P -> k e. KernelState $ = (named 'anl);
+
+theorem isGoodExit_mono:
+  $ P C_ Q -> isGoodExit ks P -> isGoodExit ks Q $ =
+(named '(anim2d @ eximd @ anim2d @ imim2d ssel));
+
+theorem isGoodExit_fail:
+  $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
+    isGoodExit k P $ =
+'(iand anll @ syl (iexe ,eqtac) @ anim anr absurd);
+
+--| `isSafe k P` asserts that starting from initial configuration `k`
+--| containing the value on input, with the ability to read more files as
+--| necessary, the program either diverges or reaches the exit point and
+--| returns a value, and moreover, if it returns `0`, then the relation `P`
+--| holds of the final input and output.
+@_ local def isSafe (k: nat) (P: set): wff =
+$ k e. KernelState /\
+  A. k2 (ksReachable k k2 -> isGoodExit k2 P \/ E. k3 ksStep k2 k3) $;
+theorem isSafeT (k: nat) (P: set): $ isSafe k P -> k e. KernelState $ = (named 'anl);
+
+theorem isSafe_base (k: nat) (P: set):
+  $ isGoodExit k P -> isSafe k P $ =
+(named '(iand isGoodExitT @ ialda @ orld @
+  mpbird (rsyl isGoodExit_ksReachable isGoodExiteq1) anl));
+
+theorem isSafe_unstep (k: nat) (P: set):
+  $ E. k2 ksStep k k2 /\ A. k2 (ksStep k k2 -> isSafe k2 P) -> isSafe k P $ =
+(focus
+  '(iand (anwl @ eex @ anld ksStepT) @ !! iald k3 @ !! eexd l ,(split-sop 'l '{
+    ($0$ => (mpbird ,eqtac @ syl5bi ksPath0 @ exp @ orrd @ mpbird (anwr ,eqtac) an3l)) o
+    ($a : l2$ => (mpbird ,eqtac @ syl5bi ksPathS @ exp @ mpd _ @
+      syl eal @ anrd {(mpd anrl @ rsyl anllr @ eale ,eqtac) : $ _ -> isSafe $}))}))
+  '(rsyl anrr @ iexe ,eqtac));
+
+theorem isSafe_reachable (k: nat) (P: set):
+  $ isSafe k P /\ ksReachable k k2 -> isSafe k2 P $ =
+(named '(iand (anwr @ anrd ksReachableT) @ mpd anlr @
+  alimd @ imim1d @ anwr ksReachable_tr ));
+
+theorem isSafe_step (k: nat) (P: set):
+  $ isSafe k P /\ ksStep k k2 -> isSafe k2 P $ =
+'(syl isSafe_reachable @ anim2 ksReachable1);
+
+theorem isSafe_mono:
+  $ P C_ Q -> isSafe ks P -> isSafe ks Q $ =
+(named '(anim2d @ alimd @ imim2d @ orim1d isGoodExit_mono));
+
+theorem isSafe_fail:
+  $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
+    isSafe k P $ =
+'(rsyl isGoodExit_fail isSafe_base);
+
 --| `terminates_ensuring k P` asserts that starting from initial configuration `k`
 --| containing the value on input, with the ability to read more files as
 --| necessary, the program always reaches the exit point and returns a value,
 --| and moreover, if it returns `0`, then the relation `P` holds of the final
 --| input and output.
-@_ def terminates_ensuring (k .k2 .k3 .exit_code: nat) (P: set): wff =
-$ k e. KernelState /\
-  A. k2 (ksReachable k k2 ->
-    E. k3 E. exit_code (ksReachable k2 k3 /\
-      execExit (ksCfg k3) exit_code /\
-      (exit_code = 0 -> ksIn k3, ksOut k3 e. P))) $;
+@_ abstract def terminates_ensuring (k: nat) (P: set): wff =
+$ isSafe k P /\ finite (S\ l, {k2 | ksPath k l k2}) $;
+
+theorem terminates_ensuring_safe (k: nat) (P: set):
+  $ terminates_ensuring k P -> isSafe k P $ = (named 'anl);
+
 pub theorem terminates_ensuringT (k: nat) (P: set):
-  $ terminates_ensuring k P -> k e. KernelState $ = (named 'anl);
+  $ terminates_ensuring k P -> k e. KernelState $ = '(syl isSafeT terminates_ensuring_safe);
 
-@_ local def can_terminate_ensuring (k .k2 .exit_code: nat) (P: set): wff =
-$ E. k2 E. exit_code (ksReachable k k2 /\
-    execExit (ksCfg k2) exit_code /\
-    (exit_code = 0 -> ksIn k2, ksOut k2 e. P)) $;
+--| The base case of `terminates_ensuring`: an exit state which is either
+--| a well behaved error exit or a success satisfying `P` is a terminating state.
+pub theorem terminates_ensuring_base (k: nat) (P: set):
+  $ isGoodExit k P -> terminates_ensuring k P $ =
+(named '(iand isSafe_base @ syl (mpi finns finss) @ sylibr ssal2 @ iald @ iald @
+  syl5bi (elsabe @ elabed ,eqtac) @ exp @ sylibr elsn @ sylibr prth isGoodExit_ksPath));
 
-theorem can_terminate_ensuringT:
-  $ can_terminate_ensuring k P -> k e. KernelState $ =
-(named '(eex @ eex @ anwll @ anld ksReachableT));
+--| The inductive case of `terminates_ensuring`: if a state is not stuck
+--| (it has at least one next state) and all possible next states are terminating,
+--| then this state is also terminating.
+pub theorem terminates_ensuring_unstep (k: nat) {k2: nat} (P: set):
+  $ E. k2 ksStep k k2 /\
+    A. k2 (ksStep k k2 -> terminates_ensuring k2 P) ->
+    terminates_ensuring k P $ =
+(named @ focus
+  '(iand (syl isSafe_unstep @ anim2 @ alimi @ imim2 terminates_ensuring_safe) @
+    sylc finss {_ : $ _ -> S\ l, {k2 | ksPath k l k2} C_ sn (0, k) u.
+      Ran (X\ k1 e. {z | ksStep k z}, Ran (X\ p e. S\ l2, {k3 | ksPath k1 l2 k3},
+        sn (k1 : fst p, snd p))) $} @
+    syl (unfin finns) @ syl rnfin @ xabfin (a1i fin_ksStep) @ syl rnfin @
+    xabfin (anrd {(imp @ anwr @ syl5bi (elabe ,eqtac) @ eale ,eqtac)
+      : $ _ -> terminates_ensuring $}) @ a1i finns)
+  '(sylibr ssal2 @ !! iald l3 @ iald @ syl5bi (elsabe @ elabed ,eqtac) ,(split-sop 'l3 '{
+    ($0$ => (mpbiri (syl elun1 @ sylibr elsn @ preq2d @ sylbi ksPath0 anr) ,eqtac)) o
+    ($_ : _$ => (mpbird ,eqtac @ syl5bi ksPathS @ exp @ syl elun2 @ syl prelrn @
+      sylibr (elxabe ,eqtac) @ iand (sylibr (elabe ,eqtac) anrl) @ syl prelrn @
+      mpbird (elxabed @ syl5bb elsn @ anwr @ sylbi (bitr3 (eqeq1 fstsnd) prth) ,eqtac) @
+      iand (mpbird (elsabed @ elabed ,eqtac) anrr) eqidd))})));
 
-theorem can_terminate_ensuring_I:
-  $ ksReachable k k2 /\ execExit (ksCfg k2) exit_code /\
-    (exit_code = 0 -> ksIn k2, ksOut k2 e. P) ->
-    can_terminate_ensuring k P $ = '(trud @ iexdde @ iexdde @ bi2d ,eqtac);
+theorem terminates_ensuring_pim:
+  $ (P. k2 ksStep k k2 -> terminates_ensuring k2 P) -> terminates_ensuring k P $ =
+'terminates_ensuring_unstep;
 
-theorem can_terminate_ensuring_R: $ ksReachable k k2 ->
-  can_terminate_ensuring k2 P -> can_terminate_ensuring k P $ =
-(named '(eximd @ eximd @ anim1d @ anim1d ksReachable_tr));
+--| `terminates_ensuring` is inductively generated from its constructors
+--| `terminates_ensuring_base` and `terminates_ensuring_unstep`.
+pub theorem terminates_ensuring_ind {k k2: nat} (P A: set):
+  $ A. k (isGoodExit k P -> k e. A) /\
+    A. k (E. k2 ksStep k k2 /\ A. k2 (ksStep k k2 -> k2 e. A) -> k e. A) ->
+    A. k (terminates_ensuring k P -> k e. A) $ =
+(named @ focus
+  '(rsyl {(iald _) :
+      $ _ -> A. n A. k (isSafe k P /\ A. l A. k3 (ksPath k l k3 -> len l < n) -> k e. A) $} @
+    rsyl alcom @ alimi @ rsyl (eale ,eqtac) @ imim1i @ iand terminates_ensuring_safe @
+    iald @ ialda @ lelttrd (a1i @ lepr1tr lenleid) @ syl ellt @
+    mpbird (bitrd (syl ellower anlr) @ elsabed @ elabed ,eqtac) anr)
+  (induct '(!! indd _ n) 'n
+    '(a1i @ ax_gen @ imp @ ealde @ ealde @
+      eimd (mpbird ,eqtac @ sylibr ksPath0 @ iand (anwll isSafeT) eqidd) @ a1i @ absurd lt02)
+    '(sylibr (!! cbval _ z ,eqtac) @ ialda @
+      mpd (rsyl anrl @ imp @ syl5 (eale ,eqtac) @ eimd ksReachable0 idd) @
+      eord (anw3l @ eale ,eqtac) @ exp @ mpd (iand anr _) @ rsyl an3lr @ eale ,eqtac))
+  '(anwl @ rsyl (anim1 anr) @ ialda @ mpd _ @ anwll @ eale ,eqtac)
+  '(iand (rsyl (anim1 anrl) isSafe_step) @ sylibr (cbval ,eqtac) @ iald @
+    mpd (rsyl anlr @ anwr @ eale ,eqtac) @ anwr @ alimd @ imimd (exp @ bi2 ksPathS) @
+    a1i @ bi1i @ bitr4 (lteq1 lenS) ltsuc));
 
-theorem can_terminate_ensuring_mono:
-  $ P C_ Q -> can_terminate_ensuring ks P -> can_terminate_ensuring ks Q $ =
-(named '(eximd @ eximd @ anim2d @ imim2d ssel));
+theorem terminates_ensuring_indd (P G) {x y: nat} (k: nat y) (px: wff x) (pk py: wff y)
+  (hy: $ x = y -> (px <-> py) $)
+  (hk: $ x = k -> (px <-> pk) $)
+  (h1: $ G /\ isGoodExit x P -> px $)
+  (h2: $ G /\ E. y ksStep x y /\ A. y (ksStep x y -> py) -> px $):
+  $ G /\ terminates_ensuring k P -> pk $ =
+'(sylib (elabe hk) @ imp @ syl (eale @ imeqd terminates_ensuringeq1 eleq1) @
+  sylan terminates_ensuring_ind
+    (sylibr (!! cbvalh w x (nfim nfv @ nfel2 nfab1) nfv @ imeqd ,eqtac @ syl6bb abid eleq1) @ ialda h1) @
+  sylibr (aleqi @ imeq1i @ aneq2i @ aleqi @ imeq2i @ elabe hy) @
+  sylibr (!! cbvalh w x (nfim nfv @ nfel2 nfab1) nfv @ imeqd ,eqtac @ syl6bb abid eleq1) @
+  ialda @ sylbir anass h2);
 
-theorem terminates_ensuring_val:
-  $ terminates_ensuring k P <-> k e. KernelState /\
-    A. k2 (ksReachable k k2 -> can_terminate_ensuring k2 P) $ = (named 'biid);
+theorem terminates_ensuring_reachable:
+  $ terminates_ensuring k P /\ ksReachable k k2 -> terminates_ensuring k2 P $ =
+'(imp @ trud @ exp @ anrd @ ! terminates_ensuring_indd _ _ x y _
+  $ terminates_ensuring x P /\ (ksReachable x k2 -> _) $ _ _ ,eqtac ,eqtac
+  (anwr @ iand terminates_ensuring_base @ exp @ mpd isGoodExit_ksReachable @
+    syl5ibrcom ,eqtac @ anwl terminates_ensuring_base)
+  (mpand (rsyl (anim anr @ alimi @ imim2i anl) terminates_ensuring_unstep) @ iand anr @
+    exp @ mpd (sylib ksReachable_hd anr) @ eord (syl5ibrcom (rsyl (eqcomd anr) ,eqtac) anlr) @
+    rsyl anllr @ exp @ rsyl alanex @ eex @ imp @ impd @ imim2i anr));
 
-theorem terminates_ensuring_E:
-  $ terminates_ensuring k P -> ksReachable k k2 ->
-    can_terminate_ensuring k2 P $ = (named '(anwr @ eale ,eqtac));
-
-theorem terminates_ensuring_can:
-  $ terminates_ensuring k P -> can_terminate_ensuring k P $ =
-'(mpd (syl ksReachable0 @ terminates_ensuringT) terminates_ensuring_E);
-
-theorem terminates_ensuring_R: $ ksReachable k k2 ->
-  terminates_ensuring k P -> terminates_ensuring k2 P $ =
-(named '(animd (a1d @ anrd ksReachableT) @ alimd @ imim1d ksReachable_tr));
+theorem terminates_ensuring_step:
+  $ terminates_ensuring k P /\ ksStep k k2 -> terminates_ensuring k2 P $ =
+'(syl terminates_ensuring_reachable @ anim2 ksReachable1);
 
 theorem terminates_ensuring_mono:
   $ P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q $ =
-(named '(anim2d @ alimd @ imim2d can_terminate_ensuring_mono));
+(named '(anim1d isSafe_mono));
 
 theorem terminates_ensuring_fail:
   $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
     terminates_ensuring k P $ =
-(named '(sylbi anass @ anim2a @ exp @ ialda @
-  iexde @ iexde @ mpbird ,eqtac @ anwll @ sylibr anass @
-  iand (mpbird (ksReachableeq1d @ sylc ksReachable_exit (anld anlr) anr) @
-    anwll ksReachable0) @
-  rsyl anlr @ anim2 absurd));
-
-theorem can_terminate_ensuring_fail:
-  $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
-    can_terminate_ensuring k P $ =
-'(syl terminates_ensuring_can terminates_ensuring_fail);
+'(rsyl isGoodExit_fail terminates_ensuring_base);
 
 --| `succeeds k i o` asserts that starting from initial configuration `k`,
 --| the program reaches the exit point and returns success (exit code 0), and
@@ -5284,17 +5397,21 @@ pub theorem succeedsT (k i o: nat):
   iand (iand anrl @ mpbid (eleq1d anllr) @ rsyl anrr ksInT) @
   mpbid (eleq1d anlr) @ rsyl anrr ksOutT));
 
+--| The basic relation between `isSafe k P` and `succeeds k i o`:
+--| together they imply that the property `P` is satisfied.
+theorem isSafe_succeeds (k i o: nat) (P: set):
+  $ isSafe k P /\ succeeds k i o -> i, o e. P $ =
+(named @ focus
+  '(imp @ anwr @ exp @ rsyl alanex @ eex @ impcom @ eimd an3l @
+    eord _ @ anwr @ eexd @ com12 @ syl absurd ksStep_no_exit)
+  '(syl5 anr @ eexda @ mpbid (eleq1d @ preqd an3lr anllr) @
+    mpd (sylan execExit_determ anrl anlr) anrr));
+
 --| The basic relation between `terminates_ensuring k P` and `succeeds k i o`:
 --| together they imply that the property `P` is satisfied.
 pub theorem terminates_ensuring_succeeds (k i o: nat) (P: set):
   $ terminates_ensuring k P /\ succeeds k i o -> i, o e. P $ =
-(named @ focus
-  (have 'h '(sylc ksReachable_exit anllr (anwr anll)))
-  '(imp @ sylibr eexb @ imp @ alimd @ com23 @ expcom @ eimd an4l @
-    eexd @ eexda @ mpbid (eleq1d @
-      preqd (eqtrd (ksIneqd h) an4lr) (eqtrd (ksOuteqd h) an3lr)) @
-    mpd (sylan execExit_determ
-      (mpbid (execExiteq1d @ ksCfgeqd h) @ anwr anlr) anllr) anrr));
+'(syl isSafe_succeeds @ anim1 terminates_ensuring_safe);
 
 ----------------------------------------
 -- ELF file format and the initial state
