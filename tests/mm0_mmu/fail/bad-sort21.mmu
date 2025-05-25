@@ -1,0 +1,2 @@
+-- strict should be after pure
+(sort s21 strict pure)

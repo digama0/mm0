@@ -1,0 +1,2 @@
+-- free should be after provable
+(sort s43 free provable)
