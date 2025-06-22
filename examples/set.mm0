@@ -37,7 +37,7 @@ axiom ax_4 {x: set} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
 axiom ax_5 {x: set} (ph: wff): $ ph -> A. x ph $;
 
 term weq (a b: set): wff; infixl weq: $=s$ prec 50;
-term wel (a b: set): wff; infixl wel: $es.$ prec 40;
+term wel (a b: set): wff; infixl wel: $es.$ prec 50;
 
 def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
 prefix weu: $E!$ prec 30;
@@ -52,7 +52,7 @@ axiom ax_9 (a b c: set): $ a =s b -> c es. a -> c es. b $;
 
 axiom ax_10 {x: set} (ph: wff x): $ ~(A. x ph) -> A. x ~(A. x ph) $;
 axiom ax_11 {x y: set} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
-axiom ax_12 {x y: set} (ph: wff y): $ A. y ph -> A. x (x =s y -> ph) $;
+axiom ax_12 {x: set} (a: set) (ph: wff x): $ x =s a -> ph -> A. x (x =s a -> ph) $;
 
 axiom ax_ext {x: set} (a b: set): $ A. x (x es. a <-> x es. b) -> a =s b $;
 axiom ax_rep {x y z: set} (a: set) (ph: wff y z):
