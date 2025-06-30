@@ -1,7 +1,7 @@
 delimiter $ ( ) ~ { } $;
 strict provable sort wff;
 term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
-term wn (ph: wff): wff; prefix wn: $~$ prec 40;
+term wn (ph: wff): wff; prefix wn: $~$ prec 41;
 
 axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
 axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
@@ -18,18 +18,22 @@ theorem bi2 (ph ps: wff): $ (ph <-> ps) -> ps -> ph $;
 theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
 
 def wa (ph ps: wff): wff = $ ~(ph -> ~ps) $;
-infixl wa: $/\$ prec 20;
+infixl wa: $/\$ prec 34;
 theorem df_an (ph ps: wff): $ (ph /\ ps) <-> ~(ph -> ~ps) $;
+
+def or (ph ps: wff): wff = $ ~ph -> ps $;
+infixl or: $\/$ prec 30;
+theorem df_or (ph ps: wff): $ (ph \/ ps) <-> ~ph -> ps $;
 
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
 theorem df_tru (ph: wff): $ T. <-> (ph <-> ph) $;
 
 pure sort set;
-term wal {x: set} (ph: wff x): wff; prefix wal: $A.$ prec 30;
+term wal {x: set} (ph: wff x): wff; prefix wal: $A.$ prec 41;
 
 def wex {x: set} (ph: wff x): wff = $ ~(A. x ~ph) $;
-prefix wex: $E.$ prec 30;
+prefix wex: $E.$ prec 41;
 theorem df_ex {x: set} (ph: wff x): $ E. x ph <-> ~(A. x ~ph) $;
 
 axiom ax_gen {x: set} (ph: wff x): $ ph $ > $ A. x ph $;
@@ -40,7 +44,7 @@ term weq (a b: set): wff; infixl weq: $=s$ prec 50;
 term wel (a b: set): wff; infixl wel: $es.$ prec 50;
 
 def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
-prefix weu: $E!$ prec 30;
+prefix weu: $E!$ prec 41;
 theorem df_eu {x y: set} (ph: wff x):
   $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
 
