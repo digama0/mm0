@@ -1,4 +1,4 @@
-delimiter $ ( ) ~ { } $;
+delimiter $ ( [ { ~ $ $ } ] ) $;
 strict provable sort wff;
 term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
 term wn (ph: wff): wff; prefix wn: $~$ prec 41;
@@ -60,6 +60,7 @@ axiom ax_12 {x: set} (a: set) (ph: wff x): $ x =s a -> ph -> A. x (x =s a -> ph)
 
 def sb (a: set) {x .y: set} (ph: wff x): wff = $ A. y (y =s a -> A. x (x =s y -> ph)) $;
 notation sb (a: set) {x: set} (ph: wff x): wff = ($[$:41) a ($/$:0) x ($]$:0) ph;
+theorem df_sb (a: set) {x y: set} (ph: wff x): $ [a / x] ph <-> A. y (y =s a -> A. x (x =s y -> ph)) $;
 
 axiom ax_ext {x: set} (a b: set): $ A. x (x es. a <-> x es. b) -> a =s b $;
 axiom ax_rep {x y z: set} (a: set) (ph: wff y z):
@@ -84,13 +85,16 @@ notation cab {x: set} (ph: wff x): class = (${$:max) x ($|$:0) ph ($}$:0);
 
 axiom ax_8b (a b: set) (A: class): $ a =s b -> a ec. A -> b ec. A $;
 
-axiom ax_clab (a: set) {x: set} (ph: wff x): $ a ec. {x | ph} <-> [ a / x ] ph $;
+axiom ax_clab (a: set) {x: set} (ph: wff x): $ a ec. {x | ph} <-> [a / x] ph $;
 
 def wceq {.x: set} (A B: class): wff = $ A. x (x ec. A <-> x ec. B) $;
 infixl wceq: $=$ prec 50;
+theorem df_cleq {x: set} (A B: class): $ A = B <-> A. x (x ec. A <-> x ec. B) $;
 
 def cv {.x: set} (a: set): class = $ {x | x es. a} $;
 coercion cv: set > class;
+theorem df_sab {x: set} (a: set): $ a = {x | x es. a} $;
 
 def wcel {.x: set} (A B: class): wff = $ E. x (x = A /\ x ec. B) $;
 infixl wcel: $e.$ prec 50;
+theorem df_clel {x: set} (A B: class): $ A e. B <-> E. x (x = A /\ x ec. B) $;
