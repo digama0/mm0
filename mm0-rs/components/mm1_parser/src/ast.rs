@@ -302,7 +302,7 @@ pub fn curly_transform<T>(
 ) {
   let n = es.len();
   if n > 2 {
-    let valid_curly = no_dot && n % 2 != 0 && {
+    let valid_curly = no_dot && !n.is_multiple_of(2) && {
       let e = &es[1];
       (3..n).step_by(2).all(|i| eq(&es[i], e))
     };

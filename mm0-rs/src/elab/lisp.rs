@@ -1085,7 +1085,7 @@ str_enum! {
     /// `(- a b)` computes the subtraction `a - b`. `(- a b c)` is `a - b - c`,
     /// `(- a)` is `-a`, and `(-)` is an error.
     Sub: "-",
-    /// {a // b}` computes the integer (flooring) division. More arguments associate to the left.
+    /// `{a // b}` computes the integer (flooring) division. More arguments associate to the left.
     Div: "//",
     /// `{a % b}` computes the integer modulus. More arguments associate to the left.
     Mod: "%",

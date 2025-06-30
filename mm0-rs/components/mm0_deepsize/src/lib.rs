@@ -309,7 +309,9 @@ macro_rules! deep_size_0 {
     };
     (@GO {$($($gen:tt)+)?} $type:ty) => {
         const _: fn() = || {
+            #[allow(dead_code)]
             fn assert_copy<T: ?Sized + Copy>() {}
+            #[allow(dead_code)]
             fn go$(<$($gen)+>)?() {assert_copy::<$type>()}
         };
         $crate::deep_size_0!(@GO {!Copy $($($gen)+)?} $type);
