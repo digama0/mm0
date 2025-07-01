@@ -8,33 +8,48 @@ axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 
-theorem a1i (ph ps: wff): $ ph $ > $ ps -> ph $;
+pub theorem a1i (ph ps: wff) (h: $ ph $): $ ps -> ph $= '(ax_mp h ax_1);
 
 def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl wb: $<->$ prec 20;
 
-theorem bi1 (ph ps: wff): $ (ph <-> ps) -> ph -> ps $;
-theorem bi2 (ph ps: wff): $ (ph <-> ps) -> ps -> ph $;
-theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
+theorem a2i (ph ps ch: wff) (h: $ ph -> ps -> ch $): $ (ph -> ps) -> ph -> ch $ = '(ax_mp h ax_2);
+theorem mpd (ph ps ch: wff) (h1: $ ph -> ps $) (h2: $ ph -> ps -> ch $): $ ph -> ch $ = '(ax_mp h1 (ax_mp h2 ax_2));
+theorem id (ph: wff): $ ph -> ph $ = '(mpd (! ax_1 _ ph) ax_1);
+theorem syl (ph ps ch: wff) (h1: $ ps -> ch $) (h2: $ ph -> ps $): $ ph -> ch $ = '(mpd h2 (a1i h1));
+theorem a2d (ph ps ch th: wff) (h: $ ph -> ps -> ch -> th $): $ ph -> (ps -> ch) -> ps -> th $ = '(syl ax_2 h);
+theorem com12 (ph ps ch: wff) (h: $ ph -> ps -> ch $): $ ps -> ph -> ch $ = '(syl (a2i h) ax_1);
+theorem mpcom (ph ps: wff): $ ph -> (ph -> ps) -> ps $ = '(com12 id);
+theorem imidm (ph ps: wff): $ (ph -> ph -> ps) -> ph -> ps $ = '(a2i mpcom);
+theorem imim2 (ph ps ch: wff): $ (ps -> ch) -> (ph -> ps) -> ph -> ch $ = '(a2d ax_1);
+theorem con1 (ph ps: wff): $ (~ph -> ps) -> (~ps -> ph) $=
+'(syl ax_3 (ax_mp (ax_mp (syl (ax_mp (! imidm ph ph) (syl (a2i ax_3) (a1i (a1i (! id ph))))) (syl ax_3 ax_1)) ax_3) imim2));
+theorem con2 (ph ps: wff): $ (ph -> ~ps) -> (ps -> ~ph) $= '(syl ax_3 (com12 (syl (com12 id) (ax_mp id con1))));
+
+pub theorem bi1 (ph ps: wff): $ (ph <-> ps) -> ph -> ps $= '(ax_mp (syl ax_3 ax_1) con1);
+pub theorem bi2 (ph ps: wff): $ (ph <-> ps) -> ps -> ph $= '(ax_mp ax_1 con1);
+pub theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $= '(syl con2 (com12 id));
+
+theorem biid (ph: wff): $ ph <-> ph $= '(ax_mp id (ax_mp id bi3));
 
 def wa (ph ps: wff): wff = $ ~(ph -> ~ps) $;
 infixl wa: $/\$ prec 34;
-theorem df_an (ph ps: wff): $ (ph /\ ps) <-> ~(ph -> ~ps) $;
+pub theorem df_an (ph ps: wff): $ (ph /\ ps) <-> ~(ph -> ~ps) $= 'biid;
 
 def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
-theorem df_or (ph ps: wff): $ (ph \/ ps) <-> ~ph -> ps $;
+pub theorem df_or (ph ps: wff): $ (ph \/ ps) <-> ~ph -> ps $= 'biid;
 
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
-theorem df_tru (ph: wff): $ T. <-> (ph <-> ph) $;
+pub theorem df_tru (ph: wff): $ T. <-> (ph <-> ph) $= '(ax_mp (a1i tru) (ax_mp (a1i biid) bi3));
 
 pure sort set;
 term wal {x: set} (ph: wff x): wff; prefix wal: $A.$ prec 41;
 
 def wex {x: set} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix wex: $E.$ prec 41;
-theorem df_ex {x: set} (ph: wff x): $ E. x ph <-> ~(A. x ~ph) $;
+pub theorem df_ex {x: set} (ph: wff x): $ E. x ph <-> ~(A. x ~ph) $= 'biid;
 
 axiom ax_gen {x: set} (ph: wff x): $ ph $ > $ A. x ph $;
 axiom ax_4 {x: set} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
@@ -45,8 +60,8 @@ term wel (a b: set): wff; infixl wel: $es.$ prec 50;
 
 def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
 prefix weu: $E!$ prec 41;
-theorem df_eu {x y: set} (ph: wff x):
-  $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
+pub theorem df_eu {x y: set} (ph: wff x):
+  $ E! x ph <-> E. y A. x (ph <-> x =s y) $= 'biid;
 
 axiom ax_6 {x: set} (a: set): $ E. x x =s a $;
 axiom ax_7 (a b c: set): $ a =s b -> a =s c -> b =s c $;
@@ -60,7 +75,7 @@ axiom ax_12 {x: set} (a: set) (ph: wff x): $ x =s a -> ph -> A. x (x =s a -> ph)
 
 def sb (a: set) {x .y: set} (ph: wff x): wff = $ A. y (y =s a -> A. x (x =s y -> ph)) $;
 notation sb (a: set) {x: set} (ph: wff x): wff = ($[$:41) a ($/$:0) x ($]$:0) ph;
-theorem df_sb (a: set) {x y: set} (ph: wff x): $ [a / x] ph <-> A. y (y =s a -> A. x (x =s y -> ph)) $;
+pub theorem df_sb (a: set) {x y: set} (ph: wff x): $ [a / x] ph <-> A. y (y =s a -> A. x (x =s y -> ph)) $= 'biid;
 
 axiom ax_ext {x: set} (a b: set): $ A. x (x es. a <-> x es. b) -> a =s b $;
 axiom ax_rep {x y z: set} (a: set) (ph: wff y z):
@@ -89,12 +104,14 @@ axiom ax_clab (a: set) {x: set} (ph: wff x): $ a ec. {x | ph} <-> [a / x] ph $;
 
 def wceq {.x: set} (A B: class): wff = $ A. x (x ec. A <-> x ec. B) $;
 infixl wceq: $=$ prec 50;
-theorem df_cleq {x: set} (A B: class): $ A = B <-> A. x (x ec. A <-> x ec. B) $;
+pub theorem df_cleq {x: set} (A B: class): $ A = B <-> A. x (x ec. A <-> x ec. B) $= 'biid;
+
+theorem eqcid (A: class): $ A = A $= '(!! ax_gen x biid);
 
 def cv {.x: set} (a: set): class = $ {x | x es. a} $;
 coercion cv: set > class;
-theorem df_sab {x: set} (a: set): $ a = {x | x es. a} $;
+pub theorem df_sab {x: set} (a: set): $ a = {x | x es. a} $= 'eqcid;
 
 def wcel {.x: set} (A B: class): wff = $ E. x (x = A /\ x ec. B) $;
 infixl wcel: $e.$ prec 50;
-theorem df_clel {x: set} (A B: class): $ A e. B <-> E. x (x = A /\ x ec. B) $;
+pub theorem df_clel {x: set} (A B: class): $ A e. B <-> E. x (x = A /\ x ec. B) $= 'biid;
