@@ -129,3 +129,8 @@ jobs:
         run: |
           mm0-rs compile -W hol.mm1 hol.mmb
           mm0-c hol.mmb < hol.mm0
+      - name: set.mm1
+        working-directory: examples
+        run: |
+          mm0-rs compile -W set.mm1 set.mmb
+          mm0-c set.mmb < set.mm0
