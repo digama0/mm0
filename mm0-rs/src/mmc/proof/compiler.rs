@@ -319,11 +319,11 @@ impl VCtx {
   }
 }
 
-trait NodeKind: Sized {
+trait NodeKind: Sized + std::fmt::Debug {
   type Context;
-  type Key: Ord;
-  type Node;
-  type Leaf;
+  type Key: Ord + std::fmt::Debug;
+  type Node: std::fmt::Debug;
+  type Leaf: std::fmt::Debug;
   fn node(de: &mut ProofDedup<'_>, a: &P<MCtxNode<Self>>, b: &P<MCtxNode<Self>>) -> Self::Node;
   fn p_node(de: &mut ProofDedup<'_>, bal: Ordering,
     a: P<MCtxNode<Self>>, b: P<MCtxNode<Self>>
@@ -352,6 +352,7 @@ trait NodeKind: Sized {
 }
 
 #[allow(clippy::type_complexity)]
+#[derive(Debug)]
 enum MCtxNode<N: NodeKind> {
   Zero,
   One(N::Leaf),
@@ -362,8 +363,10 @@ impl<N: NodeKind> Default for MCtxNode<N> {
   fn default() -> Self { Self::Zero }
 }
 
+#[derive(Debug)]
 struct RegKind<L>(PhantomData<L>);
-impl<L> NodeKind for RegKind<L> {
+
+impl<L: std::fmt::Debug> NodeKind for RegKind<L> {
   type Context = ();
   type Key = u8;
   type Node = u8;
@@ -378,8 +381,10 @@ impl<L> NodeKind for RegKind<L> {
   fn node_key((): &(), &k: &u8) -> u8 { k }
 }
 
+#[derive(Debug)]
 struct StackKind<L>(PhantomData<L>);
-impl<L> StackKind<L> {
+
+impl<L: std::fmt::Debug> StackKind<L> {
   fn get_key(node: &MCtxNode<Self>) -> u32 {
     match *node {
       MCtxNode::Zero => unreachable!(),
@@ -387,7 +392,7 @@ impl<L> StackKind<L> {
     }
   }
 }
-impl<L> NodeKind for StackKind<L> {
+impl<L: std::fmt::Debug> NodeKind for StackKind<L> {
   type Context = u32;
   type Key = u32;
   type Node = u32;
@@ -491,7 +496,7 @@ trait NodeInsert<N: NodeKind> {
             let nb = std::mem::take(&mut ns.1.0);
             let (al, ar) = *ns1;
             match bal1 {
-              Ordering::Less => {
+              Ordering::Greater => {
                 let th = Self::single_right(de, [a, et, al.1, ar.1, b, th]);
                 let n = N::p_node(de, Ordering::Equal, ar, (nb, b));
                 *node = N::p_node(de, Ordering::Equal, al, n);
@@ -499,17 +504,17 @@ trait NodeInsert<N: NodeKind> {
               }
               Ordering::Equal => {
                 let th = Self::single_right(de, [a, et, al.1, ar.1, b, th]);
-                let n = N::p_node(de, Ordering::Less, ar, (nb, b));
-                *node = N::p_node(de, Ordering::Greater, al, n);
+                let n = N::p_node(de, Ordering::Greater, ar, (nb, b));
+                *node = N::p_node(de, Ordering::Less, al, n);
                 (true, th)
               }
-              Ordering::Greater => {
+              Ordering::Less => {
                 let MCtxNode::Node(bal2, _, ns2) = ar.0 else { unreachable!() };
                 let (arl, arr) = *ns2;
                 let (bal_new, bal2_new) = match bal2 {
-                  Ordering::Less => (Ordering::Equal, Ordering::Greater),
+                  Ordering::Less => (Ordering::Greater, Ordering::Equal),
                   Ordering::Equal => (Ordering::Equal, Ordering::Equal),
-                  Ordering::Greater => (Ordering::Less, Ordering::Equal),
+                  Ordering::Greater => (Ordering::Equal, Ordering::Less),
                 };
                 let th = Self::double_right(de, [a, et, al.1, arl.1, arr.1, b, th]);
                 let n1 = N::p_node(de, bal_new, al, arl);
@@ -520,6 +525,7 @@ trait NodeInsert<N: NodeKind> {
             }
           } else {
             let th = Self::node_lt(de, [a, b, et, ns.0.1, th]);
+            node.1 = N::mk(de, ns.0.1, b);
             *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Greater, th)
           }
         } else {
@@ -535,7 +541,7 @@ trait NodeInsert<N: NodeKind> {
             let na = std::mem::take(&mut ns.0.0);
             let (bl, br) = *ns1;
             match bal1 {
-              Ordering::Greater => {
+              Ordering::Less => {
                 let th = Self::single_left(de, [b, et, a, bl.1, br.1, th]);
                 let n = N::p_node(de, Ordering::Equal, (na, a), bl);
                 *node = N::p_node(de, Ordering::Equal, n, br);
@@ -547,13 +553,13 @@ trait NodeInsert<N: NodeKind> {
                 *node = N::p_node(de, Ordering::Less, n, br);
                 (true, th)
               }
-              Ordering::Less => {
+              Ordering::Greater => {
                 let MCtxNode::Node(bal2, _, ns2) = bl.0 else { unreachable!() };
                 let (bll, blr) = *ns2;
                 let (bal_new, bal2_new) = match bal2 {
-                  Ordering::Less => (Ordering::Equal, Ordering::Greater),
+                  Ordering::Less => (Ordering::Greater, Ordering::Equal),
                   Ordering::Equal => (Ordering::Equal, Ordering::Equal),
-                  Ordering::Greater => (Ordering::Less, Ordering::Equal),
+                  Ordering::Greater => (Ordering::Equal, Ordering::Less),
                 };
                 let th = Self::double_left(de, [b, et, a, bll.1, blr.1, br.1, th]);
                 let n1 = N::p_node(de, bal_new, (na, a), bll);
@@ -563,7 +569,8 @@ trait NodeInsert<N: NodeKind> {
               }
             }
           } else {
-            let th = Self::node_lt(de, [a, b, et, ns.0.1, th]);
+            let th = Self::node_gt(de, [a, b, et, ns.1.1, th]);
+            node.1 = N::mk(de, a, ns.1.1);
             *n = N::node(de, &ns.0, &ns.1); (grew && *bal == Ordering::Less, th)
           }
         }
@@ -634,12 +641,14 @@ enum MCtxRegValue {
   Expr(P<Expr>),
 }
 
+#[derive(Debug)]
 enum MCtxStkValue {
   Free
 }
 
 type MCtxRegKind = RegKind<MCtxRegValue>;
 type MCtxStkKind = StackKind<MCtxStkValue>;
+#[derive(Debug)]
 struct MCtx {
   regs: P<MCtxNode<MCtxRegKind>>,
   stack: Option<P<MCtxNode<MCtxStkKind>>>,
@@ -660,7 +669,7 @@ impl MCtxNode<MCtxRegKind> {
         let (n1, n2) = &**ns;
         let (a, b, h1) = Self::bdd(n1, de);
         let (c, d, h2) = Self::bdd(n2, de);
-        let h3 = thm!(de, decltn[b.0][c.0](): {b.1} < {c.1});
+        let h3 = thm!(de, decltn[b.0][c.0](): (h2n {b.1}) < (h2n {c.1}));
         (a, d, thm!(de, (bddMCtx[this.1, a.1, d.1]) =>
           bddMCtx_A(n1.1, n2.1, a.1, b.1, c.1, d.1, h1, h2, h3)))
       }
@@ -689,21 +698,25 @@ impl MCtx {
   ) -> ProofId {
     let a = this.1;
     let (_, th) = I::insert(de, &mut this.0.regs, (), &reg, ((reg, value), t));
-    match this.0.stack {
-      Some((_, stk)) => I::node_lt(de, [a, stk, t, this.1, th]),
-      None => th
+    if let Some((_, stk)) = this.0.stack {
+      let a2 = this.0.regs.1;
+      this.1 = app!(de, mctxA[a2, stk]);
+      I::node_lt(de, [a, stk, t, a2, th])
+    } else {
+      this.1 = this.0.regs.1;
+      th
     }
   }
 
-  fn add_stack(this: &mut P<Self>, de: &mut ProofDedup<'_>, n: Num) {
-    let e = app!(de, (stkFREE {*n}));
+  fn add_stack(this: &mut P<Self>, de: &mut ProofDedup<'_>, off: Num, n: Num) {
+    let e = app!(de, (stkFREE {*off} {*n}));
     assert!(this.0.stack.replace((MCtxNode::One((n.val as u32, MCtxStkValue::Free)), e)).is_none());
     this.1 = app!(de, mctxA[this.1, e]);
   }
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
     match self.stack {
-      Some((_, stk)) => app!(de, (mctxA {self.regs.1} stk)),
+      Some((_, stk)) => app!(de, mctxA[self.regs.1, stk]),
       None => self.regs.1,
     }
   }
@@ -1022,7 +1035,7 @@ impl ProcProver<'_> {
       let (clob, h2) = self.accum_clob(mctx, iter);
       let clob2 = app!(self.thm, (clobS er clob));
       (clob2, thm!(self.thm, (accumClob[clob2, mctx1, mctx.1]) =>
-        accumClobS(clob, mctx1, mctx2, mctx.1, h1, h2)))
+        accumClobS(clob, mctx1, mctx2, mctx.1, er, h1, h2)))
     } else {
       let clob = app!(self.thm, (clob0));
       (clob, thm!(self.thm, accumClob0(mctx.1): accumClob[clob, mctx.1, mctx.1]))
@@ -1049,7 +1062,8 @@ impl ProcProver<'_> {
       thm!(self.thm, (okPrologue[epi, mctx1, code, epi, mctx1]) =>
         okPrologue_alloc0(epi, mctx1, h1))
     } else {
-      MCtx::add_stack(mctx, &mut self.thm, self.ctx.sp_max);
+      let off = self.hex.h2n(&mut self.thm, 0);
+      MCtx::add_stack(mctx, &mut self.thm, off, self.ctx.sp_max);
       let max = self.hex.from_u32(&mut self.thm, (1 << 12) - 8);
       let h2 = self.hex.le(&mut self.thm, self.ctx.sp_max, max);
       thm!(self.thm, (okPrologue[epi, mctx1, code, self.epi, mctx.1]) =>
@@ -1420,7 +1434,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
         InstState::StartSkip => self.inst_state = InstState::Skip,
         InstState::Skip => {}
         InstState::Call =>
-          if let StmtState::Call { f, abi, args, reach, rets, se, .. } = self.stmt_state {
+          if let StmtState::Call { f, abi, args, reach, rets, se } = self.stmt_state {
             self.call(f, abi, args, reach, rets, se, Some(inst));
             self.inst_state = InstState::None
           } else { unreachable!() },

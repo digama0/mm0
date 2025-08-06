@@ -136,7 +136,7 @@ impl HexCache {
       }
       (NumKind::Hex(a, b), NumKind::Hex(_a, c)) if b < c => {
         let (eb, ec) = (self[b], self[c]);
-        thm!(de, decltx2(*a, eb, ec)((decltn[b][c](): eb < ec)): {*x} < {*y})
+        thm!(de, decltx2(*a, eb, ec)((decltn[b][c](): (h2n eb) < (h2n ec))): {*x} < {*y})
       }
       (NumKind::H2n(a), NumKind::Hex(b, c)) => {
         let z = if a == 0 { x } else { self.h2n(de, 0) };

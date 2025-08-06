@@ -405,7 +405,7 @@ theorem okCode_rev:
 
 @mmc-th theorem okPrologue_alloc
   (h1: $ okMCtx mctx $) (h2: $ n <= ,{{2 ^ 12} - 8} $):
-  $ okPrologue epi mctx ,(instSub 'wSz64 RSP '(IRM_imm32 n))
+  $ okPrologue epi mctx ,(instSub 'wSz64 RSP '(IRM_imm32 (posZ n)))
       (epiFree n epi) (mctx +M stkFREE x0 n) $ = 'sorry;
 
 @mmc-th local def okAssembled (pctx: set) (code: set): wff =
