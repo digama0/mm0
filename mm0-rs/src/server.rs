@@ -125,7 +125,6 @@ impl Logger {
       let mut now = Instant::now();
       let messages = &mut vec![];
       while !cancel.load(Ordering::Acquire) {
-        #[allow(clippy::swap_with_temporary)]
         std::mem::swap(messages, &mut LOGGER.1.uwait(LOGGER.0.ulock()));
         for (i, id, mem, s) in messages.drain(..) {
           let d = i.saturating_duration_since(now).as_millis();
@@ -176,13 +175,10 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         v.hash(hasher);
         let matches = (|| -> bool {
           for path in deps {
-            if let Some(file) = vfs.get(path) {
-              if let Some(g) = file.parsed.try_lock() {
-                if let Some(FileCache::Ready {hash, ..}) = *g {
-                  hash.hash(hasher);
-                } else { return false }
-              } else { return false }
-            } else { return false }
+            let Some(file) = vfs.get(path) else { return false };
+            let Some(g) = file.parsed.try_lock() else { return false };
+            let Some(FileCache::Ready {hash, ..}) = *g else { return false };
+            hash.hash(hasher);
           }
           hasher.finish() == hash
         })();

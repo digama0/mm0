@@ -680,10 +680,7 @@ pub struct ElaborateBuilder<'a, F> {
   /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
   /// extra data `T`, which is collected and passed through the function.
   pub recv_dep: F,
-  /// A function which is called when an `import` is encountered, with the [`FileRef`] of
-  /// the file being imported. It sets up a channel and passes the [`Receiver`] end here,
-  /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
-  /// extra data `T`, which is collected and passed through the function.
+  /// A listener for goal view events.
   pub recv_goal: Option<GoalListener>,
 }
 

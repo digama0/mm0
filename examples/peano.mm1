@@ -3356,7 +3356,7 @@ theorem isfss: $ A C_ B -> isfun B -> isfun A $ =
   isfd anllr (sseld an3l anlr) (sseld an3l anr));
 
 --| `S\ x, A` is "lambda for relations": `a, b e. S\ x, A(x)` if `b e. A(a)`.
---| It can be iterated to pr=oduce n-ary relations.
+--| It can be iterated to produce n-ary relations.
 --| `S\ x, S\ y, {z | p(x,y,z)}` is the set `S` such that
 --| `x, y, z e. S` iff `p(x,y,z)`.
 @_ def sab {x: nat} (A: set x): set = $ {z | snd z e. S[fst z / x] A} $;
