@@ -6,7 +6,8 @@ use num::Zero;
 use regalloc2::{MachineEnv, Operand};
 use crate::codegen::InstSink;
 use crate::types::{classify as cl, mir, Size,
-  vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg, IsReg, Inst as VInst, VCode}};
+  vcode::{BlockId, GlobalId, SpillId, ProcId, InstId, VReg,
+    IsReg, Inst as VInst, VCode, VRegRename}};
 
 /// A physical register. For x86, this is one of the 16 general purpose integer registers.
 #[repr(transparent)]
@@ -883,12 +884,14 @@ pub(crate) enum Inst {
     dst: VReg,
     src: u64,
   },
-  /// GPR to GPR move: `reg <- movq reg`. This is always a pure move,
-  /// because we require that a 32 bit source register has zeroed high part.
-  MovRR {
-    dst: VReg,
-    src: VReg,
-  },
+  // An elided self-move.
+  MovId,
+  // /// GPR to GPR move: `reg <- movq reg`. This is always a pure move,
+  // /// because we require that a 32 bit source register has zeroed high part.
+  // MovRR {
+  //   dst: VReg,
+  //   src: VReg,
+  // },
   // /// Move into a fixed reg: `preg <- mov (64|32) reg`.
   // MovRP {
   //   dst: PReg,
@@ -1036,7 +1039,8 @@ impl Debug for Inst {
       Self::Mul { sz, dst_lo, dst_hi, src1, src2 } =>
         write!(f, "{dst_hi}:{dst_lo} <- mul.{} {src1}, {src2}", sz.bits0()),
       Self::Imm { sz, dst, src } => write!(f, "{dst} <- imm.{} {src}", sz.bits0()),
-      Self::MovRR { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
+      Self::MovId => write!(f, "mov_id"),
+      // Self::MovRR { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
       Self::MovPR { dst, src } => write!(f, "{dst} <- mov.64 {src}"),
       Self::MovzxRmR { ext_mode, dst, src } =>
         write!(f, "{dst}.{} <- movz {src}.{}", ext_mode.dst().bits0(), ext_mode.src().bits0()),
@@ -1090,12 +1094,6 @@ impl VInst for Inst {
     }
   }
 
-  fn is_move(&self) -> Option<(Operand, Operand)> {
-    if let Inst::MovRR { dst, src } = *self {
-      Some((Operand::reg_use(src.0), Operand::reg_def(dst.0)))
-    } else { None }
-  }
-
   fn collect_operands(&self, args: &mut Vec<Operand>) {
     match *self {
       // Inst::LetEnd { dst } => dst.collect_operands(args),
@@ -1130,6 +1128,10 @@ impl VInst for Inst {
       //   args.push(Operand::reg_fixed_def(dst_div, RAX));
       //   args.push(Operand::reg_fixed_def(dst_rem, RDX));
       // },
+      // Inst::MovRR { dst, src } => {
+      //   args.push(Operand::reg_use(src.0));
+      //   args.push(Operand::reg_def(dst.0));
+      // }
       // Inst::MovRP { dst, src } => args.push(Operand::reg_fixed_use(src, dst)),
       Inst::MovPR { dst, src } => args.push(Operand::reg_fixed_def(dst.0, src.0)),
       Inst::MovzxRmR { dst, ref src, .. } |
@@ -1167,8 +1169,7 @@ impl VInst for Inst {
       Inst::SysCall { operands: ref params, .. } |
       Inst::Epilogue { ref params } => args.extend_from_slice(params),
       // Inst::JmpUnknown { target } => target.collect_operands(args),
-      // moves are handled specially by regalloc, we don't need operands
-      Inst::MovRR { .. } |
+      Inst::MovId |
       // Jumps have blockparams but no operands
       Inst::JmpKnown { .. } |
       // Other instructions that have no operands
@@ -1278,21 +1279,28 @@ impl VCode<Inst> {
   #[must_use]
   #[inline] pub(crate) fn emit_copy(&mut self,
     sz: Size, dst: RegMem, src: impl Into<RegMemImm<u64>>
-  ) -> cl::Copy {
-    fn copy(code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>) -> cl::Copy {
+  ) -> (cl::Copy, Option<VRegRename>) {
+    fn copy(
+      code: &mut VCode<Inst>, sz: Size, dst: RegMem, src: RegMemImm<u64>
+    ) -> (cl::Copy, Option<VRegRename>) {
       match (dst, src) {
-        (RegMem::Reg(dst), RegMemImm::Reg(src)) => code.emit(Inst::MovRR { dst, src }),
-        (RegMem::Reg(dst), RegMemImm::Mem(src)) => code.emit(Inst::load_mem(sz, dst, src)),
-        (RegMem::Reg(dst), RegMemImm::Imm(src)) => code.emit(Inst::Imm { sz, dst, src }),
-        (RegMem::Mem(dst), RegMemImm::Reg(src)) => code.emit(Inst::Store { sz, dst, src }),
-        _ => {
-          let temp = code.fresh_vreg();
-          copy(code, sz, temp.into(), src);
-          copy(code, sz, dst, temp.into());
-          return cl::Copy::Two
+        (RegMem::Reg(dst), RegMemImm::Reg(src)) => {
+          code.emit(Inst::MovId);
+          return (cl::Copy::One, Some(VRegRename { from: dst, to: src }))
         }
-      };
-      cl::Copy::One
+        (RegMem::Reg(dst), RegMemImm::Mem(src)) => { code.emit(Inst::load_mem(sz, dst, src)); }
+        (RegMem::Reg(dst), RegMemImm::Imm(src)) => { code.emit(Inst::Imm { sz, dst, src }); }
+        (RegMem::Mem(dst), RegMemImm::Reg(src)) => { code.emit(Inst::Store { sz, dst, src }); }
+        _ => {
+          let mut temp = code.fresh_vreg();
+          if let (_, Some(r)) = copy(code, sz, temp.into(), src) {
+            temp = temp.rename(r);
+          }
+          let (_, r) = copy(code, sz, dst, temp.into());
+          return (cl::Copy::Two, r)
+        }
+      }
+      (cl::Copy::One, None)
     }
     copy(self, sz, dst, src.into())
   }

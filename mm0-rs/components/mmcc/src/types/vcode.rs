@@ -48,6 +48,21 @@ impl Display for VReg {
   }
 }
 
+/// A single virtual register rename, generated after reg-reg moves.
+#[derive(Copy, Clone, Debug)]
+pub struct VRegRename {
+  /// The register to rename (generally a fresh name)
+  pub from: VReg,
+  /// The target name (the value that the fresh name was assigned to)
+  pub to: VReg,
+}
+impl VReg {
+  /// Apply a single rename to a [`VReg`].
+  #[must_use] pub fn rename(self, r: VRegRename) -> Self {
+    if self == r.from { r.to } else { self }
+  }
+}
+
 impl Idx for BlockId {
   fn into_usize(self) -> usize { self.index() }
   fn from_usize(n: usize) -> Self { Self::new(n) }
@@ -103,10 +118,6 @@ pub trait Inst: Sized {
   /// number of arguments must match the number incoming blockparams
   /// for each respective successor block.
   fn branch_blockparams(&self, succ_idx: usize) -> &[regalloc2::VReg];
-
-  /// Determine whether an instruction is a move; if so, return the
-  /// Operands for (src, dst).
-  fn is_move(&self) -> Option<(Operand, Operand)>;
 
   /// Get the Operands for an instruction.
   fn collect_operands(&self, _: &mut Vec<Operand>);

@@ -309,7 +309,7 @@ fn get_clobbers(vcode: &VCode, out: &regalloc2::Output) -> PRegSet {
 impl VCode {
   #[allow(clippy::similar_names)]
   pub(crate) fn regalloc(mut self) -> (ProcAbi, Box<PCode>) {
-    // drop(simplelog::SimpleLogger::init(simplelog::LevelFilter::Debug, simplelog::Config::default()));
+    // drop(simplelog::SimpleLogger::init(simplelog::LevelFilter::Trace, simplelog::Config::default()));
     // eprintln!("{:#?}", self);
     let out = self.do_regalloc();
     // eprintln!("{:#?}", out);
@@ -388,7 +388,8 @@ impl VCode {
           code.push(PInst::Mul { sz, src });
         }
         Inst::Imm { sz, src, .. } => { code.push(PInst::Imm { sz, dst: ar.reg(), src }); }
-        Inst::MovRR { .. } => { code.push(PInst::MovId); }
+        Inst::MovId => { code.push(PInst::MovId); }
+        // Inst::MovRR { .. } => { code.push(PInst::MovId); }
         // Inst::MovRP { .. } |
         Inst::MovPR { .. } => { ar.next(); code.push(PInst::MovId); }
         Inst::MovzxRmR { ext_mode, ref src, .. } => {
