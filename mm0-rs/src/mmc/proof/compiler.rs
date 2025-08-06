@@ -22,6 +22,8 @@ use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
+const BLOCK_PROOFS: bool = false; // TODO
+
 pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D::Id {
   app!(de, (tyUnit)) // TODO
 }
@@ -1311,25 +1313,30 @@ impl DerefMut for BlockProofVisitor<'_, '_> {
 impl<'a> ProcProver<'a> {
   fn ok_stmts(&mut self, bl: BlockProof<'a>, code: ProofId, tctx: P<&mut TCtx>) -> ProofId {
     // eprintln!("\n{:?}: {:?}", bl.id, bl.vblock().map(|bl| bl.insts));
-    let n = bl.block().stmts.len();
-    let mut visitor = BlockProofVisitor {
-      proc: self,
-      block_id: bl.id,
-      vblock_id: bl.vblock_id(),
-      lhs_tctx: tctx.1,
-      tctx,
-      stmts_in: if n == 0 { vec![] } else { vec![n] },
-      stmt_state: StmtState::None,
-      stack: vec![],
-      code,
-      inst_state: InstState::None,
-      arg_count: 0,
-      out: ProofId::INVALID,
-    };
-    if n != 0 { visitor.split() }
-    bl.visit(&mut visitor);
-    assert!(visitor.out != ProofId::INVALID, "{:?}", visitor.stack);
-    visitor.out
+    if BLOCK_PROOFS {
+      let n = bl.block().stmts.len();
+      let mut visitor = BlockProofVisitor {
+        proc: self,
+        block_id: bl.id,
+        vblock_id: bl.vblock_id(),
+        lhs_tctx: tctx.1,
+        tctx,
+        stmts_in: if n == 0 { vec![] } else { vec![n] },
+        stmt_state: StmtState::None,
+        stack: vec![],
+        code,
+        inst_state: InstState::None,
+        arg_count: 0,
+        out: ProofId::INVALID,
+      };
+      if n != 0 { visitor.split() }
+      bl.visit(&mut visitor);
+      assert!(visitor.out != ProofId::INVALID, "{:?}", visitor.stack);
+      visitor.out
+    } else {
+      let ret = app!(self.thm, (okCode {self.bctx} {tctx.1} code (ok0)));
+      thm!(self.thm, sorry(ret): ret) // TODO
+    }
   }
 }
 

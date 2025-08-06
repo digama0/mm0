@@ -15,18 +15,18 @@ do {
   --     -- h: $ 2 + 2 = four $, h2: $ four = 4 $
   --     (entail h h2 eqtr))
   -- ))
-  -- (mmc-add '(
-  --   (intrinsic @ proc (sys_write {fd : u32} {count : u32}
-  --     (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
-
-  --   (proc (main)
-  --     {{hello : (array u8 11)} := (list . ,(string->list "hello world"))}
-  --     {x := (sys_write 1 11 hello (& hello))}
-  --     )
-  -- ))
   (mmc-add '(
-    (proc (main))
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main)
+      {{hello : (array u8 11)} := (list . ,(string->list "hello world"))}
+      {x := (sys_write 1 11 hello (& hello))}
+      )
   ))
+  -- (mmc-add '(
+  --   (proc (main))
+  -- ))
   (mmc-finish 'test_inner)
 };
 
