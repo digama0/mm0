@@ -528,10 +528,7 @@ impl From<PathBuf> for FileRef {
 impl From<lsp_types::Uri> for FileRef {
   fn from(uri: lsp_types::Uri) -> FileRef {
     fn to_file_path(uri: &lsp_types::Uri) -> Option<PathBuf> {
-      if uri.scheme()?.as_str() != "file" || !uri.authority()?.as_str().is_empty() {
-        return None
-      }
-      Some(PathBuf::from(uri.path().as_str()))
+      Some(url::Url::parse(uri.as_str()).ok()?.to_file_path().ok()?)
     }
     #[cfg(not(target_arch = "wasm32"))]
     let path = to_file_path(&uri).expect("bad URI");
