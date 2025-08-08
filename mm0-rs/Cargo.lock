@@ -952,6 +952,7 @@ dependencies = [
  "mm0_deepsize_derive",
  "pathdiff",
  "procfs",
+ "url",
 ]
 
 [[package]]

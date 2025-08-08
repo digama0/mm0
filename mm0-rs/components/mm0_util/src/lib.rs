@@ -510,7 +510,7 @@ impl From<PathBuf> for FileRef {
   fn from(path: PathBuf) -> FileRef {
     #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
     fn from_file_path(path: &std::path::Path) -> Option<lsp_types::Uri> {
-      std::str::FromStr::from_str(&format!("file://{}", path.to_str()?)).ok()
+      std::str::FromStr::from_str(url::Url::from_file_path(path).ok()?.as_str()).ok()
     }
     let rel = make_relative(&path);
     FileRef(Arc::new(FileRefInner {

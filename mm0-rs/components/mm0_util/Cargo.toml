@@ -23,6 +23,7 @@ mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", opti
 pathdiff = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
 lsp-types = { version = "0.97", optional = true }
+url = { version = "2.5", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.17", optional = true }
@@ -30,5 +31,5 @@ procfs = { version = "0.17", optional = true }
 [features]
 default = ["lined_string"]
 memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procfs"]
-server = ["lsp-types", "mm0_deepsize/lsp-types"]
+server = ["lsp-types", "mm0_deepsize/lsp-types", "url"]
 lined_string = ["pathdiff"]
