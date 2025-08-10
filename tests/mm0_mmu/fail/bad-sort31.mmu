@@ -1,0 +1,2 @@
+-- provable should be after pure
+(sort s31 provable pure)
