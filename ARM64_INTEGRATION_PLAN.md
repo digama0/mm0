@@ -136,13 +136,22 @@ MIR → Architecture Selector → Arch-Specific Backend → Machine Code
                               Proof Generator
 ```
 
-## Time Estimate
+## Architectural Invariants to Maintain
 
-- **Phase 1**: 2-3 weeks (minimal ARM64 working)
-- **Phase 2**: 4-6 weeks (proper abstraction)
-- **Phase 3**: 2-3 weeks (WASM + optimization)
+### Type Coherence
+- Never mix `x86::PReg` with `arm64::PReg` in the same type context
+- Always parameterize by `A: Architecture` when touching registers
+- The compiler must always know which architecture it's compiling for
 
-Total: 2-3 months for production-ready multi-architecture support
+### Proof Soundness  
+- Proofs must remain valid regardless of target architecture
+- Instruction semantics must be correctly modeled per architecture
+- Memory models must be consistent across architectures
+
+### Binary Correctness
+- x86 must continue generating valid ELF files
+- ARM64 must generate valid Mach-O files
+- Each architecture must respect its platform's ABI
 
 ## Alternative: Pure ARM64 Fork
 
