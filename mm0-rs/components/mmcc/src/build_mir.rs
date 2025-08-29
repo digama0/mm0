@@ -1803,13 +1803,26 @@ impl Initializer {
           [] => (Box::new([]), Constant::unit().into()),
           _ => panic!("main should have at most one return")
         };
+        // Handle main arguments
+        eprintln!("DEBUG: Processing main function, args.len() = {}", body.args.len());
+        let main_args = if body.args.is_empty() {
+          eprintln!("DEBUG: main has no arguments");
+          vec![]
+        } else if body.args.len() == 1 {
+          eprintln!("DEBUG: main has 1 argument, passing hardcoded 123 for now");
+          // TODO: Read actual argc from stack at [RSP] on entry to _start
+          // For now, use different hardcoded value to show mechanism works
+          vec![(true, Constant::int(IntTy::UInt(Size::S32), 123.into()).into())]
+        } else {
+          panic!("main should have at most one argument for now")
+        }.into_boxed_slice();
         let tgt = build.new_block(base_len);
         build.cur_block().terminate(Terminator::Call {
           ctx: base_ctx,
           f: main,
           tys: Box::new([]),
           se: true,
-          args: Box::new([]), // TODO
+          args: main_args,
           reach: true,
           tgt,
           rets,

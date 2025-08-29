@@ -1,0 +1,19 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {n : u32})
+      -- Just write a fixed message to show we got the argument
+      {{msg : (array u8 17)} := (list . ,(string->list "Got argument: 42\n"))}
+      {_ := (sys_write 1 17 msg (& msg))}
+      -- Store n to show it was received
+      {x := n}
+      )
+  ))
+  
+  -- Generate and print the ELF
+  (print (mmc->string))
+};

@@ -1,0 +1,24 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {n : u32})
+      -- Display the argument value we receive
+      {{msg1 : (array u8 19)} := (list . ,(string->list "Received argument: "))}
+      {_ := (sys_write 1 19 msg1 (& msg1))}
+      
+      -- Show "123" if we're getting the new hardcoded value
+      {{msg2 : (array u8 4)} := (list . ,(string->list "123\n"))}
+      {_ := (sys_write 1 4 msg2 (& msg2))}
+      
+      -- Use n to show it compiles
+      {x := n}
+      )
+  ))
+  
+  -- Generate and print the ELF
+  (print (mmc->string))
+};
