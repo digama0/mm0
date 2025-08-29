@@ -1,0 +1,10 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (main {n : u32})
+      -- Just accept the argument, don't use it yet
+      )
+  ))
+  (mmc-finish 'test_arg_minimal)
+};

@@ -1,0 +1,37 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {n : u32})
+      -- Test various arithmetic operations
+      {{a : u32} := n}          -- The passed argument (123)
+      
+      -- Addition
+      {{sum : u32} := (cast {a + 77})}      -- 123 + 77 = 200
+      
+      -- Subtraction
+      {{diff : u32} := (cast {a - 23})}     -- 123 - 23 = 100
+      
+      -- Multiplication
+      {{prod : u32} := (cast {a * 2})}      -- 123 * 2 = 246
+      
+      -- Note: Division and modulo not supported in basic MM0 yet
+      
+      -- Complex expression
+      {{expr : u32} := (cast {{a + 10} * 2})} -- (123 + 10) * 2 = 266
+      
+      -- Display a result message
+      {{msg : (array u8 28)} := (list . ,(string->list "Arithmetic operations work!\n"))}
+      {_ := (sys_write 1 28 msg (& msg))}
+      
+      -- Store final result
+      {result := expr}
+      )
+  ))
+  
+  -- Generate the ELF
+  (print (mmc->string))
+};

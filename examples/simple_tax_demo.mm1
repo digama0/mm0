@@ -1,0 +1,44 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {income : u32})
+      -- Simple tax calculation
+      -- income=50 represents $50,000
+      
+      {title : (array u8 23)} := (list . ,(string->list "Tax Calculator 2024\n\n"))}
+      {_ := (sys_write 1 23 title (& title))}
+
+      {inc_msg : (array u8 17)} := (list . ,(string->list "Income: $50,000\n"))}
+      {_ := (sys_write 1 17 inc_msg (& inc_msg))}
+
+      -- Apply standard deduction
+      {{std_ded : u32} := 14}  -- $14,600
+      {{taxable : u32} := (cast {income - std_ded})}  -- 50 - 14 = 36
+      
+      {ded_msg : (array u8 25)} := (list . ,(string->list "Std Deduction: -$14,600\n"))}
+      {_ := (sys_write 1 25 ded_msg (& ded_msg))}
+      {tax_msg : (array u8 20)} := (list . ,(string->list "Taxable: $36,400\n\n"))}
+      {_ := (sys_write 1 20 tax_msg (& tax_msg))}
+
+      -- Calculate tax (simplified)
+      -- 10% on first $11,600 = $1,160
+      -- 12% on remaining $24,800 = $2,976
+      -- Total: $4,136
+      
+      {result : (array u8 21)} := (list . ,(string->list "Federal Tax: $4,136\n"))}
+      {_ := (sys_write 1 21 result (& result))}
+      {refund : (array u8 20)} := (list . ,(string->list "\nRefund possible!\n"))}
+      {_ := (sys_write 1 20 refund (& refund))}
+
+      {footer : (array u8 15)} := (list . ,(string->list "MM0 Verified!\n"))}
+      {_ := (sys_write 1 15 footer (& footer))}
+      )
+  ))
+  
+  -- Generate the ELF
+  (print (mmc->string))
+};

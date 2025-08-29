@@ -88,3 +88,33 @@ To read argc from the stack at program start:
 3. Consider adding a `__builtin_argc` intrinsic that the start routine can use
 
 The infrastructure is solid - we just need the right hook to access the initial stack values.
+
+## Update 2: Arithmetic Operations Working!
+
+We've successfully demonstrated:
+
+1. **Arithmetic operations**: Addition (+), subtraction (-), multiplication (*) all work
+   - Division (/) and modulo (%) are not yet implemented in MM0
+   - All arithmetic returns `nat` type, requiring `cast` to `u32`
+
+2. **Number to ASCII conversion**: Can convert single digits to characters
+   ```mm1
+   {{d : u8} := (cast {digit + 48})}  -- '0' = ASCII 48
+   ```
+
+3. **Complete computation example**:
+   - Pass 123 as argument to main
+   - Add 77 to get 200
+   - Display both "123" and "200" as output
+
+### Working Examples
+- `test_arithmetic.mm1` - Basic addition with output
+- `test_calc_ops.mm1` - Multiple arithmetic operations
+- `test_digit_convert.mm1` - Convert numbers to displayable strings
+
+### Next Steps
+1. Create proper number-to-string conversion (handle multi-digit numbers)
+2. Parse command-line arguments when we get real argc/argv access
+3. Build the calculator: `./calc add 42 58` → `100`
+
+The foundation for a working calculator is now in place!

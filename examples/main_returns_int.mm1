@@ -1,0 +1,18 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (main : {ret : u32})
+      ret <- 42)
+  ))
+  (mmc-finish 'test_return_int)
+};
+
+abstract def test: string = $ test_return_int $;
+
+pub theorem test_isBasicElf: $ isBasicElf test $ = (named '(anl test_return_int_ok));
+pub theorem test_ok:
+  $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, sn 42)) $ =
+(named '(anr test_return_int_ok));
+
+output string: $ test $;

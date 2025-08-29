@@ -1,0 +1,12 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (global {stored_value : u32})
+    
+    (proc (main {n : u32})
+      (stored_value <- n)
+      )
+  ))
+  (mmc-finish 'test_store_arg)
+};

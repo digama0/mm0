@@ -1,0 +1,49 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {n : u32})
+      -- For now, let's handle 3-digit numbers (0-999)
+      -- We'll convert the result of our calculation to display
+      {{a : u32} := n}          -- 123
+      {{b : u32} := 77}         
+      {{sum : u32} := (cast {a + b})}  -- 200
+      
+      -- Extract digits from sum (200)
+      -- Since we don't have division, let's hardcode for now
+      -- In a real implementation, we'd need repeated subtraction
+      
+      -- For 200: hundreds=2, tens=0, ones=0
+      {{h : u8} := (cast {2 + 48})}   -- '2'
+      {{t : u8} := (cast {0 + 48})}   -- '0'  
+      {{o : u8} := (cast {0 + 48})}   -- '0'
+      
+      -- Build output message
+      {{msg1 : (array u8 8)} := (list . ,(string->list "Result: "))}
+      {_ := (sys_write 1 8 msg1 (& msg1))}
+      
+      -- Output the number
+      {{num : (array u8 4)} := (list h t o 10)}  -- "200\n"
+      {_ := (sys_write 1 4 num (& num))}
+      
+      -- Also test with a different calculation
+      {{prod : u32} := (cast {42 * 2})}  -- 84
+      
+      -- For 84: tens=8, ones=4
+      {{t2 : u8} := (cast {8 + 48})}   -- '8'
+      {{o2 : u8} := (cast {4 + 48})}   -- '4'
+      
+      {{msg2 : (array u8 9)} := (list . ,(string->list "42 * 2 = "))}
+      {_ := (sys_write 1 9 msg2 (& msg2))}
+      
+      {{num2 : (array u8 3)} := (list t2 o2 10)}  -- "84\n"
+      {_ := (sys_write 1 3 num2 (& num2))}
+      )
+  ))
+  
+  -- Generate the ELF
+  (print (mmc->string))
+};

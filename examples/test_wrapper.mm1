@@ -1,0 +1,18 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    -- The real entry point that will receive the argument
+    (proc (main_impl {n : u32})
+      -- For now just store it
+      {x := n}
+      )
+    
+    -- Wrapper main with no arguments
+    (proc (main)
+      -- Call main_impl with hardcoded value
+      (main_impl 42)
+      )
+  ))
+  (mmc-finish 'test_wrapper)
+};

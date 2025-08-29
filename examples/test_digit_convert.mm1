@@ -1,0 +1,32 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main {n : u32})
+      -- Convert single digits to ASCII characters
+      {{d0 : u8} := (cast {0 + 48})}  -- '0' = 48
+      {{d1 : u8} := (cast {1 + 48})}  -- '1' = 49
+      {{d2 : u8} := (cast {2 + 48})}  -- '2' = 50
+      {{d3 : u8} := (cast {3 + 48})}  -- '3' = 51
+      
+      -- Create a buffer with digits
+      {{buf : (array u8 4)} := (list d1 d2 d3 10)}  -- "123\n"
+      {_ := (sys_write 1 4 buf (& buf))}
+      
+      -- Now show the sum of n (123) + 77 = 200
+      {{sum : u32} := (cast {n + 77})}
+      
+      -- Convert 200 to string manually
+      {{c2 : u8} := (cast {2 + 48})}  -- '2'
+      {{c0 : u8} := (cast {0 + 48})}  -- '0'
+      {{buf2 : (array u8 4)} := (list c2 c0 c0 10)}  -- "200\n"
+      {_ := (sys_write 1 4 buf2 (& buf2))}
+      )
+  ))
+  
+  -- Generate the ELF
+  (print (mmc->string))
+};

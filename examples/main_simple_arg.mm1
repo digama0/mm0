@@ -1,0 +1,14 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (main {n : u32})
+      -- Just try to use the argument
+      {x := n}
+      )
+  ))
+  (mmc-finish 'test_simple_arg)
+};
+
+abstract def test: string = $ test_simple_arg $;
+output string: $ test $;

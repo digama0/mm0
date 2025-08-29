@@ -1,0 +1,17 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (adder {x : u32} {y : u32} : {ret : u32})
+      {ret := {x + y}})
+      
+    (proc (main {n : u32})
+      {sum := (adder n 10)}
+      -- Main still returns unit, but at least takes an argument
+      )
+  ))
+  (mmc-finish 'test_single_arg)
+};
+
+abstract def test: string = $ test_single_arg $;
+output string: $ test $;
