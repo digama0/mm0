@@ -1,0 +1,14 @@
+-- Test what actually gets generated - x86 or ARM64?
+import "compiler.mm1";
+
+do {
+  -- Add simple exit program  
+  (mmc-add '(
+    (proc (main)
+      {(exit 42)}
+    )
+  ))
+  
+  -- Generate and output the binary
+  (print (mmc->string))
+};

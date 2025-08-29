@@ -1,0 +1,35 @@
+-- Test if ARM64 target actually generates ARM64 code for calculator
+import "compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (def _ ((get! mmc-compiler) 'set-target "arm64-macos"))
+  (print "Target set to ARM64 macOS")
+  
+  -- Add calculator demo code
+  (mmc-add '(
+    (proc (main {n : u32})
+      -- Calculator demo showing arithmetic operations
+      {{x : u32} := n}  -- First "argument" (123)
+      {{sum : u32} := (cast {x + 77})}
+      {{diff : u32} := (cast {x - 23})} 
+      {{prod : u32} := (cast {x * 2})}
+      
+      -- Display results
+      {{msg1 : (array u8 15)} := (list . ,(string->list "123 + 77 = 200\n"))}
+      {_ := (sys_write 1 15 msg1 (& msg1))}
+      
+      {{msg2 : (array u8 15)} := (list . ,(string->list "123 - 23 = 100\n"))}
+      {_ := (sys_write 1 15 msg2 (& msg2))}
+      
+      {{msg3 : (array u8 14)} := (list . ,(string->list "123 * 2 = 246\n"))}
+      {_ := (sys_write 1 14 msg3 (& msg3))}
+      
+      {(exit 0)}
+    )
+  ))
+  
+  -- Generate the executable
+  (print "Generating executable...")
+  (print (mmc->string))
+};

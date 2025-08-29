@@ -220,6 +220,10 @@ A minimal proof-generating compiler that outputs verified native executables. No
 - Generate Mach-O headers
 - Enable Mac-native testing
 
+**Status (2025-08-29)**: Foundation complete, integration pending
+- See `ARM64_BACKEND_STATUS.md` for current implementation
+- See `ARM64_INTEGRATION_PLAN.md` for integration strategy
+
 ### Layer 6: WASM Backend
 - Add WASM as third backend
 - Leverage simpler stack-based model
