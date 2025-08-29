@@ -1,0 +1,14 @@
+import "compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (main)
+      -- Simple ARM64 exit with code 42
+      -- This will only work when we have ARM64 backend integrated
+      {(exit 42)}
+      )
+  ))
+  
+  -- Generate the executable (will be ARM64 when backend is ready)
+  (print (mmc->string))
+};

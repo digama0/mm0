@@ -1,0 +1,24 @@
+-- Test ARM64 compilation with set-target
+-- This will generate an ARM64 Mach-O executable for macOS
+
+import "compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (def _ (mmc 'set-target 'arm64-macos))
+  
+  -- Add a simple hello world program
+  (mmc-add '(
+    (proc (main)
+      -- Simple hello world using syscalls
+      {{msg : (array u8 13)} := (list . ,(string->list "Hello ARM64!\n"))}
+      {{len : u32} := 13}
+      {{fd : u32} := 1}  -- stdout
+      {_ := (sys_write fd len msg (& msg))}
+      {(exit 0)}
+    )
+  ))
+  
+  -- Generate the ARM64 executable
+  (print (mmc->string))
+};

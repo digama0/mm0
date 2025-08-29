@@ -6,9 +6,11 @@
 use std::fmt::{Debug, Display};
 use crate::arch::{traits::*, target::Target};
 
-mod regs;
-mod inst;
-// mod encode;  // TODO: implement encoding
+pub mod regs;
+pub mod inst;
+pub mod encode;
+pub mod macho;
+pub mod macho_proper;
 
 pub use regs::*;
 pub use inst::*;

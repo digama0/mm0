@@ -1,0 +1,23 @@
+-- Simple test to verify MMC target selection works
+-- This tests the new set-target functionality
+
+import "compiler.mm1";
+
+do {
+  -- Test setting target to ARM64
+  (def _ (mmc 'set-target "arm64-macos"))
+  (print "Set target to ARM64 macOS")
+  
+  -- Add a simple program
+  (mmc-add '(
+    (proc (main)
+      {(exit 42)}
+    )
+  ))
+  
+  -- Note: Actual ARM64 code generation is not yet implemented
+  -- This will currently generate x86 code until the backend is fully integrated
+  -- (print (mmc->string))
+  
+  (print "ARM64 backend integration in progress...")
+};

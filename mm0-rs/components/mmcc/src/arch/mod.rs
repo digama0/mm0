@@ -1,5 +1,11 @@
 //! Architecture-specific parts of the compiler.
 
-// We only support x86 at the moment.
-mod x86;
+// Architecture modules
+pub mod x86;
+pub mod arm64;
+pub mod wasm;
+pub mod target;
+pub mod traits;
+
+// Re-export x86 as default for backward compatibility
 pub use x86::*;

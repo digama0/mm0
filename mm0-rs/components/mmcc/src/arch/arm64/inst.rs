@@ -197,9 +197,4 @@ impl Instruction for Inst {
     }
 }
 
-impl PhysicalInstruction for PInst {
-    fn encode(&self, sink: &mut impl InstructionSink) -> Result<(), EncodeError> {
-        // This will be implemented in encode.rs
-        Err(EncodeError::NotImplemented("ARM64 encoding"))
-    }
-}
+// Implementation moved to encode.rs

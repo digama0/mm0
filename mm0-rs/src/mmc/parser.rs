@@ -105,6 +105,7 @@ make_keywords! {
   Or: "or",
   Out: "out",
   Proc: "proc",
+  SetTarget: "set-target",
   Star: "*",
   Struct: "struct",
   ToString: "->string",

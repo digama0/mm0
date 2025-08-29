@@ -90,6 +90,7 @@ impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
 struct CompilerInner {
   inner: mmcc::Compiler<Config>,
   code: Option<Box<mmcc::LinkedCode>>,
+  target: mmcc::arch::target::Target,
 }
 
 impl CompilerInner {
@@ -195,13 +196,25 @@ impl Compiler {
     Ok(())
   }
 
-  /// Get the compiled ELF file as a byte string.
+  /// Get the compiled executable file as a byte string.
   pub fn to_str(&mut self, sp: Span) -> Result<Vec<u8>> {
     let compiler = Rc::make_mut(&mut self.inner);
     let code = compiler.linked_code(sp)?;
     let mut out = Vec::new();
-    code.write_elf(&mut out).expect("IO error in string write");
+    // Use the configured target if ARM64/WASM, otherwise default to x86-64 ELF
+    if compiler.target.arch == mmcc::arch::target::TargetArch::X86_64 {
+      code.write_elf(&mut out).expect("IO error in string write");
+    } else {
+      code.write_executable(&mut out, compiler.target).map_err(|e| 
+        ElabError::new_e(sp, format!("Failed to write executable: {}", e)))?;
+    }
     Ok(out)
+  }
+  
+  /// Set the target architecture and OS
+  pub fn set_target(&mut self, target: mmcc::arch::target::Target) {
+    let compiler = Rc::make_mut(&mut self.inner);
+    compiler.target = target;
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
@@ -230,6 +243,44 @@ impl LispProc for Compiler {
       Some(Keyword::ToString) => {
         self.add(elab, sp, it)?;
         Ok(LispVal::string(self.to_str(sp)?.into()))
+      }
+      Some(Keyword::SetTarget) => {
+        let target_str = it.next().ok_or_else(||
+          ElabError::new_e(sp, "mmc-set-target: expected target string"))?;
+        let target_name = target_str.as_atom()
+          .map(|a| elab.data[a].name.as_str())
+          .or_else(|| target_str.as_string().map(|s| s as &str))
+          .ok_or_else(||
+            ElabError::new_e(sp, format!("mmc-set-target: invalid target: '{}'", elab.print(&target_str))))?;
+        
+        // Parse target string like "arm64-macos" or "x86_64-linux"
+        let target = match target_name {
+          "x86_64-linux" | "x86-64-linux" | "x64-linux" => mmcc::arch::target::Target {
+            arch: mmcc::arch::target::TargetArch::X86_64,
+            os: mmcc::arch::target::OperatingSystem::Linux,
+          },
+          "x86_64-macos" | "x86-64-macos" | "x64-macos" => mmcc::arch::target::Target {
+            arch: mmcc::arch::target::TargetArch::X86_64,
+            os: mmcc::arch::target::OperatingSystem::MacOS,
+          },
+          "arm64-linux" | "aarch64-linux" => mmcc::arch::target::Target {
+            arch: mmcc::arch::target::TargetArch::Arm64,
+            os: mmcc::arch::target::OperatingSystem::Linux,
+          },
+          "arm64-macos" | "aarch64-macos" | "arm64-darwin" => mmcc::arch::target::Target {
+            arch: mmcc::arch::target::TargetArch::Arm64,
+            os: mmcc::arch::target::OperatingSystem::MacOS,
+          },
+          "wasm32" | "wasm" => mmcc::arch::target::Target {
+            arch: mmcc::arch::target::TargetArch::Wasm32,
+            os: mmcc::arch::target::OperatingSystem::Wasi,
+          },
+          _ => return Err(ElabError::new_e(sp, 
+            format!("mmc-set-target: unknown target '{}'. Valid targets: x86_64-linux, x86_64-macos, arm64-linux, arm64-macos, wasm32", target_name)))
+        };
+        
+        self.set_target(target);
+        Ok(LispVal::undef())
       }
       Some(Keyword::Finish) => {
         let name = it.next().and_then(|e| e.as_atom()).ok_or_else(||

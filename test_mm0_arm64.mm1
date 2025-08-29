@@ -1,0 +1,18 @@
+-- Test MM0 ARM64 compilation
+-- This demonstrates cross-compilation to ARM64
+
+import "examples/compiler.mm1";
+
+do {
+  (mmc-add '(
+    (proc (main)
+      -- Simple exit with code 42
+      -- When ARM64 backend is ready, this will generate ARM64 code
+      {(exit 42)}
+      )
+  ))
+  
+  -- Generate the executable
+  -- TODO: Add target selection here
+  (print (mmc->string))
+};

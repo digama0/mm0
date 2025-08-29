@@ -18,3 +18,16 @@ out.*
 *.aux
 *_join.mm0
 *.DS_Store
+
+# MM0 build artifacts
+*.elf
+*.mmb
+output/
+debug_output.txt
+test_output.txt
+*_binary.txt
+elf_data.txt
+
+# Python
+__pycache__/
+*.py[cod]

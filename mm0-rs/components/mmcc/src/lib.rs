@@ -117,6 +117,8 @@ mod regalloc;
 mod linker;
 mod codegen;
 pub mod proof;
+mod arch_selector;
+mod codegen_multi;
 
 use std::collections::HashMap;
 use types::{entity::Entity, mir, Spanned};
