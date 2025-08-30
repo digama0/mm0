@@ -124,7 +124,7 @@ impl ArchCodegen for WasmCodegen {
         _consts: &ConstData,
         _cfg: &mir::Cfg,
         _allocs: &Allocations,
-        _ctx: crate::build_vcode::VCodeCtx,
+        _ctx: crate::build_vcode::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
         // TODO: Implement WASM VCode generation
         Err(LowerErr::InfiniteOp(Default::default()))

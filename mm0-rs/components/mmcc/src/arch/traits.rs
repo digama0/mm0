@@ -1,29 +1,25 @@
-//! Architecture abstraction traits
+//! Architecture-independent traits for the compiler
 //!
-//! This module defines traits that architecture-specific modules must implement
-//! to support code generation for different targets.
-//!
-//! The abstraction is designed to support diverse architectures including:
-//! - Register machines (x86-64, ARM64)  
-//! - Stack machines (WebAssembly)
-//! - Future targets (RISC-V, etc.)
+//! This module defines traits that allow the compiler to work with
+//! multiple target architectures without hardcoding architecture-specific types.
 
-use std::fmt::{Debug, Display};
-use regalloc2::MachineEnv;
 use crate::types::{Size, vcode::{BlockId, VReg}};
+use crate::types::vcode::ProcAbi;
 use super::target::{Target, SyscallConvention};
+use regalloc2::MachineEnv;
+use std::io::{self, Write};
 
-/// Architecture categories
+/// Architecture kind (register-based or stack-based)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchKind {
-    /// Traditional register-based architecture (x86, ARM, RISC-V)
+    /// Traditional register-based architecture (x86, ARM, etc.)
     RegisterMachine,
-    /// Stack-based architecture (WebAssembly, JVM bytecode)
+    /// Stack-based architecture (WASM, JVM, etc.)
     StackMachine,
 }
 
-/// Core trait that defines an architecture's interface
-pub trait Architecture: Sized {
+/// Core architecture trait
+pub trait Architecture: 'static {
     /// What kind of architecture is this?
     const KIND: ArchKind;
     
@@ -58,54 +54,64 @@ pub trait Architecture: Sized {
     
     /// Get callee-saved registers
     fn callee_saved() -> &'static [Self::PReg] {
-        &[]  // Default: no callee-saved registers (e.g., WASM)
+        match Self::KIND {
+            ArchKind::RegisterMachine => panic!("{} must implement callee_saved()", Self::NAME),
+            ArchKind::StackMachine => &[],
+        }
     }
     
-    /// Get caller-saved registers  
+    /// Get caller-saved registers
     fn caller_saved() -> &'static [Self::PReg] {
-        &[]  // Default: no caller-saved registers
+        match Self::KIND {
+            ArchKind::RegisterMachine => panic!("{} must implement caller_saved()", Self::NAME),
+            ArchKind::StackMachine => &[],
+        }
     }
     
-    /// Get registers used for function arguments and return values
+    /// Get argument registers
     fn arg_regs() -> &'static [Self::PReg] {
-        &[]  // Default: no argument registers (stack passing)
+        match Self::KIND {
+            ArchKind::RegisterMachine => panic!("{} must implement arg_regs()", Self::NAME),
+            ArchKind::StackMachine => &[],
+        }
     }
     
-    /// Check if this architecture supports direct system calls
+    /// Check if this target supports system calls
     fn has_syscalls(target: Target) -> bool {
-        target.syscall_convention().is_some()
+        let _ = target;
+        false
     }
     
-    /// Get registers used for system call arguments (platform-specific)
-    fn syscall_arg_regs(target: Target) -> Option<(Self::PReg, &'static [Self::PReg])> {
-        None  // Default: no syscall support
+    /// Get syscall argument registers
+    fn syscall_arg_regs(_target: Target) -> Option<(Self::PReg, &'static [Self::PReg])> {
+        None
     }
 }
 
 /// Trait for physical registers
-pub trait PhysicalReg: Copy + Clone + PartialEq + Eq + Debug + Display {
-    /// Create a new register from index
+pub trait PhysicalReg: Copy + Clone + Eq + std::fmt::Debug + std::fmt::Display {
+    /// Create a register from an index
     fn new(index: usize) -> Self;
     
-    /// Get the register index
+    /// Get the index of this register
     fn index(self) -> u8;
     
-    /// Check if this is a valid register
+    /// Check if this register is valid
     fn is_valid(self) -> bool;
     
-    /// Get an invalid register sentinel
+    /// Get the invalid register value
     fn invalid() -> Self;
     
-    /// Convert to regalloc2 PReg
+    /// Convert to regalloc2 representation
     fn to_regalloc(self) -> regalloc2::PReg;
 }
 
 /// Trait for register sets
-pub trait RegisterSet<R: PhysicalReg>: Default + Clone + Copy + Debug {
+pub trait RegisterSet<R: PhysicalReg>: Default + Clone {
     /// Insert a register into the set
     fn insert(&mut self, reg: R);
     
-    /// Check if a register is in the set
+    /// Check if the set contains a register
     fn contains(&self, reg: R) -> bool;
     
     /// Remove a register from the set
@@ -114,26 +120,30 @@ pub trait RegisterSet<R: PhysicalReg>: Default + Clone + Copy + Debug {
     /// Iterate over registers in the set
     fn iter(&self) -> impl Iterator<Item = R>;
     
-    /// Convert to regalloc2 PRegSet
+    /// Convert to regalloc2 representation
     fn to_regalloc(self) -> regalloc2::PRegSet;
 }
 
-/// Base instruction trait
-pub trait Instruction: Clone + Debug {
+/// Trait for instructions (with virtual registers)
+pub trait Instruction {
     /// Check if this is a move instruction
-    fn is_move(&self) -> bool;
+    fn is_move(&self) -> bool {
+        false
+    }
     
-    /// Get the instruction size in bytes (if known)
-    fn size_hint(&self) -> Option<usize>;
+    /// Get a size hint for this instruction
+    fn size_hint(&self) -> Option<usize> {
+        None
+    }
 }
 
-/// Physical instruction trait (after register allocation)
-pub trait PhysicalInstruction: Clone + Debug {
-    /// Encode the instruction to bytes
+/// Trait for physical instructions (after register allocation)
+pub trait PhysicalInstruction: Clone + std::fmt::Debug {
+    /// Encode this instruction to bytes
     fn encode(&self, sink: &mut impl InstructionSink) -> Result<(), EncodeError>;
 }
 
-/// Trait for emitting encoded instructions
+/// Trait for collecting encoded instructions
 pub trait InstructionSink {
     /// Emit raw bytes
     fn emit_bytes(&mut self, bytes: &[u8]);
@@ -142,49 +152,28 @@ pub trait InstructionSink {
     fn offset(&self) -> usize;
 }
 
-/// Errors that can occur during instruction encoding
-#[derive(Debug, Clone)]
+/// Errors that can occur during encoding
+#[derive(Debug)]
 pub enum EncodeError {
-    /// Instruction encoding not implemented
+    /// Feature not implemented
     NotImplemented(&'static str),
     /// Invalid instruction format
     InvalidFormat(String),
 }
 
-/// Common binary operations across architectures
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Binop {
-    Add,
-    Sub,
-    And,
-    Or,
-    Xor,
-    Mul,
-    // Architecture-specific ops can be added via extension
-}
-
-/// Common unary operations
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Unop {
-    Not,
-    Neg,
-}
-
-/// Common condition codes
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConditionCode {
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    Below,      // Unsigned less
-    BelowEqual, // Unsigned less-equal
-    Above,      // Unsigned greater
-    AboveEqual, // Unsigned greater-equal
-    Overflow,
-    NotOverflow,
-    Sign,       // Negative
-    NotSign,    // Non-negative
+/// Architecture-independent physical code trait
+pub trait ArchPCode: std::fmt::Debug + Send + Sync {
+    /// Get the total code size in bytes
+    fn len(&self) -> u32;
+    
+    /// Check if the code is empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    
+    /// Write the code bytes to a writer
+    fn write_bytes(&self, w: &mut dyn Write) -> io::Result<()>;
+    
+    /// Get the procedure ABI
+    fn abi(&self) -> &ProcAbi;
 }

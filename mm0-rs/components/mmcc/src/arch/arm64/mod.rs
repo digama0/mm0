@@ -13,6 +13,8 @@ pub mod macho;
 pub mod macho_proper;
 pub mod vcode;
 pub mod lower;
+pub mod pcode;
+pub mod code_cache;
 
 pub use regs::*;
 pub use inst::*;

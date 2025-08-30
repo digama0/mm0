@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::types::mir::{*, self};
 use crate::types::mir::ExprKind;
 use crate::types::vcode::{ProcAbi, BlockId as VBlockId, VReg, ArgAbi};
-use crate::arch::x86::PRegSet;
+use crate::arch::PRegSet;
 use crate::types::{Size, IdxVec, Spanned};
 use crate::mir_opt::storage::Allocations;
 use crate::linker::ConstData;
@@ -50,9 +50,10 @@ pub fn build_arm64_vcode(
     
     // For now, just handle the simplest case - find an exit block
     for (block_id, block) in cfg.blocks() {
-        eprintln!("ARM64: Processing block {:?}", block_id);
+        eprintln!("ARM64: Processing block {:?}, terminator: {:?}", block_id, block.terminator());
         
-        if let Terminator::Exit(op) = block.terminator() {
+        match block.terminator() {
+            Terminator::Exit(op) => {
             eprintln!("ARM64: Found exit terminator");
             
             // Create a VCode block
@@ -112,9 +113,41 @@ pub fn build_arm64_vcode(
             
             // For now, just handle one exit block
             return Ok(vcode);
+            }
+            Terminator::Return(_, _) => {
+                eprintln!("ARM64: Found return terminator - treating as exit(0) for start context");
+                
+                // For VCodeCtx::Start, a return should exit with code 0
+                if matches!(ctx, VCodeCtx::Start(_)) {
+                    let vblock = vcode.new_block();
+                    
+                    // Exit with code 0
+                    let exit_code_vreg = vcode.new_vreg();
+                    vcode.push_inst(vblock, Inst::MovImm {
+                        dst: VReg::new(exit_code_vreg as usize),
+                        imm: 0,
+                        size: Size::S64,
+                    });
+                    
+                    // Syscall number
+                    let syscall_vreg = vcode.new_vreg();
+                    vcode.push_inst(vblock, Inst::MovImm {
+                        dst: VReg::new(syscall_vreg as usize),
+                        imm: 1,
+                        size: Size::S64,
+                    });
+                    
+                    // SVC #0x80
+                    vcode.push_inst(vblock, Inst::Svc { imm: 0x80 });
+                    vcode.set_terminator(vblock, Inst::Ret);
+                    
+                    return Ok(vcode);
+                }
+            }
+            _ => {}
         }
     }
     
-    eprintln!("ARM64: No exit block found");
+    eprintln!("ARM64: No suitable terminator found");
     Err(LowerErr::EntryUnreachable(cfg.span.clone()))
 }
