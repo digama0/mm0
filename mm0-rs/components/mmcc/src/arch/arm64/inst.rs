@@ -88,6 +88,8 @@ pub enum PInst {
     /// Branches
     B { offset: i32 },
     Bcond { cond: Cond, offset: i32 },
+    Cbz { reg: PReg, offset: i32, size: OperandSize },  // Compare and branch if zero
+    Cbnz { reg: PReg, offset: i32, size: OperandSize }, // Compare and branch if not zero
     
     /// Calls
     Bl { offset: i32 },

@@ -19,6 +19,7 @@ pub mod vcode;
 pub mod lower;
 pub mod pcode;
 pub mod code_cache;
+pub mod regalloc;
 
 pub use regs::*;
 pub use inst::*;

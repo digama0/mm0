@@ -123,6 +123,20 @@ mod arch_selector;
 mod codegen_multi;
 mod codegen_arch;
 
+// Conditional compilation of architecture-specific modules
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+mod regalloc;
+
+#[cfg(feature = "arm64-backend")]
+mod regalloc {
+    pub use crate::arch::arm64::regalloc::*;
+}
+
+#[cfg(feature = "wasm-backend")]
+mod regalloc {
+    pub use crate::arch::wasm::regalloc::*;
+}
+
 use std::collections::HashMap;
 use types::{entity::Entity, mir, Spanned};
 use bumpalo::Bump;

@@ -1,0 +1,54 @@
+-- Arithmetic demonstration for all architectures
+-- This example performs: result = (a + b) * c - d
+-- Where a=10, b=5, c=3, d=2, so result = (10+5)*3-2 = 43
+
+-- Define arithmetic function
+(proc (arithmetic a b c d)
+  -- Calculate (a + b)
+  (let sum (+ a b))
+  -- Multiply by c
+  (let product (* sum c))  
+  -- Subtract d
+  (let result (- product d))
+  -- Return result
+  result)
+
+-- Main entry point
+(proc (main)
+  -- Call arithmetic with test values
+  (let result (arithmetic 10 5 3 2))
+  -- Exit with result (should be 43)
+  (exit result))
+
+-- Import compiler and set target based on features
+import "compiler.mm1";
+
+do {
+  -- Detect and set appropriate target
+  $ifdef ARM64_BACKEND
+    (mmc-set-target "arm64-macos")
+  $elifdef WASM_BACKEND  
+    (mmc-set-target "wasm32")
+  $else
+    (mmc-set-target "x86_64-linux")
+  $endif
+  
+  -- Add our functions
+  (mmc-add '(
+    (proc (arithmetic a b c d)
+      (let sum (+ a b))
+      (let product (* sum c))
+      (let result (- product d))
+      result)
+    
+    (proc (main)
+      (let result (arithmetic 10 5 3 2))
+      (exit result))
+  ))
+  
+  -- Finish compilation
+  (mmc-finish 'arithmetic_demo)
+};
+
+-- Output the compiled binary
+output string: $ arithmetic_demo $;

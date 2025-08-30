@@ -134,6 +134,60 @@ impl PhysicalInstruction for PInst {
                 Ok(())
             }
             
+            // Conditional branches
+            Bcond { cond, offset } => {
+                // B.cond (conditional branch)
+                // Encoding: 0101010 | offset[18:0] | 0 | cond
+                if *offset < -(1 << 20) || *offset >= (1 << 20) || (*offset & 3) != 0 {
+                    return Err(EncodeError::InvalidFormat(
+                        format!("B.cond offset {} out of range or misaligned", offset)
+                    ));
+                }
+                
+                let imm19 = ((*offset >> 2) & 0x7ffff) as u32;
+                let insn = 0x54000000u32 | (imm19 << 5) | (cond.encode() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
+            Cbz { reg, offset, size } => {
+                // CBZ (compare and branch if zero)
+                // Encoding: sf|011010|0|imm19|Rt
+                if *offset < -(1 << 20) || *offset >= (1 << 20) || (*offset & 3) != 0 {
+                    return Err(EncodeError::InvalidFormat(
+                        format!("CBZ offset {} out of range or misaligned", offset)
+                    ));
+                }
+                
+                let sf = match size {
+                    OperandSize::Size64 => 1,
+                    OperandSize::Size32 => 0,
+                };
+                let imm19 = ((*offset >> 2) & 0x7ffff) as u32;
+                let insn = (sf << 31) | 0x34000000u32 | (imm19 << 5) | (reg.index() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
+            Cbnz { reg, offset, size } => {
+                // CBNZ (compare and branch if not zero)
+                // Encoding: sf|011010|1|imm19|Rt
+                if *offset < -(1 << 20) || *offset >= (1 << 20) || (*offset & 3) != 0 {
+                    return Err(EncodeError::InvalidFormat(
+                        format!("CBNZ offset {} out of range or misaligned", offset)
+                    ));
+                }
+                
+                let sf = match size {
+                    OperandSize::Size64 => 1,
+                    OperandSize::Size32 => 0,
+                };
+                let imm19 = ((*offset >> 2) & 0x7ffff) as u32;
+                let insn = (sf << 31) | 0x35000000u32 | (imm19 << 5) | (reg.index() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
             // System call
             Svc { imm } => {
                 // SVC #imm

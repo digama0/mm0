@@ -71,6 +71,8 @@ impl RegisterSet<WasmReg> for WasmRegSet {
     }
 }
 
+pub mod regalloc;
+
 /// WASM instructions
 #[derive(Clone, Debug)]
 pub enum WasmInst {
@@ -96,6 +98,27 @@ pub enum WasmInst {
     Return,
     Branch { target: u32 },
     BranchIf { target: u32 },
+    BranchTable { targets: Vec<u32>, default: u32 },
+    
+    /// Comparison operations
+    I32Eq,   // Equal
+    I32Ne,   // Not equal
+    I32LtS,  // Less than (signed)
+    I32LtU,  // Less than (unsigned)
+    I32GtS,  // Greater than (signed)
+    I32GtU,  // Greater than (unsigned)
+    I32LeS,  // Less than or equal (signed)
+    I32LeU,  // Less than or equal (unsigned)
+    I32GeS,  // Greater than or equal (signed)
+    I32GeU,  // Greater than or equal (unsigned)
+    I32Eqz,  // Equal to zero
+    
+    /// Control structures
+    Block { label: u32 },
+    Loop { label: u32 },
+    If { label: u32 },
+    Else,
+    End,
     
     /// Stack manipulation
     Drop,
