@@ -7,6 +7,8 @@ pub mod wasm;
 pub mod target;
 pub mod traits;
 pub mod proof_traits;
+pub mod arch_types;
+pub mod current;
 
 // Re-export common types
 pub use target::{Target, TargetArch, OperatingSystem};

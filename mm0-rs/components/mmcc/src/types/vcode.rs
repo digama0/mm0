@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt::{Debug, Display}, iter::FromIterator};
 
-use crate::{arch::x86::{PReg, PRegSet}, types::{mir, IdxVec}, Idx};
+use crate::{arch::arch_types::{PReg, PRegSet}, types::{mir, IdxVec}, Idx};
 
 use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};

@@ -161,7 +161,7 @@ impl PhysicalInstruction for PInst {
                     | (dst.index() as u32);
                     
                 sink.emit_bytes(&insn.to_le_bytes());
-                Ok()
+                Ok(())
             }
             
             // Branch instructions

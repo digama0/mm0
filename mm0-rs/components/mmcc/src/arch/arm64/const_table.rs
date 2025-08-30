@@ -9,7 +9,7 @@ use crate::Symbol;
 use crate::types::vcode::ConstRef;
 
 /// ARM64 constant table
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Arm64ConstTable {
     /// Map from symbol to (size, offset) in the constant data section
     constants: HashMap<Symbol, (u32, u32)>,

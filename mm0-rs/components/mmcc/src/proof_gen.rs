@@ -21,7 +21,7 @@ impl ProofGenFactory {
                     proof_gen: X86ProofGen,
                 })
             }
-            TargetArch::Aarch64 => {
+            TargetArch::Arm64 => {
                 use crate::arch::arm64::proof_impl::Arm64ProofGen;
                 Box::new(Arm64ProofGenAdapter {
                     proof_gen: Arm64ProofGen::new(target.os),
