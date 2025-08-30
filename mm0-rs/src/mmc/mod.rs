@@ -104,6 +104,8 @@ impl CompilerInner {
     if self.inner.has_type_errors() {
       return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
     }
+    // Set the target on the inner MMCC compiler before finishing
+    self.inner.set_target(self.target);
     let code = self.inner.finish().map_err(|err| match err {
       LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v)) =>
         ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position"),
@@ -200,20 +202,18 @@ impl Compiler {
   pub fn to_str(&mut self, sp: Span) -> Result<Vec<u8>> {
     let compiler = Rc::make_mut(&mut self.inner);
     let target = compiler.target; // Copy the target before borrowing
+    eprintln!("mmc: to_str called with target: {:?}", target);
     let code = compiler.linked_code(sp)?;
     let mut out = Vec::new();
-    // Use the configured target if ARM64/WASM, otherwise default to x86-64 ELF
-    if target.arch == mmcc::arch::target::TargetArch::X86_64 {
-      code.write_elf(&mut out).expect("IO error in string write");
-    } else {
-      code.write_executable(&mut out, target).map_err(|e| 
-        ElabError::new_e(sp, format!("Failed to write executable: {}", e)))?;
-    }
+    // Use write_executable for all targets - it will dispatch appropriately
+    code.write_executable(&mut out, target).map_err(|e| 
+      ElabError::new_e(sp, format!("Failed to write executable: {}", e)))?;
     Ok(out)
   }
   
   /// Set the target architecture and OS
   pub fn set_target(&mut self, target: mmcc::arch::target::Target) {
+    eprintln!("mmc: set_target called with: {:?}", target);
     let compiler = Rc::make_mut(&mut self.inner);
     compiler.target = target;
   }

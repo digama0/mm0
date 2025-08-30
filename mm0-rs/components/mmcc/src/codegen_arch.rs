@@ -26,7 +26,7 @@ pub trait ArchCodegen: Send + Sync {
         consts: &ConstData,
         cfg: &mir::Cfg,
         allocs: &Allocations,
-        ctx: crate::build_vcode::VCodeCtx,
+        ctx: crate::build_vcode::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr>;
     
     /// Write executable for this architecture
@@ -51,7 +51,7 @@ impl ArchCodegen for X86Codegen {
         consts: &ConstData,
         cfg: &mir::Cfg,
         allocs: &Allocations,
-        ctx: crate::build_vcode::VCodeCtx,
+        ctx: crate::build_vcode::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
         // Use the existing x86 build_vcode
         let vcode = crate::build_vcode::build_vcode(names, funcs, func_abi, consts, cfg, allocs, ctx)?;
@@ -80,18 +80,19 @@ pub struct Arm64Codegen;
 impl ArchCodegen for Arm64Codegen {
     fn build_vcode(
         &self,
-        _names: &HashMap<Symbol, Entity>,
-        _funcs: &HashMap<Symbol, ProcId>,
-        _func_abi: &IdxVec<ProcId, ProcAbi>,
-        _consts: &ConstData,
-        _cfg: &mir::Cfg,
-        _allocs: &Allocations,
-        _ctx: crate::build_vcode::VCodeCtx,
+        names: &HashMap<Symbol, Entity>,
+        funcs: &HashMap<Symbol, ProcId>,
+        func_abi: &IdxVec<ProcId, ProcAbi>,
+        consts: &ConstData,
+        cfg: &mir::Cfg,
+        allocs: &Allocations,
+        ctx: crate::build_vcode::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
-        // TODO: Implement ARM64 VCode generation
-        eprintln!("ARM64 backend: build_vcode called!");
-        // For now, return an error
-        Err(LowerErr::InfiniteOp(Default::default()))
+        eprintln!("ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!");
+        let vcode = crate::arch::arm64::lower::build_arm64_vcode(
+            names, funcs, func_abi, consts, cfg, allocs, ctx
+        )?;
+        Ok(Box::new(vcode))
     }
     
     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()> {
@@ -148,10 +149,20 @@ impl ArchCodegen for WasmCodegen {
 
 /// Get code generator for target
 pub fn get_codegen(target: Target) -> Box<dyn ArchCodegen> {
+    eprintln!("get_codegen called with target: {:?}", target);
     match target.arch {
-        TargetArch::X86_64 => Box::new(X86Codegen),
-        TargetArch::Arm64 => Box::new(Arm64Codegen),
-        TargetArch::Wasm32 | TargetArch::Wasm64 => Box::new(WasmCodegen),
+        TargetArch::X86_64 => {
+            eprintln!("Selected X86_64 codegen");
+            Box::new(X86Codegen)
+        },
+        TargetArch::Arm64 => {
+            eprintln!("Selected ARM64 codegen!");
+            Box::new(Arm64Codegen)
+        },
+        TargetArch::Wasm32 | TargetArch::Wasm64 => {
+            eprintln!("Selected WASM codegen");
+            Box::new(WasmCodegen)
+        },
     }
 }
 

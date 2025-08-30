@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 use if_chain::if_chain;
 
-use crate::build_vcode::{VCodeCtx, build_vcode};
+use crate::build_vcode::VCodeCtx;
+use crate::codegen_arch::{get_codegen, VCodeTrait};
 use crate::codegen::FUNCTION_ALIGN;
 use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::regalloc::PCode;
@@ -254,18 +255,21 @@ impl LinkedCode {
     globals: &[(Symbol, bool, VarId, Ty)],
     target: crate::arch::target::Target
   ) -> Result<Box<Self>, LinkerErr> {
+    eprintln!("LinkedCode::link called with target: {:?}", target);
     let mut coll = Collector::new(names, &mir);
     coll.collect_cfg(&init, &[]);
+    let codegen = get_codegen(target);
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
     let mut func_code = IdxVec::from_default(coll.funcs.1.len());
     for &f in &coll.postorder {
       let sym = coll.funcs.1[f];
       if let Some(proc) = mir.get(&sym) {
-        let (abi, code) = build_vcode(
+        let vcode = codegen.build_vcode(
           names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
           proc.allocs.as_deref().expect("optimized already"),
           VCodeCtx::Proc(&proc.rets)
-        )?.regalloc();
+        )?;
+        let (abi, code) = vcode.regalloc();
         // println!("mir {} = {:#?}", sym, proc);
         // println!("abi {} = {:#?}", sym, abi);
         // println!("code {} = {:#?}", sym, code);
@@ -284,9 +288,10 @@ impl LinkedCode {
       global_size += size;
       Some((g, off, size))
     }).collect();
-    let init_code = build_vcode(
+    let init_vcode = codegen.build_vcode(
       names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)
-    )?.regalloc().1;
+    )?;
+    let init_code = init_vcode.regalloc().1;
 
     let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     let funcs = func_code.0.into_iter().map(|code| {

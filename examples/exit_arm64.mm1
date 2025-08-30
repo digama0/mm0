@@ -1,0 +1,18 @@
+-- exit_arm64.mm1
+-- A minimal program that just exits with code 42
+
+import "compiler.mm1";
+
+do {
+  -- Set the target to ARM64 macOS
+  (mmc-set-target "arm64-macos")
+  
+  -- Add a main function that just exits
+  (mmc-add '(
+    (proc (main)
+      (exit))
+  ))
+  
+  -- Generate the executable
+  (print (mmc->string))
+};
