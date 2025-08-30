@@ -242,6 +242,15 @@ impl PhysicalInstruction for PInst {
                 Ok(())
             }
             
+            // Memory operations
+            Ldr { dst, addr, size } => {
+                encode_load(sink, *dst, addr, *size)
+            }
+            
+            Str { src, addr, size } => {
+                encode_store(sink, *src, addr, *size)
+            }
+            
             _ => Err(EncodeError::NotImplemented("instruction encoding")),
         }
     }
@@ -371,6 +380,110 @@ fn encode_mov_imm(
             sink.emit_bytes(&insn.to_le_bytes());
             Ok(())
         }
+    }
+}
+
+/// Encode load instruction
+fn encode_load(
+    sink: &mut impl InstructionSink,
+    dst: PReg,
+    addr: &PAMode,
+    size: OperandSize,
+) -> Result<(), EncodeError> {
+    match addr {
+        PAMode::Offset(base, offset) => {
+            // LDR Xt, [Xn, #imm]
+            // Unsigned offset variant
+            
+            // Check offset alignment and range
+            let (scale, size_bits) = match size {
+                OperandSize::Size64 => (8, 0b11),
+                OperandSize::Size32 => (4, 0b10),
+            };
+            
+            if *offset as i64 % scale != 0 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("Load offset {} not aligned to {}", offset, scale)
+                ));
+            }
+            
+            let scaled_offset = (*offset as i64 / scale) as u32;
+            if scaled_offset > 0xfff {
+                return Err(EncodeError::InvalidFormat(
+                    format!("Load offset {} out of range", offset)
+                ));
+            }
+            
+            // LDR encoding: size_11_111001_01_imm12_Rn_Rt
+            let insn = (size_bits << 30)
+                | (0b111001 << 24)
+                | (0b01 << 22)
+                | (scaled_offset << 10)
+                | ((base.index() as u32) << 5)
+                | (dst.index() as u32);
+                
+            sink.emit_bytes(&insn.to_le_bytes());
+            Ok(())
+        }
+        
+        PAMode::Reg(base) => {
+            // LDR Xt, [Xn] - same as offset 0
+            encode_load(sink, dst, &PAMode::Offset(*base, 0), size)
+        }
+        
+        _ => Err(EncodeError::NotImplemented("load addressing mode")),
+    }
+}
+
+/// Encode store instruction
+fn encode_store(
+    sink: &mut impl InstructionSink,
+    src: PReg,
+    addr: &PAMode,
+    size: OperandSize,
+) -> Result<(), EncodeError> {
+    match addr {
+        PAMode::Offset(base, offset) => {
+            // STR Xt, [Xn, #imm]
+            // Unsigned offset variant
+            
+            // Check offset alignment and range
+            let (scale, size_bits) = match size {
+                OperandSize::Size64 => (8, 0b11),
+                OperandSize::Size32 => (4, 0b10),
+            };
+            
+            if *offset as i64 % scale != 0 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("Store offset {} not aligned to {}", offset, scale)
+                ));
+            }
+            
+            let scaled_offset = (*offset as i64 / scale) as u32;
+            if scaled_offset > 0xfff {
+                return Err(EncodeError::InvalidFormat(
+                    format!("Store offset {} out of range", offset)
+                ));
+            }
+            
+            // STR encoding: size_11_111001_00_imm12_Rn_Rt
+            let insn = (size_bits << 30)
+                | (0b111001 << 24)
+                | (0b00 << 22)  // Store (vs load which is 01)
+                | (scaled_offset << 10)
+                | ((base.index() as u32) << 5)
+                | (src.index() as u32);
+                
+            sink.emit_bytes(&insn.to_le_bytes());
+            Ok(())
+        }
+        
+        PAMode::Reg(base) => {
+            // STR Xt, [Xn] - same as offset 0
+            encode_store(sink, src, &PAMode::Offset(*base, 0), size)
+        }
+        
+        _ => Err(EncodeError::NotImplemented("store addressing mode")),
     }
 }
 

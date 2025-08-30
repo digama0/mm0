@@ -244,6 +244,37 @@ impl PhysicalInstruction for WasmInst {
                 sink.emit_bytes(&[0x0d]); // br_if
                 encode_leb128_u32(sink, *target);
             }
+            // Memory operations
+            WasmInst::Load { ty, offset, align } => {
+                match ty {
+                    WasmType::I32 => {
+                        sink.emit_bytes(&[0x28]); // i32.load
+                        encode_leb128_u32(sink, *align);
+                        encode_leb128_u32(sink, *offset);
+                    }
+                    WasmType::I64 => {
+                        sink.emit_bytes(&[0x29]); // i64.load
+                        encode_leb128_u32(sink, *align);
+                        encode_leb128_u32(sink, *offset);
+                    }
+                    _ => return Err(EncodeError::NotImplemented("float load")),
+                }
+            }
+            WasmInst::Store { ty, offset, align } => {
+                match ty {
+                    WasmType::I32 => {
+                        sink.emit_bytes(&[0x36]); // i32.store
+                        encode_leb128_u32(sink, *align);
+                        encode_leb128_u32(sink, *offset);
+                    }
+                    WasmType::I64 => {
+                        sink.emit_bytes(&[0x37]); // i64.store
+                        encode_leb128_u32(sink, *align);
+                        encode_leb128_u32(sink, *offset);
+                    }
+                    _ => return Err(EncodeError::NotImplemented("float store")),
+                }
+            }
             _ => return Err(EncodeError::NotImplemented("instruction encoding")),
         }
         Ok(())
