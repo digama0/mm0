@@ -1,0 +1,26 @@
+-- Simple Calculator Demo
+-- Computes (10 + 5) * 3 - 2 = 43
+
+theorem calc: $ 1 = 1 $ = '(eq 1 1);
+
+-- Define the calculator function
+def calc_main: string = '(
+  (proc (main)
+    -- Direct computation without variables
+    -- This matches the pattern expected by the compiler
+    (exit (- (* (+ 10 5) 3) 2)))
+);
+
+-- Import compiler (this will be provided by mm0-rs environment)
+-- For now we'll use the mmc commands directly
+
+-- Compile for the current architecture
+do {
+  -- The target will be set based on the feature flags at compile time
+  -- For testing, we'll generate for the default architecture
+  (mmc-add calc_main)
+  (mmc-finish 'calculator)
+};
+
+-- Output the binary
+output string: $ calculator $ calculator;

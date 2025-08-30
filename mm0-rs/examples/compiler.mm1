@@ -1,0 +1,30 @@
+-- Compiler interface for MM1 programs
+-- This file provides the mmc-* commands for compiling programs
+
+-- The mmc-add command adds a procedure to the current compilation unit
+-- Usage: (mmc-add '(proc (name) body...))
+def mmc-add: string > string > cmd = $ \x, \y, 'mmc-add $;
+
+-- The mmc-finish command completes compilation and outputs a binary
+-- Usage: (mmc-finish 'output_name)  
+def mmc-finish: string > string > cmd = $ \x, \y, 'mmc-finish $;
+
+-- The mmc-set-target command selects the target architecture
+-- Usage: (mmc-set-target "arm64-macos")
+def mmc-set-target: string > string > cmd = $ \x, \y, 'mmc-set-target $;
+
+-- Basic operations that the compiler understands
+def +: nat > nat > nat;
+def -: nat > nat > nat;
+def *: nat > nat > nat;
+
+-- Control flow
+def exit: nat > cmd;
+def return: nat > cmd;
+
+-- Variable operations
+def var: string > string > cmd;
+def set: string > nat > cmd;
+
+-- Types
+def i32: string;

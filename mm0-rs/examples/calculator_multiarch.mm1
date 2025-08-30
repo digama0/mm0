@@ -1,0 +1,82 @@
+-- Multi-Architecture Calculator Example
+-- Demonstrates (10 + 5) * 3 - 2 = 43 on all architectures
+
+-- This MM1 program will generate code for the currently selected architecture
+-- Build with different feature flags to test each backend:
+--   cargo build                        # x86-64 (default)
+--   cargo build --features arm64-backend  # ARM64
+--   cargo build --features wasm-backend   # WebAssembly
+
+-- The calculator computation
+-- We'll implement: result = (10 + 5) * 3 - 2
+-- Expected result: 43
+
+theorem calculator_demo: $ 1 = 1 $ = '(eq 1 1);
+
+-- Import the compiler interface
+import "compiler.mm1";
+
+-- Define our calculator program
+def calculator_main: string = '(
+  (proc (main)
+    -- Allocate variables for our computation
+    (var a i32)
+    (var b i32)
+    (var c i32)
+    (var temp1 i32)
+    (var temp2 i32)
+    (var result i32)
+    
+    -- Initialize values
+    (set a 10)      -- a = 10
+    (set b 5)       -- b = 5
+    (set c 3)       -- c = 3
+    
+    -- Perform computation: (a + b) * c - 2
+    (set temp1 (+ a b))      -- temp1 = a + b = 15
+    (set temp2 (* temp1 c))  -- temp2 = temp1 * c = 45
+    (set result (- temp2 2)) -- result = temp2 - 2 = 43
+    
+    -- Return the result as exit code
+    (return result))
+);
+
+-- Compile for x86-64 Linux
+do {
+  (mmc-set-target "x86_64-linux")
+  (mmc-add calculator_main)
+  (mmc-finish 'calc_x64)
+};
+output string: $ calc_x64_linux $ calc_x64;
+
+-- Compile for x86-64 macOS
+do {
+  (mmc-set-target "x86_64-macos")
+  (mmc-add calculator_main)
+  (mmc-finish 'calc_x64_mac)
+};
+output string: $ calc_x64_macos $ calc_x64_mac;
+
+-- Compile for ARM64 Linux
+do {
+  (mmc-set-target "arm64-linux")
+  (mmc-add calculator_main)
+  (mmc-finish 'calc_arm64)
+};
+output string: $ calc_arm64_linux $ calc_arm64;
+
+-- Compile for ARM64 macOS
+do {
+  (mmc-set-target "arm64-macos")
+  (mmc-add calculator_main)
+  (mmc-finish 'calc_arm64_mac)
+};
+output string: $ calc_arm64_macos $ calc_arm64_mac;
+
+-- Compile for WebAssembly
+do {
+  (mmc-set-target "wasm32")
+  (mmc-add calculator_main)
+  (mmc-finish 'calc_wasm)
+};
+output string: $ calc_wasm $ calc_wasm;
