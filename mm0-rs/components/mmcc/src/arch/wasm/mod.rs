@@ -183,6 +183,10 @@ impl PhysicalInstruction for WasmInst {
                     _ => return Err(EncodeError::NotImplemented("float add")),
                 }
             }
+            WasmInst::Call { func_idx } => {
+                sink.emit_bytes(&[0x10]); // call
+                encode_leb128_u32(sink, *func_idx);
+            }
             WasmInst::Return => {
                 sink.emit_bytes(&[0x0f]); // return
             }

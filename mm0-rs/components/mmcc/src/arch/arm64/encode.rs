@@ -234,6 +234,14 @@ impl PhysicalInstruction for PInst {
                 Ok(())
             }
             
+            Blr { reg } => {
+                // BLR (Branch with Link to Register)
+                // Encoding: 1101011_0001_11111_000000_Rn_00000
+                let insn = 0xd63f0000u32 | ((reg.index() as u32) << 5);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
             _ => Err(EncodeError::NotImplemented("instruction encoding")),
         }
     }

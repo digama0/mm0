@@ -1,0 +1,17 @@
+-- Simple test program that exits with code 42
+-- This tests the minimal functionality needed for each backend
+
+import "compiler.mm1";
+
+-- Define our simple main function
+do {
+  (mmc-add '(
+    (proc (main)
+      (exit 42))
+  ))
+  
+  (mmc-finish 'exit42)
+};
+
+-- Output the compiled binary
+output string: $ exit42 $;

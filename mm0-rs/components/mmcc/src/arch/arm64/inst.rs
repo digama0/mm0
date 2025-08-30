@@ -92,8 +92,9 @@ pub enum PInst {
     Cbnz { reg: PReg, offset: i32, size: OperandSize }, // Compare and branch if not zero
     
     /// Calls
-    Bl { offset: i32 },
-    Ret,
+    Bl { offset: i32 },           // Branch with Link (direct call)
+    Blr { reg: PReg },            // Branch with Link to Register (indirect call)
+    Ret,                          // Return using X30
     
     /// System
     Svc { imm: u16 },
