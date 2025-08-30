@@ -176,7 +176,7 @@ impl PCodeBuilder {
     }
     if stack_size != 0 {
       self.push(PInst::Binop {
-        op: crate::arch::Binop::Sub,
+        op: crate::arch::x86::Binop::Sub,
         sz: Size::S64,
         dst: RSP,
         src: PRegMemImm::Imm(stack_size)
@@ -187,7 +187,7 @@ impl PCodeBuilder {
   fn push_epilogue(&mut self, stack_size: u32, saved_regs: impl DoubleEndedIterator<Item=PReg>) {
     if stack_size != 0 {
       self.push(PInst::Binop {
-        op: crate::arch::Binop::Add,
+        op: crate::arch::x86::Binop::Add,
         sz: Size::S64,
         dst: RSP,
         src: PRegMemImm::Imm(stack_size)

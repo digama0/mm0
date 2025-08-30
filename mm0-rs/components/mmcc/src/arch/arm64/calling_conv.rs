@@ -23,51 +23,31 @@ impl Arm64CallConv {
     /// Get registers used for passing integer arguments
     pub fn arg_regs(&self) -> &'static [PReg] {
         // X0-X7 are used for the first 8 arguments
-        &[
-            PReg::new(0),  // X0
-            PReg::new(1),  // X1
-            PReg::new(2),  // X2
-            PReg::new(3),  // X3
-            PReg::new(4),  // X4
-            PReg::new(5),  // X5
-            PReg::new(6),  // X6
-            PReg::new(7),  // X7
-        ]
+        &super::regs::ARG_REGS
     }
     
     /// Get registers used for return values
     pub fn ret_regs(&self) -> &'static [PReg] {
         // X0-X7 can be used for returning large structs
         // But typically only X0 (and X1 for 128-bit values)
-        &[
-            PReg::new(0),  // X0
-            PReg::new(1),  // X1
-        ]
+        &super::regs::RET_REGS[..2]
     }
     
     /// Get callee-saved registers (must be preserved across calls)
     pub fn callee_saved(&self) -> &'static [PReg] {
-        &[
-            // X19-X28 are callee-saved
-            PReg::new(19), PReg::new(20), PReg::new(21), PReg::new(22),
-            PReg::new(23), PReg::new(24), PReg::new(25), PReg::new(26),
-            PReg::new(27), PReg::new(28),
-            // X29 (FP) and X30 (LR) are also callee-saved
-            PReg::new(29), // FP
-            PReg::new(30), // LR
-        ]
+        // Note: ARM64 mod.rs defines CALLEE_SAVED without FP/LR, but we need them here
+        use super::regs::{CALLEE_SAVED, FP, LR};
+        static ALL_CALLEE_SAVED: [PReg; 12] = [
+            CALLEE_SAVED[0], CALLEE_SAVED[1], CALLEE_SAVED[2], CALLEE_SAVED[3],
+            CALLEE_SAVED[4], CALLEE_SAVED[5], CALLEE_SAVED[6], CALLEE_SAVED[7],
+            CALLEE_SAVED[8], CALLEE_SAVED[9], FP, LR
+        ];
+        &ALL_CALLEE_SAVED
     }
     
     /// Get caller-saved registers (can be clobbered by calls)
     pub fn caller_saved(&self) -> &'static [PReg] {
-        &[
-            // X0-X18 are caller-saved
-            PReg::new(0),  PReg::new(1),  PReg::new(2),  PReg::new(3),
-            PReg::new(4),  PReg::new(5),  PReg::new(6),  PReg::new(7),
-            PReg::new(8),  PReg::new(9),  PReg::new(10), PReg::new(11),
-            PReg::new(12), PReg::new(13), PReg::new(14), PReg::new(15),
-            PReg::new(16), PReg::new(17), PReg::new(18),
-        ]
+        &super::regs::CALLER_SAVED
     }
     
     /// Get registers clobbered by a function call
@@ -85,12 +65,12 @@ impl Arm64CallConv {
         
         if arg_idx < arg_regs.len() {
             // Pass in register
-            ArgAbi::Reg(arg_regs[arg_idx], 0)
+            ArgAbi::Reg(arg_regs[arg_idx], Size::S64)
         } else {
             // Pass on stack
             // Stack slots are 8-byte aligned
             let stack_offset = (arg_idx - arg_regs.len()) * 8;
-            ArgAbi::Mem(stack_offset as u32)
+            ArgAbi::Mem { off: stack_offset as u32, sz: 8 }
         }
     }
     
@@ -100,10 +80,10 @@ impl Arm64CallConv {
         
         if ret_idx < ret_regs.len() && ty.size().bytes().unwrap_or(8) <= 8 {
             // Return in register
-            ArgAbi::Reg(ret_regs[ret_idx], 0)
+            ArgAbi::Reg(ret_regs[ret_idx], Size::S64)
         } else {
             // Large returns via memory (caller allocates, passes pointer in X8)
-            ArgAbi::Mem(0)
+            ArgAbi::Mem { off: 0, sz: 8 }
         }
     }
     
@@ -159,7 +139,7 @@ impl Arm64FrameLayout {
         // Determine which callee-saved registers need preserving
         let mut saved_regs = Vec::new();
         for &reg in call_conv.callee_saved() {
-            if used_regs.contains(reg) {
+            if used_regs.get(reg) {
                 saved_regs.push(reg);
             }
         }
@@ -214,15 +194,15 @@ mod tests {
         
         // First 8 args go in registers
         for i in 0..8 {
-            match conv.arg_abi(i, IntTy::I64) {
-                ArgAbi::Reg(reg, 0) => assert_eq!(reg.index(), i as u8),
+            match conv.arg_abi(i, IntTy::Int(Size::S64)) {
+                ArgAbi::Reg(reg, _) => assert_eq!(reg.index(), i as u8),
                 _ => panic!("Expected register for arg {}", i),
             }
         }
         
         // 9th arg goes on stack
-        match conv.arg_abi(8, IntTy::I64) {
-            ArgAbi::Mem(0) => {}
+        match conv.arg_abi(8, IntTy::Int(Size::S64)) {
+            ArgAbi::Mem { off: 0, .. } => {}
             _ => panic!("Expected stack for arg 8"),
         }
     }

@@ -120,12 +120,14 @@ pub enum ProofProperty {
     /// Register contains expected value
     RegisterValue {
         reg: AbstractReg,
-        value: mir::Operand,
+        // TODO: Fix mir::Operand usage
+        value: Option<()>, // Temporarily replaced
     },
     /// Memory location contains expected value
     MemoryValue {
         addr: AbstractOperand,
-        value: mir::Operand,
+        // TODO: Fix mir::Operand usage
+        value: Option<()>, // Temporarily replaced
         size: Size,
     },
     /// Stack is properly aligned

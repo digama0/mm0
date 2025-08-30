@@ -18,13 +18,13 @@ impl ProofGenFactory {
             TargetArch::X86_64 => {
                 use crate::arch::x86::proof_impl::X86ProofGen;
                 Box::new(X86ProofGenAdapter {
-                    gen: X86ProofGen,
+                    proof_gen: X86ProofGen,
                 })
             }
             TargetArch::Aarch64 => {
                 use crate::arch::arm64::proof_impl::Arm64ProofGen;
                 Box::new(Arm64ProofGenAdapter {
-                    gen: Arm64ProofGen::new(target.os),
+                    proof_gen: Arm64ProofGen::new(target.os),
                 })
             }
             _ => Box::new(NoOpProofGenAdapter),
@@ -43,11 +43,11 @@ pub trait ProofGenAdapter: Send + Sync {
 
 /// Adapter for x86 proof generation
 struct X86ProofGenAdapter {
-    gen: crate::arch::x86::proof_impl::X86ProofGen,
+    proof_gen: crate::arch::x86::proof_impl::X86ProofGen,
 }
 
 impl ProofGenAdapter for X86ProofGenAdapter {
-    fn generate_proof(&self, code: &LinkedCode) -> Vec<u8> {
+    fn generate_proof(&self, _code: &LinkedCode) -> Vec<u8> {
         // For now, delegate to the existing x86-specific proof generation
         // This will be refactored to use the trait-based system
         vec![]
@@ -60,11 +60,11 @@ impl ProofGenAdapter for X86ProofGenAdapter {
 
 /// Adapter for ARM64 proof generation
 struct Arm64ProofGenAdapter {
-    gen: crate::arch::arm64::proof_impl::Arm64ProofGen,
+    proof_gen: crate::arch::arm64::proof_impl::Arm64ProofGen,
 }
 
 impl ProofGenAdapter for Arm64ProofGenAdapter {
-    fn generate_proof(&self, code: &LinkedCode) -> Vec<u8> {
+    fn generate_proof(&self, _code: &LinkedCode) -> Vec<u8> {
         // ARM64 doesn't generate proofs yet, just returns empty
         vec![]
     }

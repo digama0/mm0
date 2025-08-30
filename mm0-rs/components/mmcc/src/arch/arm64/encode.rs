@@ -49,6 +49,84 @@ impl PhysicalInstruction for PInst {
                 encode_arithmetic(sink, ArithOp::Sub, *dst, *src1, src2, *size)
             }
             
+            // Multiplication
+            Mul { dst, src1, src2, size } => {
+                // MADD Xd, Xn, Xm, XZR (multiply-add with zero)
+                let sf = match size {
+                    OperandSize::Size32 => 0,
+                    OperandSize::Size64 => 1,
+                };
+                let insn = (sf << 31) | 0x1b000000u32
+                    | ((src2.index() as u32) << 16)
+                    | (0x1f << 10) // XZR
+                    | ((src1.index() as u32) << 5)
+                    | (dst.index() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
+            // Signed division
+            Sdiv { dst, src1, src2, size } => {
+                // SDIV Xd, Xn, Xm
+                let sf = match size {
+                    OperandSize::Size32 => 0,
+                    OperandSize::Size64 => 1,
+                };
+                let insn = (sf << 31) | 0x1ac00c00u32
+                    | ((src2.index() as u32) << 16)
+                    | ((src1.index() as u32) << 5)
+                    | (dst.index() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
+            // Unsigned division
+            Udiv { dst, src1, src2, size } => {
+                // UDIV Xd, Xn, Xm
+                let sf = match size {
+                    OperandSize::Size32 => 0,
+                    OperandSize::Size64 => 1,
+                };
+                let insn = (sf << 31) | 0x1ac00800u32
+                    | ((src2.index() as u32) << 16)
+                    | ((src1.index() as u32) << 5)
+                    | (dst.index() as u32);
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
+            // Comparison
+            Cmp { lhs, rhs, size } => {
+                // CMP is SUB with discarded result (Rd = XZR)
+                let sf = match size {
+                    OperandSize::Size32 => 0,
+                    OperandSize::Size64 => 1,
+                };
+                match rhs {
+                    POperand::Reg(rm) => {
+                        // SUBS XZR, Xn, Xm
+                        let insn = (sf << 31) | 0x6b000000u32 | 0x1f // XZR as dst
+                            | ((rm.index() as u32) << 16)
+                            | ((lhs.index() as u32) << 5);
+                        sink.emit_bytes(&insn.to_le_bytes());
+                    }
+                    POperand::Imm(imm) => {
+                        // SUBS XZR, Xn, #imm
+                        if *imm <= 0xfff {
+                            let insn = (sf << 31) | 0x71000000u32 | 0x1f // XZR as dst
+                                | ((*imm as u32) << 10)
+                                | ((lhs.index() as u32) << 5);
+                            sink.emit_bytes(&insn.to_le_bytes());
+                        } else {
+                            return Err(EncodeError::InvalidFormat(
+                                format!("CMP immediate {} out of range", imm)
+                            ));
+                        }
+                    }
+                }
+                Ok(())
+            }
+            
             // Return instruction
             Ret => {
                 // RET = 0xd65f03c0 (return using LR/X30)
@@ -82,6 +160,22 @@ impl PhysicalInstruction for PInst {
                     | (imm_hi << 5)
                     | (dst.index() as u32);
                     
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok()
+            }
+            
+            // Branch instructions
+            Bl { offset } => {
+                // BL (Branch with Link)
+                // offset is in range +/- 128MB (26-bit signed * 4)
+                if *offset < -(1 << 27) || *offset >= (1 << 27) {
+                    return Err(EncodeError::InvalidFormat(
+                        format!("BL offset {} out of range", offset)
+                    ));
+                }
+                
+                let imm26 = ((*offset >> 2) & 0x3ffffff) as u32;
+                let insn = 0x94000000u32 | imm26;
                 sink.emit_bytes(&insn.to_le_bytes());
                 Ok(())
             }

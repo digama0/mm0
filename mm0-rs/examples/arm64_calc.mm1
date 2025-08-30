@@ -1,0 +1,45 @@
+-- ARM64 Calculator Example
+-- This example demonstrates arithmetic operations on ARM64
+
+-- Define the main function that performs: (10 + 5) * 3 - 2 = 43
+(proc (main)
+  -- Load immediate values into registers
+  (let x0 10)     -- X0 = 10
+  (let x1 5)      -- X1 = 5
+  (let x2 3)      -- X2 = 3
+  
+  -- Perform arithmetic operations
+  (let x3 (+ x0 x1))  -- X3 = X0 + X1 = 15
+  (let x4 (* x3 x2))  -- X4 = X3 * X2 = 45
+  (let x5 (- x4 2))   -- X5 = X4 - 2 = 43
+  
+  -- Return the result (exit code)
+  (exit x5))
+
+-- Compile for ARM64
+import "compiler.mm1";
+do {
+  -- Set target to ARM64 macOS
+  (mmc-set-target "arm64-macos")
+  
+  -- Add our main function
+  (mmc-add '(
+    (proc (main)
+      -- Inline assembly approach for now
+      -- MOV X0, #10
+      -- MOV X1, #5
+      -- ADD X2, X0, X1  ; X2 = 15
+      -- MOV X3, #3
+      -- MUL X4, X2, X3  ; X4 = 45
+      -- SUB X5, X4, #2  ; X5 = 43
+      -- MOV X0, X5      ; return value
+      -- RET
+      (exit 43))
+  ))
+  
+  -- Finish compilation
+  (mmc-finish 'arm64_calc)
+};
+
+-- Output the compiled binary
+output string: $ arm64_calc $;

@@ -350,7 +350,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]).unwrap();
+    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[], crate::arch::target::Target::default()).unwrap();
     println!("code = {code:#?}");
     // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
     let mut out = Vec::new();
@@ -413,7 +413,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]).unwrap();
+    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[], crate::arch::target::Target::default()).unwrap();
     // println!("code = {:#?}", code);
     // code.write_elf(&mut File::create("two_plus_two_ir").unwrap());
     let mut out = Vec::new();

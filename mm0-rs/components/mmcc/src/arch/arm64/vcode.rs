@@ -9,7 +9,7 @@ use crate::types::classify::Trace;
 use crate::regalloc::{PCode, PInstId};
 use crate::codegen_arch::VCodeTrait;
 use super::{Inst, PReg};
-use crate::arch::arm64::inst::{PInst, OperandSize, CallTarget};
+use crate::arch::arm64::inst::{PInst, OperandSize, CallTarget, Operand, POperand};
 
 /// ARM64-specific VCode implementation
 #[derive(Debug)]
@@ -137,9 +137,9 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                     // Move arguments to the correct registers (X0-X7)
                     for (i, &arg) in args.iter().take(8).enumerate() {
                         if let Some(src_preg) = vreg_to_preg(arg.0.vreg() as u32) {
-                            let dst_preg = PReg::new(i as u8); // X0-X7
+                            let dst_preg = PReg::new(i); // X0-X7
                             if src_preg != dst_preg {
-                                code.push(PInst::MovReg {
+                                code.push(PInst::Mov {
                                     dst: dst_preg,
                                     src: src_preg,
                                     size: OperandSize::Size64,
@@ -168,9 +168,9 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                     // Handle return values (X0-X1)
                     for (i, &ret) in rets.iter().take(2).enumerate() {
                         if let Some(dst_preg) = vreg_to_preg(ret.0.vreg() as u32) {
-                            let src_preg = PReg::new(i as u8); // X0-X1
+                            let src_preg = PReg::new(i); // X0-X1
                             if src_preg != dst_preg {
-                                code.push(PInst::MovReg {
+                                code.push(PInst::Mov {
                                     dst: dst_preg,
                                     src: src_preg,
                                     size: OperandSize::Size64,
@@ -178,6 +178,113 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                                 current_offset += 4;
                             }
                         }
+                    }
+                }
+                // Arithmetic operations
+                Inst::Add { dst, src1, src2, size } => {
+                    if let (Some(dst_preg), Some(src1_preg)) = 
+                        (vreg_to_preg(dst.0.vreg() as u32), vreg_to_preg(src1.0.vreg() as u32)) {
+                        let poperand = match src2 {
+                            Operand::Reg(vreg) => {
+                                if let Some(preg) = vreg_to_preg(vreg.0.vreg() as u32) {
+                                    POperand::Reg(preg)
+                                } else {
+                                    continue;
+                                }
+                            }
+                            Operand::Imm(imm) => POperand::Imm(*imm),
+                        };
+                        code.push(PInst::Add {
+                            dst: dst_preg,
+                            src1: src1_preg,
+                            src2: poperand,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
+                    }
+                }
+                Inst::Sub { dst, src1, src2, size } => {
+                    if let (Some(dst_preg), Some(src1_preg)) = 
+                        (vreg_to_preg(dst.0.vreg() as u32), vreg_to_preg(src1.0.vreg() as u32)) {
+                        let poperand = match src2 {
+                            Operand::Reg(vreg) => {
+                                if let Some(preg) = vreg_to_preg(vreg.0.vreg() as u32) {
+                                    POperand::Reg(preg)
+                                } else {
+                                    continue;
+                                }
+                            }
+                            Operand::Imm(imm) => POperand::Imm(*imm),
+                        };
+                        code.push(PInst::Sub {
+                            dst: dst_preg,
+                            src1: src1_preg,
+                            src2: poperand,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
+                    }
+                }
+                Inst::Mul { dst, src1, src2, size } => {
+                    if let (Some(dst_preg), Some(src1_preg), Some(src2_preg)) = 
+                        (vreg_to_preg(dst.0.vreg() as u32), 
+                         vreg_to_preg(src1.0.vreg() as u32),
+                         vreg_to_preg(src2.0.vreg() as u32)) {
+                        code.push(PInst::Mul {
+                            dst: dst_preg,
+                            src1: src1_preg,
+                            src2: src2_preg,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
+                    }
+                }
+                Inst::Sdiv { dst, src1, src2, size } => {
+                    if let (Some(dst_preg), Some(src1_preg), Some(src2_preg)) = 
+                        (vreg_to_preg(dst.0.vreg() as u32), 
+                         vreg_to_preg(src1.0.vreg() as u32),
+                         vreg_to_preg(src2.0.vreg() as u32)) {
+                        code.push(PInst::Sdiv {
+                            dst: dst_preg,
+                            src1: src1_preg,
+                            src2: src2_preg,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
+                    }
+                }
+                Inst::Udiv { dst, src1, src2, size } => {
+                    if let (Some(dst_preg), Some(src1_preg), Some(src2_preg)) = 
+                        (vreg_to_preg(dst.0.vreg() as u32), 
+                         vreg_to_preg(src1.0.vreg() as u32),
+                         vreg_to_preg(src2.0.vreg() as u32)) {
+                        code.push(PInst::Udiv {
+                            dst: dst_preg,
+                            src1: src1_preg,
+                            src2: src2_preg,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
+                    }
+                }
+                Inst::Cmp { lhs, rhs, size } => {
+                    if let Some(lhs_preg) = vreg_to_preg(lhs.0.vreg() as u32) {
+                        let poperand = match rhs {
+                            Operand::Reg(vreg) => {
+                                if let Some(preg) = vreg_to_preg(vreg.0.vreg() as u32) {
+                                    POperand::Reg(preg)
+                                } else {
+                                    continue;
+                                }
+                            }
+                            Operand::Imm(imm) => POperand::Imm(*imm),
+                        };
+                        code.push(PInst::Cmp {
+                            lhs: lhs_preg,
+                            rhs: poperand,
+                            size: (*size).into(),
+                        });
+                        current_offset += 4;
                     }
                 }
                 _ => {}
@@ -252,6 +359,7 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
         saved_regs: vec![],
         len: (code_len * 4) as u32, // ARM64 instructions are 4 bytes each
         const_data: hello_string.to_vec(),
+        const_table: None,
     };
     
     // Clone the trace before moving arm64_pcode

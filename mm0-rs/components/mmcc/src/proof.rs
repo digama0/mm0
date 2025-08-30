@@ -494,7 +494,7 @@ pub struct Inst<'a> {
   /// The address of the instruction relative to the function start.
   pub start: u32,
   /// The layout of the instruction.
-  pub layout: arch::InstLayout,
+  pub layout: crate::arch::x86::InstLayout,
   /// The physical instruction
   pub inst: &'a VInst,
 }

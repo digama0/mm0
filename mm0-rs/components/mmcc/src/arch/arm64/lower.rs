@@ -8,6 +8,8 @@ use crate::types::mir::{*, self};
 use crate::types::mir::ExprKind;
 use crate::types::vcode::{ProcAbi, BlockId as VBlockId, VReg, ArgAbi};
 use super::regs::PRegSet;
+use super::calling_conv::Arm64CallConv;
+use crate::arch::target::OperatingSystem;
 use crate::types::{Size, IdxVec, Spanned};
 use crate::mir_opt::storage::Allocations;
 use crate::linker::ConstData;
@@ -28,6 +30,10 @@ pub fn build_arm64_vcode(
 ) -> Result<VCode, LowerErr> {
     eprintln!("ARM64: Starting VCode generation");
     
+    // Create calling convention for the target OS
+    let call_conv = Arm64CallConv::new(OperatingSystem::MacOS); // TODO: Get from target
+    let clobbers = call_conv.call_clobbers();
+    
     // Create a simple ABI for now
     let abi = match ctx {
         VCodeCtx::Start(_) => ProcAbi {
@@ -35,14 +41,14 @@ pub fn build_arm64_vcode(
             rets: Box::new([]),
             reach: true,
             args_space: 0,
-            clobbers: PRegSet::default(),
+            clobbers,
         },
         VCodeCtx::Proc(rets) => ProcAbi {
             args: Box::new([]), // TODO: Handle arguments
             rets: Box::new([]), // TODO: Convert from mir::Arg to ArgAbi
             reach: true,
             args_space: 0,
-            clobbers: PRegSet::default(),
+            clobbers,
         },
     };
     

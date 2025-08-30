@@ -145,12 +145,12 @@ mod tests {
         let mut table = Arm64ConstTable::new();
         
         // Add a string constant
-        let hello_sym = Symbol::new("hello");
+        let hello_sym = crate::intern("hello");
         let id1 = table.add_string(hello_sym, "Hello, World!\n");
         assert_eq!(id1, 0);
         
         // Add an integer constant
-        let num_sym = Symbol::new("answer");
+        let num_sym = crate::intern("answer");
         let id2 = table.add_int(num_sym, 42, 4);
         assert_eq!(id2, 1);
         
@@ -171,7 +171,7 @@ mod tests {
     fn test_duplicate_constants() {
         let mut table = Arm64ConstTable::new();
         
-        let sym = Symbol::new("const");
+        let sym = crate::intern("const");
         let id1 = table.add_string(sym, "test");
         let id2 = table.add_string(sym, "test"); // Same symbol
         

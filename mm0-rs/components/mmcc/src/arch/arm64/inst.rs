@@ -20,11 +20,17 @@ pub enum Inst {
     /// Arithmetic operations
     Add { dst: VReg, src1: VReg, src2: Operand, size: Size },
     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+    Mul { dst: VReg, src1: VReg, src2: VReg, size: Size },
+    Sdiv { dst: VReg, src1: VReg, src2: VReg, size: Size }, // Signed divide
+    Udiv { dst: VReg, src1: VReg, src2: VReg, size: Size }, // Unsigned divide
     
     /// Logical operations
     And { dst: VReg, src1: VReg, src2: Operand, size: Size },
     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+    
+    /// Comparison (sets condition codes)
+    Cmp { lhs: VReg, rhs: Operand, size: Size },
     
     /// Memory operations
     Load { dst: VReg, addr: AMode, size: Size },
@@ -60,11 +66,17 @@ pub enum PInst {
     /// Arithmetic
     Add { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+    Mul { dst: PReg, src1: PReg, src2: PReg, size: OperandSize },
+    Sdiv { dst: PReg, src1: PReg, src2: PReg, size: OperandSize },
+    Udiv { dst: PReg, src1: PReg, src2: PReg, size: OperandSize },
     
     /// Logical
     And { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+    
+    /// Comparison
+    Cmp { lhs: PReg, rhs: POperand, size: OperandSize },
     
     /// Memory
     Ldr { dst: PReg, addr: PAMode, size: OperandSize },

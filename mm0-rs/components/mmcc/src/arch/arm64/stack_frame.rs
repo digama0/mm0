@@ -38,7 +38,7 @@ pub fn generate_prologue(
     
     // Set up frame pointer
     // mov x29, sp
-    insts.push(PInst::MovReg {
+    insts.push(PInst::Mov {
         dst: fp,
         src: sp,
         size: OperandSize::Size64,
