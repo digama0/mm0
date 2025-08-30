@@ -137,13 +137,15 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
             }
         }
         
-        // Handle terminator
-        match &vcode.insts[block.term] {
-            Inst::Ret => {
-                code.push(PInst::Ret);
-                current_offset += 4;
+        // Handle terminator - check if it's valid first
+        if (block.term.0 as usize) < vcode.insts.len() {
+            match &vcode.insts[block.term] {
+                Inst::Ret => {
+                    code.push(PInst::Ret);
+                    current_offset += 4;
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
     

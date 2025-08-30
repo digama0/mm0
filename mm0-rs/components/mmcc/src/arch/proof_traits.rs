@@ -5,7 +5,7 @@
 //! the proof system to any specific architecture.
 
 use crate::proof::{ProcId, VBlockId};
-use crate::types::mir;
+use crate::types::{mir, Size};
 use crate::Symbol;
 
 /// Abstract representation of a register for proof purposes
@@ -43,7 +43,7 @@ pub enum AbstractInst {
     Move {
         dst: AbstractOperand,
         src: AbstractOperand,
-        size: mir::Size,
+        size: Size,
     },
     /// Arithmetic operation
     Arith {
@@ -126,7 +126,7 @@ pub enum ProofProperty {
     MemoryValue {
         addr: AbstractOperand,
         value: mir::Operand,
-        size: mir::Size,
+        size: Size,
     },
     /// Stack is properly aligned
     StackAlignment {
@@ -188,7 +188,7 @@ pub trait ProofGen: ArchProof {
         &self,
         dst: &Self::Reg,
         src: &AbstractOperand,
-        size: mir::Size,
+        size: Size,
     ) -> ProofTerm;
     
     /// Generate proof that a syscall follows conventions

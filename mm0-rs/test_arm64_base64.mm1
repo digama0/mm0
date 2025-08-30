@@ -1,0 +1,20 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (mmc-set-target "arm64-macos")
+  
+  -- Add a simple exit program  
+  (mmc-add '(
+    (start (exit 42))
+  ))
+  
+  -- Get the binary as string (this will contain the raw bytes)
+  (def binary (mmc->string))
+  
+  -- For now, just store it - we can't output raw binary through MM0
+  -- We'll need to extract it using the previous Python script
+};
+
+-- Note: We can't use 'output string:' with raw binary data
+-- as it causes stack overflow when trying to convert to UTF-8

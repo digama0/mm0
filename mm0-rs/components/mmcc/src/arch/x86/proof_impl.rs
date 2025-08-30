@@ -5,7 +5,7 @@
 
 use super::{PReg, PInst};
 use crate::arch::proof_traits::*;
-use crate::types::mir;
+use crate::types::{mir, Size};
 
 /// x86-specific proof generator
 pub struct X86ProofGen;
@@ -19,12 +19,12 @@ impl ArchProof for X86ProofGen {
             PInst::MovRR { dst, src, .. } => AbstractInst::Move {
                 dst: AbstractOperand::Reg(self.abstract_reg(dst)),
                 src: AbstractOperand::Reg(self.abstract_reg(src)),
-                size: mir::Size::S64,
+                size: Size::S64,
             },
             PInst::MovRI { dst, src, .. } => AbstractInst::Move {
                 dst: AbstractOperand::Reg(self.abstract_reg(dst)),
                 src: AbstractOperand::Imm(*src as i64),
-                size: mir::Size::S64,
+                size: Size::S64,
             },
             PInst::Syscall => {
                 // Linux x86-64 syscall convention:
@@ -119,7 +119,7 @@ impl ProofGen for X86ProofGen {
         &self,
         dst: &Self::Reg,
         src: &AbstractOperand,
-        size: mir::Size,
+        size: Size,
     ) -> ProofTerm {
         ProofTerm {
             conclusion: ProofProperty::RegisterValue {
@@ -204,7 +204,7 @@ impl ProofGen for X86ProofGen {
                 conclusion: ProofProperty::MemoryValue {
                     addr: AbstractOperand::Reg(AbstractReg::StackPointer),
                     value: mir::Operand::Var(0), // Placeholder
-                    size: mir::Size::S64,
+                    size: Size::S64,
                 },
                 steps: vec![
                     ProofStep {

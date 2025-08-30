@@ -1,0 +1,20 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Reset compiler
+  (mmc-reset)
+  
+  -- Set target to ARM64 macOS
+  (mmc-set-target "arm64-macos")
+  
+  -- Add a simple exit program using new syntax
+  (mmc-add '(
+    (start (exit 42))
+  ))
+  
+  -- Get the binary
+  (def exit42_str (mmc->string))
+};
+
+-- Output the generated binary
+output string: exit42_str;

@@ -17,7 +17,8 @@ use regalloc2::Operand as ROperand;
 use crate::linker::ConstData;
 use crate::types::entity::{IntrinsicProc, ProcTc, ProcTy};
 use crate::{Symbol, Entity};
-use crate::arch::{AMode, Binop as VBinop, CC, Cmp, ExtMode, Inst, PReg, RegMem, RegMemImm,
+// TODO: This module is currently x86-specific and needs to be refactored to support multiple architectures
+use crate::arch::x86::{AMode, Binop as VBinop, CC, Cmp, ExtMode, Inst, PReg, RegMem, RegMemImm,
   RET_AND_ARG_REGS, SYSCALL_ARG_REGS, ShiftKind, SysCall, Unop as VUnop};
 use crate::mir_opt::BitSet;
 use crate::mir_opt::storage::{Allocations, AllocId};

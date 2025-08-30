@@ -49,4 +49,6 @@ pub fn clear_cache() {
     if let Some(map) = cache.as_mut() {
         map.clear();
     }
+    // Reset the ID counter
+    NEXT_ID.store(1, std::sync::atomic::Ordering::SeqCst);
 }

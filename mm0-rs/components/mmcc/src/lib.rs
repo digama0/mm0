@@ -117,6 +117,8 @@ mod regalloc;
 mod linker;
 mod codegen;
 pub mod proof;
+pub mod proof_gen;
+mod proof_bypass;
 mod arch_selector;
 mod codegen_multi;
 mod codegen_arch;

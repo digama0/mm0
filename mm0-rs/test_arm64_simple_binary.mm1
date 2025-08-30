@@ -1,0 +1,20 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS  
+  (mmc-set-target "arm64-macos")
+  
+  -- Add simple exit program  
+  (mmc-add '(
+    (proc (main))
+  ))
+  
+  -- Finish compilation to create test_binary
+  (mmc-finish 'test_binary)
+};
+
+-- Define abstract string that holds the binary
+abstract def test: string = $ test_binary $;
+
+-- Output the binary
+output string: $ test $;

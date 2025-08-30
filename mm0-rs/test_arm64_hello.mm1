@@ -1,4 +1,4 @@
-import "examples/compiler.mm1";
+import "compiler.mm1";
 
 do {
   -- Set target to ARM64 macOS

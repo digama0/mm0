@@ -1,0 +1,26 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS first
+  (def c mmc-compiler)
+  (c 'set-target "arm64-macos")
+  
+  -- Add a simple exit program
+  (mmc-add '(
+    (start (exit 42))
+  ))
+  
+  -- Get the string
+  (def result (mmc->string))
+  
+  -- Check if it's a string
+  (print "Result type: ")
+  (print (typeof result))
+  (print "\n")
+  (print "Result length: ")
+  (print (string-len result))
+  (print "\n")
+};
+
+-- Output the generated binary
+output string: (mmc->string);

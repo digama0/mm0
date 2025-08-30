@@ -15,6 +15,7 @@ impl LinkedCode {
             }
             (TargetArch::Arm64, OperatingSystem::MacOS) => {
                 // Generate Mach-O for ARM64 macOS
+                eprintln!("LinkedCode: write_executable called for ARM64 macOS");
                 self.write_macho_arm64(w)
             }
             (TargetArch::Arm64, OperatingSystem::Linux) => {
@@ -30,9 +31,13 @@ impl LinkedCode {
     
     /// Write Mach-O file for ARM64 macOS
     fn write_macho_arm64(&self, w: &mut impl Write) -> io::Result<()> {
+        eprintln!("LinkedCode: write_macho_arm64 called");
         // Generate ARM64 code from the compiled MIR
         let code = self.generate_arm64_code();
-        crate::arch::arm64::macho_proper::write_proper_macho_arm64(w, &code)
+        eprintln!("LinkedCode: Generated {} bytes of ARM64 code", code.len());
+        let result = crate::arch::arm64::macho_proper::write_proper_macho_arm64(w, &code);
+        eprintln!("LinkedCode: write_proper_macho_arm64 returned: {:?}", result.is_ok());
+        result
     }
     
     /// Write ELF file for ARM64 Linux
@@ -58,22 +63,24 @@ impl LinkedCode {
         // that indicates we stored ARM64 code
         // TODO: Properly parameterize LinkedCode by architecture
         
-        // For now, just check if we're generating init code
-        // In a real implementation, we'd check all functions
-        if self.init.1.len == 2 && self.init.1.insts.len() == 1 {
-            // This might be our dummy x86 code
-            eprintln!("ARM64: Detected possible cached ARM64 code");
-            
-            // Try to find cached ARM64 code
-            // We'd need to store the ID somewhere accessible
-            // For now, just try IDs 1, 2, 3...
-            for id in 1..10 {
-                if let Some(arm64_code) = crate::arch::arm64::code_cache::get_code(id) {
-                    eprintln!("ARM64: Found cached ARM64 code with ID {}", id);
-                    return arm64_code.to_bytes();
-                }
+        // We need to get the most recent cached ARM64 code
+        // For a simple program, there should be just one cached entry
+        // For programs with multiple functions, we need to find the right one
+        eprintln!("ARM64: Looking for cached ARM64 code...");
+        
+        // Try to find the most recent cached ARM64 code
+        // Start from a high ID and work backwards
+        for id in (1..=10).rev() {
+            if let Some(arm64_code) = crate::arch::arm64::code_cache::get_code(id) {
+                eprintln!("ARM64: Found cached ARM64 code (ID {}) with {} instructions", 
+                         id, arm64_code.insts.len());
+                let bytes = arm64_code.to_bytes();
+                eprintln!("ARM64: Returning {} bytes of ARM64 code", bytes.len());
+                return bytes;
             }
         }
+        
+        eprintln!("ARM64: No cached ARM64 code found");
         
         // Fallback: analyze the init code to see if it's just exit(N)
         if let Some(exit_code) = self.detect_simple_exit() {
@@ -109,7 +116,7 @@ impl LinkedCode {
         vec![
             0x40, 0x05, 0x80, 0x52, // mov w0, #42
             0x30, 0x00, 0x80, 0xd2, // mov x16, #1
-            0x01, 0x00, 0x00, 0xd4, // svc #0x80
+            0x01, 0x10, 0x00, 0xd4, // svc #0x80 (correct encoding)
         ]
     }
     

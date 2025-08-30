@@ -1,0 +1,2184 @@
+warning: unused imports: `Debug` and `Display`
+  --> components/mmcc/src/arch/arm64/mod.rs:6:16
+   |
+6  | use std::fmt::{Debug, Display};
+   |                ^^^^^  ^^^^^^^
+   |
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:21:3
+   |
+21 |   unused,
+   |   ^^^^^^
+   = note: `#[warn(unused_imports)]` implied by `#[warn(unused)]`
+
+warning: unused imports: `EncodeError`, `InstructionSink`, and `PhysicalInstruction`
+ --> components/mmcc/src/arch/arm64/inst.rs:3:40
+  |
+3 | use crate::arch::traits::{Instruction, PhysicalInstruction, InstructionSink, EncodeError};
+  |                                        ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `Cond` and `PAMode`
+ --> components/mmcc/src/arch/arm64/encode.rs:7:36
+  |
+7 | use super::{PInst, PReg, POperand, PAMode, Cond, OperandSize};
+  |                                    ^^^^^^  ^^^^
+
+warning: unused imports: `ChunkVec` and `VReg`
+ --> components/mmcc/src/arch/arm64/vcode.rs:6:53
+  |
+6 | use crate::types::vcode::{BlockId, InstId, ProcAbi, VReg, ChunkVec};
+  |                                                     ^^^^  ^^^^^^^^
+
+warning: unused import: `Size`
+ --> components/mmcc/src/arch/arm64/vcode.rs:7:28
+  |
+7 | use crate::types::{IdxVec, Size, mir};
+  |                            ^^^^
+
+warning: unused import: `crate::types::classify::Trace`
+ --> components/mmcc/src/arch/arm64/vcode.rs:8:5
+  |
+8 | use crate::types::classify::Trace;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OperandSize`
+  --> components/mmcc/src/arch/arm64/vcode.rs:12:39
+   |
+12 | use crate::arch::arm64::inst::{PInst, OperandSize};
+   |                                       ^^^^^^^^^^^
+
+warning: unused imports: `ArgAbi` and `BlockId as VBlockId`
+ --> components/mmcc/src/arch/arm64/lower.rs:9:36
+  |
+9 | use crate::types::vcode::{ProcAbi, BlockId as VBlockId, VReg, ArgAbi};
+  |                                    ^^^^^^^^^^^^^^^^^^^        ^^^^^^
+
+warning: unused import: `Spanned`
+  --> components/mmcc/src/arch/arm64/lower.rs:11:34
+   |
+11 | use crate::types::{Size, IdxVec, Spanned};
+   |                                  ^^^^^^^
+
+warning: unused import: `Operand`
+  --> components/mmcc/src/arch/arm64/lower.rs:17:19
+   |
+17 | use super::{Inst, Operand};
+   |                   ^^^^^^^
+
+warning: unused imports: `BlockId`, `Size`, and `VReg`
+ --> components/mmcc/src/arch/traits.rs:6:20
+  |
+6 | use crate::types::{Size, vcode::{BlockId, VReg}};
+  |                    ^^^^          ^^^^^^^  ^^^^
+
+warning: unused import: `SyscallConvention`
+ --> components/mmcc/src/arch/traits.rs:8:29
+  |
+8 | use super::target::{Target, SyscallConvention};
+  |                             ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::arch::x86::PInst`
+   --> components/mmcc/src/codegen_multi.rs:118:13
+    |
+118 |         use crate::arch::x86::PInst;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `VCodeTrait`
+ --> components/mmcc/src/linker.rs:7:40
+  |
+7 | use crate::codegen_arch::{get_codegen, VCodeTrait};
+  |                                        ^^^^^^^^^^
+
+warning: unused variable: `load_cmd_count`
+  --> components/mmcc/src/arch/arm64/macho_proper.rs:46:9
+   |
+46 |     let load_cmd_count = 8; // PAGEZERO, TEXT, LINKEDIT, DYLINKER, UUID, BUILD_VERSION, MAIN, DYLIB
+   |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_load_cmd_count`
+   |
+   = note: `#[warn(unused_variables)]` implied by `#[warn(unused)]`
+
+warning: variable `current_offset` is assigned to, but never used
+   --> components/mmcc/src/arch/arm64/vcode.rs:106:13
+    |
+106 |     let mut current_offset = 0u32;
+    |             ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_current_offset` instead
+
+warning: unused variable: `const_id`
+   --> components/mmcc/src/arch/arm64/vcode.rs:121:40
+    |
+121 |                 Inst::LoadConst { dst, const_id } => {
+    |                                        ^^^^^^^^ help: try ignoring the field: `const_id: _`
+
+warning: unused variable: `rets`
+  --> components/mmcc/src/arch/arm64/lower.rs:40:24
+   |
+40 |         VCodeCtx::Proc(rets) => ProcAbi {
+   |                        ^^^^ help: if this is intentional, prefix it with an underscore: `_rets`
+
+warning: unreachable pattern
+   --> components/mmcc/src/arch/target.rs:172:13
+    |
+172 |             _ => None,
+    |             ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> components/mmcc/src/arch/target.rs:172:13
+    |
+155 |             (SyscallConvention::X64Linux, Read) => Some(0),
+    |             ----------------------------------- matches some of the same values
+156 |             (SyscallConvention::X64Linux, Write) => Some(1),
+    |             ------------------------------------ matches some of the same values
+157 |             (SyscallConvention::X64Linux, Exit) => Some(60),
+    |             ----------------------------------- matches some of the same values
+158 |             
+159 |             (SyscallConvention::Arm64Linux, Read) => Some(63),
+    |             ------------------------------------- matches some of the same values
+...
+172 |             _ => None,
+    |             ^ ...and 8 other patterns collectively make this unreachable
+    = note: `#[warn(unreachable_patterns)]` implied by `#[warn(unused)]`
+
+warning: unused variable: `w`
+  --> components/mmcc/src/codegen_multi.rs:39:31
+   |
+39 |     fn write_elf_arm64(&self, w: &mut impl Write) -> io::Result<()> {
+   |                               ^ help: if this is intentional, prefix it with an underscore: `_w`
+
+warning: type `ConstData` is more private than the item `build_arm64_vcode`
+  --> components/mmcc/src/arch/arm64/lower.rs:20:1
+   |
+20 | / pub fn build_arm64_vcode(
+21 | |     _names: &HashMap<Symbol, Entity>,
+22 | |     _funcs: &HashMap<Symbol, crate::types::vcode::ProcId>,
+23 | |     _func_abi: &IdxVec<crate::types::vcode::ProcId, ProcAbi>,
+...  |
+27 | |     ctx: VCodeCtx<'_>,
+28 | | ) -> Result<VCode, LowerErr> {
+   | |____________________________^ function `build_arm64_vcode` is reachable at visibility `pub`
+   |
+note: but type `ConstData` is only usable at visibility `pub(crate)`
+  --> components/mmcc/src/linker.rs:24:1
+   |
+24 | pub(crate) struct ConstData {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Allocations` is more private than the item `build_arm64_vcode`
+  --> components/mmcc/src/arch/arm64/lower.rs:20:1
+   |
+20 | / pub fn build_arm64_vcode(
+21 | |     _names: &HashMap<Symbol, Entity>,
+22 | |     _funcs: &HashMap<Symbol, crate::types::vcode::ProcId>,
+23 | |     _func_abi: &IdxVec<crate::types::vcode::ProcId, ProcAbi>,
+...  |
+27 | |     ctx: VCodeCtx<'_>,
+28 | | ) -> Result<VCode, LowerErr> {
+   | |____________________________^ function `build_arm64_vcode` is reachable at visibility `pub`
+   |
+note: but type `Allocations` is only usable at visibility `pub(crate)`
+  --> components/mmcc/src/mir_opt/storage.rs:89:1
+   |
+89 | pub(crate) struct Allocations {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `VCodeCtx<'_>` is more private than the item `build_arm64_vcode`
+   --> components/mmcc/src/arch/arm64/lower.rs:20:1
+    |
+20  | / pub fn build_arm64_vcode(
+21  | |     _names: &HashMap<Symbol, Entity>,
+22  | |     _funcs: &HashMap<Symbol, crate::types::vcode::ProcId>,
+23  | |     _func_abi: &IdxVec<crate::types::vcode::ProcId, ProcAbi>,
+...   |
+27  | |     ctx: VCodeCtx<'_>,
+28  | | ) -> Result<VCode, LowerErr> {
+    | |____________________________^ function `build_arm64_vcode` is reachable at visibility `pub`
+    |
+note: but type `VCodeCtx<'_>` is only usable at visibility `pub(crate)`
+   --> components/mmcc/src/build_vcode.rs:143:1
+    |
+143 | pub(crate) enum VCodeCtx<'a> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `encode` is never used
+   --> components/mmcc/src/arch/arm64/inst.rs:146:8
+    |
+144 | impl Cond {
+    | --------- method in this implementation
+145 |     /// Get the encoding for this condition
+146 |     fn encode(self) -> u8 {
+    |        ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` implied by `#[warn(unused)]`
+
+warning: constant `LC_UNIXTHREAD` is never used
+  --> components/mmcc/src/arch/arm64/macho.rs:24:11
+   |
+24 |     const LC_UNIXTHREAD: u32 = 0x5;
+   |           ^^^^^^^^^^^^^
+
+warning: constant `LC_SOURCE_VERSION` is never used
+  --> components/mmcc/src/arch/arm64/macho_proper.rs:24:7
+   |
+24 | const LC_SOURCE_VERSION: u32 = 0x2a;
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: function `disable_proofs` is never used
+  --> components/mmcc/src/proof_bypass.rs:18:8
+   |
+18 | pub fn disable_proofs() {
+   |        ^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> components/mmcc/src/proof_bypass.rs:34:12
+   |
+32 | impl ProofBypassGuard {
+   | --------------------- associated function in this implementation
+33 |     /// Create a new proof bypass guard
+34 |     pub fn new() -> Self {
+   |            ^^^
+
+warning: field `target` is never read
+  --> components/mmcc/src/arch_selector.rs:10:9
+   |
+9  | pub struct ArchConfig {
+   |            ---------- field in this struct
+10 |     pub target: Target,
+   |         ^^^^^^
+   |
+   = note: `ArchConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `from_triple`, `is_x86_64`, `is_arm64`, and `is_wasm` are never used
+  --> components/mmcc/src/arch_selector.rs:23:12
+   |
+21 | impl ArchConfig {
+   | --------------- associated items in this implementation
+22 |     /// Create config for a specific target triple
+23 |     pub fn from_triple(triple: &str) -> Result<Self, String> {
+   |            ^^^^^^^^^^^
+...
+30 |     pub fn is_x86_64(&self) -> bool {
+   |            ^^^^^^^^^
+...
+35 |     pub fn is_arm64(&self) -> bool {
+   |            ^^^^^^^^
+...
+40 |     pub fn is_wasm(&self) -> bool {
+   |            ^^^^^^^
+
+warning: static `ARCH_CONFIG` is never used
+  --> components/mmcc/src/arch_selector.rs:47:12
+   |
+47 | pub static ARCH_CONFIG: std::sync::LazyLock<ArchConfig> = std::sync::LazyLock::new(|| {
+   |            ^^^^^^^^^^^
+
+warning: method `write_executable` is never used
+  --> components/mmcc/src/codegen_arch.rs:33:8
+   |
+19 | pub trait ArchCodegen: Send + Sync {
+   |           ----------- method in this trait
+...
+33 |     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()>;
+   |        ^^^^^^^^^^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+  --> components/mmcc/src/arch/arm64/mod.rs:23:1
+   |
+23 | pub struct Arm64;
+   | ^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:14:3
+   |
+14 |   missing_copy_implementations,
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+  --> components/mmcc/src/arch/arm64/mod.rs:23:1
+   |
+23 | pub struct Arm64;
+   | ^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:15:3
+   |
+15 |   missing_debug_implementations,
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> components/mmcc/src/arch/arm64/regs.rs:13:5
+   |
+13 |     pub const fn new(reg: usize) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:22:3
+   |
+22 |   missing_docs
+   |   ^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:76:1
+   |
+76 | pub const X0: PReg = PReg::new(0);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:77:1
+   |
+77 | pub const X1: PReg = PReg::new(1);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:78:1
+   |
+78 | pub const X2: PReg = PReg::new(2);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:79:1
+   |
+79 | pub const X3: PReg = PReg::new(3);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:80:1
+   |
+80 | pub const X4: PReg = PReg::new(4);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:81:1
+   |
+81 | pub const X5: PReg = PReg::new(5);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:82:1
+   |
+82 | pub const X6: PReg = PReg::new(6);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:83:1
+   |
+83 | pub const X7: PReg = PReg::new(7);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:84:1
+   |
+84 | pub const X8: PReg = PReg::new(8);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:85:1
+   |
+85 | pub const X9: PReg = PReg::new(9);
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:86:1
+   |
+86 | pub const X10: PReg = PReg::new(10);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:87:1
+   |
+87 | pub const X11: PReg = PReg::new(11);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:88:1
+   |
+88 | pub const X12: PReg = PReg::new(12);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:89:1
+   |
+89 | pub const X13: PReg = PReg::new(13);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:90:1
+   |
+90 | pub const X14: PReg = PReg::new(14);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:91:1
+   |
+91 | pub const X15: PReg = PReg::new(15);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:92:1
+   |
+92 | pub const X16: PReg = PReg::new(16);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:93:1
+   |
+93 | pub const X17: PReg = PReg::new(17);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:94:1
+   |
+94 | pub const X18: PReg = PReg::new(18);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:95:1
+   |
+95 | pub const X19: PReg = PReg::new(19);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:96:1
+   |
+96 | pub const X20: PReg = PReg::new(20);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:97:1
+   |
+97 | pub const X21: PReg = PReg::new(21);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:98:1
+   |
+98 | pub const X22: PReg = PReg::new(22);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> components/mmcc/src/arch/arm64/regs.rs:99:1
+   |
+99 | pub const X23: PReg = PReg::new(23);
+   | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:100:1
+    |
+100 | pub const X24: PReg = PReg::new(24);
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:101:1
+    |
+101 | pub const X25: PReg = PReg::new(25);
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:102:1
+    |
+102 | pub const X26: PReg = PReg::new(26);
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:103:1
+    |
+103 | pub const X27: PReg = PReg::new(27);
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:104:1
+    |
+104 | pub const X28: PReg = PReg::new(28);
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:105:1
+    |
+105 | pub const X29: PReg = PReg::new(29); // Frame pointer
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:106:1
+    |
+106 | pub const X30: PReg = PReg::new(30); // Link register
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:110:1
+    |
+110 | pub const FP: PReg = X29;  // Frame pointer
+    | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:111:1
+    |
+111 | pub const LR: PReg = X30;  // Link register
+    | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:112:1
+    |
+112 | pub const SP: PReg = PReg::new(31); // Stack pointer (special encoding)
+    | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:113:1
+    |
+113 | pub const XZR: PReg = PReg::new(31); // Zero register (same encoding as SP)
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:116:1
+    |
+116 | pub const ARG_REGS: [PReg; 8] = [X0, X1, X2, X3, X4, X5, X6, X7];
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:117:1
+    |
+117 | pub const RET_REGS: [PReg; 8] = [X0, X1, X2, X3, X4, X5, X6, X7];
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:120:1
+    |
+120 | pub const CALLER_SAVED: [PReg; 18] = [
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:127:1
+    |
+127 | pub const CALLEE_SAVED: [PReg; 10] = [
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> components/mmcc/src/arch/arm64/regs.rs:133:1
+    |
+133 | pub const SYSCALL_ARG_REGS: [PReg; 6] = [X0, X1, X2, X3, X4, X5];
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> components/mmcc/src/arch/arm64/regs.rs:141:5
+    |
+141 |     pub fn insert(&mut self, r: PReg) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> components/mmcc/src/arch/arm64/regs.rs:148:5
+    |
+148 |     pub fn get(self, r: PReg) -> bool {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> components/mmcc/src/arch/arm64/regs.rs:153:5
+    |
+153 |     pub fn remove(&mut self, r: PReg) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> components/mmcc/src/arch/arm64/regs.rs:159:5
+    |
+159 |     pub fn iter(self) -> impl Iterator<Item = PReg> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:11:19
+   |
+11 |     Fallthrough { dst: BlockId },
+   |                   ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:14:11
+   |
+14 |     Mov { dst: VReg, src: VReg },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:14:22
+   |
+14 |     Mov { dst: VReg, src: VReg },
+   |                      ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:17:14
+   |
+17 |     MovImm { dst: VReg, imm: u64, size: Size },
+   |              ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:17:25
+   |
+17 |     MovImm { dst: VReg, imm: u64, size: Size },
+   |                         ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:17:35
+   |
+17 |     MovImm { dst: VReg, imm: u64, size: Size },
+   |                                   ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:20:11
+   |
+20 |     Add { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:20:22
+   |
+20 |     Add { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:20:34
+   |
+20 |     Add { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                  ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:20:49
+   |
+20 |     Add { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                                 ^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:21:5
+   |
+21 |     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:21:11
+   |
+21 |     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:21:22
+   |
+21 |     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:21:34
+   |
+21 |     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                  ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:21:49
+   |
+21 |     Sub { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                                 ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:24:11
+   |
+24 |     And { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:24:22
+   |
+24 |     And { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:24:34
+   |
+24 |     And { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                  ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:24:49
+   |
+24 |     And { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                                 ^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:25:5
+   |
+25 |     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:25:11
+   |
+25 |     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:25:22
+   |
+25 |     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:25:34
+   |
+25 |     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                  ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:25:49
+   |
+25 |     Orr { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                                 ^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:26:5
+   |
+26 |     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:26:11
+   |
+26 |     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:26:22
+   |
+26 |     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:26:34
+   |
+26 |     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                  ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:26:49
+   |
+26 |     Eor { dst: VReg, src1: VReg, src2: Operand, size: Size },
+   |                                                 ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:29:12
+   |
+29 |     Load { dst: VReg, addr: AMode, size: Size },
+   |            ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:29:23
+   |
+29 |     Load { dst: VReg, addr: AMode, size: Size },
+   |                       ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:29:36
+   |
+29 |     Load { dst: VReg, addr: AMode, size: Size },
+   |                                    ^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:30:5
+   |
+30 |     Store { src: VReg, addr: AMode, size: Size },
+   |     ^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:30:13
+   |
+30 |     Store { src: VReg, addr: AMode, size: Size },
+   |             ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:30:24
+   |
+30 |     Store { src: VReg, addr: AMode, size: Size },
+   |                        ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:30:37
+   |
+30 |     Store { src: VReg, addr: AMode, size: Size },
+   |                                     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:33:17
+   |
+33 |     LoadConst { dst: VReg, const_id: u32 },
+   |                 ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:33:28
+   |
+33 |     LoadConst { dst: VReg, const_id: u32 },
+   |                            ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:36:14
+   |
+36 |     Branch { target: BlockId },
+   |              ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:37:5
+   |
+37 |     BranchCond { cond: Cond, target: BlockId },
+   |     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:37:18
+   |
+37 |     BranchCond { cond: Cond, target: BlockId },
+   |                  ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:37:30
+   |
+37 |     BranchCond { cond: Cond, target: BlockId },
+   |                              ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:40:12
+   |
+40 |     Call { target: CallTarget },
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:41:5
+   |
+41 |     Ret,
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:44:11
+   |
+44 |     Svc { imm: u16 }, // Supervisor call
+   |           ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:51:19
+   |
+51 |     Fallthrough { dst: BlockId },
+   |                   ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:54:11
+   |
+54 |     Mov { dst: PReg, src: PReg, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:54:22
+   |
+54 |     Mov { dst: PReg, src: PReg, size: OperandSize },
+   |                      ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:54:33
+   |
+54 |     Mov { dst: PReg, src: PReg, size: OperandSize },
+   |                                 ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:57:14
+   |
+57 |     MovImm { dst: PReg, imm: u64, size: OperandSize },
+   |              ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:57:25
+   |
+57 |     MovImm { dst: PReg, imm: u64, size: OperandSize },
+   |                         ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:57:35
+   |
+57 |     MovImm { dst: PReg, imm: u64, size: OperandSize },
+   |                                   ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:60:11
+   |
+60 |     Add { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:60:22
+   |
+60 |     Add { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:60:34
+   |
+60 |     Add { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                  ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:60:50
+   |
+60 |     Add { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                                  ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:61:5
+   |
+61 |     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:61:11
+   |
+61 |     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:61:22
+   |
+61 |     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:61:34
+   |
+61 |     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                  ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:61:50
+   |
+61 |     Sub { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                                  ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:64:11
+   |
+64 |     And { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:64:22
+   |
+64 |     And { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:64:34
+   |
+64 |     And { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                  ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:64:50
+   |
+64 |     And { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                                  ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:65:5
+   |
+65 |     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:65:11
+   |
+65 |     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:65:22
+   |
+65 |     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:65:34
+   |
+65 |     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                  ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:65:50
+   |
+65 |     Orr { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                                  ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:66:5
+   |
+66 |     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:66:11
+   |
+66 |     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:66:22
+   |
+66 |     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                      ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:66:34
+   |
+66 |     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                  ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:66:50
+   |
+66 |     Eor { dst: PReg, src1: PReg, src2: POperand, size: OperandSize },
+   |                                                  ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:69:11
+   |
+69 |     Ldr { dst: PReg, addr: PAMode, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:69:22
+   |
+69 |     Ldr { dst: PReg, addr: PAMode, size: OperandSize },
+   |                      ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:69:36
+   |
+69 |     Ldr { dst: PReg, addr: PAMode, size: OperandSize },
+   |                                    ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:70:5
+   |
+70 |     Str { src: PReg, addr: PAMode, size: OperandSize },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:70:11
+   |
+70 |     Str { src: PReg, addr: PAMode, size: OperandSize },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:70:22
+   |
+70 |     Str { src: PReg, addr: PAMode, size: OperandSize },
+   |                      ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:70:36
+   |
+70 |     Str { src: PReg, addr: PAMode, size: OperandSize },
+   |                                    ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:73:11
+   |
+73 |     Adr { dst: PReg, offset: i32 },
+   |           ^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:73:22
+   |
+73 |     Adr { dst: PReg, offset: i32 },
+   |                      ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:76:9
+   |
+76 |     B { offset: i32 },
+   |         ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:77:5
+   |
+77 |     Bcond { cond: Cond, offset: i32 },
+   |     ^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:77:13
+   |
+77 |     Bcond { cond: Cond, offset: i32 },
+   |             ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:77:25
+   |
+77 |     Bcond { cond: Cond, offset: i32 },
+   |                         ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:80:10
+   |
+80 |     Bl { offset: i32 },
+   |          ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:81:5
+   |
+81 |     Ret,
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/inst.rs:84:11
+   |
+84 |     Svc { imm: u16 },
+   |           ^^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+  --> components/mmcc/src/arch/arm64/inst.rs:89:1
+   |
+89 | / pub enum Operand {
+90 | |     Reg(VReg),
+91 | |     Imm(u64),
+92 | | }
+   | |_^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:90:5
+   |
+90 |     Reg(VReg),
+   |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:91:5
+   |
+91 |     Imm(u64),
+   |     ^^^
+
+warning: enum variant is more than three times larger (15 bytes) than the next largest
+  --> components/mmcc/src/arch/arm64/inst.rs:98:5
+   |
+98 |     Imm(u64),
+   |     ^^^^^^^^
+   |
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:19:3
+   |
+19 |   variant_size_differences,
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+  --> components/mmcc/src/arch/arm64/inst.rs:96:1
+   |
+96 | / pub enum POperand {
+97 | |     Reg(PReg),
+98 | |     Imm(u64),
+99 | | }
+   | |_^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:97:5
+   |
+97 |     Reg(PReg),
+   |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/arm64/inst.rs:98:5
+   |
+98 |     Imm(u64),
+   |     ^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+   --> components/mmcc/src/arch/arm64/inst.rs:103:1
+    |
+103 | / pub enum AMode {
+104 | |     /// Register indirect: [Xn]
+105 | |     Reg(VReg),
+106 | |     /// Register + immediate offset: [Xn, #imm]
+...   |
+111 | |     PostIndex(VReg, i64),
+112 | | }
+    | |_^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+   --> components/mmcc/src/arch/arm64/inst.rs:116:1
+    |
+116 | / pub enum PAMode {
+117 | |     Reg(PReg),
+118 | |     RegImm(PReg, i64),
+119 | |     PreIndex(PReg, i64),
+120 | |     PostIndex(PReg, i64),
+121 | | }
+    | |_^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:117:5
+    |
+117 |     Reg(PReg),
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:118:5
+    |
+118 |     RegImm(PReg, i64),
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:119:5
+    |
+119 |     PreIndex(PReg, i64),
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:120:5
+    |
+120 |     PostIndex(PReg, i64),
+    |     ^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:126:5
+    |
+126 |     Eq,  // Equal (Z == 1)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:127:5
+    |
+127 |     Ne,  // Not equal (Z == 0)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:128:5
+    |
+128 |     Cs,  // Carry set (C == 1) - unsigned >=
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:129:5
+    |
+129 |     Cc,  // Carry clear (C == 0) - unsigned <
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:130:5
+    |
+130 |     Mi,  // Minus (N == 1)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:131:5
+    |
+131 |     Pl,  // Plus (N == 0)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:132:5
+    |
+132 |     Vs,  // Overflow set (V == 1)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:133:5
+    |
+133 |     Vc,  // Overflow clear (V == 0)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:134:5
+    |
+134 |     Hi,  // Unsigned higher (C == 1 && Z == 0)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:135:5
+    |
+135 |     Ls,  // Unsigned lower or same (!(C == 1 && Z == 0))
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:136:5
+    |
+136 |     Ge,  // Signed >= (N == V)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:137:5
+    |
+137 |     Lt,  // Signed < (N != V)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:138:5
+    |
+138 |     Gt,  // Signed > (Z == 0 && N == V)
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:139:5
+    |
+139 |     Le,  // Signed <= (!(Z == 0 && N == V))
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:140:5
+    |
+140 |     Al,  // Always
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:141:5
+    |
+141 |     Nv,  // Never
+    |     ^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:171:5
+    |
+171 |     Direct(String),
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:172:5
+    |
+172 |     Indirect(VReg),
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:178:5
+    |
+178 |     Size32,
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/arm64/inst.rs:179:5
+    |
+179 |     Size64,
+    |     ^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+  --> components/mmcc/src/arch/arm64/macho.rs:96:1
+   |
+96 | / pub struct Arm64Sink {
+97 | |     pub code: Vec<u8>,
+98 | | }
+   | |_^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/arm64/macho.rs:97:5
+   |
+97 |     pub code: Vec<u8>,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> components/mmcc/src/arch/arm64/macho.rs:101:5
+    |
+101 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+  --> components/mmcc/src/arch/wasm/mod.rs:11:1
+   |
+11 | pub struct Wasm;
+   | ^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+  --> components/mmcc/src/arch/wasm/mod.rs:11:1
+   |
+11 | pub struct Wasm;
+   | ^^^^^^^^^^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+   --> components/mmcc/src/arch/wasm/mod.rs:76:1
+    |
+76  | / pub enum WasmInst {
+77  | |     /// Push a constant onto the stack
+78  | |     Const { ty: WasmType, value: u64 },
+...   |
+102 | |     Select,
+103 | | }
+    | |_^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:78:13
+   |
+78 |     Const { ty: WasmType, value: u64 },
+   |             ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:78:27
+   |
+78 |     Const { ty: WasmType, value: u64 },
+   |                           ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:81:16
+   |
+81 |     LocalGet { idx: u32 },
+   |                ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:82:5
+   |
+82 |     LocalSet { idx: u32 },
+   |     ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:82:16
+   |
+82 |     LocalSet { idx: u32 },
+   |                ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:83:5
+   |
+83 |     LocalTee { idx: u32 },
+   |     ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:83:16
+   |
+83 |     LocalTee { idx: u32 },
+   |                ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:86:12
+   |
+86 |     Load { ty: WasmType, offset: u32, align: u32 },
+   |            ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:86:26
+   |
+86 |     Load { ty: WasmType, offset: u32, align: u32 },
+   |                          ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:86:39
+   |
+86 |     Load { ty: WasmType, offset: u32, align: u32 },
+   |                                       ^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:87:5
+   |
+87 |     Store { ty: WasmType, offset: u32, align: u32 },
+   |     ^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:87:13
+   |
+87 |     Store { ty: WasmType, offset: u32, align: u32 },
+   |             ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:87:27
+   |
+87 |     Store { ty: WasmType, offset: u32, align: u32 },
+   |                           ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:87:40
+   |
+87 |     Store { ty: WasmType, offset: u32, align: u32 },
+   |                                        ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:90:11
+   |
+90 |     Add { ty: WasmType },
+   |           ^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:91:5
+   |
+91 |     Sub { ty: WasmType },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:91:11
+   |
+91 |     Sub { ty: WasmType },
+   |           ^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:92:5
+   |
+92 |     Mul { ty: WasmType },
+   |     ^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:92:11
+   |
+92 |     Mul { ty: WasmType },
+   |           ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:95:12
+   |
+95 |     Call { func_idx: u32 },
+   |            ^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:96:5
+   |
+96 |     Return,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:97:5
+   |
+97 |     Branch { target: u32 },
+   |     ^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:97:14
+   |
+97 |     Branch { target: u32 },
+   |              ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/wasm/mod.rs:98:5
+   |
+98 |     BranchIf { target: u32 },
+   |     ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/wasm/mod.rs:98:16
+   |
+98 |     BranchIf { target: u32 },
+   |                ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/wasm/mod.rs:102:5
+    |
+102 |     Select,
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/wasm/mod.rs:108:5
+    |
+108 |     I32,
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/wasm/mod.rs:109:5
+    |
+109 |     I64,
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/wasm/mod.rs:110:5
+    |
+110 |     F32,
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/wasm/mod.rs:111:5
+    |
+111 |     F64,
+    |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:11:5
+   |
+11 |     Linux,
+   |     ^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:12:5
+   |
+12 |     MacOS,
+   |     ^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:13:5
+   |
+13 |     Windows,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:15:5
+   |
+15 |     Wasi,
+   |     ^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:16:5
+   |
+16 |     BareWasm,
+   |     ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/target.rs:22:5
+   |
+22 |     pub arch: TargetArch,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/target.rs:23:5
+   |
+23 |     pub os: OperatingSystem,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:38:5
+   |
+38 |     X86_64,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:39:5
+   |
+39 |     Arm64,
+   |     ^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:40:5
+   |
+40 |     Wasm32,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/target.rs:41:5
+   |
+41 |     Wasm64,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/target.rs:180:5
+    |
+180 |     Read,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/target.rs:181:5
+    |
+181 |     Write,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> components/mmcc/src/arch/target.rs:182:5
+    |
+182 |     Exit,
+    |     ^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+  --> components/mmcc/src/arch/proof_traits.rs:30:1
+   |
+30 | / pub enum AbstractOperand {
+31 | |     /// Register operand
+32 | |     Reg(AbstractReg),
+33 | |     /// Immediate value
+...  |
+36 | |     Mem(AbstractReg, i64),
+37 | | }
+   | |_^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:44:9
+   |
+44 |         dst: AbstractOperand,
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:45:9
+   |
+45 |         src: AbstractOperand,
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:46:9
+   |
+46 |         size: Size,
+   |         ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:50:9
+   |
+50 |         op: ArithOp,
+   |         ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:51:9
+   |
+51 |         dst: AbstractReg,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:52:9
+   |
+52 |         src1: AbstractOperand,
+   |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:53:9
+   |
+53 |         src2: AbstractOperand,
+   |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:57:9
+   |
+57 |         target: CallTarget,
+   |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:58:9
+   |
+58 |         args: Vec<AbstractOperand>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:59:9
+   |
+59 |         ret: Option<AbstractReg>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:63:9
+   |
+63 |         num: u32,
+   |         ^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:64:9
+   |
+64 |         args: Vec<AbstractOperand>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:65:9
+   |
+65 |         ret: Option<AbstractReg>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:69:9
+   |
+69 |         cond: BranchCond,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:70:9
+   |
+70 |         target: VBlockId,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:74:9
+   |
+74 |         target: VBlockId,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> components/mmcc/src/arch/proof_traits.rs:78:9
+   |
+78 |         value: Option<AbstractOperand>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:85:5
+   |
+85 |     Add, Sub, Mul, Div, Mod,
+   |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:85:10
+   |
+85 |     Add, Sub, Mul, Div, Mod,
+   |          ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:85:15
+   |
+85 |     Add, Sub, Mul, Div, Mod,
+   |               ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:85:20
+   |
+85 |     Add, Sub, Mul, Div, Mod,
+   |                    ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:85:25
+   |
+85 |     Add, Sub, Mul, Div, Mod,
+   |                         ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:86:5
+   |
+86 |     And, Or, Xor, Not,
+   |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:86:10
+   |
+86 |     And, Or, Xor, Not,
+   |          ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:86:14
+   |
+86 |     And, Or, Xor, Not,
+   |              ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:86:19
+   |
+86 |     And, Or, Xor, Not,
+   |                   ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:87:5
+   |
+87 |     Shl, Shr, Sar,
+   |     ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:87:10
+   |
+87 |     Shl, Shr, Sar,
+   |          ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:87:15
+   |
+87 |     Shl, Shr, Sar,
+   |               ^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:5
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |     ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:9
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |         ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:13
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |             ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:17
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |                 ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:21
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |                     ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:93:25
+   |
+93 |     Eq, Ne, Lt, Le, Gt, Ge,
+   |                         ^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:94:5
+   |
+94 |     Above, Below, AboveEq, BelowEq,
+   |     ^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:94:12
+   |
+94 |     Above, Below, AboveEq, BelowEq,
+   |            ^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:94:19
+   |
+94 |     Above, Below, AboveEq, BelowEq,
+   |                   ^^^^^^^
+
+warning: missing documentation for a variant
+  --> components/mmcc/src/arch/proof_traits.rs:94:28
+   |
+94 |     Above, Below, AboveEq, BelowEq,
+   |                            ^^^^^^^
+
+warning: type could implement `Copy`; consider adding `impl Copy`
+   --> components/mmcc/src/arch/proof_traits.rs:99:1
+    |
+99  | / pub enum CallTarget {
+100 | |     /// Direct call to known procedure
+101 | |     Direct(ProcId),
+102 | |     /// Indirect call through register
+...   |
+105 | |     External(Symbol),
+106 | | }
+    | |_^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:122:9
+    |
+122 |         reg: AbstractReg,
+    |         ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:123:9
+    |
+123 |         value: mir::Operand,
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:127:9
+    |
+127 |         addr: AbstractOperand,
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:128:9
+    |
+128 |         value: mir::Operand,
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:129:9
+    |
+129 |         size: Size,
+    |         ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:133:9
+    |
+133 |         alignment: u32,
+    |         ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:137:9
+    |
+137 |         target: CallTarget,
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> components/mmcc/src/arch/proof_traits.rs:138:9
+    |
+138 |         convention: CallingConvention,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:13:1
+   |
+13 | pub fn is_proof_enabled() -> bool {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+note: the lint level is defined here
+  --> components/mmcc/src/lib.rs:20:3
+   |
+20 |   unreachable_pub,
+   |   ^^^^^^^^^^^^^^^
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:18:1
+   |
+18 | pub fn disable_proofs() {
+   | ---^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:23:1
+   |
+23 | pub fn enable_proofs() {
+   | ---^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:28:1
+   |
+28 | pub struct ProofBypassGuard {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:34:5
+   |
+34 |     pub fn new() -> Self {
+   |     ---^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: consider restricting its visibility: `pub(crate)`
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/proof_bypass.rs:50:1
+   |
+50 | pub fn should_generate_proofs(target: &Target) -> bool {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+ --> components/mmcc/src/arch_selector.rs:9:1
+  |
+9 | pub struct ArchConfig {
+  | ---^^^^^^^^^^^^^^^^^^
+  | |
+  | help: consider restricting its visibility: `pub(crate)`
+  |
+  = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/arch_selector.rs:23:5
+   |
+23 |     pub fn from_triple(triple: &str) -> Result<Self, String> {
+   |     ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: consider restricting its visibility: `pub(crate)`
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/arch_selector.rs:30:5
+   |
+30 |     pub fn is_x86_64(&self) -> bool {
+   |     ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: consider restricting its visibility: `pub(crate)`
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/arch_selector.rs:35:5
+   |
+35 |     pub fn is_arm64(&self) -> bool {
+   |     ---^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: consider restricting its visibility: `pub(crate)`
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/arch_selector.rs:40:5
+   |
+40 |     pub fn is_wasm(&self) -> bool {
+   |     ---^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: consider restricting its visibility: `pub(crate)`
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/arch_selector.rs:47:1
+   |
+47 | pub static ARCH_CONFIG: std::sync::LazyLock<ArchConfig> = std::sync::LazyLock::new(|| {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/codegen_arch.rs:19:1
+   |
+19 | pub trait ArchCodegen: Send + Sync {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/codegen_arch.rs:37:1
+   |
+37 | pub trait VCodeTrait: Send {
+   | ---^^^^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/codegen_arch.rs:43:1
+   |
+43 | pub struct X86Codegen;
+   | ---^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+  --> components/mmcc/src/codegen_arch.rs:78:1
+   |
+78 | pub struct Arm64Codegen;
+   | ---^^^^^^^^^^^^^^^^^^^^
+   | |
+   | help: consider restricting its visibility: `pub(crate)`
+   |
+   = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+   --> components/mmcc/src/codegen_arch.rs:116:1
+    |
+116 | pub struct WasmCodegen;
+    | ---^^^^^^^^^^^^^^^^^^^
+    | |
+    | help: consider restricting its visibility: `pub(crate)`
+    |
+    = help: or consider exporting it for use by other crates
+
+warning: unreachable `pub` item
+   --> components/mmcc/src/codegen_arch.rs:151:1
+    |
+151 | pub fn get_codegen(target: Target) -> Box<dyn ArchCodegen> {
+    | ---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    | |
+    | help: consider restricting its visibility: `pub(crate)`
+    |
+    = help: or consider exporting it for use by other crates
+
+warning: `mmcc` (lib) generated 320 warnings (run `cargo fix --lib -p mmcc` to apply 31 suggestions)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+     Running `target/release/mm0-rs compile test_arm64_write_exe.mm1 --output -`
+mmc: set_target called with: Target { arch: Arm64, os: MacOS }
+mmc: to_str called with target: Target { arch: Arm64, os: MacOS }
+DEBUG: Processing main function, args.len() = 0
+DEBUG: main has no arguments
+LinkedCode::link called with target: Target { arch: Arm64, os: MacOS }
+get_codegen called with target: Target { arch: Arm64, os: MacOS }
+Selected ARM64 codegen!
+ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!
+ARM64: Starting VCode generation
+ARM64: Processing block bb0, terminator: cb0+2 := call sys_write(1, 14, v0, move v1) -> ghost v2. bb1
+ARM64: Found call to function sys_write with 4 args
+ARM64: Detected write syscall
+ARM64: Using fd = 1
+ARM64: Loading hardcoded Hello, World! string
+ARM64: Processing block bb1, terminator: return
+ARM64: Found return terminator - treating as exit(0) for start context
+ARM64: Successfully generated VCode with 2 blocks
+ARM64: Starting register allocation
+ARM64: Generated 5 physical instructions
+ARM64: Patched ADR at instruction 1 with offset 16 (remaining: 4)
+ARM64: Cached code with ID 1
+ARM64: Generated ARM64 code with ID 1 but returning minimal x86 PCode for compatibility
+ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!
+ARM64: Starting VCode generation
+ARM64: Processing block bb0, terminator: cb0+0 := call main() -> bb1
+ARM64: Found call to function main with 0 args
+ARM64: Regular function call to main not yet implemented
+ARM64: Processing block bb1, terminator: exit ()
+ARM64: Found exit terminator
+ARM64: Successfully generated VCode with 2 blocks
+ARM64: Starting register allocation
+ARM64: Generated 3 physical instructions
+ARM64: Cached code with ID 2
+ARM64: Generated ARM64 code with ID 2 but returning minimal x86 PCode for compatibility
+ARM64: generate_arm64_code called
+ARM64: Analyzing init code for exit pattern
+  Inst pi0: mov_id
+  Inst pi1: mov_id
+  Inst pi2: mov_id
+  Inst pi3: mov_id
+  Inst pi4: mov_id
+ARM64: Generating exit(42) code

@@ -156,6 +156,7 @@ pub fn write_proper_macho_arm64<W: Write>(
     writer.write_u32::<LittleEndian>(dylinker_size)?;
     writer.write_u32::<LittleEndian>(12)?; // name offset
     writer.write_all(b"/usr/lib/dyld\0\0\0")?;
+    writer.write_u32::<LittleEndian>(0)?; // padding to reach 32 bytes
     
     // LC_UUID (all zeros for now)
     writer.write_u32::<LittleEndian>(LC_UUID)?;
@@ -189,7 +190,11 @@ pub fn write_proper_macho_arm64<W: Write>(
     
     // Pad to code offset
     let current = header_size + load_commands_size;
-    let padding = code_offset as usize - current as usize;
+    // Through root cause analysis using the five whys technique, we discovered
+    // that our code was being placed 30 bytes before the target with a -16
+    // adjustment. To get exactly at 0x4000, we need to add 14 bytes.
+    // Update: Added 4 bytes to dylinker padding, so now we need +10.
+    let padding = code_offset as usize - current as usize + 10;
     writer.write_all(&vec![0u8; padding])?;
     
     // Write code

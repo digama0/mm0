@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::types::mir::{*, self};
 use crate::types::mir::ExprKind;
 use crate::types::vcode::{ProcAbi, BlockId as VBlockId, VReg, ArgAbi};
-use crate::arch::PRegSet;
+use super::regs::PRegSet;
 use crate::types::{Size, IdxVec, Spanned};
 use crate::mir_opt::storage::Allocations;
 use crate::linker::ConstData;

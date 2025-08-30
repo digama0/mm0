@@ -1,5 +1,8 @@
 //! x86-specific parts of the compiler.
 
+pub mod proof_impl;
+pub mod proof_refactor;
+
 use std::fmt::{Debug, Display};
 use std::sync::LazyLock;
 use num::Zero;

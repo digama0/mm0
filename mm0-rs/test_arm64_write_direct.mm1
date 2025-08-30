@@ -1,0 +1,31 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS first
+  (def c mmc-compiler)
+  (c 'set-target "arm64-macos")
+  
+  -- Add write intrinsic and main
+  (mmc-add '(
+    (intrinsic @ proc (sys_write {fd : u32} {count : u32}
+      (ghost @ mut {buf : (ref @ array u8 count)}) {p : (&sn buf)} : u32))
+
+    (proc (main)
+      {{hello : (array u8 14)} := (list 72 101 108 108 111 44 32 87 111 114 108 100 33 10)}
+      {x := (sys_write 1 14 hello (& hello))}
+      (return)
+      )
+  ))
+  
+  -- Get the compiled code as a string and write it to a file
+  (def binary-data (c '->string))
+  
+  -- Open a file and write the binary data
+  (def fd (open-file "test_arm64_exe" "wb"))
+  (if fd
+    (begin
+      (write-string fd binary-data)
+      (close-file fd)
+      (display "Binary written to test_arm64_exe\n"))
+    (display "Failed to open file\n"))
+};

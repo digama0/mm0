@@ -208,6 +208,7 @@ impl Compiler {
     // Use write_executable for all targets - it will dispatch appropriately
     code.write_executable(&mut out, target).map_err(|e| 
       ElabError::new_e(sp, format!("Failed to write executable: {}", e)))?;
+    eprintln!("mmc: to_str returning {} bytes", out.len());
     Ok(out)
   }
   

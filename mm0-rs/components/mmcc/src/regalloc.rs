@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use mm0_util::u32_as_usize;
 use regalloc2::{Allocation, Edit, Function, ProgPoint, SpillSlot};
 
-use crate::arch::{AMode, Inst, callee_saved, caller_saved, MACHINE_ENV, Offset, PAMode, PInst,
+// TODO: This module is currently x86-specific and needs to be refactored to support multiple architectures
+use crate::arch::x86::{AMode, Inst, callee_saved, caller_saved, MACHINE_ENV, Offset, PAMode, PInst,
   PRegMem, PRegMemImm, PRegSet, PShiftIndex, RSP, PReg, RegMem, RegMemImm};
 use crate::types::classify::Trace;
 use crate::types::{IdxVec, Size};

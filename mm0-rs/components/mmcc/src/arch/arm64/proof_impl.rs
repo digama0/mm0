@@ -5,7 +5,7 @@
 
 use super::{PReg, PInst};
 use crate::arch::proof_traits::*;
-use crate::types::mir;
+use crate::types::{mir, Size};
 
 /// ARM64-specific proof generator
 pub struct Arm64ProofGen {
@@ -31,16 +31,16 @@ impl ArchProof for Arm64ProofGen {
                 dst: AbstractOperand::Reg(self.abstract_reg(dst)),
                 src: AbstractOperand::Reg(self.abstract_reg(src)),
                 size: match size {
-                    OperandSize::Size32 => mir::Size::S32,
-                    OperandSize::Size64 => mir::Size::S64,
+                    OperandSize::Size32 => Size::S32,
+                    OperandSize::Size64 => Size::S64,
                 },
             },
             PInst::MovImm { dst, imm, size } => AbstractInst::Move {
                 dst: AbstractOperand::Reg(self.abstract_reg(dst)),
                 src: AbstractOperand::Imm(*imm as i64),
                 size: match size {
-                    OperandSize::Size32 => mir::Size::S32,
-                    OperandSize::Size64 => mir::Size::S64,
+                    OperandSize::Size32 => Size::S32,
+                    OperandSize::Size64 => Size::S64,
                 },
             },
             PInst::Svc { imm } => {
@@ -89,7 +89,7 @@ impl ArchProof for Arm64ProofGen {
                 AbstractInst::Move {
                     dst: AbstractOperand::Reg(self.abstract_reg(dst)),
                     src: AbstractOperand::Imm(*offset as i64), // Simplified
-                    size: mir::Size::S64,
+                    size: Size::S64,
                 }
             },
             _ => todo!("abstract other ARM64 instructions"),
@@ -178,7 +178,7 @@ impl ProofGen for Arm64ProofGen {
         &self,
         dst: &Self::Reg,
         src: &AbstractOperand,
-        size: mir::Size,
+        size: Size,
     ) -> ProofTerm {
         ProofTerm {
             conclusion: ProofProperty::RegisterValue {
@@ -277,7 +277,7 @@ impl ProofGen for Arm64ProofGen {
                 conclusion: ProofProperty::MemoryValue {
                     addr: AbstractOperand::Mem(AbstractReg::StackPointer, -16),
                     value: mir::Operand::Var(0), // Placeholder
-                    size: mir::Size::S64,
+                    size: Size::S64,
                 },
                 steps: vec![
                     ProofStep {
