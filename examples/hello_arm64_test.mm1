@@ -1,0 +1,19 @@
+-- hello_arm64_test.mm1
+-- Based on hello_mmc.mm1 but with ARM64 target
+
+import "../mm0-c/x86.mm1";
+
+-- Set the target to ARM64 macOS
+do (mmc-set-target "arm64-macos");
+
+-- Normal hello world program continues
+do (mmc
+  (typedef str (array u8))
+  (global hello_world str "hello world\n")
+  
+  (proc main
+    (call (sys_write) 1 12 (& hello_world)))
+  
+  (finish main));
+
+output string: $ hello_arm64_test.out $;

@@ -229,6 +229,7 @@ pub struct LinkedCode {
   pub(crate) funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
   pub(crate) postorder: Vec<ProcId>,
   pub(crate) text_size: u32,
+  pub(crate) target: crate::arch::target::Target,
 }
 #[cfg(feature = "memory")]
 mm0_deepsize::deep_size_0!({!Copy} LinkedCode);
@@ -250,7 +251,8 @@ impl LinkedCode {
     mir: HashMap<Symbol, Proc>,
     init: Cfg,
     allocs: &Allocations,
-    globals: &[(Symbol, bool, VarId, Ty)]
+    globals: &[(Symbol, bool, VarId, Ty)],
+    target: crate::arch::target::Target
   ) -> Result<Box<Self>, LinkerErr> {
     let mut coll = Collector::new(names, &mir);
     coll.collect_cfg(&init, &[]);
@@ -305,6 +307,7 @@ impl LinkedCode {
       postorder: coll.postorder,
       text_size: pos - TEXT_START,
       mir,
+      target,
     }))
   }
 }

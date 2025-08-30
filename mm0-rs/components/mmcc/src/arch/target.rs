@@ -23,6 +23,15 @@ pub struct Target {
     pub os: OperatingSystem,
 }
 
+impl Default for Target {
+    fn default() -> Self {
+        Target {
+            arch: TargetArch::X86_64,
+            os: OperatingSystem::Linux,
+        }
+    }
+}
+
 /// Target architectures
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetArch {

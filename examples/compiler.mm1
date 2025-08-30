@@ -26,6 +26,11 @@ do {
   (def mmc-finish
     (def c mmc-compiler)
     (fn xs (apply c 'finish xs)))
+  --| `(mmc-set-target "target")` sets the target architecture and OS.
+  --| Supported targets: "x86_64-linux", "arm64-macos", "wasm32-wasi"
+  (def mmc-set-target
+    (def c mmc-compiler)
+    (fn (target) (c 'set-target target)))
   (def mmc-compiler)
   (def (mmc-compile x . xs)
     (apply mmc-add xs)

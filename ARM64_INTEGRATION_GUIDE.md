@@ -9,11 +9,14 @@ Files: arm64/*, traits.rs, target.rs, codegen_multi.rs
 Status: Complete but not integrated
 ```
 
-### The Core Truth
-**You cannot generate ARM64 binaries yet.** The code exists but doesn't compile because:
-- `arch/mod.rs` exports only x86 (`pub use x86::*`)
-- MIR pipeline hardcodes x86 assumptions
-- Build fails with trait conflicts when you try to add ARM64
+### The Core Truth (Updated 2025-08-29)
+**ARM64 code generation works but isn't integrated into MIR pipeline.** Status:
+- ✅ ARM64 instruction encoding works (tested: exit(42) generates correct bytes)
+- ✅ Mach-O file generation works (proper segments, runs on macOS) 
+- ✅ set-target command accepted by MMC
+- ❌ MIR→VCode pipeline still hardcoded to x86
+- ❌ `arch/mod.rs` exports only x86 (`pub use x86::*`)
+- ⚠️ MM1 output causes stack overflow (unrelated to ARM64)
 
 ## Architecture Reference Points
 
@@ -89,12 +92,45 @@ match target.arch {
 }
 ```
 
+## What Was Accomplished (2025-08-29)
+
+### 1. Complete ARM64 Backend Implementation
+- Created trait-based architecture abstraction (arch/traits.rs)
+- Implemented ARM64 registers, instructions, encoding
+- Fixed Mach-O generation (was missing __LINKEDIT segment)
+- Verified exit(42) generates correct bytes
+
+### 2. Partial Integration  
+- Added set-target command to MMC
+- Created codegen_multi.rs for multi-arch dispatch
+- Fixed all immediate build errors
+- Backend compiles but MIR pipeline not connected
+
+### 3. Key Test
+```rust
+// This test passes!
+#[test]
+fn test_arm64_exit_42() {
+    let mut sink = TestSink { bytes: vec![] };
+    
+    // Generate mov w0, #42; mov x16, #1; svc #0
+    // ... encoding code ...
+    
+    assert_eq!(sink.bytes, vec![
+        0x40, 0x05, 0x80, 0x52, // mov w0, #42
+        0x30, 0x00, 0x80, 0xd2, // mov x16, #1  
+        0x01, 0x00, 0x00, 0xd4, // svc #0
+    ]);
+}
+```
+
 ## Critical Reference Standards
 
-### ELF Magic Numbers (for verification)
+### Binary Magic Numbers (for verification)
 ```
 x86-64 ELF: 7f 45 4c 46 02 01 01 00  (.ELF....)
-ARM64 Mach-O: cf fa ed fe  (feed face reversed)
+ARM64 Mach-O: cf fa ed fe  (feedface reversed)
+ARM64 Mach-O 64-bit: cf fa ed fe 0c 00 00 01
 ```
 
 ### Syscall Conventions (platform-specific)

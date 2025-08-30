@@ -122,11 +122,13 @@ The `output string: $ test $;` command in MM1 files triggers ELF generation.
 3. Add simple number I/O beyond just strings
 4. Create test program: `./calculator add 42 58` → `100`
 
-### Phase 2: ARM64 Support (macOS)
-1. Port the working x64 patterns to ARM64
-2. Generate Mach-O instead of ELF headers
-3. Enable local testing on Mac without VMs
-4. Prove multi-backend architecture works
+### Phase 2: ARM64 Support (macOS) - IN PROGRESS
+**Status**: Backend implemented but not integrated. See `ARM64_INTEGRATION_GUIDE.md` for details.
+1. ✅ ARM64 instruction encoding works
+2. ✅ Mach-O generation works (fixed missing segments)
+3. ✅ set-target command added to MMC
+4. ❌ MIR pipeline still generates x86 code
+5. ❌ Type conflicts from `pub use x86::*` block integration
 
 ### Phase 3: Backend Abstraction
 1. Extract common patterns between x64 and ARM64
@@ -220,11 +222,12 @@ A minimal proof-generating compiler that outputs verified native executables. No
 - Generate Mach-O headers
 - Enable Mac-native testing
 
-**Status (2025-08-29)**: Foundation complete, integration blocked by type conflicts
+**Status (2025-08-30)**: Trait-based architecture abstraction complete!
 - See `ARM64_QUICK_REFERENCE.md` for immediate context recovery
 - See `ARM64_BACKEND_STATUS.md` for what was built
 - See `ARM64_INTEGRATION_PLAN.md` for architectural challenges
 - See `ARM64_INTEGRATION_GUIDE.md` for AI-focused integration guide
+- See `ARM64_TRAIT_ARCHITECTURE.md` for the implemented solution
 
 ### Layer 6: WASM Backend
 - Add WASM as third backend

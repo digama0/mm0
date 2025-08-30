@@ -175,7 +175,7 @@ impl RegisterSet<PReg> for PRegSet {
     }
     
     fn iter(&self) -> impl Iterator<Item = PReg> {
-        self.iter()
+        (*self).iter()
     }
     
     fn to_regalloc(self) -> regalloc2::PRegSet {

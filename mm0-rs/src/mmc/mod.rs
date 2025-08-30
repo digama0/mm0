@@ -199,13 +199,14 @@ impl Compiler {
   /// Get the compiled executable file as a byte string.
   pub fn to_str(&mut self, sp: Span) -> Result<Vec<u8>> {
     let compiler = Rc::make_mut(&mut self.inner);
+    let target = compiler.target; // Copy the target before borrowing
     let code = compiler.linked_code(sp)?;
     let mut out = Vec::new();
     // Use the configured target if ARM64/WASM, otherwise default to x86-64 ELF
-    if compiler.target.arch == mmcc::arch::target::TargetArch::X86_64 {
+    if target.arch == mmcc::arch::target::TargetArch::X86_64 {
       code.write_elf(&mut out).expect("IO error in string write");
     } else {
-      code.write_executable(&mut out, compiler.target).map_err(|e| 
+      code.write_executable(&mut out, target).map_err(|e| 
         ElabError::new_e(sp, format!("Failed to write executable: {}", e)))?;
     }
     Ok(out)
@@ -247,11 +248,21 @@ impl LispProc for Compiler {
       Some(Keyword::SetTarget) => {
         let target_str = it.next().ok_or_else(||
           ElabError::new_e(sp, "mmc-set-target: expected target string"))?;
-        let target_name = target_str.as_atom()
-          .map(|a| elab.data[a].name.as_str())
-          .or_else(|| target_str.as_string().map(|s| s as &str))
-          .ok_or_else(||
-            ElabError::new_e(sp, format!("mmc-set-target: invalid target: '{}'", elab.print(&target_str))))?;
+        
+        // Get target name as string
+        let target_name_string = if let Some(a) = target_str.as_atom() {
+          elab.data[a].name.clone()
+        } else if let Some(s) = target_str.unwrapped(|e| match e {
+          crate::LispKind::String(s) => Some(s.clone()),
+          _ => None
+        }) {
+          s
+        } else {
+          return Err(ElabError::new_e(sp, 
+            format!("mmc-set-target: invalid target: '{}'", elab.print(&target_str))))
+        };
+        
+        let target_name = target_name_string.as_str();
         
         // Parse target string like "arm64-macos" or "x86_64-linux"
         let target = match target_name {

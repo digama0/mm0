@@ -1,0 +1,9 @@
+import "compiler.mm1";
+
+do {
+  (def mmc (mmc-init))
+  (set-target mmc "arm64-macos")
+  (add-item mmc
+    '(func (main () () 0) (exit 42)))
+  (export mmc)
+};

@@ -1,0 +1,46 @@
+-- hello_arm64.mm1
+-- A simple hello world program that sets ARM64 as target
+
+-- Set the target to ARM64 macOS
+do (mmc-set-target "arm64-macos");
+
+-- x86 specific definitions
+def sys_write: nat = $ 1 $;
+def sys_exit: nat = $ 60 $;
+
+def STDOUT_FILENO: nat = $ 1 $;
+
+intrinsic def asm_exit: {xi: nat} (x1: u64) -> {} = $ x86 64 {
+  48 c7 c0 3c 00 00 00 -- mov $60, %rax
+  48 c7 c7 00 00 00 00 -- mov $0, %rdi
+  0f 05                -- syscall
+  -- The exit syscall does not return
+  0f 0b                -- ud2
+} $;
+
+intrinsic def sys_write_: {x1 x2 x3: nat} (fd: u32, count: u32, p: &sn [u8; x3]) -> u32 = $ x86 64 {
+  b8 01 00 00 00       -- mov $1, %eax
+  0f 05                -- syscall
+} $;
+
+-- Test ARM64 code generation by using mmc instead of asm
+do (mmc
+  (typedef str (array u8))
+  
+  -- write function using intrinsic sys_write_
+  (intrinsic proc write (fd: u32) (count: u32) (ghost mut buf: (ref (array u8 count))) (p: (& buf)) -> u32
+    (sys_write_ fd count p))
+  
+  -- main function
+  (proc main ()
+    (begin
+      (let hello (array 72 101 108 108 111 32 119 111 114 108 100 10)) -- "Hello world\n"
+      (let len 12)
+      (call write 1 len hello (& hello))
+      (call asm_exit 0)))
+  
+  -- generate output
+  (finish main));
+
+-- Output the executable
+output string: $ test_arm64.bin $;

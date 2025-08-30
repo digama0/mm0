@@ -119,6 +119,7 @@ mod codegen;
 pub mod proof;
 mod arch_selector;
 mod codegen_multi;
+mod codegen_arch;
 
 use std::collections::HashMap;
 use types::{entity::Entity, mir, Spanned};
@@ -210,6 +211,8 @@ pub struct Compiler<C> {
   main: Option<Symbol>,
   /// If true, some items have not been generated correctly, so compilation cannot proceed.
   has_type_errors: bool,
+  /// The target architecture and OS for code generation.
+  target: arch::target::Target,
 }
 
 impl<C: Default> Default for Compiler<C> {
@@ -226,6 +229,7 @@ impl<C> Compiler<C> {
       main: None,
       has_type_errors: false,
       config,
+      target: arch::target::Target::default(),
     })
   }
 }
@@ -274,6 +278,7 @@ impl<C: Config> Compiler<C> {
     self.init = Default::default();
     self.main = None;
     self.has_type_errors = false;
+    // Keep the target as-is
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an
@@ -289,7 +294,12 @@ impl<C: Config> Compiler<C> {
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
-    LinkedCode::link(&names, mir, init, &allocs, &globals)
+    LinkedCode::link(&names, mir, init, &allocs, &globals, self.target)
+  }
+  
+  /// Set the target architecture and OS for code generation.
+  pub fn set_target(&mut self, target: arch::target::Target) {
+    self.target = target;
   }
 }
 

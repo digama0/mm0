@@ -176,8 +176,8 @@ pub enum OperandSize {
 impl From<Size> for OperandSize {
     fn from(size: Size) -> Self {
         match size.bytes() {
-            1 | 2 | 4 => OperandSize::Size32,
-            8 => OperandSize::Size64,
+            Some(1) | Some(2) | Some(4) => OperandSize::Size32,
+            Some(8) => OperandSize::Size64,
             _ => panic!("Invalid size for ARM64: {:?}", size),
         }
     }

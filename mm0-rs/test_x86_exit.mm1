@@ -1,0 +1,9 @@
+import "../examples/compiler.mm1";
+
+do {
+  (mmc-reset)
+  (mmc-add '(main u8 () () (exit 42)))
+  (def exit42_str (mmc->string))
+};
+
+output string: exit42_str;

@@ -199,7 +199,7 @@ fn encode_mov_imm(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::arm64::{X0, X1, X2};
+    use crate::arch::arm64::{X0, X1, X2, X16};
     
     struct TestSink {
         bytes: Vec<u8>,
@@ -237,5 +237,40 @@ mod tests {
         // ORR X0, XZR, X1
         // Expected: 0xaa0103e0
         assert_eq!(sink.bytes, vec![0xe0, 0x03, 0x01, 0xaa]);
+    }
+    
+    #[test]
+    fn test_arm64_exit_42() {
+        let mut sink = TestSink { bytes: vec![] };
+        
+        // mov w0, #42
+        let mov_inst = PInst::MovImm {
+            dst: X0,
+            imm: 42,
+            size: OperandSize::Size32,
+        };
+        mov_inst.encode(&mut sink).unwrap();
+        
+        // mov x16, #1 (exit syscall)
+        let syscall_inst = PInst::MovImm {
+            dst: X16,
+            imm: 1,
+            size: OperandSize::Size64,
+        };
+        syscall_inst.encode(&mut sink).unwrap();
+        
+        // svc #0
+        let svc_inst = PInst::Svc { imm: 0 };
+        svc_inst.encode(&mut sink).unwrap();
+        
+        // Check generated code matches expected
+        let expected = vec![
+            0x40, 0x05, 0x80, 0x52, // mov w0, #42
+            0x30, 0x00, 0x80, 0xd2, // mov x16, #1
+            0x01, 0x00, 0x00, 0xd4, // svc #0
+        ];
+        
+        assert_eq!(sink.bytes, expected);
+        println!("ARM64 exit(42) code generation successful!");
     }
 }

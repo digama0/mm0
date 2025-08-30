@@ -1,0 +1,20 @@
+import "../examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (def c mmc-compiler)
+  (c 'set-target "arm64-macos")
+  
+  -- Add a simple main function that exits with 42
+  (mmc-add '(
+    (proc (main)
+      {(exit 42)}
+      )
+  ))
+  
+  -- Generate the executable string
+  (def exit42_str (mmc->string))
+};
+
+-- Output the generated binary
+output string: exit42_str;

@@ -5,7 +5,7 @@
 //! register-based architectures.
 
 use std::fmt::{Debug, Display};
-use crate::arch::traits::*;
+use crate::arch::{traits::*, target::Target};
 
 /// WebAssembly architecture implementation
 pub struct Wasm;
@@ -30,7 +30,7 @@ impl Architecture for Wasm {
     }
     
     // No syscalls in WASM - must use imports
-    fn has_syscalls() -> bool {
+    fn has_syscalls(_target: Target) -> bool {
         false
     }
 }

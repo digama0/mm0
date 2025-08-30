@@ -1,0 +1,18 @@
+import "compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (mmc-set-target "arm64-macos")
+
+  -- Simple test that just exits with code 42
+  (mmc-add '(
+    (proc (main : u8)
+      42)
+  ))
+  
+  (mmc-finish 'test_arm64)
+};
+
+abstract def test_arm64: string = $ test_arm64 $;
+
+output string: $ test_arm64 $;

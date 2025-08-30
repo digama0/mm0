@@ -1,0 +1,8 @@
+-- Simple test program that just exits with code 42
+import "peano.mm1";
+
+do {
+  (mmc 'set-target "arm64-macos")
+  (mmc 'add '(main u8 () () {exit 42}))
+  (mmc 'to-string)
+};
