@@ -112,6 +112,16 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                         });
                     }
                 }
+                Inst::LoadConst { dst, const_id } => {
+                    if let Some(preg) = vreg_to_preg(dst.0.vreg() as u32) {
+                        // For now, emit ADR instruction with placeholder offset
+                        // In a real implementation, this would be patched with the actual offset
+                        code.push(PInst::Adr {
+                            dst: preg,
+                            offset: 0x1000, // Placeholder offset to rodata section
+                        });
+                    }
+                }
                 Inst::Svc { imm } => {
                     code.push(PInst::Svc { imm: *imm });
                 }

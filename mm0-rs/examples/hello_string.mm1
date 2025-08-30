@@ -1,0 +1,12 @@
+-- hello_string.mm1
+-- Test program that uses a string constant
+
+intrinsic def write {n: nat} {fd: u32} (arr: u8 ^ n): u64;
+
+do {
+  -- Define a string constant
+  let hello: u8 ^ 6 = 'H', 'e', 'l', 'l', 'o', '\n';
+  
+  -- Write to stdout
+  (write hello 1 : u64);
+};
