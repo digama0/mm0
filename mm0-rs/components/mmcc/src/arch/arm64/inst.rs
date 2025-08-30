@@ -2,6 +2,7 @@
 
 use crate::arch::traits::{Instruction, PhysicalInstruction, InstructionSink, EncodeError};
 use crate::types::{Size, vcode::{BlockId, VReg}};
+use crate::Symbol;
 use super::regs::PReg;
 
 /// ARM64 instructions (with virtual registers)
@@ -36,8 +37,8 @@ pub enum Inst {
     Branch { target: BlockId },
     BranchCond { cond: Cond, target: BlockId },
     
-    /// Function calls
-    Call { target: CallTarget },
+    /// Function call with explicit args/rets
+    Call { target: CallTarget, args: Vec<VReg>, rets: Vec<VReg> },
     Ret,
     
     /// System call
@@ -168,7 +169,7 @@ impl Cond {
 /// Call targets
 #[derive(Clone, Debug)]
 pub enum CallTarget {
-    Direct(String),
+    Direct(Symbol),
     Indirect(VReg),
 }
 

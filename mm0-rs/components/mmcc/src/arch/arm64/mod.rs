@@ -9,6 +9,8 @@ use crate::arch::{traits::*, target::Target};
 pub mod regs;
 pub mod inst;
 pub mod proof_impl;
+pub mod const_table;
+pub mod calling_conv;
 pub mod encode;
 pub mod macho;
 pub mod macho_proper;

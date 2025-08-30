@@ -9,7 +9,7 @@ use crate::types::classify::Trace;
 use crate::regalloc::{PCode, PInstId};
 use crate::codegen_arch::VCodeTrait;
 use super::{Inst, PReg};
-use crate::arch::arm64::inst::{PInst, OperandSize};
+use crate::arch::arm64::inst::{PInst, OperandSize, CallTarget};
 
 /// ARM64-specific VCode implementation
 #[derive(Debug)]
@@ -132,6 +132,53 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                 Inst::Svc { imm } => {
                     code.push(PInst::Svc { imm: *imm });
                     current_offset += 4;
+                }
+                Inst::Call { target, args, rets } => {
+                    // Move arguments to the correct registers (X0-X7)
+                    for (i, &arg) in args.iter().take(8).enumerate() {
+                        if let Some(src_preg) = vreg_to_preg(arg.0.vreg() as u32) {
+                            let dst_preg = PReg::new(i as u8); // X0-X7
+                            if src_preg != dst_preg {
+                                code.push(PInst::MovReg {
+                                    dst: dst_preg,
+                                    src: src_preg,
+                                    size: OperandSize::Size64,
+                                });
+                                current_offset += 4;
+                            }
+                        }
+                    }
+                    
+                    // Generate the call
+                    match target {
+                        CallTarget::Direct(sym) => {
+                            // For now, use a placeholder offset
+                            // In a real implementation, this would be resolved by the linker
+                            code.push(PInst::Bl { offset: 0 });
+                            current_offset += 4;
+                        }
+                        CallTarget::Indirect(vreg) => {
+                            if let Some(preg) = vreg_to_preg(vreg.0.vreg() as u32) {
+                                // BLR instruction for indirect calls
+                                eprintln!("ARM64: Indirect calls not yet implemented");
+                            }
+                        }
+                    }
+                    
+                    // Handle return values (X0-X1)
+                    for (i, &ret) in rets.iter().take(2).enumerate() {
+                        if let Some(dst_preg) = vreg_to_preg(ret.0.vreg() as u32) {
+                            let src_preg = PReg::new(i as u8); // X0-X1
+                            if src_preg != dst_preg {
+                                code.push(PInst::MovReg {
+                                    dst: dst_preg,
+                                    src: src_preg,
+                                    size: OperandSize::Size64,
+                                });
+                                current_offset += 4;
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }

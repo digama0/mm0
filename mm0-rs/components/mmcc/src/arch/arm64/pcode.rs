@@ -32,6 +32,7 @@ pub struct Arm64PCode {
     pub len: u32,
     /// Constant data to be placed after the code
     pub const_data: Vec<u8>,
+    pub const_table: Option<super::const_table::Arm64ConstTable>,
 }
 
 impl Arm64PCode {
@@ -53,6 +54,7 @@ impl Arm64PCode {
             saved_regs: vec![],
             len: 0,
             const_data: vec![],
+            const_table: None,
         }
     }
     
