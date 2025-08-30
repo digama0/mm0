@@ -117,8 +117,9 @@ pub enum AMode {
 pub enum PAMode {
     Reg(PReg),
     RegImm(PReg, i64),
-    PreIndex(PReg, i64),
-    PostIndex(PReg, i64),
+    Offset(PReg, i16),      // [Xn, #imm]
+    PreIndex(PReg, i16),    // [Xn, #imm]!
+    PostIndex(PReg, i16),   // [Xn], #imm
 }
 
 /// Condition codes
