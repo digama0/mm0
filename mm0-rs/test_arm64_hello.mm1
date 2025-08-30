@@ -1,0 +1,23 @@
+import "examples/compiler.mm1";
+
+do {
+  -- Set target to ARM64 macOS
+  (def c mmc-compiler)
+  (c 'set-target "arm64-macos")
+  
+  -- Define write syscall intrinsic
+  (c 'add-intrinsic-write)
+  
+  -- Add a simple main function that writes Hello World
+  (mmc-add '(
+    (proc (main)
+      {(os-write 1 "Hello" 5)}
+    )
+  ))
+  
+  -- Generate the executable string
+  (def hello_exe (mmc->string))
+};
+
+-- Output the generated binary
+output string: hello_exe;

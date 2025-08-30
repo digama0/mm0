@@ -72,9 +72,6 @@ pub fn build_arm64_vcode(
             Terminator::Exit(op) => {
             eprintln!("ARM64: Found exit terminator");
             
-            // Create a VCode block
-            let vblock = vcode.new_block();
-            
             // Generate code for the exit value
             match op {
                 mir::Operand::Const(c) => {
@@ -126,16 +123,12 @@ pub fn build_arm64_vcode(
             
             // Return instruction as terminator
             vcode.set_terminator(vblock, Inst::Ret);
-            
-            // For now, just handle one exit block
-            return Ok(vcode);
             }
             Terminator::Return(_, _) => {
                 eprintln!("ARM64: Found return terminator - treating as exit(0) for start context");
                 
                 // For VCodeCtx::Start, a return should exit with code 0
                 if matches!(ctx, VCodeCtx::Start(_)) {
-                    let vblock = vcode.new_block();
                     
                     // Exit with code 0
                     let exit_code_vreg = vcode.new_vreg();
@@ -156,8 +149,6 @@ pub fn build_arm64_vcode(
                     // SVC #0x80
                     vcode.push_inst(vblock, Inst::Svc { imm: 0x80 });
                     vcode.set_terminator(vblock, Inst::Ret);
-                    
-                    return Ok(vcode);
                 }
             }
             Terminator::Call { f, args, tgt, .. } => {
@@ -241,7 +232,7 @@ pub fn build_arm64_vcode(
                     
                     // Jump to the next block
                     if let Some(&next_vblock) = block_map.get(tgt) {
-                        vcode.push_inst(vblock, Inst::Branch { target: next_vblock });
+                        vcode.set_terminator(vblock, Inst::Branch { target: next_vblock });
                     }
                 } else {
                     eprintln!("ARM64: Regular function call to {:?} not yet implemented", f);
