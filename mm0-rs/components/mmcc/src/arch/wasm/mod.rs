@@ -176,6 +176,10 @@ impl PhysicalInstruction for WasmInst {
                 sink.emit_bytes(&[0x21]); // local.set
                 encode_leb128_u32(sink, *idx);
             }
+            WasmInst::LocalTee { idx } => {
+                sink.emit_bytes(&[0x22]); // local.tee
+                encode_leb128_u32(sink, *idx);
+            }
             WasmInst::Add { ty } => {
                 match ty {
                     WasmType::I32 => sink.emit_bytes(&[0x6a]), // i32.add
@@ -183,12 +187,62 @@ impl PhysicalInstruction for WasmInst {
                     _ => return Err(EncodeError::NotImplemented("float add")),
                 }
             }
+            WasmInst::Sub { ty } => {
+                match ty {
+                    WasmType::I32 => sink.emit_bytes(&[0x6b]), // i32.sub
+                    WasmType::I64 => sink.emit_bytes(&[0x7d]), // i64.sub
+                    _ => return Err(EncodeError::NotImplemented("float sub")),
+                }
+            }
+            WasmInst::Mul { ty } => {
+                match ty {
+                    WasmType::I32 => sink.emit_bytes(&[0x6c]), // i32.mul
+                    WasmType::I64 => sink.emit_bytes(&[0x7e]), // i64.mul
+                    _ => return Err(EncodeError::NotImplemented("float mul")),
+                }
+            }
+            // Comparison operations
+            WasmInst::I32Eq => sink.emit_bytes(&[0x46]),
+            WasmInst::I32Ne => sink.emit_bytes(&[0x47]),
+            WasmInst::I32LtS => sink.emit_bytes(&[0x48]),
+            WasmInst::I32LtU => sink.emit_bytes(&[0x49]),
+            WasmInst::I32GtS => sink.emit_bytes(&[0x4a]),
+            WasmInst::I32GtU => sink.emit_bytes(&[0x4b]),
+            WasmInst::I32LeS => sink.emit_bytes(&[0x4c]),
+            WasmInst::I32LeU => sink.emit_bytes(&[0x4d]),
+            WasmInst::I32GeS => sink.emit_bytes(&[0x4e]),
+            WasmInst::I32GeU => sink.emit_bytes(&[0x4f]),
+            WasmInst::I32Eqz => sink.emit_bytes(&[0x45]),
             WasmInst::Call { func_idx } => {
                 sink.emit_bytes(&[0x10]); // call
                 encode_leb128_u32(sink, *func_idx);
             }
             WasmInst::Return => {
                 sink.emit_bytes(&[0x0f]); // return
+            }
+            // Control structures
+            WasmInst::Block { .. } => {
+                sink.emit_bytes(&[0x02, 0x40]); // block void
+            }
+            WasmInst::Loop { .. } => {
+                sink.emit_bytes(&[0x03, 0x40]); // loop void
+            }
+            WasmInst::If { .. } => {
+                sink.emit_bytes(&[0x04, 0x40]); // if void
+            }
+            WasmInst::Else => {
+                sink.emit_bytes(&[0x05]); // else
+            }
+            WasmInst::End => {
+                sink.emit_bytes(&[0x0b]); // end
+            }
+            WasmInst::Branch { target } => {
+                sink.emit_bytes(&[0x0c]); // br
+                encode_leb128_u32(sink, *target);
+            }
+            WasmInst::BranchIf { target } => {
+                sink.emit_bytes(&[0x0d]); // br_if
+                encode_leb128_u32(sink, *target);
             }
             _ => return Err(EncodeError::NotImplemented("instruction encoding")),
         }
