@@ -29,6 +29,9 @@ pub enum Inst {
     Load { dst: VReg, addr: AMode, size: Size },
     Store { src: VReg, addr: AMode, size: Size },
     
+    /// Load address of a constant (will be resolved later)
+    LoadConst { dst: VReg, const_id: u32 },
+    
     /// Branch operations
     Branch { target: BlockId },
     BranchCond { cond: Cond, target: BlockId },
@@ -65,6 +68,9 @@ pub enum PInst {
     /// Memory
     Ldr { dst: PReg, addr: PAMode, size: OperandSize },
     Str { src: PReg, addr: PAMode, size: OperandSize },
+    
+    /// Load address (PC-relative)
+    Adr { dst: PReg, offset: i32 },
     
     /// Branches
     B { offset: i32 },

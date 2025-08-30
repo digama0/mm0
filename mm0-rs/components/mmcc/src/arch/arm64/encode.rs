@@ -64,6 +64,28 @@ impl PhysicalInstruction for PInst {
                 Ok(())
             }
             
+            // Load address (PC-relative)
+            Adr { dst, offset } => {
+                // ADR Xd, #offset
+                // offset is in range +/- 1MB (21-bit signed)
+                if *offset < -(1 << 20) || *offset >= (1 << 20) {
+                    return Err(EncodeError::InvalidFormat(
+                        format!("ADR offset {} out of range", offset)
+                    ));
+                }
+                
+                let imm_lo = (*offset & 0x3) as u32;
+                let imm_hi = ((*offset >> 2) & 0x7ffff) as u32;
+                
+                let insn = 0x10000000u32  // ADR opcode
+                    | (imm_lo << 29)
+                    | (imm_hi << 5)
+                    | (dst.index() as u32);
+                    
+                sink.emit_bytes(&insn.to_le_bytes());
+                Ok(())
+            }
+            
             _ => Err(EncodeError::NotImplemented("instruction encoding")),
         }
     }

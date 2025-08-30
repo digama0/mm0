@@ -82,13 +82,17 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
     
     eprintln!("ARM64: Starting register allocation");
     
-    // Simple register mapping for exit syscall:
-    // vreg 0 -> X0 (exit code)
-    // vreg 1 -> X16 (syscall number)
+    // Simple register mapping for syscalls:
+    // vreg 0 -> X0 (first arg / exit code)
+    // vreg 1 -> X1 (second arg)
+    // vreg 2 -> X2 (third arg)
+    // vreg 3 -> X16 (syscall number)
     let vreg_to_preg = |vreg: u32| -> Option<PReg> {
         match vreg {
             0 => Some(PReg::new(0)),  // X0
-            1 => Some(PReg::new(16)), // X16
+            1 => Some(PReg::new(1)),  // X1
+            2 => Some(PReg::new(2)),  // X2
+            3 => Some(PReg::new(16)), // X16
             _ => None,
         }
     };
