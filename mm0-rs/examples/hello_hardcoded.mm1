@@ -1,0 +1,9 @@
+-- hello_hardcoded.mm1
+-- Simple test with hardcoded write syscall
+
+intrinsic def write {n: nat} {fd: u32} (arr: u8 ^ n): u64;
+
+do {
+  -- For now, this will trigger our hardcoded hello world
+  (write 0 1 : u64);
+};

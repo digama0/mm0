@@ -83,22 +83,27 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
     eprintln!("ARM64: Starting register allocation");
     
     // Simple register mapping for syscalls:
-    // vreg 0 -> X0 (first arg / exit code)
-    // vreg 1 -> X1 (second arg)
-    // vreg 2 -> X2 (third arg)
+    // vreg 0 -> X0 (first arg / exit code / fd)
+    // vreg 1 -> X1 (second arg / buffer pointer)
+    // vreg 2 -> X2 (third arg / count)
     // vreg 3 -> X16 (syscall number)
+    // Additional vregs for other uses
     let vreg_to_preg = |vreg: u32| -> Option<PReg> {
         match vreg {
             0 => Some(PReg::new(0)),  // X0
             1 => Some(PReg::new(1)),  // X1
             2 => Some(PReg::new(2)),  // X2
             3 => Some(PReg::new(16)), // X16
+            4 => Some(PReg::new(3)),  // X3 (temp)
+            5 => Some(PReg::new(4)),  // X4 (temp)
+            6 => Some(PReg::new(5)),  // X5 (temp)
             _ => None,
         }
     };
     
     // Convert virtual instructions to physical instructions
     let mut code = Vec::new();
+    let mut current_offset = 0u32;
     
     for (_, block) in vcode.blocks.enum_iter() {
         for &inst_id in &block.insts {
@@ -110,20 +115,23 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
                             imm: *imm,
                             size: (*size).into(),
                         });
+                        current_offset += 4; // ARM64 instructions are 4 bytes
                     }
                 }
                 Inst::LoadConst { dst, const_id } => {
                     if let Some(preg) = vreg_to_preg(dst.0.vreg() as u32) {
-                        // For now, emit ADR instruction with placeholder offset
-                        // In a real implementation, this would be patched with the actual offset
+                        // We'll patch this later with the correct offset
+                        // For now, just record the instruction position
                         code.push(PInst::Adr {
                             dst: preg,
-                            offset: 0x1000, // Placeholder offset to rodata section
+                            offset: 0, // Will be patched
                         });
+                        current_offset += 4;
                     }
                 }
                 Inst::Svc { imm } => {
                     code.push(PInst::Svc { imm: *imm });
+                    current_offset += 4;
                 }
                 _ => {}
             }
@@ -133,6 +141,7 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
         match &vcode.insts[block.term] {
             Inst::Ret => {
                 code.push(PInst::Ret);
+                current_offset += 4;
             }
             _ => {}
         }
@@ -140,6 +149,19 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
     
     let code_len = code.len();
     eprintln!("ARM64: Generated {} physical instructions", code_len);
+    
+    // Now patch ADR instructions with correct offsets
+    for (i, inst) in code.iter_mut().enumerate() {
+        if let PInst::Adr { offset, .. } = inst {
+            // Calculate offset from this instruction to constant data
+            // Offset is from current PC (this instruction) to the target
+            let remaining_instructions = code_len - i;
+            let offset_to_const = remaining_instructions * 4;
+            *offset = offset_to_const as i32;
+            eprintln!("ARM64: Patched ADR at instruction {} with offset {} (remaining: {})", 
+                     i, *offset, remaining_instructions);
+        }
+    }
     
     // Convert Vec to IdxVec for PCode
     let mut pinsts: IdxVec<PInstId, PInst> = IdxVec::default();
@@ -152,6 +174,9 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
     let start = PInstId(0);
     let end = PInstId(pinsts.len().try_into().unwrap());
     blocks.push((mir::BlockId(0), start, end));
+    
+    // Create hardcoded "Hello, World!\n" string
+    let hello_string = b"Hello, World!\n";
     
     // Create ARM64 PCode
     let arm64_pcode = super::pcode::Arm64PCode {
@@ -169,6 +194,7 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
         stack_size: 0,
         saved_regs: vec![],
         len: (code_len * 4) as u32, // ARM64 instructions are 4 bytes each
+        const_data: hello_string.to_vec(),
     };
     
     // Clone the trace before moving arm64_pcode

@@ -30,6 +30,8 @@ pub struct Arm64PCode {
     pub saved_regs: Vec<super::PReg>,
     /// Total code size in bytes
     pub len: u32,
+    /// Constant data to be placed after the code
+    pub const_data: Vec<u8>,
 }
 
 impl Arm64PCode {
@@ -50,6 +52,7 @@ impl Arm64PCode {
             stack_size: 0,
             saved_regs: vec![],
             len: 0,
+            const_data: vec![],
         }
     }
     
@@ -78,6 +81,9 @@ impl Arm64PCode {
                 eprintln!("ARM64: Failed to encode instruction: {:?}", e);
             });
         }
+        
+        // Append constant data after the code
+        sink.bytes.extend_from_slice(&self.const_data);
         
         sink.bytes
     }

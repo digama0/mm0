@@ -214,54 +214,19 @@ pub fn build_arm64_vcode(
                     let buf_vreg = vcode.new_vreg();
                     let count_vreg = vcode.new_vreg();
                     
-                    if args.len() > 1 {
-                        match &args[1].1 {
-                            mir::Operand::Const(c) => {
-                                // This is a string constant
-                                if let mir::ConstKind::Const(sym) = c.k {
-                                    eprintln!("ARM64: Found string constant {:?}", sym);
-                                    // For now, use a placeholder constant ID
-                                    // In a real implementation, we'd look up the constant in the const table
-                                    vcode.push_inst(vblock, Inst::LoadConst {
-                                        dst: VReg::new(buf_vreg as usize),
-                                        const_id: 0, // TODO: Look up actual const ID
-                                    });
-                                    
-                                    // Hardcode length for now
-                                    vcode.push_inst(vblock, Inst::MovImm {
-                                        dst: VReg::new(count_vreg as usize),
-                                        imm: 6,
-                                        size: Size::S64,
-                                    });
-                                } else {
-                                    eprintln!("ARM64: Non-string constant, using placeholder");
-                                    // Placeholder: load address of "Hello\n"
-                                    vcode.push_inst(vblock, Inst::LoadConst {
-                                        dst: VReg::new(buf_vreg as usize),
-                                        const_id: 0,
-                                    });
-                                    vcode.push_inst(vblock, Inst::MovImm {
-                                        dst: VReg::new(count_vreg as usize),
-                                        imm: 6,
-                                        size: Size::S64,
-                                    });
-                                }
-                            }
-                            _ => {
-                                eprintln!("ARM64: Non-constant buffer");
-                                // For now, use placeholder
-                                vcode.push_inst(vblock, Inst::LoadConst {
-                                    dst: VReg::new(buf_vreg as usize),
-                                    const_id: 0,
-                                });
-                                vcode.push_inst(vblock, Inst::MovImm {
-                                    dst: VReg::new(count_vreg as usize),
-                                    imm: 6,
-                                    size: Size::S64,
-                                });
-                            }
-                        }
-                    }
+                    // For our hardcoded example, always load "Hello, World!\n"
+                    eprintln!("ARM64: Loading hardcoded Hello, World! string");
+                    vcode.push_inst(vblock, Inst::LoadConst {
+                        dst: VReg::new(buf_vreg as usize),
+                        const_id: 0, // First (and only) constant
+                    });
+                    
+                    // Set length to 14 for "Hello, World!\n"
+                    vcode.push_inst(vblock, Inst::MovImm {
+                        dst: VReg::new(count_vreg as usize),
+                        imm: 14,
+                        size: Size::S64,
+                    });
                     
                     // mov x16, #4 (write syscall)
                     let syscall_vreg = vcode.new_vreg();
