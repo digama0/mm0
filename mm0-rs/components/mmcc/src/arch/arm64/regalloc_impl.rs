@@ -317,6 +317,20 @@ impl<'a> RegAllocBuilder<'a> {
                 });
             }
             
+            // System calls
+            Inst::Svc { imm } => {
+                self.pinsts.push(PInst::Svc { imm: *imm });
+            }
+            
+            // Load constant
+            Inst::LoadConst { dst, const_id } => {
+                let dst = self.alloc_vreg(*dst, inst_id);
+                self.pinsts.push(PInst::LoadConst { 
+                    dst, 
+                    const_id: *const_id 
+                });
+            }
+            
             _ => {
                 return Err(format!("Unimplemented instruction: {:?}", inst));
             }

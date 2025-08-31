@@ -12,6 +12,7 @@ use super::{Inst, PReg};
 use crate::arch::arm64::inst::{PInst, OperandSize, CallTarget, Operand, POperand};
 use regalloc2;
 use std::ops::Index;
+use std::collections::HashMap;
 
 /// ARM64-specific VCode implementation
 #[derive(Debug)]
@@ -377,8 +378,32 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<super::regalloc::PCode>) {
 
 impl VCodeTrait for VCode {
     fn regalloc(self: Box<Self>) -> (ProcAbi, ArchPCode) {
-        let (abi, pcode) = regalloc_arm64(*self);
-        (abi, ArchPCode::Arm64(pcode))
+        // Use the complete register allocator implementation
+        match super::regalloc_impl::allocate_registers(&self) {
+            Ok(result) => {
+                // Convert RegAllocResult to PCode
+                let pcode = super::regalloc::PCode {
+                    insts: result.pinsts,
+                    block_map: HashMap::new(), // TODO: populate properly
+                    blocks: result.blocks,
+                    block_addr: result.block_addr,
+                    block_params: ChunkVec::default(),
+                    trace: Trace::default(),
+                    stack_size: result.stack_size,
+                    saved_regs: vec![],
+                    len: result.len,
+                    const_data: vec![], // TODO: Handle constants
+                    const_table: None,
+                };
+                (self.abi.clone(), ArchPCode::Arm64(Box::new(pcode)))
+            }
+            Err(e) => {
+                eprintln!("ARM64: Register allocation failed, using simple allocator: {}", e);
+                // Fall back to simple allocator
+                let (abi, pcode) = regalloc_arm64(*self);
+                (abi, ArchPCode::Arm64(pcode))
+            }
+        }
     }
 }
 

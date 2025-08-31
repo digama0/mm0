@@ -160,7 +160,10 @@ fn compile_arm64(source: &str, output: &str, emit_asm: bool) {
     
     // Parse the source
     let (items, var_names) = match parse_mmc(source) {
-        Ok(result) => result,
+        Ok(result) => {
+            eprintln!("Parsed {} items", result.0.len());
+            result
+        }
         Err(e) => {
             eprintln!("Parse error: {}", e);
             process::exit(1);

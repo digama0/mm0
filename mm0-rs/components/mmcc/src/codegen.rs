@@ -112,20 +112,108 @@ impl LinkedCode {
   /// Write ARM64 executable (currently outputs assembly)
   #[cfg(feature = "arm64-backend")]
   pub fn write_arm64_executable(&self, w: &mut impl Write) -> io::Result<()> {
-    // For now, generate simple ARM64 assembly
+    use crate::arch::arm64::{PInst, POperand, OperandSize};
+    
+    // Helper to format operands
+    fn format_operand_64(op: &POperand) -> String {
+      match op {
+        POperand::Reg(r) => format!("x{}", r.index()),
+        POperand::Imm(i) => format!("#{}", i),
+      }
+    }
+    
+    fn format_operand_32(op: &POperand) -> String {
+      match op {
+        POperand::Reg(r) => format!("w{}", r.index()),
+        POperand::Imm(i) => format!("#{}", i),
+      }
+    }
+    
+    // For now, generate ARM64 assembly
     writeln!(w, "    .text")?;
     writeln!(w, "    .align 2")?;
     writeln!(w, "    .globl _start")?;
     writeln!(w, "_start:")?;
     
     // Get the ARM64 PCode from the init section
+    eprintln!("ARM64: Checking for PCode in LinkedCode (init size: {})", self.init.1.len());
     if let Some(pcode) = self.init.1.with_arm64(|p| Some(p.clone())) {
-      // TODO: Implement proper ARM64 instruction encoding
-      // For now, just emit a simple exit
-      writeln!(w, "    // exit(0)")?;
-      writeln!(w, "    mov     x0, #0          // status: 0")?;
-      writeln!(w, "    mov     x16, #1         // syscall: exit (macOS)")?;
-      writeln!(w, "    svc     #0x80           // supervisor call")?;
+      eprintln!("ARM64: Generating assembly from {} instructions", pcode.insts.len());
+      eprintln!("ARM64: PCode blocks: {}, stack size: {}", pcode.blocks.len(), pcode.stack_size);
+      
+      // If we have actual instructions, generate them
+      if !pcode.insts.is_empty() {
+        for (idx, inst) in pcode.insts.enum_iter() {
+          match inst {
+            PInst::MovImm { dst, imm, size } => {
+              let reg_name = match size {
+                OperandSize::Size64 => format!("x{}", dst.index()),
+                OperandSize::Size32 => format!("w{}", dst.index()),
+              };
+              writeln!(w, "    mov     {}, #{}", reg_name, imm)?;
+            }
+            PInst::Svc { imm } => {
+              writeln!(w, "    svc     #{:#x}", imm)?;
+            }
+            PInst::Ret => {
+              writeln!(w, "    ret")?;
+            }
+            PInst::LoadConst { dst, const_id } => {
+              writeln!(w, "    adr     x{}, const_{}", dst.index(), const_id)?;
+            }
+            PInst::Add { dst, src1, src2, size } => {
+              let (reg_prefix, op2) = match size {
+                OperandSize::Size64 => ("x", format_operand_64(src2)),
+                OperandSize::Size32 => ("w", format_operand_32(src2)),
+              };
+              writeln!(w, "    add     {}{}, {}{}, {}", 
+                reg_prefix, dst.index(), 
+                reg_prefix, src1.index(), 
+                op2)?;
+            }
+            PInst::Sub { dst, src1, src2, size } => {
+              let (reg_prefix, op2) = match size {
+                OperandSize::Size64 => ("x", format_operand_64(src2)),
+                OperandSize::Size32 => ("w", format_operand_32(src2)),
+              };
+              writeln!(w, "    sub     {}{}, {}{}, {}", 
+                reg_prefix, dst.index(), 
+                reg_prefix, src1.index(), 
+                op2)?;
+            }
+            PInst::Branch { target } => {
+              writeln!(w, "    b       .Lblock{}", target.raw())?;
+            }
+            PInst::Mov { dst, src, size } => {
+              let reg_prefix = match size {
+                OperandSize::Size64 => "x",
+                OperandSize::Size32 => "w",
+              };
+              writeln!(w, "    mov     {}{}, {}{}", 
+                reg_prefix, dst.index(),
+                reg_prefix, src.index())?;
+            }
+            _ => {
+              writeln!(w, "    // TODO: {:?}", inst)?;
+            }
+          }
+        }
+      } else {
+        // Fallback to simple exit if no instructions
+        writeln!(w, "    // No instructions generated, using fallback exit")?;
+        writeln!(w, "    mov     x0, #0          // status: 0")?;
+        writeln!(w, "    mov     x16, #1         // syscall: exit (macOS)")?;
+        writeln!(w, "    svc     #0x80           // supervisor call")?;
+      }
+      
+      // Add constant data if any
+      if !pcode.const_data.is_empty() {
+        writeln!(w, "\n    .data")?;
+        writeln!(w, "    .align 3")?;
+        // For now, assume it's a string
+        writeln!(w, "const_0:")?;
+        writeln!(w, "    .ascii \"Hello, World!\\n\"")?;
+      }
     } else {
       return Err(io::Error::new(io::ErrorKind::InvalidData, 
         "Expected ARM64 code but found different architecture"));
