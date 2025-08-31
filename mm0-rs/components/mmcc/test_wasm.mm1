@@ -1,0 +1,3 @@
+-- Simple exit test for WASM backend
+(def main () void (begin
+  (exit 0)))
