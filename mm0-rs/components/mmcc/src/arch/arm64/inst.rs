@@ -82,6 +82,12 @@ pub enum PInst {
     Ldr { dst: PReg, addr: PAMode, size: OperandSize },
     Str { src: PReg, addr: PAMode, size: OperandSize },
     
+    /// Load/Store pair
+    Ldp { dst1: PReg, dst2: PReg, addr: PAMode },
+    Stp { src1: PReg, src2: PReg, addr: PAMode },
+    LdpPostIndex { dst1: PReg, dst2: PReg, base: PReg, offset: i16 },
+    StpPreIndex { src1: PReg, src2: PReg, base: PReg, offset: i16 },
+    
     /// Load address (PC-relative)
     Adr { dst: PReg, offset: i32 },
     

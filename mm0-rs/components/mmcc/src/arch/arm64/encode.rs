@@ -251,6 +251,25 @@ impl PhysicalInstruction for PInst {
                 encode_store(sink, *src, addr, *size)
             }
             
+            // Load/Store pair instructions
+            Ldp { dst1, dst2, addr } => {
+                encode_load_pair(sink, *dst1, *dst2, addr)
+            }
+            
+            Stp { src1, src2, addr } => {
+                encode_store_pair(sink, *src1, *src2, addr)
+            }
+            
+            LdpPostIndex { dst1, dst2, base, offset } => {
+                // LDP Xt1, Xt2, [Xn], #imm
+                encode_ldp_post_index(sink, *dst1, *dst2, *base, *offset)
+            }
+            
+            StpPreIndex { src1, src2, base, offset } => {
+                // STP Xt1, Xt2, [Xn, #imm]!
+                encode_stp_pre_index(sink, *src1, *src2, *base, *offset)
+            }
+            
             _ => Err(EncodeError::NotImplemented("instruction encoding")),
         }
     }
@@ -485,6 +504,169 @@ fn encode_store(
         
         _ => Err(EncodeError::NotImplemented("store addressing mode")),
     }
+}
+
+/// Encode load pair instruction
+fn encode_load_pair(
+    sink: &mut impl InstructionSink,
+    dst1: PReg,
+    dst2: PReg,
+    addr: &PAMode,
+) -> Result<(), EncodeError> {
+    match addr {
+        PAMode::Offset(base, offset) => {
+            // LDP Xt1, Xt2, [Xn, #imm]
+            // Check offset range and alignment
+            if *offset % 8 != 0 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("LDP offset {} not aligned to 8", offset)
+                ));
+            }
+            
+            let scaled_offset = *offset / 8;
+            if scaled_offset < -64 || scaled_offset > 63 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("LDP offset {} out of range", offset)
+                ));
+            }
+            
+            // LDP encoding: 10_101001_01_imm7_Rt2_Rn_Rt1
+            let imm7 = (scaled_offset & 0x7f) as u32;
+            let insn = (0b10 << 30)
+                | (0b101001 << 24)
+                | (0b01 << 22)
+                | (imm7 << 15)
+                | ((dst2.index() as u32) << 10)
+                | ((base.index() as u32) << 5)
+                | (dst1.index() as u32);
+                
+            sink.emit_bytes(&insn.to_le_bytes());
+            Ok(())
+        }
+        
+        PAMode::Reg(base) => {
+            encode_load_pair(sink, dst1, dst2, &PAMode::Offset(*base, 0))
+        }
+        
+        _ => Err(EncodeError::NotImplemented("LDP addressing mode")),
+    }
+}
+
+/// Encode store pair instruction
+fn encode_store_pair(
+    sink: &mut impl InstructionSink,
+    src1: PReg,
+    src2: PReg,
+    addr: &PAMode,
+) -> Result<(), EncodeError> {
+    match addr {
+        PAMode::Offset(base, offset) => {
+            // STP Xt1, Xt2, [Xn, #imm]
+            if *offset % 8 != 0 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("STP offset {} not aligned to 8", offset)
+                ));
+            }
+            
+            let scaled_offset = *offset / 8;
+            if scaled_offset < -64 || scaled_offset > 63 {
+                return Err(EncodeError::InvalidFormat(
+                    format!("STP offset {} out of range", offset)
+                ));
+            }
+            
+            // STP encoding: 10_101001_00_imm7_Rt2_Rn_Rt1
+            let imm7 = (scaled_offset & 0x7f) as u32;
+            let insn = (0b10 << 30)
+                | (0b101001 << 24)
+                | (0b00 << 22)  // Store (vs load which is 01)
+                | (imm7 << 15)
+                | ((src2.index() as u32) << 10)
+                | ((base.index() as u32) << 5)
+                | (src1.index() as u32);
+                
+            sink.emit_bytes(&insn.to_le_bytes());
+            Ok(())
+        }
+        
+        PAMode::Reg(base) => {
+            encode_store_pair(sink, src1, src2, &PAMode::Offset(*base, 0))
+        }
+        
+        _ => Err(EncodeError::NotImplemented("STP addressing mode")),
+    }
+}
+
+/// Encode LDP with post-index
+fn encode_ldp_post_index(
+    sink: &mut impl InstructionSink,
+    dst1: PReg,
+    dst2: PReg,
+    base: PReg,
+    offset: i16,
+) -> Result<(), EncodeError> {
+    // LDP Xt1, Xt2, [Xn], #imm
+    if offset % 8 != 0 {
+        return Err(EncodeError::InvalidFormat(
+            format!("LDP post-index offset {} not aligned to 8", offset)
+        ));
+    }
+    
+    let scaled_offset = offset / 8;
+    if scaled_offset < -64 || scaled_offset > 63 {
+        return Err(EncodeError::InvalidFormat(
+            format!("LDP post-index offset {} out of range", offset)
+        ));
+    }
+    
+    // LDP post-index encoding: 10_101000_11_imm7_Rt2_Rn_Rt1
+    let imm7 = (scaled_offset & 0x7f) as u32;
+    let insn = (0b10 << 30)
+        | (0b101000 << 24)
+        | (0b11 << 22)  // Post-index
+        | (imm7 << 15)
+        | ((dst2.index() as u32) << 10)
+        | ((base.index() as u32) << 5)
+        | (dst1.index() as u32);
+        
+    sink.emit_bytes(&insn.to_le_bytes());
+    Ok(())
+}
+
+/// Encode STP with pre-index
+fn encode_stp_pre_index(
+    sink: &mut impl InstructionSink,
+    src1: PReg,
+    src2: PReg,
+    base: PReg,
+    offset: i16,
+) -> Result<(), EncodeError> {
+    // STP Xt1, Xt2, [Xn, #imm]!
+    if offset % 8 != 0 {
+        return Err(EncodeError::InvalidFormat(
+            format!("STP pre-index offset {} not aligned to 8", offset)
+        ));
+    }
+    
+    let scaled_offset = offset / 8;
+    if scaled_offset < -64 || scaled_offset > 63 {
+        return Err(EncodeError::InvalidFormat(
+            format!("STP pre-index offset {} out of range", offset)
+        ));
+    }
+    
+    // STP pre-index encoding: 10_101001_10_imm7_Rt2_Rn_Rt1
+    let imm7 = (scaled_offset & 0x7f) as u32;
+    let insn = (0b10 << 30)
+        | (0b101001 << 24)
+        | (0b10 << 22)  // Pre-index
+        | (imm7 << 15)
+        | ((src2.index() as u32) << 10)
+        | ((base.index() as u32) << 5)
+        | (src1.index() as u32);
+        
+    sink.emit_bytes(&insn.to_le_bytes());
+    Ok(())
 }
 
 #[cfg(test)]

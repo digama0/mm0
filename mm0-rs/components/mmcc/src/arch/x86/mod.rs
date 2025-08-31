@@ -2,6 +2,8 @@
 
 pub mod proof_impl;
 pub mod proof_refactor;
+pub mod calling_conv;
+pub mod frame;
 
 use std::fmt::{Debug, Display};
 use std::sync::LazyLock;
