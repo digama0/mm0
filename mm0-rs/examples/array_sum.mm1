@@ -1,0 +1,44 @@
+-- Array Sum Example using MMC Library
+-- Demonstrates memory operations and array access
+import "mmc_lib.mm1";
+
+-- Function to sum an array of integers
+def sum_array: string =
+  (function 'sum_array '((arr ptr) (len i32)) 'i32
+    '(block
+      (let sum i32 0)
+      (let i i32 0)
+      (while (< i len)
+        (block
+          -- Load array[i] and add to sum
+          (let val i32 (load (+ arr (* i 8))))
+          (set sum (+ sum val))
+          (set i (+ i 1))))
+      (return sum)));
+
+-- Main function that creates an array and sums it
+def array_main: string =
+  (function 'main () 'i32
+    '(block
+      -- Create array on stack: [10, 20, 30, 40]
+      (let arr (array i64 4) 0)
+      
+      -- Initialize array values
+      (store arr 10)
+      (store (+ arr 8) 20)
+      (store (+ arr 16) 30)
+      (store (+ arr 24) 40)
+      
+      -- Calculate sum (should be 100)
+      (let result i32 (sum_array arr 4))
+      (return result)));
+
+-- Compile the program
+do {
+  (begin
+    (mmc-add sum_array)
+    (mmc-add array_main)
+    (mmc-finish 'array_sum))
+};
+
+output string: $ array_sum $ 'array_sum;

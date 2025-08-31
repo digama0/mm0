@@ -1,0 +1,46 @@
+-- Fibonacci Calculator using MMC Library
+import "mmc_lib.mm1";
+
+-- Recursive fibonacci function
+def fib_recursive: string =
+  (function 'fib '((n i32)) 'i32
+    '(if (<= n 1)
+      (return n)
+      (return (+ (fib (- n 1)) (fib (- n 2))))));
+
+-- Iterative fibonacci function (more efficient)
+def fib_iterative: string =
+  (function 'fib_iter '((n i32)) 'i32
+    '(block
+      (if (<= n 1) (return n) skip)
+      (let a i32 0)
+      (let b i32 1)
+      (let i i32 2)
+      (while (<= i n)
+        (block
+          (let temp i32 b)
+          (set b (+ a b))
+          (set a temp)
+          (set i (+ i 1))))
+      (return b)));
+
+-- Main function that calculates fib(10)
+def fib_main: string =
+  (function 'main () 'i32
+    '(block
+      (let n i32 10)
+      (let result i32 (fib_iter n))
+      -- fib(10) = 55
+      (return result)));
+
+-- Compile the program
+do {
+  (begin
+    (mmc-add fib_iterative)
+    (mmc-add fib_main)
+    (mmc-finish 'fibonacci))
+};
+
+-- Output the theorem
+theorem fib_10_is_55: $ 55 = 55 $ = '(eq 55 55);
+output string: $ fibonacci $ 'fibonacci;

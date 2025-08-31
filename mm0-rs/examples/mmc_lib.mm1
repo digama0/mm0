@@ -1,0 +1,165 @@
+-- MMC Library: High-level constructs for easier MM0 compilation
+-- This library provides convenient abstractions over the low-level mmc commands
+
+-- Import the base compiler interface
+import "compiler.mm1";
+
+--------------------------------------------------------------------------------
+-- Type Definitions
+--------------------------------------------------------------------------------
+
+-- Basic types
+def u8: string = 'u8;
+def u16: string = 'u16;
+def u32: string = 'u32;
+def u64: string = 'u64;
+def ptr: string = 'ptr;
+
+-- Type constructors
+def array {T: string} (n: nat): string = '(array ,T ,n);
+def ref {T: string}: string = '(ref ,T);
+
+--------------------------------------------------------------------------------
+-- High-Level Language Constructs
+--------------------------------------------------------------------------------
+
+-- Function definition helper
+-- Usage: (function main () i32 (return 42))
+def function (name: string) (params: string) (ret: string) (body: string): string =
+  '(proc (,name ,@params) ,ret ,body);
+
+-- Local variable declaration with type
+-- Usage: (let x i32 42)
+def let (name: string) (ty: string) (val: nat): string =
+  '((,name : ,ty) := ,val);
+
+-- If-then-else expression
+-- Usage: (if (< x 10) (return 1) (return 0))
+def if (cond: string) (then: string) (else: string): string =
+  '(if ,cond then ,then else ,else);
+
+-- While loop
+-- Usage: (while (< i 10) (block (print i) (set i (+ i 1))))
+def while (cond: string) (body: string): string =
+  '(while ,cond ,body);
+
+-- For loop (syntactic sugar over while)
+-- Usage: (for i 0 10 (print i))
+def for (var: string) (start: nat) (end: nat) (body: string): string =
+  '(block
+    (let ,var i32 ,start)
+    (while (< ,var ,end)
+      (block
+        ,body
+        (set ,var (+ ,var 1)))));
+
+-- Block of statements
+def block: string > string > string = $ \x, \y, '(begin ,x ,y) $;
+
+--------------------------------------------------------------------------------
+-- Memory Operations
+--------------------------------------------------------------------------------
+
+-- Load from memory
+-- Usage: (load ptr_expr)
+def load (addr: string): string = '(* ,addr);
+
+-- Store to memory
+-- Usage: (store ptr_expr value)
+def store (addr: string) (val: string): string = '(,addr <- ,val);
+
+-- Array access
+-- Usage: (aref array_ptr index)
+def aref (arr: string) (idx: string): string =
+  '(+ ,arr (* ,idx (sizeof element_type)));
+
+--------------------------------------------------------------------------------
+-- System Calls and I/O
+--------------------------------------------------------------------------------
+
+-- Print string (using write syscall)
+def print (s: string): string =
+  '(syscall 1 1 ,s (strlen ,s));
+
+-- Print number (converts to string first)
+def print_num (n: nat): string =
+  '(print (to_string ,n));
+
+-- Read from stdin
+def read (buf: string) (size: nat): string =
+  '(syscall 0 0 ,buf ,size);
+
+--------------------------------------------------------------------------------
+-- Convenient Program Templates
+--------------------------------------------------------------------------------
+
+-- Hello world program
+def hello_world: string =
+  (function 'main () 'i32
+    '(block
+      (print "Hello, World!\n")
+      (return 0)));
+
+-- Program that processes command line arguments
+def main_with_args: string =
+  (function 'main '((argc i32) (argv ptr)) 'i32
+    '(block
+      (if (> argc 1)
+        (block
+          (print "Got argument: ")
+          (print (load (aref argv 1)))
+          (print "\n"))
+        (print "No arguments provided\n"))
+      (return 0)));
+
+-- Calculator example using high-level constructs
+def calculator_example: string =
+  (function 'calculate '((a i32) (b i32)) 'i32
+    '(block
+      (let result i32 0)
+      (set result (+ a b))
+      (set result (* result 2))
+      (return result)));
+
+--------------------------------------------------------------------------------
+-- Compilation Helpers
+--------------------------------------------------------------------------------
+
+-- Compile a single function to a binary
+def compile_function (name: string) (func: string): cmd =
+  (begin
+    (mmc-add func)
+    (mmc-finish name));
+
+-- Compile multiple functions
+def compile_program (name: string) (funcs: string): cmd =
+  (begin
+    (iterate (\f, (mmc-add f)) funcs)
+    (mmc-finish name));
+
+-- Set architecture and compile
+def compile_for (arch: string) (name: string) (func: string): cmd =
+  (begin
+    (mmc-set-target arch)
+    (compile_function name func));
+
+--------------------------------------------------------------------------------
+-- Example Usage
+--------------------------------------------------------------------------------
+
+-- To compile hello world:
+-- do { (compile_function "hello" hello_world) };
+
+-- To compile for specific architecture:
+-- do { (compile_for "arm64-macos" "hello" hello_world) };
+
+-- To write a custom program:
+-- def my_program: string =
+--   (function 'main () 'i32
+--     '(block
+--       (let x i32 10)
+--       (let y i32 32)
+--       (let sum i32 (+ x y))
+--       (print_num sum)
+--       (return sum)));
+-- do { (compile_function "my_prog" my_program) };

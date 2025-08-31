@@ -1,0 +1,57 @@
+-- Echo Command Line Arguments
+-- Demonstrates argv processing with proper memory access
+import "mmc_lib.mm1";
+
+-- Function to calculate string length
+def strlen_func: string =
+  (function 'strlen '((str ptr)) 'i32
+    '(block
+      (let len i32 0)
+      (while (!= (load (+ str len)) 0)
+        (set len (+ len 1)))
+      (return len)));
+
+-- Function to print a string
+def print_str: string =
+  (function 'print_str '((str ptr)) 'void
+    '(block
+      (let len i32 (strlen str))
+      -- Write syscall: fd=1 (stdout)
+      (syscall 1 1 str len)));
+
+-- Main function that echoes all arguments
+def echo_main: string =
+  (function 'main '((argc i32) (argv ptr)) 'i32
+    '(block
+      -- Print program name
+      (print_str "Program: ")
+      (print_str (load argv))
+      (print_str "\n")
+      
+      -- Check if we have arguments
+      (if (> argc 1)
+        (block
+          (print_str "Arguments:\n")
+          (let i i32 1)
+          (while (< i argc)
+            (block
+              (print_str "  ")
+              -- argv[i] is at argv + i*8 (8 bytes per pointer)
+              (let arg_ptr ptr (load (+ argv (* i 8))))
+              (print_str arg_ptr)
+              (print_str "\n")
+              (set i (+ i 1)))))
+        (print_str "No arguments provided\n"))
+      
+      (return 0)));
+
+-- Compile the program
+do {
+  (begin
+    (mmc-add strlen_func)
+    (mmc-add print_str)
+    (mmc-add echo_main)
+    (mmc-finish 'echo_args))
+};
+
+output string: $ echo_args $ 'echo_args;
