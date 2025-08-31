@@ -1,0 +1,20 @@
+-- test_target_flag.mm1
+-- Test using --target flag instead of mmc-set-target
+
+import "compiler.mm1";
+
+do {
+  -- Don't set target here - rely on command line flag
+  
+  (mmc-add '(
+    (proc (main)
+      (return 123)
+      )
+  ))
+  
+  (mmc-finish 'test_target)
+};
+
+abstract def test: string = $ test_target $;
+
+output string: $ test $;

@@ -72,6 +72,15 @@ impl RegisterSet<WasmReg> for WasmRegSet {
 }
 
 pub mod regalloc;
+pub mod module;
+pub mod vcode;
+pub mod lower;
+pub mod arch_impl;
+
+// Re-export instruction type as inst module
+pub mod inst {
+    pub use super::{WasmInst as Inst, WasmType};
+}
 
 /// WASM instructions
 #[derive(Clone, Debug)]
@@ -123,6 +132,99 @@ pub enum WasmInst {
     /// Stack manipulation
     Drop,
     Select,
+    
+    // SIMD 128-bit Instructions
+    /// Push a v128 constant onto the stack
+    V128Const { value: [u8; 16] },
+    
+    /// Load a v128 value from memory
+    V128Load { offset: u32, align: u32 },
+    /// Store a v128 value to memory
+    V128Store { offset: u32, align: u32 },
+    
+    /// SIMD arithmetic - float operations
+    F32x4Add,
+    F32x4Sub,
+    F32x4Mul,
+    F32x4Div,
+    F32x4Sqrt,
+    F32x4Min,
+    F32x4Max,
+    
+    /// SIMD arithmetic - integer operations
+    I32x4Add,
+    I32x4Sub,
+    I32x4Mul,
+    I16x8Add,
+    I16x8Sub,
+    I16x8Mul,
+    I8x16Add,
+    I8x16Sub,
+    
+    /// SIMD comparisons - float
+    F32x4Eq,
+    F32x4Ne,
+    F32x4Lt,
+    F32x4Gt,
+    F32x4Le,
+    F32x4Ge,
+    
+    /// SIMD comparisons - integer
+    I32x4Eq,
+    I32x4Ne,
+    I32x4LtS,
+    I32x4LtU,
+    I32x4GtS,
+    I32x4GtU,
+    I32x4LeS,
+    I32x4LeU,
+    I32x4GeS,
+    I32x4GeU,
+    
+    /// SIMD conversions
+    I32x4TruncSatF32x4S,
+    I32x4TruncSatF32x4U,
+    F32x4ConvertI32x4S,
+    F32x4ConvertI32x4U,
+    
+    /// SIMD shuffle and swizzle
+    I8x16Shuffle { lanes: [u8; 16] },
+    I8x16Swizzle,
+    
+    /// SIMD splat operations
+    I32x4Splat,
+    I16x8Splat,
+    I8x16Splat,
+    F32x4Splat,
+    F64x2Splat,
+    
+    /// SIMD extract lane
+    I32x4ExtractLane { lane: u8 },
+    I16x8ExtractLane { lane: u8 },
+    I8x16ExtractLane { lane: u8 },
+    F32x4ExtractLane { lane: u8 },
+    F64x2ExtractLane { lane: u8 },
+    
+    /// SIMD replace lane
+    I32x4ReplaceLane { lane: u8 },
+    I16x8ReplaceLane { lane: u8 },
+    I8x16ReplaceLane { lane: u8 },
+    F32x4ReplaceLane { lane: u8 },
+    F64x2ReplaceLane { lane: u8 },
+    
+    /// SIMD bitwise operations
+    V128And,
+    V128Or,
+    V128Xor,
+    V128Not,
+    V128Andnot,
+    V128Bitselect,
+    
+    /// SIMD any/all true operations
+    V128AnyTrue,
+    I32x4AllTrue,
+    I16x8AllTrue,
+    I8x16AllTrue,
 }
 
 /// WASM value types
@@ -132,6 +234,7 @@ pub enum WasmType {
     I64,
     F32,
     F64,
+    V128,
 }
 
 impl Instruction for WasmInst {
@@ -275,6 +378,143 @@ impl PhysicalInstruction for WasmInst {
                     _ => return Err(EncodeError::NotImplemented("float store")),
                 }
             }
+            // Stack manipulation
+            WasmInst::Drop => sink.emit_bytes(&[0x1a]),
+            WasmInst::Select => sink.emit_bytes(&[0x1b]),
+            
+            // SIMD instructions
+            WasmInst::V128Const { value } => {
+                sink.emit_bytes(&[0xfd, 0x0c]); // v128.const
+                sink.emit_bytes(value);
+            }
+            WasmInst::V128Load { offset, align } => {
+                sink.emit_bytes(&[0xfd, 0x00]); // v128.load
+                encode_leb128_u32(sink, *align);
+                encode_leb128_u32(sink, *offset);
+            }
+            WasmInst::V128Store { offset, align } => {
+                sink.emit_bytes(&[0xfd, 0x0b]); // v128.store
+                encode_leb128_u32(sink, *align);
+                encode_leb128_u32(sink, *offset);
+            }
+            
+            // SIMD arithmetic - float
+            WasmInst::F32x4Add => sink.emit_bytes(&[0xfd, 0xe4]),
+            WasmInst::F32x4Sub => sink.emit_bytes(&[0xfd, 0xe5]),
+            WasmInst::F32x4Mul => sink.emit_bytes(&[0xfd, 0xe6]),
+            WasmInst::F32x4Div => sink.emit_bytes(&[0xfd, 0xe7]),
+            WasmInst::F32x4Sqrt => sink.emit_bytes(&[0xfd, 0xe3]),
+            WasmInst::F32x4Min => sink.emit_bytes(&[0xfd, 0xe8]),
+            WasmInst::F32x4Max => sink.emit_bytes(&[0xfd, 0xe9]),
+            
+            // SIMD arithmetic - integer
+            WasmInst::I32x4Add => sink.emit_bytes(&[0xfd, 0xae]),
+            WasmInst::I32x4Sub => sink.emit_bytes(&[0xfd, 0xb1]),
+            WasmInst::I32x4Mul => sink.emit_bytes(&[0xfd, 0xb5]),
+            WasmInst::I16x8Add => sink.emit_bytes(&[0xfd, 0x8e]),
+            WasmInst::I16x8Sub => sink.emit_bytes(&[0xfd, 0x91]),
+            WasmInst::I16x8Mul => sink.emit_bytes(&[0xfd, 0x95]),
+            WasmInst::I8x16Add => sink.emit_bytes(&[0xfd, 0x6e]),
+            WasmInst::I8x16Sub => sink.emit_bytes(&[0xfd, 0x71]),
+            
+            // SIMD comparisons - float
+            WasmInst::F32x4Eq => sink.emit_bytes(&[0xfd, 0x41]),
+            WasmInst::F32x4Ne => sink.emit_bytes(&[0xfd, 0x42]),
+            WasmInst::F32x4Lt => sink.emit_bytes(&[0xfd, 0x43]),
+            WasmInst::F32x4Gt => sink.emit_bytes(&[0xfd, 0x44]),
+            WasmInst::F32x4Le => sink.emit_bytes(&[0xfd, 0x45]),
+            WasmInst::F32x4Ge => sink.emit_bytes(&[0xfd, 0x46]),
+            
+            // SIMD comparisons - integer
+            WasmInst::I32x4Eq => sink.emit_bytes(&[0xfd, 0x37]),
+            WasmInst::I32x4Ne => sink.emit_bytes(&[0xfd, 0x38]),
+            WasmInst::I32x4LtS => sink.emit_bytes(&[0xfd, 0x39]),
+            WasmInst::I32x4LtU => sink.emit_bytes(&[0xfd, 0x3a]),
+            WasmInst::I32x4GtS => sink.emit_bytes(&[0xfd, 0x3b]),
+            WasmInst::I32x4GtU => sink.emit_bytes(&[0xfd, 0x3c]),
+            WasmInst::I32x4LeS => sink.emit_bytes(&[0xfd, 0x3d]),
+            WasmInst::I32x4LeU => sink.emit_bytes(&[0xfd, 0x3e]),
+            WasmInst::I32x4GeS => sink.emit_bytes(&[0xfd, 0x3f]),
+            WasmInst::I32x4GeU => sink.emit_bytes(&[0xfd, 0x40]),
+            
+            // SIMD conversions
+            WasmInst::I32x4TruncSatF32x4S => sink.emit_bytes(&[0xfd, 0xf8]),
+            WasmInst::I32x4TruncSatF32x4U => sink.emit_bytes(&[0xfd, 0xf9]),
+            WasmInst::F32x4ConvertI32x4S => sink.emit_bytes(&[0xfd, 0xfa]),
+            WasmInst::F32x4ConvertI32x4U => sink.emit_bytes(&[0xfd, 0xfb]),
+            
+            // SIMD shuffle and swizzle
+            WasmInst::I8x16Shuffle { lanes } => {
+                sink.emit_bytes(&[0xfd, 0x0d]);
+                sink.emit_bytes(lanes);
+            }
+            WasmInst::I8x16Swizzle => sink.emit_bytes(&[0xfd, 0x0e]),
+            
+            // SIMD splat operations
+            WasmInst::I32x4Splat => sink.emit_bytes(&[0xfd, 0x11]),
+            WasmInst::I16x8Splat => sink.emit_bytes(&[0xfd, 0x10]),
+            WasmInst::I8x16Splat => sink.emit_bytes(&[0xfd, 0x0f]),
+            WasmInst::F32x4Splat => sink.emit_bytes(&[0xfd, 0x13]),
+            WasmInst::F64x2Splat => sink.emit_bytes(&[0xfd, 0x14]),
+            
+            // SIMD extract lane
+            WasmInst::I32x4ExtractLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x1b]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::I16x8ExtractLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x18]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::I8x16ExtractLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x15]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::F32x4ExtractLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x1f]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::F64x2ExtractLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x21]);
+                sink.emit_bytes(&[*lane]);
+            }
+            
+            // SIMD replace lane
+            WasmInst::I32x4ReplaceLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x1c]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::I16x8ReplaceLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x1a]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::I8x16ReplaceLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x17]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::F32x4ReplaceLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x20]);
+                sink.emit_bytes(&[*lane]);
+            }
+            WasmInst::F64x2ReplaceLane { lane } => {
+                sink.emit_bytes(&[0xfd, 0x22]);
+                sink.emit_bytes(&[*lane]);
+            }
+            
+            // SIMD bitwise operations
+            WasmInst::V128And => sink.emit_bytes(&[0xfd, 0x4e]),
+            WasmInst::V128Or => sink.emit_bytes(&[0xfd, 0x50]),
+            WasmInst::V128Xor => sink.emit_bytes(&[0xfd, 0x51]),
+            WasmInst::V128Not => sink.emit_bytes(&[0xfd, 0x4d]),
+            WasmInst::V128Andnot => sink.emit_bytes(&[0xfd, 0x4f]),
+            WasmInst::V128Bitselect => sink.emit_bytes(&[0xfd, 0x52]),
+            
+            // SIMD any/all true operations
+            WasmInst::V128AnyTrue => sink.emit_bytes(&[0xfd, 0x53]),
+            WasmInst::I32x4AllTrue => sink.emit_bytes(&[0xfd, 0xa3]),
+            WasmInst::I16x8AllTrue => sink.emit_bytes(&[0xfd, 0x83]),
+            WasmInst::I8x16AllTrue => sink.emit_bytes(&[0xfd, 0x63]),
+            
             _ => return Err(EncodeError::NotImplemented("instruction encoding")),
         }
         Ok(())

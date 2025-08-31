@@ -1,0 +1,12 @@
+// Simple program that exits with code 42
+
+proc main() {
+  // Exit with code 42
+  #[cfg(target = "x86_64-linux")]
+  syscall(60, 42); // sys_exit on x86_64 Linux
+  
+  #[cfg(target = "aarch64-macos")]
+  syscall(1, 42); // exit on macOS ARM64
+  
+  return 42; // For platforms without syscall
+}

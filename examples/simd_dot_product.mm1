@@ -1,0 +1,84 @@
+-- SIMD Dot Product Example
+-- Demonstrates using SIMD intrinsics for vector operations
+
+-- Import the SIMD types and intrinsics
+-- (In practice, these would be defined in a standard library)
+
+-- Basic SIMD types
+ghost type v4f32; -- 4 x 32-bit floats
+ghost type v4i32; -- 4 x 32-bit integers
+
+-- SIMD intrinsics (these would map to the SimdOp operations)
+intrinsic (v4f32.load {ptr: (&sn (array u8 16))}: v4f32);
+intrinsic (v4f32.store {ptr: (&mut (array u8 16))} {v: v4f32});
+intrinsic (v4f32.add {a: v4f32} {b: v4f32}: v4f32);
+intrinsic (v4f32.mul {a: v4f32} {b: v4f32}: v4f32);
+intrinsic (v4f32.hadd {a: v4f32} {b: v4f32}: v4f32); -- horizontal add
+
+-- Extract single element (for final reduction)
+intrinsic (v4f32.extract0 {v: v4f32}: f32);
+
+-- Splat operation (broadcast scalar to all lanes)
+intrinsic (v4f32.splat {x: f32}: v4f32);
+
+-- Main entry point
+(func (main)
+  -- Two test vectors for dot product
+  (local {a: (array f32 4)} (array 1.0 2.0 3.0 4.0))
+  (local {b: (array f32 4)} (array 5.0 6.0 7.0 8.0))
+  
+  -- Load vectors using SIMD
+  {va : v4f32} := (v4f32.load (cast (&sn u8) (& a)))
+  {vb : v4f32} := (v4f32.load (cast (&sn u8) (& b)))
+  
+  -- Element-wise multiplication
+  {vmul : v4f32} := (v4f32.mul va vb)
+  
+  -- Horizontal add to sum all elements
+  -- First hadd: [vmul[0]+vmul[1], vmul[2]+vmul[3], vmul[0]+vmul[1], vmul[2]+vmul[3]]
+  {vsum1 : v4f32} := (v4f32.hadd vmul vmul)
+  -- Second hadd: [sum of all 4 elements, ..., ...]
+  {vsum2 : v4f32} := (v4f32.hadd vsum1 vsum1)
+  
+  -- Extract final result
+  {result : f32} := (v4f32.extract0 vsum2)
+  
+  -- Expected result: 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
+  (assert (f32.eq result 70.0))
+  
+  -- Print result (in practice)
+  -- (call print_f32 result)
+  
+  (return))
+
+-- Alternative implementation using explicit SIMD operations
+(func (dot_product_simd {a: (&sn (array f32 4))} {b: (&sn (array f32 4))}: f32)
+  -- Load vectors
+  {va : v4f32} := (v4f32.load (cast (&sn u8) a))
+  {vb : v4f32} := (v4f32.load (cast (&sn u8) b))
+  
+  -- Multiply
+  {vmul : v4f32} := (v4f32.mul va vb)
+  
+  -- Reduce using horizontal adds
+  {vsum1 : v4f32} := (v4f32.hadd vmul vmul)
+  {vsum2 : v4f32} := (v4f32.hadd vsum1 vsum1)
+  
+  (return (v4f32.extract0 vsum2)))
+
+-- Example of using integer SIMD
+intrinsic (v4i32.load {ptr: (&sn (array u8 16))}: v4i32);
+intrinsic (v4i32.add {a: v4i32} {b: v4i32}: v4i32);
+intrinsic (v4i32.mul {a: v4i32} {b: v4i32}: v4i32);
+intrinsic (v4i32.extract0 {v: v4i32}: i32);
+
+(func (sum_arrays_simd {a: (&sn (array i32 4))} {b: (&sn (array i32 4))}: i32)
+  -- Load integer vectors
+  {va : v4i32} := (v4i32.load (cast (&sn u8) a))
+  {vb : v4i32} := (v4i32.load (cast (&sn u8) b))
+  
+  -- Add vectors
+  {vsum : v4i32} := (v4i32.add va vb)
+  
+  -- For demo, just return first element
+  (return (v4i32.extract0 vsum)))

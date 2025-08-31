@@ -5,7 +5,7 @@
 //! the compiler interface.
 
 use crate::types::{IdxVec, mir, vcode::*};
-use crate::build_vcode::VCode;
+// WASM doesn't have a VCode type yet, we'll create a placeholder
 use crate::types::classify::Trace;
 use crate::Idx;
 use super::{WasmReg, WasmRegSet, WasmInst};
@@ -43,7 +43,7 @@ impl PCode {
 mk_id! { PInstId }
 
 /// "Register allocation" for WASM (no-op since it's a stack machine)
-pub fn regalloc_wasm(vcode: &VCode<WasmInst>) -> Result<PCode, String> {
+pub fn regalloc_wasm(vcode: &super::vcode::VCode) -> Result<PCode, String> {
     let mut pinsts = IdxVec::default();
     let mut blocks = IdxVec::default();
     let mut block_addr = IdxVec::default();

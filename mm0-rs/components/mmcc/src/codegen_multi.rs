@@ -122,24 +122,36 @@ impl LinkedCode {
     
     /// Detect if this is a simple exit(N) program
     fn detect_simple_exit(&self) -> Option<u8> {
-        use crate::arch::x86::PInst;
-        
         // Analyze the init code to detect exit patterns
-        eprintln!("ARM64: Analyzing init code for exit pattern");
+        eprintln!("Analyzing init code for exit pattern");
         
         // The init code is the startup/main function
         let init_code = &self.init.1;
         
-        // Look for a simple pattern in the first few instructions
-        if init_code.insts.len() >= 3 {
-            // Debug print the instructions
-            for (i, inst) in init_code.insts.enum_iter().take(5) {
-                eprintln!("  Inst {:?}: {:?}", i, inst);
-            }
-            
-            // Check for exit pattern (this is a simplified check)
-            // In reality we'd need to track register values through the code
-            // For now, just use the hardcoded exit code
+        // Architecture-specific analysis
+        match init_code {
+            #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+            crate::arch_pcode::ArchPCode::X86(code) => {
+                use crate::arch::x86::PInst;
+                // Look for a simple pattern in the first few instructions
+                if code.insts.len() >= 3 {
+                    // Debug print the instructions
+                    for (i, inst) in code.insts.enum_iter().take(5) {
+                        eprintln!("  Inst {:?}: {:?}", i, inst);
+                    }
+                }
+            },
+            #[cfg(feature = "arm64-backend")]
+            crate::arch_pcode::ArchPCode::Arm64(code) => {
+                // Look for a simple pattern in the first few instructions
+                if code.insts.len() >= 3 {
+                    // Debug print the instructions
+                    for (i, inst) in code.insts.enum_iter().take(5) {
+                        eprintln!("  Inst {:?}: {:?}", i, inst);
+                    }
+                }
+            },
+            _ => {},
         }
         
         // Default to exit(42) for testing

@@ -16,7 +16,19 @@ We're working toward a minimal viable proof-generating compiler that can:
 
 This baseline would prove the architecture works end-to-end.
 
-## Current Status (2025-08-29)
+## Current Status (2025-08-31)
+
+### ⚠️ CRITICAL: Compiler Pipeline Reality Check
+**See [mm0-rs/PIPELINE_STATUS_AND_ROADMAP.md](mm0-rs/PIPELINE_STATUS_AND_ROADMAP.md) for the full truth!**
+
+Key discoveries:
+- ✅ x86-64: Fully working (Linux/macOS)
+- ⚠️ ARM64: **Generates x86 code and pretends it's ARM64!** 
+- ❌ WASM: Not implemented beyond stubs
+
+**Current Priority**: Fix ARM64 to actually generate ARM64 instructions, not x86 code!
+
+## Previous Status (2025-08-29)
 
 ### What Works in Upstream (Mario's latest)
 - Basic `main` procedure (no arguments yet)

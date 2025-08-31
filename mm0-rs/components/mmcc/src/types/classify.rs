@@ -1,5 +1,6 @@
 //! A high level classification of `VCode` emit patterns, used for relating MIR to `VCode`.
 // TODO: This module is currently x86-specific and needs to be refactored to support multiple architectures
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 use crate::arch::x86::{PInst, SysCall, PReg};
 
 use super::{vcode::{BlockId, ChunkVec, ProcAbi, ArgAbi, ProcId}, IdxVec, mir, IntTy, entity::IntrinsicProc};

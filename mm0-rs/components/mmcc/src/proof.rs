@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 use crate::regalloc::PCode;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 use crate::types::classify;
 use crate::types::vcode::ProcAbi;
 use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
@@ -12,6 +14,7 @@ use crate::types::{mir::{self, Cfg, BlockTree}, vcode::ConstRef};
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
 // TODO: This module is currently x86-specific and needs to be refactored to support multiple architectures
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub use crate::arch::x86::{self, PReg, PInst as VInst, PRegMem};
 
 /// A flag to control totality checking.

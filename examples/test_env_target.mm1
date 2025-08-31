@@ -1,0 +1,25 @@
+-- test_env_target.mm1
+-- Test using environment variable for target selection
+
+import "compiler.mm1";
+
+do {
+  -- Check environment variable MMC_TARGET
+  (def target (or (sys-env "MMC_TARGET") "x86_64-linux"))
+  (display @ list "Using target: " target '\n)
+  
+  -- Set the target based on environment
+  (mmc-set-target target)
+  
+  (mmc-add '(
+    (proc (main)
+      (return 42)
+      )
+  ))
+  
+  (mmc-finish 'test_env)
+};
+
+abstract def test: string = $ test_env $;
+
+output string: $ test $;

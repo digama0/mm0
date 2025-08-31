@@ -3,10 +3,33 @@
 //! This module implements the x86-64 calling convention for function calls,
 //! following the System V ABI used on Linux/BSD/macOS.
 
-use crate::types::vcode::{VReg, ArgAbi};
+use crate::types::vcode::VReg;
 use crate::types::{Size, IntTy};
 use crate::arch::target::OperatingSystem;
 use super::{PReg, PRegSet};
+
+/// x86-specific argument ABI
+#[derive(Clone, Copy, Debug)]
+pub enum X86ArgAbi {
+    /// The value is not passed.
+    Ghost,
+    /// The value is passed in the given physical register.
+    Reg(PReg, Size),
+    /// The value is passed in a memory location.
+    Mem {
+        /// The offset in the stack to find the data.
+        off: u32,
+        /// The size of the data in bytes.
+        sz: u32
+    },
+    /// A pointer to a value of the given size is passed in a physical register.
+    Boxed {
+        /// The register carrying the pointer.
+        reg: PReg,
+        /// The size of the pointed-to data in bytes.
+        sz: u32
+    },
+}
 
 /// x86-64 calling convention parameters
 pub struct X86CallConv {
@@ -81,30 +104,30 @@ impl X86CallConv {
     }
     
     /// Determine how an argument should be passed
-    pub fn arg_abi(&self, arg_idx: usize, ty: IntTy) -> ArgAbi {
+    pub fn arg_abi(&self, arg_idx: usize, ty: IntTy) -> X86ArgAbi {
         let arg_regs = self.arg_regs();
         
         if arg_idx < arg_regs.len() {
             // Pass in register
-            ArgAbi::Reg(arg_regs[arg_idx], Size::S64)
+            X86ArgAbi::Reg(arg_regs[arg_idx], Size::S64)
         } else {
             // Pass on stack
             // Stack slots are 8-byte aligned, pushed right-to-left
             let stack_offset = (arg_idx - arg_regs.len()) * 8;
-            ArgAbi::Mem { off: stack_offset as u32, sz: 8 }
+            X86ArgAbi::Mem { off: stack_offset as u32, sz: 8 }
         }
     }
     
     /// Determine how a return value should be passed
-    pub fn ret_abi(&self, ret_idx: usize, ty: IntTy) -> ArgAbi {
+    pub fn ret_abi(&self, ret_idx: usize, ty: IntTy) -> X86ArgAbi {
         let ret_regs = self.ret_regs();
         
         if ret_idx < ret_regs.len() && ty.size().bytes().unwrap_or(8) <= 8 {
             // Return in register
-            ArgAbi::Reg(ret_regs[ret_idx], Size::S64)
+            X86ArgAbi::Reg(ret_regs[ret_idx], Size::S64)
         } else {
             // Large returns via hidden pointer (passed in RDI, others shift)
-            ArgAbi::Mem { off: 0, sz: 8 }
+            X86ArgAbi::Mem { off: 0, sz: 8 }
         }
     }
     

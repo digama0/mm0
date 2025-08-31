@@ -1,11 +1,15 @@
 //! Architecture-specific parts of the compiler.
 
 // Architecture modules
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod x86;
+#[cfg(feature = "arm64-backend")]
 pub mod arm64;
+#[cfg(feature = "wasm-backend")]
 pub mod wasm;
 pub mod target;
 pub mod traits;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod proof_traits;
 pub mod arch_types;
 pub mod current;

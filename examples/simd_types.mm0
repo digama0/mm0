@@ -1,0 +1,117 @@
+-- SIMD Types in MM0
+-- Formal definitions and axioms for SIMD vector types
+
+-- Basic sorts
+strict free sort nat;
+strict free sort set;
+sort wff;
+
+-- Term definitions
+term im (ph ps: wff): wff; infixr im: 25 "=>";
+term an (ph ps: wff): wff; infixl an: 34 "/\\";
+
+-- Basic number types (we'll build on these)
+term n0: nat;          -- Zero
+term suc (n: nat): nat; -- Successor
+term nadd (a b: nat): nat; infixl nadd: 64 "+";
+term nmul (a b: nat): nat; infixl nmul: 70 "*";
+
+-- Define a sort for SIMD vector types
+strict free sort vec;
+
+-- Vector constructors (128-bit vectors)
+term v128: set;        -- The type of 128-bit vectors
+term v4f32: set;       -- 4 x 32-bit float vectors
+term v2f64: set;       -- 2 x 64-bit float vectors  
+term v4i32: set;       -- 4 x 32-bit integer vectors
+term v2i64: set;       -- 2 x 64-bit integer vectors
+term v8i16: set;       -- 8 x 16-bit integer vectors
+term v16i8: set;       -- 16 x 8-bit integer vectors
+
+-- Element types
+term f32: set;         -- 32-bit float type
+term f64: set;         -- 64-bit float type
+term i32: set;         -- 32-bit integer type
+term i64: set;         -- 64-bit integer type
+term i16: set;         -- 16-bit integer type
+term i8: set;          -- 8-bit integer type
+
+-- Vector operations
+term vadd {T: set} (a b: T): T;    -- Vector addition
+term vsub {T: set} (a b: T): T;    -- Vector subtraction
+term vmul {T: set} (a b: T): T;    -- Vector multiplication
+term vdiv {T: set} (a b: T): T;    -- Vector division (float only)
+
+-- Vector comparisons (return mask vectors)
+term veq {T: set} (a b: T): T;     -- Element-wise equality
+term vlt {T: set} (a b: T): T;     -- Element-wise less-than
+term vle {T: set} (a b: T): T;     -- Element-wise less-or-equal
+
+-- Vector construction and extraction
+term vmake4 {T: set} (e0 e1 e2 e3: T): v4i32; -- Make vector from 4 elements
+term vextract {T: set} (v: T) (i: nat): i32;  -- Extract element at index
+
+-- Memory operations
+term vload {T: set} (addr: nat): T;           -- Load vector from memory
+term vstore {T: set} (addr: nat) (v: T): wff; -- Store vector to memory
+
+-- Axioms for SIMD operations
+
+-- Axiom: Vector addition is element-wise
+axiom vadd_elem {T: set} (a b: T) (i: nat):
+  $ vextract (vadd a b) i = nadd (vextract a i) (vextract b i) $;
+
+-- Axiom: Vector equality produces all-ones or all-zeros masks
+axiom veq_mask {T: set} (a b: T) (i: nat):
+  $ vextract (veq a b) i = 
+    (vextract a i = vextract b i => nmul (suc n0) (suc n0) | n0) $;
+
+-- Axiom: Load-store consistency
+axiom vload_store {T: set} (addr: nat) (v: T):
+  $ vstore addr v => vload addr = v $;
+
+-- Axiom: Vector construction identity
+axiom vmake4_extract (e0 e1 e2 e3: i32):
+  $ vextract (vmake4 e0 e1 e2 e3) n0 = e0 /\
+    vextract (vmake4 e0 e1 e2 e3) (suc n0) = e1 /\
+    vextract (vmake4 e0 e1 e2 e3) (suc (suc n0)) = e2 /\
+    vextract (vmake4 e0 e1 e2 e3) (suc (suc (suc n0))) = e3 $;
+
+-- Type conversion operations
+term vcvt_i32_f32 (v: v4i32): v4f32;  -- Convert int to float
+term vcvt_f32_i32 (v: v4f32): v4i32;  -- Convert float to int
+
+-- Shuffle operations
+term vshuffle {T: set} (v: T) (mask: v4i32): T;
+
+-- Horizontal operations
+term vhadd {T: set} (a b: T): T;      -- Horizontal add
+term vsum {T: set} (v: T): i32;       -- Sum all elements
+
+-- Axiom: Horizontal add combines adjacent elements
+axiom vhadd_def (a b: v4f32):
+  $ vextract (vhadd a b) n0 = 
+    nadd (vextract a n0) (vextract a (suc n0)) /\
+    vextract (vhadd a b) (suc n0) = 
+    nadd (vextract a (suc (suc n0))) (vextract a (suc (suc (suc n0)))) $;
+
+-- Theorems to prove
+
+-- Theorem: Vector addition is commutative
+theorem vadd_comm {T: set} (a b: T): $ vadd a b = vadd b a $;
+
+-- Theorem: Vector addition is associative  
+theorem vadd_assoc {T: set} (a b c: T): $ vadd (vadd a b) c = vadd a (vadd b c) $;
+
+-- Theorem: Vector zero is identity for addition
+theorem vadd_zero {T: set} (a: T) (zero: T)
+  (h: $ forall (i: nat), vextract zero i = n0 $):
+  $ vadd a zero = a $;
+
+-- Theorem: Dot product implementation is correct
+theorem dot_product_correct (a b: v4f32):
+  $ vsum (vmul a b) = 
+    nadd (nadd (nmul (vextract a n0) (vextract b n0))
+               (nmul (vextract a (suc n0)) (vextract b (suc n0))))
+         (nadd (nmul (vextract a (suc (suc n0))) (vextract b (suc (suc n0))))
+               (nmul (vextract a (suc (suc (suc n0)))) (vextract b (suc (suc (suc n0)))))) $;

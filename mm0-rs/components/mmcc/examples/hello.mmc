@@ -1,0 +1,18 @@
+// Hello World in MMC
+
+// For x86_64 Linux
+const SYS_WRITE: u64 = 1;
+const SYS_EXIT: u64 = 60;
+const STDOUT: u64 = 1;
+
+// Main entry point
+proc main() {
+  // String to print
+  let msg: [u8; 14] = "Hello, World!\n";
+  
+  // Write system call: write(stdout, msg, len)
+  syscall(SYS_WRITE, STDOUT, &msg as u64, 14);
+  
+  // Exit with code 0
+  syscall(SYS_EXIT, 0);
+}

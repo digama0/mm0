@@ -1,0 +1,16 @@
+-- Simple exit program for testing ARM64 compilation
+import "../../components/mm1_parser/test_resources/peano.mm1";
+
+do {
+  -- Initialize the MMC compiler
+  (def mmc (mmc-init))
+  
+  -- Set target to ARM64 macOS  
+  (mmc 'set-target "arm64-macos")
+  
+  -- Add a simple main function that exits with code 42
+  (mmc 'add '(main u8 () () {exit 42}))
+  
+  -- Generate the code
+  (mmc 'to-string)
+};

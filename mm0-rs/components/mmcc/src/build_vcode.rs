@@ -25,6 +25,7 @@ use crate::mir_opt::storage::{Allocations, AllocId};
 use crate::types::{Idx, IdxVec, IntTy, Size, Spanned, classify as cl};
 use crate::types::vcode::{self, ArgAbi, BlockId as VBlockId,
   ChunkVec, ConstRef, InstId, GlobalId, ProcAbi, ProcId, SpillId, VReg, VRegRename};
+use crate::lower_shared::{VCodeCtx, LowerErr};
 
 #[allow(clippy::wildcard_imports)]
 use crate::types::mir::*;
@@ -127,31 +128,7 @@ enum GhostErr {
   InfiniteOp,
 }
 
-/// Errors that can occur during lowering. Several user-level errors make it to this stage;
-/// the main one is that a ghost variable is used in a computationally relevant position.
-#[derive(Debug)]
-pub enum LowerErr {
-  /// A ghost variable was used in an operation that requires it to not be ghost.
-  GhostVarUsed(Spanned<VarId>),
-  /// An operation on unbounded integers was used and could not be optimized away.
-  InfiniteOp(FileSpan),
-  /// The entry point is unreachable, which means that there is an
-  /// unconditional infinite loop in the function.
-  EntryUnreachable(FileSpan),
-}
-/// The ABI expected by the caller.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum VCodeCtx<'a> {
-  /// This is a regular procedure; the `&[Arg]` is the function returns.
-  Proc(&'a [Arg]),
-  /// This is the `start` function, which is called by the operating system and has a
-  /// special stack layout.
-  Start(&'a [(Symbol, bool, VarId, Ty)]),
-}
-
-impl<'a> From<&'a [Arg]> for VCodeCtx<'a> {
-    fn from(v: &'a [Arg]) -> Self { Self::Proc(v) }
-}
+// LowerErr and VCodeCtx are now imported from lower_shared
 
 struct LowerCtx<'a> {
   cfg: &'a Cfg,

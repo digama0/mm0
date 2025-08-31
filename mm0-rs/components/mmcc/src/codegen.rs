@@ -1,7 +1,7 @@
 use std::{io::{self, Write}, ops::Index};
 use arrayvec::ArrayVec;
 use byteorder::{LE, WriteBytesExt};
-use crate::{LinkedCode, TEXT_START, regalloc::PCode, types::vcode::{GlobalId, ProcId, BlockId}};
+use crate::{LinkedCode, TEXT_START, arch_pcode::ArchPCode, types::vcode::{GlobalId, ProcId, BlockId}};
 
 pub(crate) const FUNCTION_ALIGN: u32 = 16;
 
@@ -19,6 +19,26 @@ impl LinkedCode {
   /// This can then be executed to run the compiled program.
   #[allow(clippy::cast_lossless)]
   pub fn write_elf(&self, w: &mut impl Write) -> io::Result<()> {
+    // Dispatch based on target architecture
+    match self.target.arch {
+      #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+      crate::arch::target::TargetArch::X86_64 => self.write_elf_x86(w),
+      #[cfg(feature = "arm64-backend")]
+      crate::arch::target::TargetArch::Arm64 => self.write_arm64_executable(w),
+      #[cfg(feature = "wasm-backend")]
+      crate::arch::target::TargetArch::Wasm32 => self.write_wasm_executable(w),
+      _ => {
+        // Fallback for unknown architectures
+        Err(io::Error::new(io::ErrorKind::Unsupported, 
+          format!("Code generation not implemented for {:?}", self.target.arch)))
+      }
+    }
+  }
+
+  /// Write x86-64 ELF file
+  #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+  #[allow(clippy::cast_lossless)]
+  fn write_elf_x86(&self, w: &mut impl Write) -> io::Result<()> {
     const BSS_ALIGN: u64 = 16;
     const HEADER: [u8; 0x60] = [
       // ELF header
@@ -65,36 +85,81 @@ impl LinkedCode {
     w.write_u64::<LE>(1 << 21)?;
     // end of program header, now at offset 0x78
 
+    // Ensure we have x86 code
+    let init_x86 = self.init.1.with_x86(|pcode| pcode.as_ref()).expect("write_elf_x86 called with non-x86 code");
+    
     let mut ctx = InstSink {
-      linked: self, proc: &self.init.1,
+      linked: self, proc: init_x86,
       rodata_start: rodata_start.try_into().expect("overflow"),
       proc_start: TEXT_START,
       local_rip: 0,
       buf: ArrayVec::new(),
     };
     ctx.write_to(w)?;
-    w.write_all(function_pad(u64::from(TEXT_START + self.init.1.len)))?;
+    w.write_all(function_pad(u64::from(TEXT_START + self.init.1.len())))?;
 
     for &(start, ref code) in &self.funcs.0 {
-      ctx.proc = code;
+      let code_x86 = code.with_x86(|pcode| pcode.as_ref()).expect("write_elf_x86 called with non-x86 code");
+      ctx.proc = code_x86;
       ctx.proc_start = start;
       ctx.write_to(w)?;
-      w.write_all(function_pad(u64::from(code.len)))?;
+      w.write_all(function_pad(u64::from(code.len())))?;
     }
 
     w.write_all(&self.consts.rodata)
   }
+
+  /// Write ARM64 executable (currently outputs assembly)
+  #[cfg(feature = "arm64-backend")]
+  pub fn write_arm64_executable(&self, w: &mut impl Write) -> io::Result<()> {
+    // For now, generate simple ARM64 assembly
+    writeln!(w, "    .text")?;
+    writeln!(w, "    .align 2")?;
+    writeln!(w, "    .globl _start")?;
+    writeln!(w, "_start:")?;
+    
+    // Get the ARM64 PCode from the init section
+    if let Some(pcode) = self.init.1.with_arm64(|p| Some(p.clone())) {
+      // TODO: Implement proper ARM64 instruction encoding
+      // For now, just emit a simple exit
+      writeln!(w, "    // exit(0)")?;
+      writeln!(w, "    mov     x0, #0          // status: 0")?;
+      writeln!(w, "    mov     x16, #1         // syscall: exit (macOS)")?;
+      writeln!(w, "    svc     #0x80           // supervisor call")?;
+    } else {
+      return Err(io::Error::new(io::ErrorKind::InvalidData, 
+        "Expected ARM64 code but found different architecture"));
+    }
+    
+    Ok(())
+  }
+  
+  /// Write WASM executable (currently outputs WAT)
+  #[cfg(feature = "wasm-backend")]
+  pub fn write_wasm_executable(&self, w: &mut impl Write) -> io::Result<()> {
+    // For now, generate simple WASM text format
+    writeln!(w, "(module")?;
+    writeln!(w, "  (func $main (export \"_start\")")?;
+    writeln!(w, "    ;; Exit with code 0")?;
+    writeln!(w, "    i32.const 0")?;
+    writeln!(w, "    unreachable")?;
+    writeln!(w, "  )")?;
+    writeln!(w, ")")?;
+    Ok(())
+  }
 }
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub(crate) struct InstSink<'a> {
   linked: &'a LinkedCode,
-  proc: &'a PCode,
+  proc: &'a crate::regalloc::PCode,
   buf: ArrayVec<u8, 15>,
   proc_start: u32,
   local_rip: u32,
   pub(crate) rodata_start: u32,
 }
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 impl InstSink<'_> {
   pub(crate) fn len(&self) -> usize { self.buf.len() }
   pub(crate) fn push_u8(&mut self, n: u8) { self.buf.push(n) }
@@ -130,6 +195,7 @@ impl InstSink<'_> {
   }
 }
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 impl Index<GlobalId> for InstSink<'_> {
   type Output = u32;
   fn index(&self, index: GlobalId) -> &Self::Output { &self.linked.globals[index].1 }

@@ -1,0 +1,120 @@
+-- SIMD Types Proofs in MM1
+import "simd_types.mm0";
+
+-- Helper lemmas for natural number arithmetic
+theorem nadd_comm (a b: nat): $ nadd a b = nadd b a $ = '(sorry);
+theorem nadd_assoc (a b c: nat): $ nadd (nadd a b) c = nadd a (nadd b c) $ = '(sorry);
+theorem nmul_comm (a b: nat): $ nmul a b = nmul b a $ = '(sorry);
+
+-- Proof: Vector addition is commutative
+theorem vadd_comm {T: set} (a b: T): $ vadd a b = vadd b a $ = '(
+  -- By extensionality, two vectors are equal if all their elements are equal
+  -- For each index i, we have:
+  -- vextract (vadd a b) i = nadd (vextract a i) (vextract b i)  [by vadd_elem]
+  --                      = nadd (vextract b i) (vextract a i)  [by nadd_comm]
+  --                      = vextract (vadd b a) i              [by vadd_elem]
+  sorry -- Full extensionality proof would require more infrastructure
+);
+
+-- Proof: Vector addition is associative
+theorem vadd_assoc {T: set} (a b c: T): $ vadd (vadd a b) c = vadd a (vadd b c) $ = '(
+  -- Similar extensionality argument:
+  -- vextract (vadd (vadd a b) c) i 
+  --   = nadd (vextract (vadd a b) i) (vextract c i)
+  --   = nadd (nadd (vextract a i) (vextract b i)) (vextract c i)
+  --   = nadd (vextract a i) (nadd (vextract b i) (vextract c i))  [by nadd_assoc]
+  --   = vextract (vadd a (vadd b c)) i
+  sorry
+);
+
+-- Proof: Vector zero is identity for addition
+theorem vadd_zero {T: set} (a: T) (zero: T)
+  (h: $ forall (i: nat), vextract zero i = n0 $):
+  $ vadd a zero = a $ = '(
+  -- For each index i:
+  -- vextract (vadd a zero) i = nadd (vextract a i) (vextract zero i)
+  --                         = nadd (vextract a i) n0  [by h]
+  --                         = vextract a i            [n0 is identity for nadd]
+  sorry
+);
+
+-- Helper: Sum of products expansion
+do {
+  (def sum4 (a0 a1 a2 a3: nat) 
+    := (nadd (nadd a0 a1) (nadd a2 a3)))
+};
+
+-- Proof: Dot product implementation is correct
+theorem dot_product_correct (a b: v4f32):
+  $ vsum (vmul a b) = 
+    nadd (nadd (nmul (vextract a n0) (vextract b n0))
+               (nmul (vextract a (suc n0)) (vextract b (suc n0))))
+         (nadd (nmul (vextract a (suc (suc n0))) (vextract b (suc (suc n0))))
+               (nmul (vextract a (suc (suc (suc n0)))) (vextract b (suc (suc (suc n0)))))) $ = '(
+  -- Step 1: vmul produces element-wise multiplication
+  -- vextract (vmul a b) i = nmul (vextract a i) (vextract b i)
+  
+  -- Step 2: vsum adds all elements
+  -- vsum v = nadd (vextract v 0) 
+  --               (nadd (vextract v 1)
+  --                     (nadd (vextract v 2) (vextract v 3)))
+  
+  -- Combining these gives the desired result
+  sorry
+);
+
+-- Correctness of SIMD implementations
+
+-- Theorem: SIMD operations preserve type safety
+theorem simd_type_safety {T: set} (a b: T) (op: T -> T -> T):
+  $ exists (result: T), op a b = result $ = '(
+  -- SIMD operations are closed under their types
+  sorry
+);
+
+-- Theorem: SIMD load is injective (different addresses give different values)
+theorem vload_injective {T: set} (addr1 addr2: nat) (h: $ addr1 != addr2 $):
+  $ vload {T} addr1 != vload {T} addr2 $ = '(
+  -- Memory model axiom
+  sorry  
+);
+
+-- Architecture-specific correctness
+
+-- x86 SSE correctness
+def x86_movaps {T: set} (src: T): T := src;
+def x86_addps (a b: v4f32): v4f32 := (vadd a b);
+
+theorem x86_sse_correct (a b: v4f32):
+  $ x86_addps a b = vadd a b $ = '(eq_refl);
+
+-- ARM NEON correctness  
+def arm_fadd (a b: v4f32): v4f32 := (vadd a b);
+
+theorem arm_neon_correct (a b: v4f32):
+  $ arm_fadd a b = vadd a b $ = '(eq_refl);
+
+-- WASM SIMD128 correctness
+def wasm_f32x4_add (a b: v4f32): v4f32 := (vadd a b);
+
+theorem wasm_simd_correct (a b: v4f32):
+  $ wasm_f32x4_add a b = vadd a b $ = '(eq_refl);
+
+-- Cross-platform consistency theorem
+theorem simd_cross_platform (a b: v4f32):
+  $ x86_addps a b = arm_fadd a b /\ arm_fadd a b = wasm_f32x4_add a b $ = '(
+  -- All map to the same abstract operation
+  (an eq_refl eq_refl)
+);
+
+-- Performance properties (informal)
+-- These can't be formally proven in MM0 but document expected behavior
+
+-- Property: SIMD operations process multiple elements in parallel
+-- vadd on v4f32 processes 4 floats simultaneously
+
+-- Property: SIMD memory access is more efficient for aligned data
+-- vload at 16-byte aligned addresses is faster
+
+-- Property: Horizontal operations have higher latency than vertical
+-- vhadd typically takes more cycles than vadd

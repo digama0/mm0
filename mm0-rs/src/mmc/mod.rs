@@ -105,7 +105,10 @@ impl CompilerInner {
       return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
     }
     // Set the target on the inner MMCC compiler before finishing
-    self.inner.set_target(self.target);
+    // Command-line override takes precedence
+    let target = mmcc::target_override::get_target_override()
+      .unwrap_or(self.target);
+    self.inner.set_target(target);
     let code = self.inner.finish().map_err(|err| match err {
       LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v)) =>
         ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position"),

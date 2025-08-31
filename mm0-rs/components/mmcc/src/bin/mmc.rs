@@ -7,6 +7,7 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use std::process;
+use mmcc::{Compiler, parser::parse_mmc};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -111,33 +112,96 @@ fn detect_current_arch() -> &'static str {
 fn compile_x86(source: &str, output: &str, emit_asm: bool) {
     eprintln!("Using x86-64 backend");
     
-    // Placeholder implementation
-    if emit_asm {
-        let asm = generate_x86_hello_asm();
-        if let Err(e) = fs::write(format!("{}.s", output), asm) {
-            eprintln!("Error writing assembly file: {}", e);
+    // Parse the source
+    let (items, var_names) = match parse_mmc(source) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
             process::exit(1);
         }
-        eprintln!("Generated assembly: {}.s", output);
-    } else {
-        eprintln!("Binary generation not yet implemented");
-        eprintln!("Use --emit-asm to see generated assembly");
+    };
+    
+    // Create compiler and add items
+    let mut compiler = Compiler::new(());
+    
+    for item in items {
+        if let Err(e) = compiler.add(&item, var_names.clone(), ()) {
+            eprintln!("Compilation error: {:?}", e);
+            process::exit(1);
+        }
+    }
+    
+    // Generate code
+    match compiler.finish() {
+        Ok(code) => {
+            if emit_asm {
+                // For now, still use placeholder assembly
+                // TODO: Extract actual generated assembly from LinkedCode
+                let asm = generate_x86_hello_asm();
+                if let Err(e) = fs::write(format!("{}.s", output), asm) {
+                    eprintln!("Error writing assembly file: {}", e);
+                    process::exit(1);
+                }
+                eprintln!("Generated assembly: {}.s", output);
+            } else {
+                eprintln!("Binary generation not yet implemented");
+                eprintln!("Use --emit-asm to see generated assembly");
+            }
+        }
+        Err(e) => {
+            eprintln!("Code generation error: {:?}", e);
+            process::exit(1);
+        }
     }
 }
 
 fn compile_arm64(source: &str, output: &str, emit_asm: bool) {
     eprintln!("Using ARM64 backend");
     
-    if emit_asm {
-        let asm = generate_arm64_hello_asm();
-        if let Err(e) = fs::write(format!("{}.s", output), asm) {
-            eprintln!("Error writing assembly file: {}", e);
+    // Parse the source
+    let (items, var_names) = match parse_mmc(source) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
             process::exit(1);
         }
-        eprintln!("Generated assembly: {}.s", output);
-    } else {
-        eprintln!("Binary generation not yet implemented");
-        eprintln!("Use --emit-asm to see generated assembly");
+    };
+    
+    // Create compiler with ARM64 target
+    let mut compiler = Compiler::new(());
+    compiler.set_target(mmcc::arch::target::Target {
+        arch: mmcc::arch::target::TargetArch::Arm64,
+        os: mmcc::arch::target::OperatingSystem::MacOS,
+    });
+    
+    for item in items {
+        if let Err(e) = compiler.add(&item, var_names.clone(), ()) {
+            eprintln!("Compilation error: {:?}", e);
+            process::exit(1);
+        }
+    }
+    
+    // Generate code
+    match compiler.finish() {
+        Ok(code) => {
+            if emit_asm {
+                // For now, still use placeholder assembly
+                // TODO: Extract actual generated assembly from LinkedCode
+                let asm = generate_arm64_hello_asm();
+                if let Err(e) = fs::write(format!("{}.s", output), asm) {
+                    eprintln!("Error writing assembly file: {}", e);
+                    process::exit(1);
+                }
+                eprintln!("Generated assembly: {}.s", output);
+            } else {
+                eprintln!("Binary generation not yet implemented");
+                eprintln!("Use --emit-asm to see generated assembly");
+            }
+        }
+        Err(e) => {
+            eprintln!("Code generation error: {:?}", e);
+            process::exit(1);
+        }
     }
 }
 

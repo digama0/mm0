@@ -1,0 +1,9 @@
+-- Simple exit program for ARM64
+theorem exit_zero: $ 0 = 0 $ = '(eq 0 0);
+
+do {
+  (main) {
+    -- Just exit with code 0
+    @ 0 exit
+  }
+};

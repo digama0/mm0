@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::types::mir;
 use crate::types::vcode::{ProcAbi, ProcId};
 use crate::types::IdxVec;
-use crate::regalloc::PCode;
+use crate::arch_pcode::ArchPCode;
 use crate::mir_opt::storage::Allocations;
 use crate::arch::target::{Target, TargetArch};
 use crate::linker::ConstData;
@@ -26,7 +26,7 @@ pub trait ArchCodegen: Send + Sync {
         consts: &ConstData,
         cfg: &mir::Cfg,
         allocs: &Allocations,
-        ctx: crate::build_vcode::VCodeCtx<'_>,
+        ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr>;
     
     /// Write executable for this architecture
@@ -36,7 +36,7 @@ pub trait ArchCodegen: Send + Sync {
 /// Trait for VCode that can be register allocated
 pub trait VCodeTrait: Send {
     /// Perform register allocation
-    fn regalloc(self: Box<Self>) -> (ProcAbi, Box<PCode>);
+    fn regalloc(self: Box<Self>) -> (crate::types::vcode::ProcAbi, ArchPCode);
 }
 
 /// X86-64 code generator
@@ -51,11 +51,19 @@ impl ArchCodegen for X86Codegen {
         consts: &ConstData,
         cfg: &mir::Cfg,
         allocs: &Allocations,
-        ctx: crate::build_vcode::VCodeCtx<'_>,
+        ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
-        // Use the existing x86 build_vcode
-        let vcode = crate::build_vcode::build_vcode(names, funcs, func_abi, consts, cfg, allocs, ctx)?;
-        Ok(Box::new(vcode))
+        #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+        {
+            // Use the existing x86 build_vcode
+            let vcode = crate::build_vcode::build_vcode(names, funcs, func_abi, consts, cfg, allocs, ctx)?;
+            Ok(Box::new(vcode))
+        }
+        #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+        {
+            // When building for ARM64/WASM, x86 build_vcode is not available
+            Err(LowerErr::InfiniteOp(Default::default()))
+        }
     }
     
     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()> {
@@ -86,7 +94,7 @@ impl ArchCodegen for Arm64Codegen {
         consts: &ConstData,
         cfg: &mir::Cfg,
         allocs: &Allocations,
-        ctx: crate::build_vcode::VCodeCtx<'_>,
+        ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
         eprintln!("ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!");
         let vcode = crate::arch::arm64::lower::build_arm64_vcode(
@@ -105,10 +113,7 @@ impl ArchCodegen for Arm64Codegen {
                 self.0.flush()
             }
         }
-        code.write_executable(&mut WriteWrapper(w), Target {
-            arch: TargetArch::Arm64,
-            os: crate::arch::target::OperatingSystem::MacOS,
-        })
+        code.write_elf(&mut WriteWrapper(w))
     }
 }
 
@@ -124,7 +129,7 @@ impl ArchCodegen for WasmCodegen {
         _consts: &ConstData,
         _cfg: &mir::Cfg,
         _allocs: &Allocations,
-        _ctx: crate::build_vcode::VCodeCtx<'_>,
+        _ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
         // TODO: Implement WASM VCode generation
         Err(LowerErr::InfiniteOp(Default::default()))
@@ -140,10 +145,7 @@ impl ArchCodegen for WasmCodegen {
                 self.0.flush()
             }
         }
-        code.write_executable(&mut WriteWrapper(w), Target {
-            arch: TargetArch::Wasm32,
-            os: crate::arch::target::OperatingSystem::Wasi,
-        })
+        code.write_elf(&mut WriteWrapper(w))
     }
 }
 
@@ -167,8 +169,10 @@ pub fn get_codegen(target: Target) -> Box<dyn ArchCodegen> {
 }
 
 // Implement VCodeTrait for x86 VCode
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 impl VCodeTrait for crate::build_vcode::VCode {
-    fn regalloc(self: Box<Self>) -> (ProcAbi, Box<PCode>) {
-        (*self).regalloc()
+    fn regalloc(self: Box<Self>) -> (ProcAbi, ArchPCode) {
+        let (abi, pcode) = (*self).regalloc();
+        (abi, ArchPCode::X86(pcode))
     }
 }

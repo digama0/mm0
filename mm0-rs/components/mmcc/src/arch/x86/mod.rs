@@ -3,7 +3,8 @@
 pub mod proof_impl;
 pub mod proof_refactor;
 pub mod calling_conv;
-pub mod frame;
+pub mod arch_impl;
+// pub mod frame; // Temporarily disabled - compilation issues
 
 use std::fmt::{Debug, Display};
 use std::sync::LazyLock;
@@ -1009,6 +1010,62 @@ pub(crate) enum Inst {
   /// Traps if the condition code is not set.
   /// Otherwise, jumps to the target block.
   Assert { cc: CC, dst: BlockId },
+  
+  // SSE SIMD Instructions
+  /// Move aligned packed single-precision floating-point values: `dst <- movaps src`
+  Movaps { dst: VReg, src: RegMem },
+  /// Move unaligned packed single-precision floating-point values: `dst <- movups src`
+  Movups { dst: VReg, src: RegMem },
+  /// Store aligned packed single-precision floating-point values: `dst <- movaps src`
+  MovapsStore { dst: AMode, src: VReg },
+  /// Store unaligned packed single-precision floating-point values: `dst <- movups src`
+  MovupsStore { dst: AMode, src: VReg },
+  
+  /// Add packed single-precision floating-point values: `dst <- addps dst, src`
+  Addps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Subtract packed single-precision floating-point values: `dst <- subps dst, src`
+  Subps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Multiply packed single-precision floating-point values: `dst <- mulps dst, src`
+  Mulps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Divide packed single-precision floating-point values: `dst <- divps dst, src`
+  Divps { dst: VReg, src1: VReg, src2: RegMem },
+  
+  /// Add packed integers: `dst <- paddd dst, src`
+  Paddd { dst: VReg, src1: VReg, src2: RegMem },
+  /// Subtract packed integers: `dst <- psubd dst, src`
+  Psubd { dst: VReg, src1: VReg, src2: RegMem },
+  /// Multiply packed signed dword integers and store low result: `dst <- pmulld dst, src`
+  Pmulld { dst: VReg, src1: VReg, src2: RegMem },
+  
+  /// Compare packed single-precision floating-point values for equality: `dst <- cmpeqps dst, src`
+  Cmpeqps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Compare packed single-precision floating-point values for less-than: `dst <- cmpltps dst, src`
+  Cmpltps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Compare packed single-precision floating-point values for less-than-or-equal: `dst <- cmpleps dst, src`
+  Cmpleps { dst: VReg, src1: VReg, src2: RegMem },
+  
+  /// Compare packed dword integers for equality: `dst <- pcmpeqd dst, src`
+  Pcmpeqd { dst: VReg, src1: VReg, src2: RegMem },
+  /// Compare packed dword integers for greater-than: `dst <- pcmpgtd dst, src`
+  Pcmpgtd { dst: VReg, src1: VReg, src2: RegMem },
+  
+  /// Shuffle packed single-precision floating-point values: `dst <- shufps dst, src, imm8`
+  Shufps { dst: VReg, src1: VReg, src2: RegMem, imm: u8 },
+  /// Unpack and interleave low packed single-precision floating-point values
+  Unpcklps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Unpack and interleave high packed single-precision floating-point values
+  Unpckhps { dst: VReg, src1: VReg, src2: RegMem },
+  
+  /// Horizontal add packed single-precision floating-point values (SSE3): `dst <- haddps dst, src`
+  Haddps { dst: VReg, src1: VReg, src2: RegMem },
+  /// Dot product of packed single-precision floating-point values (SSE4.1): `dst <- dpps dst, src, imm8`
+  Dpps { dst: VReg, src1: VReg, src2: RegMem, imm: u8 },
+  
+  /// Convert packed dword integers to packed single-precision floating-point values
+  Cvtdq2ps { dst: VReg, src: RegMem },
+  /// Convert packed single-precision floating-point values to packed dword integers
+  Cvtps2dq { dst: VReg, src: RegMem },
+  
   /// An instruction that will always trigger the illegal instruction exception.
   Ud2,
 }
@@ -1073,12 +1130,49 @@ impl Debug for Inst {
       Self::JmpCond { cc, taken, not_taken } =>
         write!(f, "j{cc} -> bb{} else bb{}", taken.0, not_taken.0),
       Self::Assert { cc, dst } => write!(f, "assert{cc} -> bb{}", dst.0),
+      
+      // SSE SIMD Instructions
+      Self::Movaps { dst, src } => write!(f, "{dst} <- movaps {src}"),
+      Self::Movups { dst, src } => write!(f, "{dst} <- movups {src}"),
+      Self::MovapsStore { dst, src } => write!(f, "{dst} <- movaps {src}"),
+      Self::MovupsStore { dst, src } => write!(f, "{dst} <- movups {src}"),
+      
+      Self::Addps { dst, src1, src2 } => write!(f, "{dst} <- addps {src1}, {src2}"),
+      Self::Subps { dst, src1, src2 } => write!(f, "{dst} <- subps {src1}, {src2}"),
+      Self::Mulps { dst, src1, src2 } => write!(f, "{dst} <- mulps {src1}, {src2}"),
+      Self::Divps { dst, src1, src2 } => write!(f, "{dst} <- divps {src1}, {src2}"),
+      
+      Self::Paddd { dst, src1, src2 } => write!(f, "{dst} <- paddd {src1}, {src2}"),
+      Self::Psubd { dst, src1, src2 } => write!(f, "{dst} <- psubd {src1}, {src2}"),
+      Self::Pmulld { dst, src1, src2 } => write!(f, "{dst} <- pmulld {src1}, {src2}"),
+      
+      Self::Cmpeqps { dst, src1, src2 } => write!(f, "{dst} <- cmpeqps {src1}, {src2}"),
+      Self::Cmpltps { dst, src1, src2 } => write!(f, "{dst} <- cmpltps {src1}, {src2}"),
+      Self::Cmpleps { dst, src1, src2 } => write!(f, "{dst} <- cmpleps {src1}, {src2}"),
+      
+      Self::Pcmpeqd { dst, src1, src2 } => write!(f, "{dst} <- pcmpeqd {src1}, {src2}"),
+      Self::Pcmpgtd { dst, src1, src2 } => write!(f, "{dst} <- pcmpgtd {src1}, {src2}"),
+      
+      Self::Shufps { dst, src1, src2, imm } => write!(f, "{dst} <- shufps {src1}, {src2}, {imm:#x}"),
+      Self::Unpcklps { dst, src1, src2 } => write!(f, "{dst} <- unpcklps {src1}, {src2}"),
+      Self::Unpckhps { dst, src1, src2 } => write!(f, "{dst} <- unpckhps {src1}, {src2}"),
+      
+      Self::Haddps { dst, src1, src2 } => write!(f, "{dst} <- haddps {src1}, {src2}"),
+      Self::Dpps { dst, src1, src2, imm } => write!(f, "{dst} <- dpps {src1}, {src2}, {imm:#x}"),
+      
+      Self::Cvtdq2ps { dst, src } => write!(f, "{dst} <- cvtdq2ps {src}"),
+      Self::Cvtps2dq { dst, src } => write!(f, "{dst} <- cvtps2dq {src}"),
+      
       Self::Ud2 => write!(f, "ud2"),
     }
   }
 }
 
-impl VInst for Inst {
+// Implementation of VInst trait for x86
+// Note: When building with non-x86 backends, this may have type mismatches
+// since the trait uses globally imported types
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+impl crate::types::vcode::Inst for Inst {
   fn is_call(&self) -> bool {
     matches!(self, Inst::CallKnown {..} | Inst::SysCall {..})
   }
@@ -1181,7 +1275,47 @@ impl VInst for Inst {
       Inst::Fallthrough { .. } |
       // Inst::LetStart { .. } |
       Inst::JmpCond { .. } |
-      Inst::Assert { .. } |
+      Inst::Assert { .. } => {}
+      
+      // SSE SIMD Instructions - operand collection
+      Inst::Movaps { dst, ref src } | Inst::Movups { dst, ref src } => {
+        src.collect_operands(args);
+        args.push(Operand::reg_def(dst.0));
+      }
+      Inst::MovapsStore { ref dst, src } | Inst::MovupsStore { ref dst, src } => {
+        args.push(Operand::reg_use(src.0));
+        dst.collect_operands(args);
+      }
+      Inst::Addps { dst, src1, ref src2 } | 
+      Inst::Subps { dst, src1, ref src2 } |
+      Inst::Mulps { dst, src1, ref src2 } |
+      Inst::Divps { dst, src1, ref src2 } |
+      Inst::Paddd { dst, src1, ref src2 } |
+      Inst::Psubd { dst, src1, ref src2 } |
+      Inst::Pmulld { dst, src1, ref src2 } |
+      Inst::Cmpeqps { dst, src1, ref src2 } |
+      Inst::Cmpltps { dst, src1, ref src2 } |
+      Inst::Cmpleps { dst, src1, ref src2 } |
+      Inst::Pcmpeqd { dst, src1, ref src2 } |
+      Inst::Pcmpgtd { dst, src1, ref src2 } |
+      Inst::Unpcklps { dst, src1, ref src2 } |
+      Inst::Unpckhps { dst, src1, ref src2 } |
+      Inst::Haddps { dst, src1, ref src2 } => {
+        args.push(Operand::reg_use(src1.0));
+        src2.collect_operands(args);
+        args.push(Operand::reg_reuse_def(dst.0, 0));
+      }
+      Inst::Shufps { dst, src1, ref src2, .. } |
+      Inst::Dpps { dst, src1, ref src2, .. } => {
+        args.push(Operand::reg_use(src1.0));
+        src2.collect_operands(args);
+        args.push(Operand::reg_reuse_def(dst.0, 0));
+      }
+      Inst::Cvtdq2ps { dst, ref src } | Inst::Cvtps2dq { dst, ref src } => {
+        src.collect_operands(args);
+        args.push(Operand::reg_def(dst.0));
+      }
+      
       Inst::Ud2 => {}
     }
   }

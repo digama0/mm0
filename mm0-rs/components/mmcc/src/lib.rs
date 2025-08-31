@@ -111,6 +111,7 @@ mod nameck;
 mod build_mir;
 mod mir_opt;
 mod symbol;
+pub mod parser;
 #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 mod build_vcode;
 mod lower_shared;

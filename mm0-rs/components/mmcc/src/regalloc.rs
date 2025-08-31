@@ -458,6 +458,24 @@ impl VCode {
           code.push(PInst::Assert { cc, dst });
         }
         Inst::Ud2 => { code.push(PInst::Ud2); }
+        // SIMD instructions - for now, skip them during register allocation
+        Inst::Movaps { .. } | Inst::Movups { .. } | 
+        Inst::MovapsStore { .. } | Inst::MovupsStore { .. } |
+        Inst::Addps { .. } | Inst::Subps { .. } | 
+        Inst::Mulps { .. } | Inst::Divps { .. } |
+        Inst::Minps { .. } | Inst::Maxps { .. } |
+        Inst::Sqrtps { .. } | Inst::Rsqrtps { .. } |
+        Inst::Rcpps { .. } | Inst::Andps { .. } |
+        Inst::Andnps { .. } | Inst::Orps { .. } |
+        Inst::Xorps { .. } | Inst::Cmpps { .. } |
+        Inst::Shufps { .. } | Inst::Unpcklps { .. } |
+        Inst::Unpckhps { .. } | Inst::Movmskps { .. } |
+        Inst::Cvtsi2ss { .. } | Inst::Cvtss2si { .. } |
+        Inst::Comiss { .. } | Inst::Ucomiss { .. } => {
+          // TODO: Implement SIMD register allocation
+          ar.next(); // Skip for now
+          code.push(PInst::Ud2); // Placeholder
+        }
       }
       code.apply_edits(&mut edits, &ar, ProgPoint::after(i));
     }

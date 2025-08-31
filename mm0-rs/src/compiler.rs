@@ -465,6 +465,9 @@ pub struct Args {
   pub input: String,
   /// Sets the output file (.mmb or .mmu)
   pub output: Option<String>,
+  /// Target architecture and OS (e.g., x86_64-linux, arm64-macos, wasm32)
+  #[clap(long, value_name = "TARGET", default_value = "x86_64-linux")]
+  pub target: String,
 }
 
 impl Args {
@@ -479,6 +482,13 @@ impl Args {
   ///   successful. The file extension is used to determine if we are outputting
   ///   binary. If this argument is omitted, the input is only elaborated.
   pub fn main(self) -> io::Result<()> {
+    // Parse and set the target override if provided
+    if let Ok(target) = mmcc::target_override::parse_target(&self.target) {
+      mmcc::target_override::set_target_override(target);
+    } else {
+      eprintln!("Warning: Invalid target '{}', using default", self.target);
+    }
+    
     let path: FileRef = fs::canonicalize(self.input)?.into();
     QUIET.store(self.quiet, Ordering::Relaxed);
     let (file, env) = elab_for_result(path.clone())?;
