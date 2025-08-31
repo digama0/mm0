@@ -4,11 +4,13 @@
 //! code in a form close to WASM instructions but using virtual registers.
 
 use crate::types::{IdxVec, mir, vcode::*};
-use crate::types::classify::Trace;
+use super::regalloc::Trace;
 use crate::types::mir::Constant;
 use crate::Idx;
-use super::inst::Inst;
+use super::WasmInst;
 use std::ops::Index;
+use crate::codegen_arch::VCodeTrait;
+use crate::arch_pcode::ArchPCode;
 
 /// WASM virtual code
 #[derive(Debug)]
@@ -16,7 +18,7 @@ pub struct VCode {
     /// The function ABI
     pub abi: ProcAbi,
     /// The instructions
-    pub insts: IdxVec<InstId, Inst>,
+    pub insts: IdxVec<InstId, WasmInst>,
     /// Basic blocks
     pub blocks: IdxVec<BlockId, Block>,
     /// Map from MIR blocks to VCode blocks
@@ -55,12 +57,29 @@ impl VCode {
         let block = &self.blocks[block];
         block.start..block.end
     }
+    
+    /// Emit an instruction
+    pub fn emit(&mut self, inst: Inst) -> InstId {
+        let id = InstId(self.insts.len() as u32);
+        self.insts.push(inst);
+        id
+    }
 }
 
 impl Index<InstId> for VCode {
-    type Output = Inst;
+    type Output = WasmInst;
     
     fn index(&self, idx: InstId) -> &Self::Output {
         &self.insts[idx]
+    }
+}
+
+impl VCodeTrait for VCode {
+    fn regalloc(self: Box<Self>) -> (ProcAbi, ArchPCode) {
+        // WASM doesn't need register allocation - it's a stack machine
+        // We just convert VCode directly to PCode
+        let pcode = super::regalloc_impl::wasm_simple_alloc(*self);
+        let abi = pcode.abi.clone();
+        (abi, ArchPCode::Wasm(Box::new(pcode)))
     }
 }

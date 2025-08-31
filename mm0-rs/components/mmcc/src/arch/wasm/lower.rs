@@ -212,9 +212,9 @@ pub fn build_wasm_vcode(
                                         0
                                     };
                                     insts.push(WasmInst::Const {
-                                        ty: WasmType::I32,
-                                        value: value as u64,
-                                    });
+                                ty: WasmType::I32,
+                                value: value as u64,
+                            });
                                 }
                             }
                             mir::Operand::Var(v) => {
@@ -243,16 +243,3 @@ pub fn build_wasm_vcode(
     Ok(vcode)
 }
 
-// Implement the VCodeTrait for WASM VCode
-impl crate::codegen_arch::VCodeTrait for VCode {
-    fn regalloc(self: Box<Self>) -> (ProcAbi, Box<crate::regalloc::PCode>) {
-        // WASM doesn't need register allocation - just convert to PCode
-        // For now, return a minimal PCode
-        let pcode = crate::regalloc::PCode {
-            len: 100, // Placeholder
-            insts: crate::types::vcode::ChunkVec::new(),
-            jumps: vec![],
-        };
-        (self.abi, Box::new(pcode))
-    }
-}

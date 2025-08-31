@@ -694,7 +694,11 @@ mk_fold! { <'a>
         self.do_call(f, &funcs[f], args, *reach, rets, *se, *tgt, it)
       }
       (&Terminator::Intrinsic(f, cl), mir::Terminator::Call { args, rets, .. }) => {
+        #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+        use crate::arch::x86::SysCall;
+        #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
         use SysCall::*;
+        #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
         match (f, &**args) {
           (IntrinsicProc::Open | IntrinsicProc::Create, [fname]) =>
             self.do_syscall(Open, &[Some(fname), None, None], cl, it),
@@ -709,6 +713,11 @@ mk_fold! { <'a>
           (IntrinsicProc::MMapAnon, [len, prot]) =>
             self.do_syscall(MMap, &[None, Some(len), Some(prot), None, None, None], cl, it),
           _ => unreachable!(),
+        }
+        #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+        {
+          // For non-x86 backends, we don't have syscall support yet
+          unreachable!("classify: intrinsics not supported on this architecture: {f:?}")
         }
       }
       _ => unreachable!()

@@ -49,6 +49,7 @@ impl ArchitectureTypes for X86Arch {
 #[derive(Debug, Clone, Copy)]
 pub struct Arm64Arch;
 
+#[cfg(feature = "arm64-backend")]
 impl ArchitectureTypes for Arm64Arch {
     type PReg = crate::arch::arm64::PReg;
     type PRegSet = crate::arch::arm64::regs::PRegSet;
@@ -89,6 +90,7 @@ impl ArchReg for crate::arch::x86::PReg {
     }
 }
 
+#[cfg(feature = "arm64-backend")]
 impl ArchReg for crate::arch::arm64::PReg {
     fn is_valid(&self) -> bool {
         use crate::arch::traits::PhysicalReg;

@@ -10,7 +10,6 @@ pub mod mir;
 pub mod vcode;
 pub mod arch_vcode;
 pub mod generic_vcode;
-#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod classify;
 
 use std::borrow::Cow;

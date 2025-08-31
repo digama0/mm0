@@ -123,16 +123,19 @@ pub struct WasmCodegen;
 impl ArchCodegen for WasmCodegen {
     fn build_vcode(
         &self,
-        _names: &HashMap<Symbol, Entity>,
-        _funcs: &HashMap<Symbol, ProcId>,
-        _func_abi: &IdxVec<ProcId, ProcAbi>,
-        _consts: &ConstData,
-        _cfg: &mir::Cfg,
-        _allocs: &Allocations,
-        _ctx: crate::lower_shared::VCodeCtx<'_>,
+        names: &HashMap<Symbol, Entity>,
+        funcs: &HashMap<Symbol, ProcId>,
+        func_abi: &IdxVec<ProcId, ProcAbi>,
+        consts: &ConstData,
+        cfg: &mir::Cfg,
+        allocs: &Allocations,
+        ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
-        // TODO: Implement WASM VCode generation
-        Err(LowerErr::InfiniteOp(Default::default()))
+        eprintln!("WASM CODEGEN: build_vcode called! This is the WASM backend!");
+        let vcode = crate::arch::wasm::lower::build_wasm_vcode(
+            names, funcs, func_abi, consts, cfg, allocs, ctx
+        )?;
+        Ok(Box::new(vcode))
     }
     
     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()> {

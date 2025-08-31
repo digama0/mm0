@@ -71,9 +71,17 @@ impl RegisterSet<WasmReg> for WasmRegSet {
     }
 }
 
+impl From<WasmRegSet> for regalloc2::PRegSet {
+    fn from(_: WasmRegSet) -> Self {
+        regalloc2::PRegSet::empty()
+    }
+}
+
 pub mod regalloc;
+pub mod regalloc_impl;
 pub mod module;
 pub mod vcode;
+pub mod vcode_impl;
 pub mod lower;
 pub mod arch_impl;
 

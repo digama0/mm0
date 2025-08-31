@@ -53,8 +53,11 @@ impl LinkedCode {
 impl LinkedCode {
     /// Generate ARM64 machine code from the linked code
     fn generate_arm64_code(&self) -> Vec<u8> {
-        use crate::arch::arm64::{PInst, X0, X16, OperandSize};
-        use crate::arch::traits::PhysicalInstruction;
+        #[cfg(feature = "arm64-backend")]
+        {
+            use crate::arch::arm64::{PInst, X0, X16, OperandSize};
+            use crate::arch::traits::PhysicalInstruction;
+        }
         
         eprintln!("ARM64: generate_arm64_code called");
         
