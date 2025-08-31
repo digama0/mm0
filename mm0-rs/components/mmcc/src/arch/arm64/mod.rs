@@ -21,6 +21,7 @@ pub mod lower;
 pub mod pcode;
 pub mod code_cache;
 pub mod regalloc;
+pub mod regalloc_impl;
 
 pub use regs::*;
 pub use inst::*;
