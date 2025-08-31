@@ -1,0 +1,88 @@
+elab hello_arm64.mm1
+elab compiler.mm1
+elab compiler-new.mm1
+elab compiler-old.mm1
+elab separation_logic.mm1
+elab assembler-new.mm1
+elab assembler-old.mm1
+elab x86_determ.mm1
+elab x86.mm1
+elab peano_hex.mm1
+elab peano.mm1
+elabbed peano.mm1
+elabbed peano_hex.mm1
+elabbed x86.mm1
+elabbed x86_determ.mm1
+elabbed assembler-old.mm1
+elabbed assembler-new.mm1
+elabbed separation_logic.mm1
+elabbed compiler-old.mm1
+elabbed compiler-new.mm1
+elabbed compiler.mm1
+mmc: set_target called with: Target { arch: Arm64, os: MacOS }
+DEBUG: Processing main function, args.len() = 0
+DEBUG: main has no arguments
+LinkedCode::link called with target: Target { arch: Arm64, os: MacOS }
+get_codegen called with target: Target { arch: Arm64, os: MacOS }
+Selected ARM64 codegen!
+ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!
+ARM64: Starting VCode generation
+ARM64: Processing block bb0, terminator: cb0+2 := call sys_write(1, 14, v0, move v1) -> ghost v2. bb1
+ARM64: Found call to function sys_write with 4 args
+ARM64: Detected write syscall
+ARM64: Using fd = 1
+ARM64: Loading hardcoded Hello, World! string
+ARM64: Processing block bb1, terminator: return
+ARM64: Found return terminator - treating as exit(0) for start context
+ARM64: Successfully generated VCode with 2 blocks
+ARM64: Starting register allocation
+ARM64: Generated 5 physical instructions
+ARM64: Patched ADR at instruction 1 with offset 16 (remaining: 4)
+ARM64: Cached code with ID 1
+ARM64: Generated ARM64 code with ID 1 but returning minimal x86 PCode for compatibility
+ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!
+ARM64: Starting VCode generation
+ARM64: Processing block bb0, terminator: cb0+0 := call main() -> bb1
+ARM64: Found call to function main with 0 args
+ARM64: Regular function call to main not yet implemented
+ARM64: Processing block bb1, terminator: exit ()
+ARM64: Found exit terminator
+ARM64: Successfully generated VCode with 2 blocks
+ARM64: Starting register allocation
+ARM64: Generated 3 physical instructions
+ARM64: Cached code with ID 2
+ARM64: Generated ARM64 code with ID 2 but returning minimal x86 PCode for compatibility
+WARNING: Proof generation not yet supported for ARM64, bypassing proofs
+Proof generation bypassed for Target { arch: Arm64, os: MacOS }
+Proof rendering bypassed for Arm64 architecture
+LinkedCode: write_executable called for ARM64 macOS
+LinkedCode: write_macho_arm64 called
+ARM64: generate_arm64_code called
+ARM64: Looking for cached ARM64 code...
+ARM64: Found cached ARM64 code (ID 2) with 3 instructions
+ARM64: Returning 26 bytes of ARM64 code
+LinkedCode: Generated 26 bytes of ARM64 code
+LinkedCode: write_proper_macho_arm64 returned: true
+Creating string definition with 33024 bytes of ARM64 binary data
+elabbed hello_arm64.mm1
+[1m[91merror[0m: [1munknown theorem/hypothesis 'test_arm64_ok'[0m
+  [1m[94m-->[0m hello_arm64.mm1:29:52
+   [1m[94m|[0m
+[1m[94m29 |[0m pub theorem test_isBasicElf: $ isBasicElf test $ = (named '(anl test_arm64_ok));
+   [1m[94m|[0m                                                    [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1m[92mnote[0m: peano.mm1:106:13: error occurred here
+   [1m[94m= [0m[1m[92mnote[0m: peano.mm1:106:13: (refine-extra-args)
+   [1m[94m= [0m[1m[92mnote[0m: hello_arm64.mm1:29:52: (refine)
+
+[1m[91merror[0m: [1munknown theorem/hypothesis 'test_arm64_ok'[0m
+  [1m[94m-->[0m hello_arm64.mm1:32:1
+   [1m[94m|[0m
+[1m[94m32 |[0m (named '(anr test_arm64_ok));
+   [1m[94m|[0m [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1m[92mnote[0m: peano.mm1:106:13: error occurred here
+   [1m[94m= [0m[1m[92mnote[0m: peano.mm1:106:13: (refine-extra-args)
+   [1m[94m= [0m[1m[92mnote[0m: hello_arm64.mm1:32:1: (refine)
+
+6 sorts, 942 term/def, 8956 ax/thm

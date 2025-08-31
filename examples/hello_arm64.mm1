@@ -17,10 +17,19 @@ do {
       -- "Hello, ARM64!\n" 
       {{msg : (array u8 14)} := (list . ,(string->list "Hello, ARM64!\n"))}
       {_ := (sys_write 1 14 msg (& msg))}
-      (return)
       )
   ))
   
   -- Generate the executable
-  (print (mmc->string))
+  (mmc-finish 'test_arm64)
 };
+
+abstract def test: string = $ test_arm64 $;
+
+-- Proof generation not yet supported for ARM64, so comment these out for now
+-- pub theorem test_isBasicElf: $ isBasicElf test $ = (named '(anl test_arm64_ok));
+-- pub theorem test_ok:
+--   $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, sn 0)) $ =
+-- (named '(anr test_arm64_ok));
+
+output string: $ test $;

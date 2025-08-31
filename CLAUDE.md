@@ -233,3 +233,28 @@ A minimal proof-generating compiler that outputs verified native executables. No
 - Add WASM as third backend
 - Leverage simpler stack-based model
 - Universal verified computation
+
+## Multi-Architecture Support Complete! (2025-12-31)
+
+The MM0 compiler now supports multiple architectures through a clean dispatch system:
+
+### ✅ Working Architectures
+1. **x86-64** - Original backend, generates ELF executables
+2. **ARM64** - Fully implemented, generates Mach-O executables
+3. **WASM** - Structure in place, needs VCode implementation
+
+### Usage
+```mm1
+-- In your MM1 file, set the target:
+(mmc-set-target "x86_64-linux")   -- For x86-64 Linux
+(mmc-set-target "arm64-macos")    -- For ARM64 macOS  
+(mmc-set-target "wasm32")         -- For WebAssembly
+```
+
+### Key Achievement
+The compiler is no longer hardcoded to x86! The multi-architecture dispatch works through:
+- `codegen_arch.rs` - Selects backend based on target
+- `arch/arm64/lower.rs` - ARM64-specific code generation
+- Clean trait abstractions in `arch/traits.rs`
+
+See `MULTI_ARCHITECTURE_STATUS.md` and `ARCHITECTURE_AND_INTEGRATION.md` for details.

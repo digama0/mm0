@@ -1,0 +1,25 @@
+-- hello_wasm.mm1
+-- A simple hello world program for WASM
+
+import "compiler.mm1";
+
+do {
+  -- Set the target to WASM32
+  (mmc-set-target "wasm32")
+
+  
+  (mmc-add '(
+    -- For WASM, we'll just return an exit code
+    (proc (main)
+      (return 42)
+      )
+  ))
+  
+  -- Generate the executable
+  (mmc-finish 'test_wasm)
+};
+
+abstract def test: string = $ test_wasm $;
+
+-- Proof generation not yet supported for WASM
+output string: $ test $;

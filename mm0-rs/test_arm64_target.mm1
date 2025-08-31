@@ -1,0 +1,11 @@
+import "../mm0-c/x86.mm1";
+
+-- Set target to ARM64 macOS
+(mmc-set-target "arm64-macos")
+
+-- Simple test program
+(proc main () u32
+  (return 42))
+
+-- Generate executable
+output string: $ test_arm64 $;
