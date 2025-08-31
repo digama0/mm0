@@ -38,7 +38,7 @@ impl LinkedCode {
   /// Write WASM module
   #[cfg(feature = "wasm-backend")]
   #[allow(clippy::cast_lossless)]
-  fn write_wasm_executable(&self, w: &mut impl Write) -> io::Result<()> {
+  pub fn write_wasm_executable(&self, w: &mut impl Write) -> io::Result<()> {
     // Use the WASM module writer
     crate::arch::wasm::module::write_wasm_module(self, w)
   }
@@ -233,20 +233,6 @@ impl LinkedCode {
         "Expected ARM64 code but found different architecture"));
     }
     
-    Ok(())
-  }
-  
-  /// Write WASM executable (currently outputs WAT)
-  #[cfg(feature = "wasm-backend")]
-  pub fn write_wasm_executable(&self, w: &mut impl Write) -> io::Result<()> {
-    // For now, generate simple WASM text format
-    writeln!(w, "(module")?;
-    writeln!(w, "  (func $main (export \"_start\")")?;
-    writeln!(w, "    ;; Exit with code 0")?;
-    writeln!(w, "    i32.const 0")?;
-    writeln!(w, "    unreachable")?;
-    writeln!(w, "  )")?;
-    writeln!(w, ")")?;
     Ok(())
   }
 }

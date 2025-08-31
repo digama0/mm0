@@ -467,7 +467,7 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 // Push address onto stack
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // Load v128
                 self.emit(WasmInst::V128Load { offset: 0, align: 4 });
@@ -480,11 +480,11 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 // Push address
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // Push value
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // Store
                 self.emit(WasmInst::V128Store { offset: 0, align: 4 });
@@ -497,10 +497,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Add);
             }
@@ -511,10 +511,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Sub);
             }
@@ -525,10 +525,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Mul);
             }
@@ -539,10 +539,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Div);
             }
@@ -554,10 +554,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4Add);
             }
@@ -568,10 +568,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4Sub);
             }
@@ -582,10 +582,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4Mul);
             }
@@ -597,10 +597,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Eq);
             }
@@ -611,10 +611,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Lt);
             }
@@ -625,10 +625,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4Le);
             }
@@ -639,10 +639,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4Eq);
             }
@@ -653,10 +653,10 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 // For WASM, VReg index is used directly as local index
-                let idx = args[1].0.0.index() as u32;
+                let idx = args[1].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4GtS);
             }
@@ -668,7 +668,7 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::F32x4ConvertI32x4S);
             }
@@ -679,7 +679,7 @@ impl SimdLowering for VCode<wasm::WasmInst> {
                 }
                 // For WASM, VReg index is used directly as local index
                 // In a real implementation, we'd need proper VReg to local mapping
-                let idx = args[0].0.0.index() as u32;
+                let idx = args[0].0.vreg() as u32;
                 self.emit(WasmInst::LocalGet { idx });
                 self.emit(WasmInst::I32x4TruncSatF32x4S);
             }

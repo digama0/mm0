@@ -31,13 +31,23 @@ impl LinkedCode {
     
     /// Write Mach-O file for ARM64 macOS
     fn write_macho_arm64(&self, w: &mut impl Write) -> io::Result<()> {
-        eprintln!("LinkedCode: write_macho_arm64 called");
-        // Generate ARM64 code from the compiled MIR
-        let code = self.generate_arm64_code();
-        eprintln!("LinkedCode: Generated {} bytes of ARM64 code", code.len());
-        let result = crate::arch::arm64::macho_proper::write_proper_macho_arm64(w, &code);
-        eprintln!("LinkedCode: write_proper_macho_arm64 returned: {:?}", result.is_ok());
-        result
+        #[cfg(feature = "arm64-backend")]
+        {
+            eprintln!("LinkedCode: write_macho_arm64 called");
+            // Generate ARM64 code from the compiled MIR
+            let code = self.generate_arm64_code();
+            eprintln!("LinkedCode: Generated {} bytes of ARM64 code", code.len());
+            let result = crate::arch::arm64::macho_proper::write_proper_macho_arm64(w, &code);
+            eprintln!("LinkedCode: write_proper_macho_arm64 returned: {:?}", result.is_ok());
+            result
+        }
+        #[cfg(not(feature = "arm64-backend"))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "ARM64 backend not enabled"
+            ))
+        }
     }
     
     /// Write ELF file for ARM64 Linux
@@ -73,13 +83,16 @@ impl LinkedCode {
         
         // Try to find the most recent cached ARM64 code
         // Start from a high ID and work backwards
-        for id in (1..=10).rev() {
-            if let Some(arm64_code) = crate::arch::arm64::code_cache::get_code(id) {
-                eprintln!("ARM64: Found cached ARM64 code (ID {}) with {} instructions", 
-                         id, arm64_code.insts.len());
-                let bytes = arm64_code.to_bytes();
-                eprintln!("ARM64: Returning {} bytes of ARM64 code", bytes.len());
-                return bytes;
+        #[cfg(feature = "arm64-backend")]
+        {
+            for id in (1..=10).rev() {
+                if let Some(arm64_code) = crate::arch::arm64::code_cache::get_code(id) {
+                    eprintln!("ARM64: Found cached ARM64 code (ID {}) with {} instructions", 
+                             id, arm64_code.insts.len());
+                    let bytes = arm64_code.to_bytes();
+                    eprintln!("ARM64: Returning {} bytes of ARM64 code", bytes.len());
+                    return bytes;
+                }
             }
         }
         

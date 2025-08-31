@@ -121,6 +121,9 @@ mod linker;
 mod codegen;
 #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod proof;
+#[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+#[path = "proof_dummy.rs"]
+pub mod proof;
 #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod proof_gen;
 /// Unified SIMD abstraction layer

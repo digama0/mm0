@@ -131,9 +131,17 @@ pub fn build_wasm_vcode(
                             });
                         }
                     }
-                    mir::Operand::Var(v) => {
-                        let local = vcode.get_or_alloc_local(*v);
-                        insts.push(WasmInst::LocalGet { idx: local });
+                    mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                        if place.proj.is_empty() {
+                            let local = vcode.get_or_alloc_local(place.local);
+                            insts.push(WasmInst::LocalGet { idx: local });
+                        } else {
+                            // TODO: Handle projections
+                            insts.push(WasmInst::Const {
+                                ty: WasmType::I32,
+                                value: 0,
+                            });
+                        }
                     }
                     _ => {
                         // Default exit code 0
@@ -178,9 +186,17 @@ pub fn build_wasm_vcode(
                             });
                         }
                     }
-                    mir::Operand::Var(v) => {
-                        let local = vcode.get_or_alloc_local(*v);
-                        insts.push(WasmInst::LocalGet { idx: local });
+                    mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                        if place.proj.is_empty() {
+                            let local = vcode.get_or_alloc_local(place.local);
+                            insts.push(WasmInst::LocalGet { idx: local });
+                        } else {
+                            // TODO: Handle projections
+                            insts.push(WasmInst::Const {
+                                ty: WasmType::I32,
+                                value: 0,
+                            });
+                        }
                     }
                     _ => {}
                 }
@@ -217,9 +233,12 @@ pub fn build_wasm_vcode(
                             });
                                 }
                             }
-                            mir::Operand::Var(v) => {
-                                let local = vcode.get_or_alloc_local(*v);
-                                insts.push(WasmInst::LocalGet { idx: local });
+                            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                                if place.proj.is_empty() {
+                                    let local = vcode.get_or_alloc_local(place.local);
+                                    insts.push(WasmInst::LocalGet { idx: local });
+                                }
+                                // TODO: Handle projections
                             }
                             _ => {}
                         }

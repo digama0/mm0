@@ -5,8 +5,54 @@
 
 use super::vcode::VCode;
 use super::WasmInst;
-use crate::types::vcode::{BlockId, InstId};
+use crate::types::vcode::{BlockId, InstId, Operand};
 use regalloc2;
+
+// Import the necessary types for Inst trait
+#[cfg(feature = "wasm-backend")]
+use crate::arch::arch_types::PRegSet;
+
+// Implement the vcode::Inst trait for WasmInst
+impl crate::types::vcode::Inst for WasmInst {
+    fn is_call(&self) -> bool {
+        matches!(self, WasmInst::Call { .. })
+    }
+    
+    fn is_ret(&self) -> bool {
+        matches!(self, WasmInst::Return)
+    }
+    
+    fn is_branch(&self) -> bool {
+        matches!(
+            self,
+            WasmInst::Branch { .. } | WasmInst::BranchIf { .. }
+        )
+    }
+    
+    fn branch_blockparams(&self, _succ_idx: usize) -> &[regalloc2::VReg] {
+        // WASM doesn't use block parameters in our implementation
+        &[]
+    }
+    
+    fn collect_operands(&self, _operands: &mut Vec<Operand>) {
+        // WASM is a stack machine, so operands are implicit
+        // However, we could track local variable usage here if needed
+        match self {
+            WasmInst::LocalGet { idx } => {
+                // Could track local reads
+            }
+            WasmInst::LocalSet { idx } => {
+                // Could track local writes
+            }
+            _ => {}
+        }
+    }
+    
+    fn clobbers(&self) -> PRegSet {
+        // WASM doesn't have physical registers
+        PRegSet::default()
+    }
+}
 
 // Implement regalloc2::Function trait for WASM VCode
 // Note: WASM doesn't actually need register allocation since it's a stack machine,

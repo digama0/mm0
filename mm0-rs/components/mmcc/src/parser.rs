@@ -174,30 +174,30 @@ impl<'a> Parser<'a> {
         let ty = match self.peek() {
             Some('i') => {
                 let ident = self.parse_ident()?;
-                match ident.0.as_ref() {
+                match ident.as_str() {
                     "i8" => TypeKind::Int(Size::S8),
                     "i16" => TypeKind::Int(Size::S16),
                     "i32" => TypeKind::Int(Size::S32),
                     "i64" => TypeKind::Int(Size::S64),
-                    _ => return Err(self.error(format!("Unknown type: {}", ident.0))),
+                    _ => return Err(self.error(format!("Unknown type: {}", ident))),
                 }
             }
             Some('u') => {
                 let ident = self.parse_ident()?;
-                match ident.0.as_ref() {
+                match ident.as_str() {
                     "u8" => TypeKind::UInt(Size::S8),
                     "u16" => TypeKind::UInt(Size::S16),
                     "u32" => TypeKind::UInt(Size::S32),
                     "u64" => TypeKind::UInt(Size::S64),
-                    _ => return Err(self.error(format!("Unknown type: {}", ident.0))),
+                    _ => return Err(self.error(format!("Unknown type: {}", ident))),
                 }
             }
             Some('v') => {
                 let ident = self.parse_ident()?;
-                if ident.0.as_ref() == "void" {
-                    TypeKind::Void
+                if ident.as_str() == "void" {
+                    TypeKind::Unit  // In MM0, void is represented as Unit type
                 } else {
-                    return Err(self.error(format!("Unknown type: {}", ident.0)));
+                    return Err(self.error(format!("Unknown type: {}", ident)));
                 }
             }
             _ => return Err(self.error("Expected type")),
@@ -248,8 +248,8 @@ impl<'a> Parser<'a> {
                     Binop::Mul
                 }
                 Some('/') => {
-                    self.advance();
-                    Binop::Div
+                    // Division is not directly supported in MM0 integers
+                    return Err(self.error("Division operator not supported"));
                 }
                 _ => break,
             };
@@ -348,17 +348,10 @@ impl<'a> Parser<'a> {
             }))
         }
         // Check for 'return' statement
+        // Note: MM0 doesn't have explicit return statements in the AST
+        // Returns are handled by the expression at the end of a block
         else if self.peek() == Some('r') && self.peek_keyword("return") {
-            self.parse_keyword("return")?;
-            
-            let expr = if self.peek() == Some(';') {
-                self.spanned(ExprKind::Unit)
-            } else {
-                self.parse_expr()?
-            };
-            
-            self.expect(';')?;
-            Ok(self.spanned(StmtKind::Return(expr)))
+            return Err(self.error("Explicit return statements are not supported. Use the final expression of a block as the return value."));
         }
         // Expression statement
         else {

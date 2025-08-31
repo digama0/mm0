@@ -730,7 +730,10 @@ mk_fold! { <'a>
 
 #[derive(Clone, Debug)]
 struct TraceIterInner<'a> {
+  #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
   insts: crate::proof::InstIter<'a>,
+  #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+  insts: std::marker::PhantomData<&'a ()>,
   projs: std::slice::Iter<'a, Projection>,
   lists: std::slice::Iter<'a, Elem>,
 }
@@ -744,8 +747,14 @@ impl<'a> TraceIter<'a> {
   pub const GHOST: Self = Self(None);
 
   /// Get the next instruction in the stream.
+  #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
   pub fn next_inst(&mut self) -> Option<crate::proof::Inst<'a>> {
     Some(self.0.as_mut()?.insts.next().expect("missing instruction"))
+  }
+  
+  #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+  pub fn next_inst(&mut self) -> Option<()> {
+    None
   }
 
   /// Get the next projection element in the stream.

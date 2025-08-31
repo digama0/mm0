@@ -96,11 +96,18 @@ impl ArchCodegen for Arm64Codegen {
         allocs: &Allocations,
         ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
-        eprintln!("ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!");
-        let vcode = crate::arch::arm64::lower::build_arm64_vcode(
-            names, funcs, func_abi, consts, cfg, allocs, ctx
-        )?;
-        Ok(Box::new(vcode))
+        #[cfg(feature = "arm64-backend")]
+        {
+            eprintln!("ARM64 CODEGEN: build_vcode called! This is the ARM64 backend!");
+            let vcode = crate::arch::arm64::lower::build_arm64_vcode(
+                names, funcs, func_abi, consts, cfg, allocs, ctx
+            )?;
+            Ok(Box::new(vcode))
+        }
+        #[cfg(not(feature = "arm64-backend"))]
+        {
+            Err(LowerErr::InfiniteOp(Default::default()))
+        }
     }
     
     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()> {
@@ -131,11 +138,18 @@ impl ArchCodegen for WasmCodegen {
         allocs: &Allocations,
         ctx: crate::lower_shared::VCodeCtx<'_>,
     ) -> Result<Box<dyn VCodeTrait>, LowerErr> {
-        eprintln!("WASM CODEGEN: build_vcode called! This is the WASM backend!");
-        let vcode = crate::arch::wasm::lower::build_wasm_vcode(
-            names, funcs, func_abi, consts, cfg, allocs, ctx
-        )?;
-        Ok(Box::new(vcode))
+        #[cfg(feature = "wasm-backend")]
+        {
+            eprintln!("WASM CODEGEN: build_vcode called! This is the WASM backend!");
+            let vcode = crate::arch::wasm::lower::build_wasm_vcode(
+                names, funcs, func_abi, consts, cfg, allocs, ctx
+            )?;
+            Ok(Box::new(vcode))
+        }
+        #[cfg(not(feature = "wasm-backend"))]
+        {
+            Err(LowerErr::InfiniteOp(Default::default()))
+        }
     }
     
     fn write_executable(&self, code: &LinkedCode, w: &mut dyn Write) -> std::io::Result<()> {
