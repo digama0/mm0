@@ -141,7 +141,7 @@ fn write_code_section(code: &LinkedCode, w: &mut impl Write) -> std::io::Result<
         encode_leb128(&mut body, pcode.stack_size);
         
         // Encode each instruction
-        for inst in pcode.insts.iter() {
+        for inst in &pcode.insts.0 {
             encode_wasm_inst(&mut body, inst)?;
         }
     } else {

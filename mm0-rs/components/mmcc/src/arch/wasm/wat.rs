@@ -33,7 +33,7 @@ pub fn write_wat(code: &LinkedCode, w: &mut impl Write) -> std::io::Result<()> {
         }
         
         // Instructions
-        for inst in pcode.insts.iter() {
+        for inst in &pcode.insts.0 {
             write!(w, "    ")?;
             write_wat_inst(w, inst)?;
             writeln!(w)?;

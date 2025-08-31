@@ -328,7 +328,8 @@ impl<'a> Parser<'a> {
         if self.peek() == Some('l') && self.peek_keyword("let") {
             self.parse_keyword("let")?;
             
-            let name = self.spanned(self.parse_ident()?);
+            let ident = self.parse_ident()?;
+            let name = self.spanned(ident);
             
             self.expect(':')?;
             let ty = self.parse_type()?;
@@ -447,7 +448,8 @@ impl<'a> Parser<'a> {
         self.skip_whitespace();
         if self.peek() != Some(')') {
             loop {
-                let name = self.spanned(self.parse_ident()?);
+                let ident = self.parse_ident()?;
+                let name = self.spanned(ident);
                 self.expect(':')?;
                 let ty = self.parse_type()?;
                 
@@ -492,18 +494,19 @@ impl<'a> Parser<'a> {
             let mut arg_vars = Vec::new();
             for (name, ty) in &args {
                 let var = ctx.push_fresh(name.clone());
-                arg_vars.push(Arg { name: self.spanned(true), kind: ArgKind::Lam(name.map_into(|n| (n, var))) });
+                arg_vars.push(self.spanned((ArgAttr::empty(), ArgKind::Lam(
+                    name.clone().map_into(|n| TuplePatternKind::Name(false, n, var))
+                ))));
             }
             
-            ctx.parse_block()
+            self.parse_block()
         })?;
 
         // Convert args to the expected format
         let arg_specs: Vec<_> = args.into_iter().enumerate().map(|(i, (name, ty))| {
-            Arg {
-                name: self.spanned(true),
-                kind: ArgKind::Lam(name.map_into(|n| (n, VarId(i as u32)))),
-            }
+            self.spanned((ArgAttr::empty(), ArgKind::Lam(
+                name.map_into(|n| TuplePatternKind::Name(false, n, VarId(i as u32)))
+            )))
         }).collect();
 
         // Determine if this is main
@@ -515,9 +518,10 @@ impl<'a> Parser<'a> {
             name,
             tyargs: 0,
             args: arg_specs.into_boxed_slice(),
-            outs: outs.into_iter().map(|(name, ty)| Arg {
-                name: self.spanned(false),
-                kind: ArgKind::Lam(name.map_into(|n| (n, VarId(1000)))), // Placeholder
+            outs: outs.into_iter().map(|(name, ty)| {
+                self.spanned((ArgAttr::empty(), ArgKind::Lam(
+                    name.map_into(|n| TuplePatternKind::Name(false, n, VarId(1000))) // Placeholder
+                )))
             }).collect::<Vec<_>>().into_boxed_slice(),
             rets: rets.into_boxed_slice(),
             variant: None,

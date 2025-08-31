@@ -59,7 +59,7 @@ impl VCode {
     }
     
     /// Emit an instruction
-    pub fn emit(&mut self, inst: Inst) -> InstId {
+    pub fn emit(&mut self, inst: WasmInst) -> InstId {
         let id = InstId(self.insts.len() as u32);
         self.insts.push(inst);
         id
