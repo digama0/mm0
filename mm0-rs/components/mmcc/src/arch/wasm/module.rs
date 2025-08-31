@@ -129,40 +129,32 @@ fn write_code_section(code: &LinkedCode, w: &mut impl Write) -> std::io::Result<
     let mut section = Vec::new();
     
     // Number of function bodies
-    let func_count = code.funcs.0.len() + 1;
+    let func_count = 1; // Just _start for now
     encode_leb128(&mut section, func_count as u32);
     
-    // _start function body
-    let mut start_body = Vec::new();
-    encode_leb128(&mut start_body, 0); // 0 locals
+    // Generate the _start function from init code
+    let mut body = Vec::new();
     
-    // Call main if it exists
-    if !code.funcs.0.is_empty() {
-        start_body.push(0x10); // call
-        encode_leb128(&mut start_body, 1); // function index 1 (main)
+    // Check if we have WASM code in init
+    if let crate::arch_pcode::ArchPCode::Wasm(pcode) = &code.init.1 {
+        // Local count from PCode
+        encode_leb128(&mut body, pcode.stack_size);
+        
+        // Encode each instruction
+        for inst in pcode.insts.iter() {
+            encode_wasm_inst(&mut body, inst)?;
+        }
     } else {
-        // No main, just return 0
-        start_body.push(0x41); // i32.const
-        encode_leb128(&mut start_body, 0);
-    }
-    start_body.push(0x0f); // return
-    start_body.push(0x0b); // end
-    
-    encode_leb128(&mut section, start_body.len() as u32);
-    section.extend_from_slice(&start_body);
-    
-    // Other function bodies (placeholder for now)
-    for _ in 0..code.funcs.0.len() {
-        let mut body = Vec::new();
+        // Fallback: just return 0
         encode_leb128(&mut body, 0); // 0 locals
         body.push(0x41); // i32.const
-        encode_leb128(&mut body, 42); // return 42
-        body.push(0x0f); // return
-        body.push(0x0b); // end
-        
-        encode_leb128(&mut section, body.len() as u32);
-        section.extend_from_slice(&body);
+        encode_leb128(&mut body, 0);
     }
+    
+    body.push(0x0b); // end
+    
+    encode_leb128(&mut section, body.len() as u32);
+    section.extend_from_slice(&body);
     
     encode_leb128(w, section.len() as u32);
     w.write_all(&section)?;
@@ -180,6 +172,75 @@ fn encode_leb128(w: &mut impl Write, mut value: u32) {
             break;
         } else {
             w.write_all(&[byte | 0x80]).unwrap();
+        }
+    }
+}
+
+/// Encode a WASM instruction to bytes
+fn encode_wasm_inst(w: &mut Vec<u8>, inst: &super::WasmInst) -> std::io::Result<()> {
+    use super::WasmInst::*;
+    use super::WasmType;
+    
+    match inst {
+        Const { ty, value } => {
+            match ty {
+                WasmType::I32 => {
+                    w.push(0x41); // i32.const
+                    encode_leb128(w, *value as u32);
+                }
+                WasmType::I64 => {
+                    w.push(0x42); // i64.const
+                    encode_leb128_i64(w, *value as i64);
+                }
+                _ => {} // TODO: Float constants
+            }
+        }
+        LocalGet { idx } => {
+            w.push(0x20); // local.get
+            encode_leb128(w, *idx);
+        }
+        LocalSet { idx } => {
+            w.push(0x21); // local.set
+            encode_leb128(w, *idx);
+        }
+        LocalTee { idx } => {
+            w.push(0x22); // local.tee
+            encode_leb128(w, *idx);
+        }
+        Add { ty } => {
+            match ty {
+                WasmType::I32 => w.push(0x6a), // i32.add
+                WasmType::I64 => w.push(0x7c), // i64.add
+                _ => {} // TODO: Float add
+            }
+        }
+        Call { func_idx } => {
+            w.push(0x10); // call
+            encode_leb128(w, *func_idx);
+        }
+        Return => {
+            w.push(0x0f); // return
+        }
+        Drop => {
+            w.push(0x1a); // drop
+        }
+        _ => {} // TODO: Other instructions
+    }
+    
+    Ok(())
+}
+
+/// LEB128 encoding for i64
+fn encode_leb128_i64(w: &mut impl Write, mut value: i64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        let more = !((value == 0 && (byte & 0x40) == 0) || (value == -1 && (byte & 0x40) != 0));
+        if more {
+            w.write_all(&[byte | 0x80]).unwrap();
+        } else {
+            w.write_all(&[byte]).unwrap();
+            break;
         }
     }
 }

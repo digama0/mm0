@@ -553,7 +553,10 @@ mk_fold! { <'a>
   }
 
   fn before_epilogue, after_epilogue, do_epilogue(self, it) {
-    while self.do_inst(it).is_some_and(|inst| !matches!(inst.inst, PInst::Ret)) {}
+    #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+    while self.do_inst(it).is_some_and(|inst| !matches!(inst.inst, crate::arch::x86::PInst::Ret)) {}
+    #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+    while self.do_inst(it).is_some() {}
   }
 
   fn before_call_arg, after_call_arg, do_call_arg(self, it,

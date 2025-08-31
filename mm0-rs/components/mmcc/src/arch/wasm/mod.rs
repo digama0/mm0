@@ -84,6 +84,7 @@ pub mod vcode;
 pub mod vcode_impl;
 pub mod lower;
 pub mod arch_impl;
+pub mod wat;
 
 // Re-export instruction type as inst module
 pub mod inst {

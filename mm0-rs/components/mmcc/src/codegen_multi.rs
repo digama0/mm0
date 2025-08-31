@@ -89,29 +89,40 @@ impl LinkedCode {
         if let Some(exit_code) = self.detect_simple_exit() {
             eprintln!("ARM64: Generating exit({}) code", exit_code);
             // Generate ARM64 code for exit(N)
-            let mut sink = Arm64Sink { bytes: vec![] };
+            #[cfg(feature = "arm64-backend")]
+            {
+                use crate::arch::arm64::{PInst, X0, X16, OperandSize};
+                use crate::arch::traits::PhysicalInstruction;
+                
+                let mut sink = Arm64Sink { bytes: vec![] };
+                
+                // mov w0, #exit_code
+                let mov_inst = PInst::MovImm {
+                    dst: X0,
+                    imm: exit_code as u64,
+                    size: OperandSize::Size32,
+                };
+                mov_inst.encode(&mut sink).unwrap();
             
-            // mov w0, #exit_code
-            let mov_inst = PInst::MovImm {
-                dst: X0,
-                imm: exit_code as u64,
-                size: OperandSize::Size32,
-            };
-            mov_inst.encode(&mut sink).unwrap();
-            
-            // mov x16, #1 (exit syscall number)
-            let syscall_inst = PInst::MovImm {
-                dst: X16,
-                imm: 1,
-                size: OperandSize::Size64,
-            };
-            syscall_inst.encode(&mut sink).unwrap();
-            
-            // svc #0x80 (macOS syscall)
-            let svc_inst = PInst::Svc { imm: 0x80 };
-            svc_inst.encode(&mut sink).unwrap();
-            
-            return sink.bytes;
+                // mov x16, #1 (exit syscall number)
+                let syscall_inst = PInst::MovImm {
+                    dst: X16,
+                    imm: 1,
+                    size: OperandSize::Size64,
+                };
+                syscall_inst.encode(&mut sink).unwrap();
+                
+                // svc #0x80 (macOS syscall)
+                let svc_inst = PInst::Svc { imm: 0x80 };
+                svc_inst.encode(&mut sink).unwrap();
+                
+                return sink.bytes;
+            }
+            #[cfg(not(feature = "arm64-backend"))]
+            {
+                // Can't generate ARM64 code without the backend
+                eprintln!("ARM64: Backend not available");
+            }
         }
         
         // Fallback to hardcoded exit(42) for now

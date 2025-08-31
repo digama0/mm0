@@ -35,6 +35,20 @@ impl LinkedCode {
     }
   }
 
+  /// Write WASM module
+  #[cfg(feature = "wasm-backend")]
+  #[allow(clippy::cast_lossless)]
+  fn write_wasm_executable(&self, w: &mut impl Write) -> io::Result<()> {
+    // Use the WASM module writer
+    crate::arch::wasm::module::write_wasm_module(self, w)
+  }
+  
+  /// Write WebAssembly Text (WAT) format
+  #[cfg(feature = "wasm-backend")]
+  pub fn write_wat(&self, w: &mut impl Write) -> io::Result<()> {
+    crate::arch::wasm::wat::write_wat(self, w)
+  }
+
   /// Write x86-64 ELF file
   #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
   #[allow(clippy::cast_lossless)]
