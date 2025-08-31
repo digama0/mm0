@@ -5,6 +5,17 @@ use crate::types::{Size, vcode::{BlockId, VReg}};
 use crate::Symbol;
 use super::regs::PReg;
 
+/// NEON vector types
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VectorType {
+    V4S,  // 4 x 32-bit (single-precision float or int)
+    V2D,  // 2 x 64-bit (double-precision float or long)
+    V4H,  // 4 x 16-bit (half-precision float or short) - only lower 64 bits
+    V8H,  // 8 x 16-bit (full 128-bit)
+    V8B,  // 8 x 8-bit (only lower 64 bits)
+    V16B, // 16 x 8-bit (full 128-bit)
+}
+
 /// ARM64 instructions (with virtual registers)
 #[derive(Clone, Debug)]
 pub enum Inst {
@@ -49,6 +60,62 @@ pub enum Inst {
     
     /// System call
     Svc { imm: u16 }, // Supervisor call
+    
+    // NEON SIMD Instructions
+    /// Load 128-bit vector
+    Ld1 { dst: VReg, addr: AMode },
+    /// Store 128-bit vector
+    St1 { src: VReg, addr: AMode },
+    
+    /// Vector arithmetic - float
+    FaddV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    FsubV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    FmulV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    FdivV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    
+    /// Vector arithmetic - integer
+    AddV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    SubV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    MulV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    
+    /// Vector comparisons - float
+    FcmeqV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    FcmgtV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    FcmgeV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    
+    /// Vector comparisons - integer
+    CmeqV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    CmgtV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    CmgeV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    
+    /// Vector bitwise operations
+    AndV { dst: VReg, src1: VReg, src2: VReg },
+    OrrV { dst: VReg, src1: VReg, src2: VReg },
+    EorV { dst: VReg, src1: VReg, src2: VReg },
+    BicV { dst: VReg, src1: VReg, src2: VReg }, // Bit clear
+    
+    /// Vector move and duplicate
+    DupV { dst: VReg, src: VReg, lane: u8, ty: VectorType },
+    MoviV { dst: VReg, imm: u8, shift: u8, ty: VectorType },
+    
+    /// Vector conversions
+    ScvtfV { dst: VReg, src: VReg, ty: VectorType }, // Signed int to float
+    FcvtzsV { dst: VReg, src: VReg, ty: VectorType }, // Float to signed int (round to zero)
+    
+    /// Vector shuffle/permute
+    Tbl { dst: VReg, tbl: VReg, idx: VReg }, // Table lookup
+    Zip1 { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    Zip2 { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    Uzp1 { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    Uzp2 { dst: VReg, src1: VReg, src2: VReg, ty: VectorType },
+    
+    /// Vector reduction operations
+    AddvS { dst: VReg, src: VReg, ty: VectorType }, // Add across vector
+    FaddpV { dst: VReg, src1: VReg, src2: VReg, ty: VectorType }, // Pairwise add
+    
+    /// Vector extract/insert
+    InsV { dst: VReg, src: VReg, lane: u8, elem_src: VReg },
+    UmovV { dst: VReg, src: VReg, lane: u8, ty: VectorType }, // Move vector element to general register
 }
 
 /// Physical instructions (after register allocation)
@@ -166,7 +233,7 @@ pub enum Cond {
 
 impl Cond {
     /// Get the encoding for this condition
-    fn encode(self) -> u8 {
+    pub(crate) fn encode(self) -> u8 {
         match self {
             Cond::Eq => 0b0000,
             Cond::Ne => 0b0001,

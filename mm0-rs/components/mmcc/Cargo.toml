@@ -36,8 +36,11 @@ mm0_deepsize_derive = { path = "../mm0_deepsize_derive", optional = true }
 
 [features]
 memory = ["mm0_util/memory", "mm0_deepsize", "mm0_deepsize_derive"]
-
 # Architecture backend selection (mutually exclusive)
 # Default is x86-64 backend
 arm64-backend = []
 wasm-backend = []
+
+[[bin]]
+name = "mmc"
+path = "src/bin/mmc.rs"

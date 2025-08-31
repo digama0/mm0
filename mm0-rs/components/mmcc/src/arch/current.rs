@@ -9,14 +9,13 @@ use super::arch_types::*;
 /// The currently selected architecture for compilation
 /// 
 /// This can be controlled by features or configuration in the future.
-/// For now, it defaults to x86 to maintain compatibility.
-#[cfg(not(any(feature = "target-arm64", feature = "target-wasm")))]
+#[cfg(all(not(feature = "arm64-backend"), not(feature = "wasm-backend")))]
 pub type CurrentArch = X86Arch;
 
-#[cfg(feature = "target-arm64")]
+#[cfg(feature = "arm64-backend")]
 pub type CurrentArch = Arm64Arch;
 
-#[cfg(feature = "target-wasm")]
+#[cfg(feature = "wasm-backend")]
 pub type CurrentArch = WasmArch;
 
 /// Physical register type for the current architecture

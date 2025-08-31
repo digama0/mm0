@@ -1,0 +1,23 @@
+// calculator.mmc - A simple calculator that adds two numbers
+// This tests arithmetic operations and function calls
+
+proc add(x: i32, y: i32) -> i32 {
+  return x + y;
+}
+
+proc sub(x: i32, y: i32) -> i32 {
+  return x - y;
+}
+
+proc mul(x: i32, y: i32) -> i32 {
+  return x * y;
+}
+
+proc main() -> i32 {
+  // Calculate (5 + 3) * 2 - 1
+  let a: i32 = add(5, 3);   // a = 8
+  let b: i32 = mul(a, 2);   // b = 16
+  let c: i32 = sub(b, 1);   // c = 15
+  
+  return c; // Should return 15
+}

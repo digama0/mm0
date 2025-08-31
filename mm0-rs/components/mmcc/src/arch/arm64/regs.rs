@@ -196,3 +196,9 @@ impl FromIterator<PReg> for PRegSet {
         out
     }
 }
+
+impl From<PRegSet> for regalloc2::PRegSet {
+    fn from(set: PRegSet) -> Self {
+        set.to_regalloc()
+    }
+}

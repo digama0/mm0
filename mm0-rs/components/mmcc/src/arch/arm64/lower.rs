@@ -13,7 +13,7 @@ use crate::arch::target::OperatingSystem;
 use crate::types::{Size, IdxVec, Spanned};
 use crate::mir_opt::storage::Allocations;
 use crate::linker::ConstData;
-use crate::build_vcode::{VCodeCtx, LowerErr};
+use crate::lower_shared::{VCodeCtx, LowerErr};
 use crate::{Symbol, Entity};
 use super::vcode::VCode;
 use super::{Inst, Operand};

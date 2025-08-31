@@ -8,7 +8,19 @@ use mm0_util::u32_as_usize;
 pub(crate) use regalloc2::{RegClass, InstRange, Operand, Inst as InstId};
 pub use regalloc2::Block as BlockId;
 
-use super::{Size, classify::Trace};
+use super::Size;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+use super::classify::Trace;
+
+// For non-x86 architectures, provide a dummy Trace type
+#[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+#[derive(Default, Clone, Debug)]
+pub struct Trace {
+    pub(crate) stmts: ChunkVec<BlockId, ()>,
+    pub(crate) block: IdxVec<BlockId, ()>,
+    pub(crate) projs: Vec<()>,
+    pub(crate) lists: Vec<()>,
+}
 
 /// A trait to factor the commonalities of [`VReg`] and [`PReg`].
 pub trait IsReg: Sized + Eq {

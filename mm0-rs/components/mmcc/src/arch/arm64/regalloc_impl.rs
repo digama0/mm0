@@ -4,11 +4,10 @@
 //! handling virtual to physical register mapping, spilling, and move insertion.
 
 use crate::types::{IdxVec, mir, vcode::*, Size};
-use crate::build_vcode::VCode;
-use crate::types::classify::Trace;
-use crate::Idx;
+use crate::arch::arm64::vcode::VCode;
+use crate::arch_pcode::PInstId;
 use super::{
-    PReg, regs::PRegSet, PInst, PAMode, POperand, OperandSize,
+    PReg, PInst, PAMode, POperand, OperandSize,
     inst::{Inst, AMode, Operand as VOperand, Cond},
 };
 use std::collections::HashMap;
@@ -28,11 +27,11 @@ pub struct RegAllocResult {
 }
 
 /// Perform register allocation on ARM64 VCode
-pub fn allocate_registers(vcode: &VCode<Inst>) -> Result<RegAllocResult, String> {
+pub fn allocate_registers(vcode: &VCode) -> Result<RegAllocResult, String> {
     // Run regalloc2
     let alloc_result = regalloc2::run(
         vcode,
-        &super::regalloc::ARM64_MACHINE_ENV,
+        &super::MACHINE_ENV,
         &regalloc2::RegallocOptions::default()
     ).map_err(|e| format!("Register allocation failed: {:?}", e))?;
     
@@ -43,7 +42,7 @@ pub fn allocate_registers(vcode: &VCode<Inst>) -> Result<RegAllocResult, String>
 
 /// Helper for building allocated code
 struct RegAllocBuilder<'a> {
-    vcode: &'a VCode<Inst>,
+    vcode: &'a VCode,
     alloc: &'a regalloc2::Output,
     pinsts: IdxVec<PInstId, PInst>,
     blocks: IdxVec<BlockId, (mir::BlockId, PInstId, PInstId)>,
@@ -53,7 +52,7 @@ struct RegAllocBuilder<'a> {
 }
 
 impl<'a> RegAllocBuilder<'a> {
-    fn new(vcode: &'a VCode<Inst>, alloc: &'a regalloc2::Output) -> Self {
+    fn new(vcode: &'a VCode, alloc: &'a regalloc2::Output) -> Self {
         Self {
             vcode,
             alloc,
@@ -66,32 +65,35 @@ impl<'a> RegAllocBuilder<'a> {
     
     fn build(mut self) -> Result<RegAllocResult, String> {
         // Process each block
-        for block in 0..self.vcode.num_blocks() {
-            let block_id = BlockId::new(block);
+        for (block_id, _) in self.vcode.blocks() {
             self.process_block(block_id)?;
         }
         
         // Calculate block addresses
         self.calculate_addresses();
         
-        // Calculate total stack size
-        let stack_size = self.alloc.stackslots_size as u32;
+        // Calculate total stack size (8 bytes per spill slot)
+        let stack_size = self.alloc.num_spillslots as u32 * 8;
+        
+        // Calculate total code length
+        let len = self.pinsts.len() as u32 * 4; // ARM64 instructions are 4 bytes
         
         Ok(RegAllocResult {
             pinsts: self.pinsts,
             blocks: self.blocks,
             block_addr: self.block_addr,
             stack_size,
-            len: self.pinsts.len() as u32 * 4, // ARM64 instructions are 4 bytes
+            len,
         })
     }
     
     fn process_block(&mut self, block: BlockId) -> Result<(), String> {
-        let (mir_block, inst_start, inst_end) = self.vcode.blocks[block];
+        let vblock = &self.vcode.blocks[block];
+        let mir_block = mir::BlockId(block.index() as u32);
         let pinst_start = PInstId(self.pinsts.len() as u32);
         
         // Process each instruction in the block
-        for inst_id in self.vcode.block_insns(block) {
+        for inst_id in self.vcode.block_insts(block) {
             // Record mapping for branch targets
             self.inst_map.insert(inst_id, PInstId(self.pinsts.len() as u32));
             
@@ -113,15 +115,21 @@ impl<'a> RegAllocBuilder<'a> {
     }
     
     fn insert_moves_before(&mut self, inst: InstId) -> Result<(), String> {
-        for edit in self.alloc.edits_before(inst) {
-            self.process_edit(edit)?;
+        // Find edits for this instruction  
+        for &(prog_point, ref edit) in &self.alloc.edits {
+            if prog_point == regalloc2::ProgPoint::before(inst) {
+                self.process_edit(edit)?;
+            }
         }
         Ok(())
     }
     
     fn insert_moves_after(&mut self, inst: InstId) -> Result<(), String> {
-        for edit in self.alloc.edits_after(inst) {
-            self.process_edit(edit)?;
+        // Find edits for this instruction
+        for &(prog_point, ref edit) in &self.alloc.edits {
+            if prog_point == regalloc2::ProgPoint::after(inst) {
+                self.process_edit(edit)?;
+            }
         }
         Ok(())
     }
@@ -129,34 +137,33 @@ impl<'a> RegAllocBuilder<'a> {
     fn process_edit(&mut self, edit: &regalloc2::Edit) -> Result<(), String> {
         match edit {
             regalloc2::Edit::Move { from, to } => {
-                let (src, dst) = match (from.as_reg(), to.as_reg()) {
-                    (Some(src), Some(dst)) => {
+                match (from.kind(), to.kind()) {
+                    (regalloc2::AllocationKind::Reg, regalloc2::AllocationKind::Reg) => {
                         // Register to register move
-                        (POperand::Reg(self.preg(src)), self.preg(dst))
+                        let src_preg = PReg::new(from.as_reg().unwrap().hw_enc() as usize);
+                        let dst_preg = PReg::new(to.as_reg().unwrap().hw_enc() as usize);
+                        self.pinsts.push(PInst::Mov {
+                            dst: dst_preg,
+                            src: src_preg,
+                            size: OperandSize::Size64,
+                        });
                     }
-                    (Some(src), None) => {
+                    (regalloc2::AllocationKind::Reg, regalloc2::AllocationKind::Stack) => {
                         // Spill: register to stack
+                        let src_preg = PReg::new(from.as_reg().unwrap().hw_enc() as usize);
                         let slot = to.as_stack().unwrap();
-                        self.emit_spill(self.preg(src), slot);
-                        return Ok(());
+                        self.emit_spill(src_preg, slot);
                     }
-                    (None, Some(dst)) => {
+                    (regalloc2::AllocationKind::Stack, regalloc2::AllocationKind::Reg) => {
                         // Reload: stack to register
+                        let dst_preg = PReg::new(to.as_reg().unwrap().hw_enc() as usize);
                         let slot = from.as_stack().unwrap();
-                        self.emit_reload(dst, slot);
-                        return Ok(());
+                        self.emit_reload(dst_preg, slot);
                     }
-                    (None, None) => {
+                    _ => {
                         return Err("Invalid move: stack to stack".to_string());
                     }
-                };
-                
-                // Emit move instruction
-                self.pinsts.push(PInst::Mov {
-                    dst,
-                    src: src.as_reg().unwrap(),
-                    size: OperandSize::Size64,
-                });
+                }
             }
         }
         Ok(())
@@ -198,12 +205,12 @@ impl<'a> RegAllocBuilder<'a> {
                 self.pinsts.push(PInst::Ret);
             }
             
-            Inst::Branch { target } => {
+            Inst::Branch { target: _ } => {
                 // Will be patched later with correct offset
                 self.pinsts.push(PInst::B { offset: 0 });
             }
             
-            Inst::BranchCond { cond, target } => {
+            Inst::BranchCond { cond, target: _ } => {
                 self.pinsts.push(PInst::Bcond { 
                     cond: *cond, 
                     offset: 0  // Will be patched
@@ -319,13 +326,17 @@ impl<'a> RegAllocBuilder<'a> {
     }
     
     fn alloc_vreg(&self, vreg: VReg, inst: InstId) -> PReg {
-        let alloc = self.alloc.inst_allocs(inst)[vreg.vreg()];
-        match alloc {
-            regalloc2::Allocation::Reg(preg) => {
-                PReg::new(preg.hw_enc() as usize)
+        let allocs = self.alloc.inst_allocs(inst);
+        let alloc = allocs[vreg.0.vreg()];
+        match alloc.kind() {
+            regalloc2::AllocationKind::Reg => {
+                PReg::new(alloc.as_reg().unwrap().hw_enc() as usize)
             }
-            regalloc2::Allocation::Stack(_) => {
+            regalloc2::AllocationKind::Stack => {
                 panic!("Unexpected stack allocation for vreg");
+            }
+            regalloc2::AllocationKind::None => {
+                panic!("No allocation for vreg");
             }
         }
     }
@@ -367,7 +378,7 @@ impl<'a> RegAllocBuilder<'a> {
     
     fn calculate_addresses(&mut self) {
         let mut addr = 0u32;
-        for (i, &(_, start, end)) in self.blocks.iter() {
+        for (i, &(_, start, end)) in self.blocks.enum_iter() {
             self.block_addr[i] = addr;
             // Each ARM64 instruction is 4 bytes
             addr += (end.0 - start.0) * 4;

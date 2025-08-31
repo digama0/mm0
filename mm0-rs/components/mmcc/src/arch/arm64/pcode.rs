@@ -3,9 +3,8 @@
 //! This module provides an ARM64-specific PCode structure that can be used
 //! instead of the x86-specific one for ARM64 targets.
 
-use crate::types::{IdxVec, vcode::ChunkVec, mir};
-use crate::types::classify::Trace;
-use crate::regalloc::PInstId;
+use crate::types::{IdxVec, vcode::{ChunkVec, Trace}, mir};
+use crate::arch_pcode::PInstId;
 use super::PInst;
 use std::collections::HashMap;
 

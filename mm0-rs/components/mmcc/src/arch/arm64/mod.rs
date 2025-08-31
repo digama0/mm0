@@ -8,7 +8,10 @@ use crate::arch::{traits::*, target::Target};
 
 pub mod regs;
 pub mod inst;
-pub mod proof_impl;
+pub mod arch_impl;
+// proof_impl depends on x86-specific proof system, so disable it for now
+// TODO: Implement architecture-agnostic proof system
+// pub mod proof_impl;
 pub mod const_table;
 pub mod calling_conv;
 pub mod stack_frame;
@@ -17,11 +20,14 @@ pub mod encode;
 pub mod macho;
 pub mod macho_proper;
 pub mod vcode;
+pub mod vcode_impl;
 pub mod lower;
 pub mod pcode;
 pub mod code_cache;
 pub mod regalloc;
 pub mod regalloc_impl;
+#[cfg(test)]
+mod test;
 
 pub use regs::*;
 pub use inst::*;

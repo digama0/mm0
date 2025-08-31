@@ -3,17 +3,17 @@
 use std::collections::{HashMap, HashSet};
 use if_chain::if_chain;
 
-use crate::build_vcode::VCodeCtx;
+use crate::lower_shared::VCodeCtx;
 use crate::codegen_arch::{get_codegen, VCodeTrait};
 use crate::codegen::FUNCTION_ALIGN;
 use crate::mir_opt::storage::{Allocations, AllocId};
-use crate::regalloc::PCode;
+use crate::arch_pcode::ArchPCode;
 use crate::types::global::{TyKind, ExprKind};
 use crate::types::entity::{ConstTc, Entity, ProcTc};
 use crate::types::mir::{
-  Cfg, ConstKind, Constant, Place, Proc, Terminator, Ty, VarId, Visitor};
+  Cfg, ConstKind, Constant, Place, Proc, Terminator, Ty, Visitor};
 use crate::types::vcode::{GlobalId, ProcId, ConstRef, ProcAbi};
-use crate::types::{IdxVec, Size};
+use crate::types::{IdxVec, Size, VarId};
 use crate::{Symbol, LowerErr};
 
 type GenericCall = (Symbol, Box<[Ty]>);
@@ -224,10 +224,10 @@ pub struct LinkedCode {
   pub(crate) consts: ConstData,
   pub(crate) globals: IdxVec<GlobalId, (Symbol, u32, u32)>,
   pub(crate) global_size: u32,
-  pub(crate) init: (Cfg, Box<PCode>),
+  pub(crate) init: (Cfg, ArchPCode),
   pub(crate) func_names: (HashMap<Symbol, ProcId>, IdxVec<ProcId, Symbol>),
   pub(crate) func_abi: IdxVec<ProcId, ProcAbi>,
-  pub(crate) funcs: IdxVec<ProcId, (u32, Box<PCode>)>,
+  pub(crate) funcs: IdxVec<ProcId, (u32, ArchPCode)>,
   pub(crate) postorder: Vec<ProcId>,
   pub(crate) text_size: u32,
   pub(crate) target: crate::arch::target::Target,
@@ -282,7 +282,7 @@ impl LinkedCode {
     let globals_out = globals.iter().filter_map(|&(g, r, v, _)| {
       if !r { return None }
       let off = global_size;
-      let a = allocs.get(v);
+      let a = allocs.get(crate::types::mir::VarId(v.0));
       assert_ne!(a, AllocId::ZERO);
       let size = allocs[a].m.size.try_into().expect("overflow");
       global_size += size;
@@ -293,11 +293,11 @@ impl LinkedCode {
     )?;
     let init_code = init_vcode.regalloc().1;
 
-    let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
+    let mut pos = (TEXT_START + init_code.len() + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
     let funcs = func_code.0.into_iter().map(|code| {
       let code = code.expect("impossible");
       let cur = pos;
-      pos = (pos + code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
+      pos = (pos + code.len() + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
       (cur, code)
     }).collect();
 

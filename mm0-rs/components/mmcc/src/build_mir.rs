@@ -1607,6 +1607,7 @@ impl<'a, 'n> BuildMir<'a, 'n> {
       self.rvalue_block(span, *body, None)?;
       // If we are checking termination, then this is a failure condition because
       // we don't have any proof to go with the back-edge.
+      #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
       if crate::proof::VERIFY_TERMINATION {
         panic!("Add an explicit (continue) in the loop to prove termination");
       }

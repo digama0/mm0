@@ -3,13 +3,15 @@
 //! This module defines the ARM64-specific VCode type that represents
 //! programs using virtual registers before register allocation.
 
-use crate::types::vcode::{BlockId, InstId, ProcAbi, VReg, ChunkVec};
+use crate::types::vcode::{BlockId, InstId, ProcAbi, VReg, ChunkVec, Trace};
 use crate::types::{IdxVec, Size, mir};
-use crate::types::classify::Trace;
-use crate::regalloc::{PCode, PInstId};
+use crate::arch_pcode::PInstId;
 use crate::codegen_arch::VCodeTrait;
+use crate::arch_pcode::ArchPCode;
 use super::{Inst, PReg};
 use crate::arch::arm64::inst::{PInst, OperandSize, CallTarget, Operand, POperand};
+use regalloc2;
+use std::ops::Index;
 
 /// ARM64-specific VCode implementation
 #[derive(Debug)]
@@ -43,6 +45,17 @@ impl VCode {
             abi,
         }
     }
+    
+    /// Get blocks
+    pub fn blocks(&self) -> impl Iterator<Item = (BlockId, &Block)> {
+        self.blocks.enum_iter()
+    }
+    
+    /// Get block instructions
+    pub fn block_insts(&self, block: BlockId) -> impl Iterator<Item = InstId> + '_ {
+        let b = &self.blocks[block];
+        b.insts.iter().chain(std::iter::once(&b.term)).copied()
+    }
 
     /// Add a new block
     pub fn new_block(&mut self) -> BlockId {
@@ -73,12 +86,19 @@ impl VCode {
     }
 }
 
+impl Index<InstId> for VCode {
+    type Output = Inst;
+    
+    fn index(&self, index: InstId) -> &Self::Output {
+        &self.insts[index]
+    }
+}
+
 /// Simple ARM64 register allocation
 /// Maps virtual registers to physical registers for basic cases
-fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
+fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<super::regalloc::PCode>) {
     use crate::types::IdxVec;
-    use crate::types::classify::Trace;
-    use crate::types::vcode::ChunkVec;
+    use crate::types::vcode::{ChunkVec, Trace};
     
     eprintln!("ARM64: Starting register allocation");
     
@@ -341,20 +361,7 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
         blocks,
         block_addr: IdxVec::from(vec![0]),
         block_params: ChunkVec::default(),
-        trace: {
-            let mut stmts = ChunkVec::default();
-            stmts.push_new(); // Add empty statements for block 0
-            Trace {
-                stmts,
-                block: IdxVec::from(vec![crate::types::classify::Block {
-                    proj_start: 0,
-                    list_start: 0,
-                    term: crate::types::classify::Terminator::Exit,
-                }]),
-                projs: vec![],
-                lists: vec![crate::types::classify::Elem::Ghost],
-            }
-        },
+        trace: Trace::default(),
         stack_size: 0,
         saved_regs: vec![],
         len: (code_len * 4) as u32, // ARM64 instructions are 4 bytes each
@@ -362,52 +369,95 @@ fn regalloc_arm64(vcode: VCode) -> (ProcAbi, Box<PCode>) {
         const_table: None,
     };
     
-    // Clone the trace before moving arm64_pcode
-    let trace_clone = arm64_pcode.trace.clone();
+    // Return the ARM64 PCode directly!
+    eprintln!("ARM64: Returning actual ARM64 PCode with {} instructions", arm64_pcode.insts.len());
     
-    // Store the ARM64 code in our cache
-    let code_id = super::code_cache::store_code(arm64_pcode);
-    
-    // For now, we still need to return x86 PCode for compatibility
-    eprintln!("ARM64: Generated ARM64 code with ID {} but returning minimal x86 PCode for compatibility", code_id);
-    
-    use crate::regalloc::PCode;
-    use crate::arch::x86::PInst as X86PInst;
-    
-    // Create minimal x86 code that satisfies the proof system
-    let mut x86_insts = IdxVec::default();
-    // Add enough instructions for syscall validation
-    // The proof system expects args.len() + 2 instructions for syscall
-    // For our write syscall, that's 4 + 2 = 6 instructions
-    x86_insts.push(X86PInst::MovId); // Instruction 0
-    x86_insts.push(X86PInst::MovId); // Instruction 1
-    x86_insts.push(X86PInst::MovId); // Instruction 2
-    x86_insts.push(X86PInst::MovId); // Instruction 3
-    x86_insts.push(X86PInst::MovId); // Instruction 4
-    x86_insts.push(X86PInst::MovId); // Instruction 5
-    x86_insts.push(X86PInst::Ret);   // Terminator
-    
-    // Create block_params with one empty entry for our single block
-    let mut block_params = ChunkVec::default();
-    block_params.push_new(); // Add empty params for block 0
-    
-    let pcode = Box::new(PCode {
-        insts: x86_insts,
-        block_map: vec![(mir::BlockId(0), regalloc2::Block::new(0))].into_iter().collect(),
-        blocks: IdxVec::from(vec![(mir::BlockId(0), PInstId(0), PInstId(7))]),
-        block_addr: IdxVec::from(vec![0, 7]), // Start of block 0, end at instruction 7
-        block_params,
-        trace: trace_clone,
-        stack_size: 0,
-        saved_regs: vec![],
-        len: 7, // 6 MovId + RET
-    });
-    
-    (vcode.abi, pcode)
+    (vcode.abi, Box::new(arm64_pcode))
 }
 
 impl VCodeTrait for VCode {
-    fn regalloc(self: Box<Self>) -> (ProcAbi, Box<PCode>) {
-        regalloc_arm64(*self)
+    fn regalloc(self: Box<Self>) -> (ProcAbi, ArchPCode) {
+        let (abi, pcode) = regalloc_arm64(*self);
+        (abi, ArchPCode::Arm64(pcode))
+    }
+}
+
+// Implement regalloc2::Function trait for ARM64 VCode
+impl regalloc2::Function for VCode {
+    
+    fn num_insts(&self) -> usize {
+        self.insts.len()
+    }
+    
+    fn num_blocks(&self) -> usize {
+        self.blocks.len()
+    }
+    
+    fn entry_block(&self) -> regalloc2::Block {
+        regalloc2::Block::new(0)
+    }
+    
+    fn block_insns(&self, block: regalloc2::Block) -> regalloc2::InstRange {
+        let b = &self.blocks[BlockId(block.index() as u32)];
+        let start = b.insts.first().map(|&i| i.0).unwrap_or(0);
+        let end = b.term.0 + 1;
+        regalloc2::InstRange::new(
+            regalloc2::Inst::new(start as usize),
+            regalloc2::Inst::new(end as usize),
+        )
+    }
+    
+    fn block_succs(&self, block: regalloc2::Block) -> &[regalloc2::Block] {
+        // TODO: Implement proper successor tracking
+        &[]
+    }
+    
+    fn block_preds(&self, block: regalloc2::Block) -> &[regalloc2::Block] {
+        // TODO: Implement proper predecessor tracking
+        &[]
+    }
+    
+    fn block_params(&self, block: regalloc2::Block) -> &[regalloc2::VReg] {
+        // TODO: Implement block parameters
+        &[]
+    }
+    
+    fn is_ret(&self, insn: regalloc2::Inst) -> bool {
+        matches!(self.insts[InstId(insn.index() as u32)], Inst::Ret)
+    }
+    
+    fn is_branch(&self, insn: regalloc2::Inst) -> bool {
+        matches!(self.insts[InstId(insn.index() as u32)], 
+            Inst::Branch { .. } | Inst::BranchCond { .. })
+    }
+    
+    fn inst_operands(&self, insn: regalloc2::Inst) -> &[regalloc2::Operand] {
+        // TODO: Implement operand collection
+        &[]
+    }
+    
+    fn inst_clobbers(&self, insn: regalloc2::Inst) -> regalloc2::PRegSet {
+        // TODO: Implement clobber tracking
+        regalloc2::PRegSet::default()
+    }
+    
+    fn num_vregs(&self) -> usize {
+        self.num_vregs as usize
+    }
+    
+    fn spillslot_size(&self, regclass: regalloc2::RegClass) -> usize {
+        // ARM64 spill slots are 8 bytes for general purpose, 16 for vector
+        if regclass == regalloc2::RegClass::Int {
+            8
+        } else if regclass == regalloc2::RegClass::Float {
+            16
+        } else {
+            unreachable!()
+        }
+    }
+    
+    fn branch_blockparams(&self, block: regalloc2::Block, _branch: regalloc2::Inst, _idx: usize) -> &[regalloc2::VReg] {
+        // TODO: Implement proper branch block parameters
+        &[]
     }
 }

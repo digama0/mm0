@@ -12,6 +12,60 @@ use super::{IntTy, Size, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast,
   super::mir_opt::DominatorTree};
 pub use {ast::TyVarId, hir::{Unop, Binop}};
 
+/// SIMD vector types (128-bit)
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub enum SimdTy {
+  /// Generic 128-bit vector
+  V128,
+  /// 4 x 32-bit floats
+  V4F32,
+  /// 2 x 64-bit floats
+  V2F64,
+  /// 4 x 32-bit integers
+  V4I32,
+  /// 2 x 64-bit integers
+  V2I64,
+  /// 8 x 16-bit integers
+  V8I16,
+  /// 16 x 8-bit integers
+  V16I8,
+}
+
+/// SIMD operations
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub enum SimdOp {
+  /// Load vector from memory (aligned)
+  Load(SimdTy),
+  /// Store vector to memory (aligned)
+  Store(SimdTy),
+  /// Vector addition
+  Add(SimdTy),
+  /// Vector subtraction
+  Sub(SimdTy),
+  /// Vector multiplication
+  Mul(SimdTy),
+  /// Vector division (float only)
+  Div(SimdTy),
+  /// Vector comparison (equality)
+  Eq(SimdTy),
+  /// Vector comparison (less than)
+  Lt(SimdTy),
+  /// Vector comparison (less than or equal)
+  Le(SimdTy),
+  /// Shuffle/permute within vector
+  Shuffle(SimdTy),
+  /// Extract element at index
+  Extract(SimdTy, u8),
+  /// Insert element at index
+  Insert(SimdTy, u8),
+  /// Horizontal sum reduction
+  Sum(SimdTy),
+  /// Type conversion/reinterpret
+  Convert(SimdTy, SimdTy),
+}
+
 /// The alpha conversion struct is a mapping from variables to variables.
 #[derive(Debug, Default)]
 pub struct Alpha(HashMap<VarId, VarId>);
@@ -183,6 +237,15 @@ pub enum TyKind {
   /// * `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
   /// * `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
   Int(IntTy),
+  /// SIMD vector types (128-bit):
+  /// * `v128` is the generic 128-bit vector type
+  /// * `v4f32` is a vector of 4 x float32
+  /// * `v2f64` is a vector of 2 x float64
+  /// * `v4i32` is a vector of 4 x int32
+  /// * `v2i64` is a vector of 2 x int64
+  /// * `v8i16` is a vector of 8 x int16
+  /// * `v16i8` is a vector of 16 x int8
+  Simd(SimdTy),
   /// The type `[T; n]` is an array of `n` elements of type `T`;
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty, Expr),
@@ -296,6 +359,7 @@ impl std::fmt::Debug for TyKind {
       TyKind::Input => write!(f, "Input"),
       TyKind::Output => write!(f, "Output"),
       TyKind::Moved(ty) => write!(f, "|{ty:?}|"),
+      TyKind::Simd(ty) => write!(f, "simd<{ty:?}>"),
     }
   }
 }
@@ -314,6 +378,7 @@ impl TyKind {
       TyKind::False |
       TyKind::Bool |
       TyKind::Int(_) |
+      TyKind::Simd(_) |
       TyKind::Input |
       TyKind::Output => false,
       TyKind::Var(_) => true,
@@ -403,6 +468,7 @@ impl HasAlpha for TyKind {
       TyKind::Input => TyKind::Input,
       TyKind::Output => TyKind::Output,
       TyKind::Moved(ty) => TyKind::Moved(a!(ty)),
+      TyKind::Simd(ty) => TyKind::Simd(*ty),
     }
   }
 }
@@ -523,6 +589,8 @@ pub enum ExprKind {
   Unop(super::Unop, Expr),
   /// A binary operation.
   Binop(super::Binop, Expr, Expr),
+  /// SIMD vector operations
+  SimdOp(SimdOp, Box<[Expr]>),
   /// An index operation `a[i]: T` where `a: (array T n)` and `i: nat`.
   Index(Expr, Expr),
   /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
@@ -594,6 +662,7 @@ impl ExprKind {
       ExprKind::Ref(p) => p.has_tyvar(),
       ExprKind::Call { tys, args, .. } =>
         tys.iter().all(|e| e.has_tyvar()) || args.iter().any(|e| e.has_tyvar()),
+      ExprKind::SimdOp(_, args) => args.iter().any(|e| e.has_tyvar()),
     }
   }
 }
@@ -628,6 +697,8 @@ impl std::fmt::Debug for ExprKind {
       }
       ExprKind::If {cond, then, els} =>
         write!(f, "if {cond:?} {{ {then:?} }} else {{ {els:?} }}"),
+      ExprKind::SimdOp(op, args) =>
+        write!(f, "simd_{op:?}({:?})", args.iter().format(", ")),
     }
   }
 }
@@ -659,6 +730,7 @@ impl HasAlpha for ExprKind {
         ExprKind::Call {f, tys: tys.clone(), args: a!(args)},
       ExprKind::If {cond, then, els} => ExprKind::If {
         cond: a!(cond), then: a!(then), els: a!(els)},
+      ExprKind::SimdOp(op, args) => ExprKind::SimdOp(*op, a!(args)),
     }
   }
 }

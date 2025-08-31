@@ -3880,9 +3880,11 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))))
           })
         };
-        let ret_ty =
-          if crate::proof::VERIFY_TERMINATION { self.common.t_false }
-          else { self.common.t_unit };
+        #[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+        let ret_ty = if crate::proof::VERIFY_TERMINATION { self.common.t_false }
+            else { self.common.t_unit };
+        #[cfg(any(feature = "arm64-backend", feature = "wasm-backend"))]
+        let ret_ty = self.common.t_unit;
         let body = Box::new(self.check_block(span, body, ret_ty).0);
         let LabelData {labels, dcs, ..} =
           self.labels.remove(&label).expect("labels should be well scoped");

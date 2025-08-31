@@ -211,6 +211,16 @@ impl TyKind {
         m.merge(ty2.meta(ns)?);
         Some(m)
       }
+      TyKind::Simd(ty) => {
+        // SIMD types typically have fixed sizes (e.g., 128-bit for V4F32)
+        match ty {
+          SimdTy::V4F32 | SimdTy::V4I32 => Some(Meta::from_size(16)), // 4 * 32-bit = 128 bits
+          SimdTy::V2F64 | SimdTy::V2I64 => Some(Meta::from_size(16)), // 2 * 64-bit = 128 bits
+          SimdTy::V8I16 => Some(Meta::from_size(16)), // 8 * 16-bit = 128 bits
+          SimdTy::V16I8 => Some(Meta::from_size(16)), // 16 * 8-bit = 128 bits
+          SimdTy::V128 => Some(Meta::from_size(16)), // Generic 128-bit vector
+        }
+      }
     }
   }
 }

@@ -111,31 +111,36 @@ mod nameck;
 mod build_mir;
 mod mir_opt;
 mod symbol;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 mod build_vcode;
+mod lower_shared;
 pub mod arch;
-mod regalloc;
+// regalloc module is conditionally included below
 mod linker;
 mod codegen;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod proof;
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 pub mod proof_gen;
+/// Unified SIMD abstraction layer
+pub mod simd;
+/// Architecture-generic PCode wrapper
+mod arch_pcode;
 mod proof_bypass;
 mod arch_selector;
 mod codegen_multi;
 mod codegen_arch;
+pub mod target_override;
 
-// Conditional compilation of architecture-specific modules
-#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
+// Architecture-specific regalloc module selection
+#[cfg(all(not(feature = "arm64-backend"), not(feature = "wasm-backend")))]
 mod regalloc;
 
 #[cfg(feature = "arm64-backend")]
-mod regalloc {
-    pub use crate::arch::arm64::regalloc::*;
-}
+use crate::arch::arm64::regalloc as regalloc;
 
 #[cfg(feature = "wasm-backend")]
-mod regalloc {
-    pub use crate::arch::wasm::regalloc::*;
-}
+use crate::arch::wasm::regalloc as regalloc;
 
 use std::collections::HashMap;
 use types::{entity::Entity, mir, Spanned};
@@ -148,7 +153,7 @@ pub use types::Idx;
 pub use symbol::{Symbol, Interner, intern, init_dense_symbol_map};
 pub use nameck::DeclarationError;
 pub use ty::{CtxPrint, CtxDisplay, DisplayCtx};
-pub use build_vcode::LowerErr;
+pub use lower_shared::LowerErr;
 pub use linker::{LinkedCode, LinkerErr, TEXT_START};
 use types::{IdxVec, VarId, LambdaId, ty, ast, hir};
 
@@ -310,7 +315,10 @@ impl<C: Config> Compiler<C> {
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
-    LinkedCode::link(&names, mir, init, &allocs, &globals, self.target)
+    // Convert mir::VarId to types::VarId
+    let globals_converted: Vec<(Symbol, bool, types::VarId, types::mir::Ty)> = 
+      globals.into_iter().map(|(s, b, v, t)| (s, b, types::VarId(v.0), t)).collect();
+    LinkedCode::link(&names, mir, init, &allocs, globals_converted.as_slice(), self.target)
   }
   
   /// Set the target architecture and OS for code generation.

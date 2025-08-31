@@ -33,9 +33,11 @@ pub trait ArchitectureTypes: Sized {
 }
 
 /// Marker type for x86 architecture
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 #[derive(Debug, Clone, Copy)]
 pub struct X86Arch;
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 impl ArchitectureTypes for X86Arch {
     type PReg = crate::arch::x86::PReg;
     type PRegSet = crate::arch::x86::PRegSet;
@@ -55,9 +57,11 @@ impl ArchitectureTypes for Arm64Arch {
 }
 
 /// Marker type for WASM architecture
+#[cfg(feature = "wasm-backend")]
 #[derive(Debug, Clone, Copy)]
 pub struct WasmArch;
 
+#[cfg(feature = "wasm-backend")]
 impl ArchitectureTypes for WasmArch {
     type PReg = crate::arch::wasm::WasmReg;
     type PRegSet = crate::arch::wasm::WasmRegSet;
@@ -74,6 +78,7 @@ pub trait ArchReg: Copy + Clone + Debug + PartialEq + Eq {
     fn invalid() -> Self;
 }
 
+#[cfg(not(any(feature = "arm64-backend", feature = "wasm-backend")))]
 impl ArchReg for crate::arch::x86::PReg {
     fn is_valid(&self) -> bool {
         crate::types::vcode::IsReg::is_valid(self)
@@ -96,6 +101,7 @@ impl ArchReg for crate::arch::arm64::PReg {
     }
 }
 
+#[cfg(feature = "wasm-backend")]
 impl ArchReg for crate::arch::wasm::WasmReg {
     fn is_valid(&self) -> bool {
         use crate::arch::traits::PhysicalReg;
