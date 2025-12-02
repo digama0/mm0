@@ -9,9 +9,10 @@ use std::{collections::HashSet, mem};
 
 /// The reachability status of a block.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub enum Reachability {
   /// A block is dead if it is not accessible from the entry block.
+  [#default]
   Dead,
   /// A block is unreachable if it is accessible from the entry block, but necessarily ends
   /// in a call to `unreachable`, meaning that `false` is provable in the current context.
@@ -21,9 +22,6 @@ pub enum Reachability {
   Reachable,
 }
 
-impl Default for Reachability {
-  fn default() -> Self { Self::Dead }
-}
 impl Reachability {
   /// True if this block is reachable.
   #[inline] #[must_use] pub fn reach(self) -> bool { matches!(self, Self::Reachable) }
