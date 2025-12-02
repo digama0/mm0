@@ -1706,17 +1706,13 @@ impl std::default::Default for ServerOptions {
 
 /// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
 /// and the new file to be elaborated.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum ElabOn {
   /// Apply changes and elaborate every time a change is received from the server
-  Change,
+  #[default] Change,
   /// Apply changes and elaborate when a save message is received.
   Save,
-}
-
-impl std::default::Default for ElabOn {
-  fn default() -> Self { Self::Change }
 }
 
 fn send_config_request() -> Result<()> {
