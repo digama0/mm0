@@ -75,7 +75,7 @@ impl Ctx {
 mmcc::mk_id! { VCtxId, }
 
 impl VCtxId {
-  /// A sentinel value used in `VCtx::parent` to indicate the root context.
+  /// A sentinel value used in [`VCtx::parent`] to indicate the root context.
   const ROOT: Self = Self(u32::MAX);
 }
 
@@ -354,15 +354,11 @@ trait NodeKind: Sized + std::fmt::Debug {
 }
 
 #[allow(clippy::type_complexity)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum MCtxNode<N: NodeKind> {
-  Zero,
+  #[default] Zero,
   One(N::Leaf),
   Node(Ordering, N::Node, Box<(P<MCtxNode<N>>, P<MCtxNode<N>>)>),
-}
-
-impl<N: NodeKind> Default for MCtxNode<N> {
-  fn default() -> Self { Self::Zero }
 }
 
 #[derive(Debug)]
@@ -1244,17 +1240,13 @@ impl ProcProver<'_> {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum StmtState<'a> {
-  None,
+  #[default] None,
   Call {
     f: ProcId, abi: &'a ProcAbi, args: &'a [(bool, Operand)],
     reach: bool, rets: &'a [(bool, VarId)], se: bool,
   },
-}
-
-impl Default for StmtState<'_> {
-  fn default() -> Self { Self::None }
 }
 
 enum InstState {

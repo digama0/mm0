@@ -932,9 +932,8 @@ impl<'a> Parser<'a> {
                 delim_end += 1
               }
               _ =>
-                break self
-                  .errors
-                  .push(ParseError::new(start..end, "delimiter must have one character".into())),
+                break self.errors.push(
+                  ParseError::new(start..delim_end, "delimiter must have one character".into())),
             }
           }
         }

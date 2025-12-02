@@ -177,7 +177,7 @@ impl<T> Spanned<T> {
 }
 
 /// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Size {
   /// 8 bits, or 1 byte. Used for `u8` and `i8`.
   S8,
@@ -191,13 +191,9 @@ pub enum Size {
   /// ghost variables, but they are also used to indicate "correct to an unbounded model"
   /// for operations like [`Unop::BitNot`] when it makes sense. We do not actually support
   /// bignum compilation.)
-  Inf,
+  #[default] Inf,
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Size);
-
-impl Default for Size {
-  fn default() -> Self { Self::Inf }
-}
 
 impl Size {
   /// The number of bits of this type, or `None` for the infinite case.
