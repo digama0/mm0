@@ -500,7 +500,6 @@ impl Elaborator {
     };
 
     self.add_const(tk.trim, prec)?;
-    if infix && it.peek().is_none() { rassoc = Some(false) }
     while let Some(lit) = it.next() {
       match *lit {
         ALiteral::Const(ref cnst, prec) => {
@@ -527,6 +526,7 @@ impl Elaborator {
         }
       }
     }
+    if infix && rassoc.is_none() { rassoc = Some(false) }
 
     for (_, (i, b)) in vars {
       if !b {

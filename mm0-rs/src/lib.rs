@@ -79,6 +79,9 @@ pub mod mmu { pub mod import; pub mod export; }
 #[cfg(feature = "mmc")]
 pub mod mmc;
 
+#[cfg(test)]
+mod test;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use elab::{environment::*,

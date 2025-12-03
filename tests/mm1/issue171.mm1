@@ -1,0 +1,5 @@
+strict provable sort wff;
+term wi: wff > wff > wff; infixr wi: $->$ prec 25;
+term foo (a b: wff): wff;
+notation foo (a b) = a ($[$:100) b ($]$:0);
+axiom x: $ a -> a [ a ] $;

@@ -441,7 +441,7 @@ pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option
 
 /// Compile MM1 files into MMB
 #[allow(clippy::struct_excessive_bools)]
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Default)]
 pub struct Args {
   /// Disable proof checking until (check-proofs #t)
   #[clap(short, long)]
