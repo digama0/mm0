@@ -1043,10 +1043,12 @@ impl Elaborator {
           if let Some(e) = err { self.report(e.into_elab_error(d.id)) }
           self.spans.insert(d.id, ObjectKind::Thm(true, tid));
         } else if VERIFY_ON_ADD {
-          match self.verify_thmdef(&Default::default(), &t) {
-            Ok(()) | Err(VerifyError::UsesSorry) => {}
-            Err(e) => return Err(ElabError::new_e(d.id, e.render_to_string(self))),
-          }
+          scope_ast_source(&self.ast.source, || {
+            match self.verify_thmdef(&Default::default(), &t) {
+              Ok(()) | Err(VerifyError::UsesSorry) => Ok(()),
+              Err(e) => Err(ElabError::new_e(d.id, e.render_to_string(self))),
+            }
+          })?
         }
       }
     }

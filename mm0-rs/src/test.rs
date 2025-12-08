@@ -6,3 +6,4 @@ fn compile_mm1(file: &str) -> io::Result<()> {
 }
 
 #[test] fn issue171() -> io::Result<()> { compile_mm1("issue171") }
+#[test] fn issue172() -> io::Result<()> { compile_mm1("issue172") }

@@ -548,7 +548,7 @@ struct VerifyProof<'a, 'b> {
 impl<'a> VerifyProof<'a, '_> {
   fn verify_proof_node(&mut self, node: &'a ProofNode) -> Result<HeapEl<'a>, VerifyError<'a>> {
     Ok(match *node {
-      ProofNode::Ref(i) => self.heap[i],
+      ProofNode::Ref(i) => self.heap.get(i).copied().ok_or(VerifyError::MalformedHeap)?,
       ProofNode::Dummy(a, s) => {
         self.bound.check_sort(s)?;
         let mods = self.env.sorts[s].mods;
@@ -647,9 +647,8 @@ impl<'a> VerifyProof<'a, '_> {
       ProofNode::Conv(p) => {
         vassert!(p + 3 <= self.ctx.store.len(), VerifyError::MalformedStore);
         let (tgt, conv, proof) = ProofNode::unpack_conv(&self.ctx.store[p..]);
-        let lhs = unref(self.ctx.heap, tgt);
         let rhs = self.verify_proof_node(proof)?.as_proof(&self.ctx, Some(node))?;
-        self.verify_conv_node(node, conv, lhs, rhs)?;
+        self.verify_conv_node(node, conv, unref(self.ctx.heap, tgt), unref(self.ctx.heap, rhs))?;
         HeapEl::Proof(node, tgt)
       }
       ProofNode::Refl(_) |

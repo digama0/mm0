@@ -516,7 +516,11 @@ impl Args {
     }
     let max_error = if self.warn_as_error { ErrorLevel::Warning } else { ErrorLevel::Error };
     if max_error as u8 <= MAX_EMITTED_ERROR.load(Ordering::Relaxed) {
-      std::process::exit(1);
+      if cfg!(test) {
+        panic!("errors emitted")
+      } else {
+        std::process::exit(1)
+      }
     }
     Ok(())
   }
