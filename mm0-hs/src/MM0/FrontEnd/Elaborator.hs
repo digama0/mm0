@@ -90,7 +90,7 @@ elabInout :: Bool -> T.Text -> [Either Ident Formula] -> SpecM ()
 elabInout out "string" [x] = do
   e <- runLocalCtxM' $ parseTermFmla "string" x
   insertSpec (SInout (IOKString out e))
-elabInout _ "string" _ = throwError ("input/output-kind string takes one argument")
+elabInout _ "string" _ = throwError "input/output-kind string takes one argument"
 elabInout False k _ = throwError ("input-kind " ++ show k ++ " not supported")
 elabInout True k _ = throwError ("output-kind " ++ show k ++ " not supported")
 
@@ -103,7 +103,7 @@ parseTermFmla _ (Left x) = do
 parseTermFmla s (Right f) = parseFormula s f
 
 runLocalCtxM' :: LocalCtxM a -> SpecM a
-runLocalCtxM' m = StateT $ \e -> (\r -> (r, e)) <$> runLocalCtxM m e
+runLocalCtxM' m = StateT $ \e -> (, e) <$> runLocalCtxM m e
 
 processBinders :: [Binder] -> ([PBinder] -> M.Map Ident Ident -> [SExpr] -> LocalCtxM a) -> LocalCtxM a
 processBinders = go M.empty where

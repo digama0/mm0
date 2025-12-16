@@ -1,4 +1,26 @@
 window.onload = () => {
+  const styleSheet = document.createElement('style');
+  styleSheet.innerText = '.axm {display: none}';
+  document.head.appendChild(styleSheet);
+
+  for (const elem of document.getElementsByClassName('axs')) {
+    const axs = elem.nextElementSibling;
+    const axsHint = document.createElement('span');
+    const n = axs.getElementsByClassName('ax').length;
+    axsHint.className = 'axs-hint';
+    axsHint.style = 'display: none';
+    axsHint.innerHTML = ` (+${n})`;;
+    axs.parentNode.insertBefore(axsHint, axs);
+    let hidden = true;
+    elem.onmouseenter = () => { if (hidden) axsHint.style = '' };
+    elem.onmouseleave = () => { if (hidden) axsHint.style = 'display: none' };
+    elem.onclick = () => {
+      hidden = !hidden;
+      axsHint.style = hidden ? '' : 'display: none';
+      axs.style = hidden ? '' : 'display: inline';
+    };
+  }
+
   function select(tgt) {
     const lastSelected = document.getElementsByClassName('selected')[0];
     if (lastSelected) lastSelected.classList.remove('selected');

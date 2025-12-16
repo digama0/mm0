@@ -12,7 +12,7 @@ void debug_print_input() {}
 #else
 
 #define PARSER_ALLOC(val, size) ({ \
-  ENSURE("parser store overflow", g_parser_arena_size + (size) <= PARSER_ARENA_SIZE); \
+  ENSURE("parser store overflow", g_parser_arena_size + (size)/4 <= PARSER_ARENA_SIZE); \
   u32 p = g_parser_arena_size; \
   *(typeof(val)*)&g_parser_arena[p] = val; \
   g_parser_arena_size += (size)/4; \
@@ -446,7 +446,7 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       }
       for (; var_group_start < arg_idx; var_group_start++) {
         ENSURE("variable type does not match theorem", type ==
-          (curly ? args[var_group_start] & ~TYPE_DEPS_MASK : args[var_group_start]));
+          (curly ? args[var_group_start] & TYPE_UPPER_MASK : args[var_group_start]));
         g_var_sorts[var_group_start] = sort;
       }
       while (dummy_group_start < g_num_vars)
@@ -477,6 +477,7 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       if (ch('>')) {
         ENSURE("variable type does not match theorem", type == args[arg_idx++]);
       } else {
+        ENSURE("the return type of a theorem should end be a statement", kind != KW_THEOREM);
         ENSURE("return type does not match theorem", type == ret);
         break;
       }

@@ -8,7 +8,7 @@ import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.String
 import MM0.Kernel.Environment
 
-data VInoutKind = VIKString Bool -- ^ False for input, True for output
+newtype VInoutKind = VIKString Bool -- ^ False for input, True for output
   deriving (Show)
 
 type WCStmt = WithComment Stmt

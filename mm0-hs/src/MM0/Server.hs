@@ -1,8 +1,9 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
 module MM0.Server (server) where
 
 import Control.Concurrent
@@ -47,7 +48,7 @@ server ("--debug" : _) = atomically newTChan >>= run True
 server _ = atomically newTChan >>= run False
 
 catchAll :: forall a. IO a -> IO ()
-catchAll m = () <$ (E.try m :: IO (Either E.SomeException a))
+catchAll m = void (E.try m :: IO (Either E.SomeException a))
 
 run :: Bool -> TChan FromClientMessage -> IO ()
 run debug rin = do
@@ -307,7 +308,7 @@ toLocation :: Lines -> (FilePath, (Int, Int)) -> Location
 toLocation larr (p, r) = Location (filePathToUri p) (toRange larr r)
 
 elabErrorDiags :: Lines -> [CE.ElabError] -> [Diagnostic]
-elabErrorDiags larr errs = mapMaybe toDiag errs where
+elabErrorDiags larr = mapMaybe toDiag where
   toRel :: ((FilePath, (Int, Int)), T.Text) -> DiagnosticRelatedInformation
   toRel (loc, msg) = DiagnosticRelatedInformation (toLocation larr loc) msg
   toDiag :: CE.ElabError -> Maybe Diagnostic
@@ -441,28 +442,28 @@ getSymbols larr doc env = do
   v <- VD.unsafeFreeze (CE.eLispData env)
   l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
     ty <- CE.unRefIO (v V.! n) <&> \case
-      CE.Atom _ _ _          -> Just SkConstant
-      CE.List _              -> Just SkArray
-      CE.DottedList _ _ _    -> Just SkObject
-      CE.Number _            -> Just SkNumber
-      CE.String _            -> Just SkString
-      CE.UnparsedFormula _ _ -> Just SkString
-      CE.Bool _              -> Just SkBoolean
-      CE.Syntax _            -> Just SkEvent
-      CE.Undef               -> Nothing
-      CE.Proc _              -> Just SkFunction
-      CE.AtomMap _           -> Just SkObject
-      CE.Ref _               -> undefined
-      CE.MVar _ _ _ _        -> Just SkConstant
-      CE.Goal _ _            -> Just SkConstant
+      CE.Atom            {} -> Just SkConstant
+      CE.List            {} -> Just SkArray
+      CE.DottedList      {} -> Just SkObject
+      CE.Number          {} -> Just SkNumber
+      CE.String          {} -> Just SkString
+      CE.UnparsedFormula {} -> Just SkString
+      CE.Bool            {} -> Just SkBoolean
+      CE.Syntax          {} -> Just SkEvent
+      CE.Undef           {} -> Nothing
+      CE.Proc            {} -> Just SkFunction
+      CE.AtomMap         {} -> Just SkObject
+      CE.Ref             {} -> undefined
+      CE.MVar            {} -> Just SkConstant
+      CE.Goal            {} -> Just SkConstant
     return $ liftM2 (mkDS x Nothing) o ty
   let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x Nothing r SkClass
   let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) ->
         mkDS x (Just (renderNoBreak (ppDeclType env d))) r $ case d of
-          CE.DTerm _ _          -> SkConstructor
-          CE.DDef _ _ _ _       -> SkConstructor
-          CE.DAxiom _ _ _       -> SkMethod
-          CE.DTheorem _ _ _ _ _ -> SkMethod
+          CE.DTerm    {} -> SkConstructor
+          CE.DDef     {} -> SkConstructor
+          CE.DAxiom   {} -> SkMethod
+          CE.DTheorem {} -> SkMethod
   return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) $
     mapMaybe (\(p, ds) -> if p == doc then Just ds else Nothing) (l1 ++ l2 ++ l3)
 

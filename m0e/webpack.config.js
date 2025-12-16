@@ -8,6 +8,7 @@ const examples = path.resolve(dist, "examples");
 
 module.exports = {
   mode: "production",
+  // mode: "development",
   entry: {
     index: "./src/index.js"
   },
@@ -16,7 +17,7 @@ module.exports = {
     filename: "[name].js"
   },
   devServer: {
-    contentBase: dist,
+    static: dist,
   },
   module: {
     rules: [{
@@ -28,15 +29,28 @@ module.exports = {
     }, {
       test: /\.(mm0|mm1|mmu)$/,
       use: ['raw-loader']
+    }, {
+      test: /\.wasm$/,
+      type: 'webassembly/sync',
     }]
   },
+  performance: {
+    hints: false,
+    maxEntrypointSize: 5000000,
+    maxAssetSize: 5000000
+  },
+  experiments: {
+    syncWebAssembly: true
+  },
   plugins: [
-    new CopyPlugin([
-      "static",
-      { from: "../examples/*.mm0", to: examples },
-      { from: "../examples/*.mm1", to: examples },
-      { from: "../examples/*.mmu", to: examples },
-    ]),
+    new CopyPlugin({
+      patterns: [
+        "static",
+        { from: "../examples/*.mm0", to: examples },
+        { from: "../examples/*.mm1", to: examples },
+        { from: "../examples/*.mmu", to: examples },
+      ]
+    }),
 
     new WasmPackPlugin({
       crateDirectory: __dirname,

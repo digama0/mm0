@@ -2,13 +2,16 @@ module MM0.FromMM (fromMM, showBundled) where
 
 import System.IO
 import System.Exit
+import Control.Monad
 import Control.Monad.State
 import Control.Monad.RWS.Strict
 import Data.Foldable
 import Data.Maybe
 import Data.Either
 import Data.List
+import Data.Char
 import Data.Default
+import Data.Bifunctor
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
@@ -37,8 +40,7 @@ write f io = withFile f WriteMode $ \h ->
 showBundled :: [String] -> IO ()
 showBundled [] = die "show-bundled: no .mm file specified"
 showBundled (mm : rest) = do
-  db <- withFile mm ReadMode $ \h ->
-    B.hGetContents h >>= liftIO' . parseMM
+  db <- withFile mm ReadMode (B.hGetContents >=> (liftIO' . parseMM))
   let db' = emancipate db
   let bu = findBundled db'
   case rest of
@@ -54,7 +56,7 @@ showBundled (mm : rest) = do
     n : _ -> showBundles db $ filt (\_ _ i -> i <= read n) bu
   where
   filt :: (Label -> [Int] -> Int -> Bool) -> M.Map Label Bundles -> M.Map Label Bundles
-  filt f = M.filter (not . M.null) . M.mapWithKey (\x -> M.filterWithKey (f x))
+  filt f = M.filter (not . M.null) . M.mapWithKey (M.filterWithKey . f)
 
   showBundles :: MMDatabase -> M.Map Label Bundles -> IO ()
   showBundles db bu = out $ mapMaybe (\case
@@ -72,8 +74,7 @@ showBundled (mm : rest) = do
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
 fromMM (mm : rest) = do
-  db <- withFile mm ReadMode $ \h ->
-    B.hGetContents h >>= liftIO' . parseMM
+  db <- withFile mm ReadMode (B.hGetContents >=> (liftIO' . parseMM))
   let db' = emancipate db
   (dbf, rest') <- return $ case rest of
     "-f" : l : rest' ->
@@ -82,11 +83,11 @@ fromMM (mm : rest) = do
     _ -> (Nothing, rest)
   case rest' of
     [] -> printAST db' dbf (\a -> putStr (shows a "\n\n")) (\_ -> return ())
-    "-o" : mm0 : [] ->
+    ["-o", mm0] ->
       write mm0 $ \h -> printAST db' dbf
         (\a -> hPutStr h (shows a "\n\n")) (\_ -> return ())
     "-o" : mm0 : mmo : _ ->
-      if isSuffixOf "mmb" mmo then
+      if "mmb" `isSuffixOf` mmo then
         write mm0 $ \hmm0 -> exportKP False mmo $
           printAST db' dbf (\a -> hPutStr hmm0 (shows a "\n\n"))
       else write mm0 $ \hmm0 -> write mmo $ \hmmu ->
@@ -209,7 +210,7 @@ trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
         let pub = stmtPublic i st
         n <- trName st mst
         (out, pa, rm) <- trThmB c Nothing pub fr e p n
-        (out2, ns) <- unzip <$> mapM (\bu -> do
+        (out2, ns) <- mapAndUnzipM (\bu -> do
           n' <- trBName st bu (mst <> "_b")
           (out', _, rm') <- trThmB c (Just bu) pub fr e p n'
           return (out', (bu, (n', rm'))))
@@ -382,13 +383,13 @@ trExpr vm = \e -> gets $ \t -> trExpr' (tNameMap t) (tBuilders t) e where
       go <$> reorder (fst $ bExpr (bds M.! t)) es
 
 exprToFmla :: SExpr -> A.Formula
-exprToFmla e = A.Formula $ T.pack $ ' ' : showsPrec 0 e " "
+exprToFmla e = A.Formula $ T.pack $ ' ' : shows e " "
 
 identCh1 :: Char -> Bool
-identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_'
+identCh1 c = isAsciiLower c || isAsciiUpper c || c == '_'
 
 identCh :: Char -> Bool
-identCh c = '0' <= c && c <= '9' || identCh1 c
+identCh c = isDigit c || identCh1 c
 
 identStr :: T.Text -> Bool
 identStr "_" = False
@@ -407,7 +408,7 @@ mangle s = case T.uncons s of
 trProof :: (Label -> Label) -> TransState ->
   ([(Label, Label)], MMProof) -> ([(VarName, Sort)], Proof)
 trProof vm t (ds, pr) = (
-  (\(d, s) -> (tNameMap t M.! d, tNameMap t M.! s)) <$> ds,
+  bimap (tNameMap t M.!) (tNameMap t M.!) <$> ds,
   fromRight undefined $ evalState (trProof' pr) def)
   where
 

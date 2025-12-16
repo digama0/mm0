@@ -15,10 +15,9 @@ use std::sync::Arc;
 
 /// User-supplied delimiter characters.
 ///
-/// A delimiter-stmt with only one math string is parsed
-/// as [`Delimiter::Both`]`(..)`, and the contents are put in the environment as both left and right
-/// delimiters. delimiter-stmts with two math strings are parsed as [`Delimiter::LeftRight`]`(s1, s2)`.
-///
+/// A delimiter-stmt with only one math string is parsed as <code>[Delimiter::Both](..)</code>,
+/// and the contents are put in the environment as both left and right delimiters.
+/// Delimiter-stmts with two math strings are parsed as <code>[Delimiter::LeftRight](s1, s2)</code>.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Clone, Debug)]
 pub enum Delimiter {
@@ -168,6 +167,7 @@ impl Type {
 }
 
 /// A list of variables with a type or formula annotation.
+///
 /// A binder exists in a binder group such as `(ph ps: wff)` or `{x y .z: set}`,
 /// and `bi.span` is the span of the enclosing binder group.
 /// Detailed information about binder syntax can be found in the [declaration grammar].
@@ -242,17 +242,12 @@ mm0_deepsize::deep_size_0!(Atom);
 pub enum SExprKind {
   /// An atom, an unquoted string of identifier characters like `foo`. These are usually
   /// interpreted as variable accesses or variable declarations, unless they appear inside
-  /// a quoted context, in which case they evaluate to themselves as a [`LispKind::Atom`].
-  ///
-  /// [`LispKind::Atom`]: crate::elab::lisp::LispKind::Atom
+  /// a quoted context, in which case they evaluate to themselves as a `LispKind::Atom`.
   Atom(Atom),
   /// A proper list, like `(a b c)`. This is normally interpreted as a function application,
-  /// unless the head of the list is a [`Syntax`], in which case it has special semantics.
+  /// unless the head of the list is a `Syntax`, in which case it has special semantics.
   /// The empty list `()` evaluates to itself, and when quoted a list evaluates to a
-  /// [`LispKind::List`] of its contents.
-  ///
-  /// [`Syntax`]: crate::elab::lisp::Syntax
-  /// [`LispKind::List`]: crate::elab::lisp::LispKind::List
+  /// `LispKind::List` of its contents.
   List(Vec<SExpr>),
   /// A dotted list, like `(a b c . d)`. (The dot must appear at the second to last
   /// position as in the example, but there may be one or more subexpressions before the
@@ -307,7 +302,7 @@ pub fn curly_transform<T>(
 ) {
   let n = es.len();
   if n > 2 {
-    let valid_curly = no_dot && n % 2 != 0 && {
+    let valid_curly = no_dot && !n.is_multiple_of(2) && {
       let e = &es[1];
       (3..n).step_by(2).all(|i| eq(&es[i], e))
     };
@@ -561,6 +556,7 @@ impl Default for Ast {
 
 /// Iteartor over the AST's stmts while also traversing into the nested
 /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
+#[must_use]
 #[derive(Debug)]
 pub struct StmtIter<'a> {
   stmts: std::slice::Iter<'a, Stmt>,
@@ -584,7 +580,6 @@ impl<'a> Iterator for StmtIter<'a> {
 impl Ast {
   /// Get an iterator over the AST's stmts while also traversing into the nested
   /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
-  #[must_use]
   pub fn stmts_iter(&self) -> StmtIter<'_> { StmtIter { stmts: self.stmts.iter(), nested: None } }
 
   /// Look for a [`Decl`] by `ident` (where `ident` is in bytes)

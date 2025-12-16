@@ -1,12 +1,23 @@
+-- This is the MM0 file corresponding to the MM1 file `03-mm1-intro-mm1.mm1`.
+-- It contains only declarations, and no proofs.
+
+-- Declare delimiters that don't require whitespace
 delimiter $ ( ~ $  $ ) $;
 
+-- Declare wff as the sort of provable well-formed formulas
 provable sort wff;
 
+--| implication
 term imp: wff > wff > wff;
+-- infix syntax, right-associative
 infixr imp: $->$ prec 25;
 
+--| negation
 term not: wff > wff;
+-- prefix syntax
 prefix not: $~$ prec 100;
+
+-- Lukasiewicz axiom system for propositional calculus
 
 axiom ax_1 (a b: wff): $ a -> b -> a $;
 
@@ -16,4 +27,7 @@ axiom ax_3 (a b: wff): $ (~a -> ~b) -> (b -> a) $;
 
 axiom ax_mp (a b: wff): $ a -> b $ > $ a $ > $ b $;
 
+-- Example theorem: identity. Note that MM0 doesn't allow a proof
+-- expression; see the next tutorial file for an MM1 file, which
+-- is allowed to contain proofs.
 theorem id (a: wff): $ a -> a $;

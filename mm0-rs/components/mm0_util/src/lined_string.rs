@@ -49,7 +49,11 @@ impl LinedString {
   /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the [`Span`] used in the index
   /// was generated from the file that is being indexed.
   #[allow(unused)]
-  pub fn str_at(&self, s: Span) -> &str { unsafe { std::str::from_utf8_unchecked(&self[s]) } }
+  #[must_use]
+  pub fn str_at(&self, s: Span) -> &str {
+    // Safety: ensured by caller
+    unsafe { std::str::from_utf8_unchecked(&self[s]) }
+  }
 
   /// Calculate and store information about the positions of any newline
   /// characters in the string, and set 'unicode' to true if the string contains unicode.
@@ -69,17 +73,26 @@ impl LinedString {
     lines
   }
 
+  /// Returns the index of the start of the line, and the line number.
+  #[must_use]
+  pub fn get_line(&self, line: usize) -> Option<usize> { self.lines.get(line).copied() }
+
+  /// Returns the index of the start of the line, and the line number.
+  #[must_use]
+  pub fn line_start(&self, idx: usize) -> (usize, usize) {
+    match self.lines.binary_search(&idx) {
+      Ok(n) => (idx, n + 1),
+      Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n),
+    }
+  }
+
   /// Turn a byte index into an LSP [`Position`]
   ///
   /// # Safety
   /// `idx` must be a valid index in the string.
   #[must_use]
   pub fn to_pos(&self, idx: usize) -> Position {
-    use std::convert::TryInto;
-    let (pos, line) = match self.lines.binary_search(&idx) {
-      Ok(n) => (idx, n + 1),
-      Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n),
-    };
+    let (pos, line) = self.line_start(idx);
     Position {
       line: line.try_into().expect("too many lines"),
       character: if self.unicode {
@@ -108,10 +121,7 @@ impl LinedString {
 
   /// Get the total number of lines in the file (as a `u32` for LSP compatibility).
   #[must_use]
-  pub fn num_lines(&self) -> u32 {
-    use std::convert::TryInto;
-    self.lines.len().try_into().expect("too many lines")
-  }
+  pub fn num_lines(&self) -> u32 { self.lines.len().try_into().expect("too many lines") }
 
   /// Get the [`Position`] (line and UTF-16 code unit offset) of the end of the file.
   #[must_use]
@@ -127,7 +137,13 @@ impl LinedString {
   /// `start` must be a valid index in the string.
   #[must_use]
   fn lsp_to_idx(&self, start: usize, chs: usize) -> usize {
-    start + if self.unicode { lsp_to_idx(unsafe { self.get_unchecked(start..) }, chs) } else { chs }
+    start
+      + if self.unicode {
+        // Safety: ensured by caller
+        lsp_to_idx(unsafe { self.get_unchecked(start..) }, chs)
+      } else {
+        chs
+      }
   }
 
   /// Turn an LSP [`Position`] into a usize index. [`Position`] is already zero-based,
@@ -185,9 +201,11 @@ impl LinedString {
         },
       )
     };
+    // Safety: off is a valid offset in the string because it is 0, len, or yielded by char_indices
     let tail = unsafe { s.get_unchecked(off..) };
     let idx = if unicode { lsp_to_idx(tail, chs) } else { chs };
     let len = self.s.len() + off;
+    // Safety: idx is a valid offset because lsp_to_idx() returns valid offsets
     for (b, c) in unsafe { tail.get_unchecked(..idx) }.char_indices() {
       if c == '\n' {
         self.lines.push(b + len + 1)
@@ -226,7 +244,7 @@ impl LinedString {
     let mut first_change = None;
     for e in changes {
       if let Some(Range { start, end }) = e.range {
-        if first_change.map_or(true, |c| start < c) {
+        if first_change.is_none_or(|c| start < c) {
           first_change = Some(start)
         }
         if out.end() > start {
@@ -246,7 +264,9 @@ impl LinedString {
     out.extend(uncopied);
     if let Some(pos) = first_change {
       let start = out.to_idx(pos).expect("change out of range");
+      // Safety: self.s and out.s agree up to start so start is valid in self.s
       let from = unsafe { self.s.get_unchecked(start..) };
+      // Safety: out.to_idx returns a valid position in out.s
       let to = unsafe { out.s.get_unchecked(start..) };
       for ((b, c1), c2) in from.char_indices().zip(to.chars()) {
         if c1 != c2 {
@@ -267,6 +287,6 @@ impl From<String> for LinedString {
   fn from(s: String) -> LinedString {
     let mut unicode = false;
     let lines = LinedString::get_lines(&mut unicode, &s);
-    LinedString { unicode, lines, s }
+    LinedString { s, unicode, lines }
   }
 }

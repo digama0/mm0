@@ -11,6 +11,7 @@ import Data.List
 import Data.List.Split
 import Data.Maybe
 import Data.Default
+import Data.Bifunctor
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -119,17 +120,17 @@ processLits x bis = \lits prec1 -> do
     go [] r = return ([], r)
     go (NConst c p : lits'') r = do
       tk2 <- processConst c p
-      go lits'' r <&> \(l, r') -> (PConst tk2 : l, r')
+      go lits'' r <&> first (PConst tk2 :)
     go (NVar v : lits'') r = do
       (q, r2) <- lift $ case lits'' of
         [] -> do
-          r2 <- fromJustError "general infix notation requires explicit associativity" $
+          r2 <- fromJustError "general infix notation requires explicit associativity"
             (r <|> (snd <$> prec1))
           (,Just r2) <$> bump (not r2) prec2
         (NConst _ q : _) -> (,r) <$> bump True q
         (NVar _ : _) -> return (maxBound, r)
       n <- lift $ findVar v
-      go lits'' r2 <&> \(l, r') -> (PVar n q : l, r')
+      go lits'' r2 <&> first (PVar n q :)
   (plits, r') <- go lits' rassoc
   return (inf, tk', NotaInfo x (llit, plits) r')
   where
@@ -170,7 +171,7 @@ addCoeInner :: Ident -> Ident -> Coe -> ParserEnv -> Either String ParserEnv
 addCoeInner s1 s2 l e = do
   guardError "coercion cycle detected" (s1 /= s2)
   guardError "coercion diamond detected" (isNothing $ getCoe s1 s2 e)
-  let f = M.alter (Just . M.insert s2 l . maybe M.empty id) s1
+  let f = M.alter (Just . M.insert s2 l . fromMaybe M.empty) s1
   return (e {coes = f (coes e)})
 
 addCoe :: Ident -> Ident -> Ident -> ParserEnv -> Either String ParserEnv

@@ -4,7 +4,6 @@
 use std::rc::Rc;
 use std::hash::Hash;
 use std::ops::Index;
-use std::result::Result as StdResult;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::{AtomId, Type};
@@ -49,10 +48,12 @@ impl<'a> NodeHasher<'a> {
   }
 }
 
+/// Basic contextual kind information when interpreting s-expressions as proofs.
+///
 /// Because the s-expr representation of proof terms is ambiguous between terms,
 /// proofs and conversions, we have to know up front what kind of object we are looking
-/// at. This enum is used to prevent the Dedup from mixing up identical lisp expressions
-/// of different kinds.
+/// at. This enum is used to prevent the [`Dedup`] from mixing up identical lisp
+/// expressions of different kinds.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ProofKind {
   /// This is an expr, for example [`ProofNode::Term`] or [`ProofNode::Ref`]
@@ -80,32 +81,76 @@ impl<T> ProofKindMap<T> {
   }
 }
 
+/// A builder for constructing lisp objects from a [`Dedup`].
+#[derive(Debug)]
+pub struct ToLisp {
+  cache: Vec<Option<LispVal>>,
+  hyps: Vec<Option<LispVal>>,
+}
+
+impl ToLisp {
+  /// Get the lisp value of a given index in the [`Dedup`].
+  pub fn get<H: NodeHash>(&mut self, env: &mut Environment, de: &Dedup<H>, i: usize) -> LispVal {
+    if let Some(x) = &self.cache[i] { return x.clone() }
+    let ret = de[i].to_lisp(self, env, de);
+    self.cache[i] = Some(ret.clone());
+    ret
+  }
+
+  /// Insert the argument names, which are not stored in the [`Dedup`].
+  pub fn add_arg_names(&mut self, args: impl Iterator<Item=Option<AtomId>>) {
+    for (a, val) in args.zip(&mut self.cache) {
+      if let Some(a) = a {
+        if val.is_some() { *val = Some(LispVal::atom(a)) }
+      }
+    }
+  }
+
+  /// Insert the argument names, which are not stored in the [`Dedup`].
+  pub fn add_hyp_names(&mut self, args: impl Iterator<Item=Option<AtomId>>) {
+    self.hyps = args.map(|a| a.map(LispVal::atom)).collect()
+  }
+}
+
 /// A "hashable" type. We use this to abstract the difference between
-/// [`ExprHash`] and [`ProofHash`]. The definition of [`NodeHash`] is mutually recursive
+/// [`ExprHash`] and [`ProofHash`].
+///
+/// The definition of [`NodeHash`] is mutually recursive
 /// with the [`Dedup`] struct. A [`NodeHash`] type represents a nonrecursive shadow
 /// of a recursive type (namely [`ExprNode`] and [`ProofNode`], respectively),
 /// where recursive occurrences are replaced with indices tracked by the [`Dedup`] type.
 /// Effectively, [`Dedup`] is acting as an arena allocator where the pointers are
 /// replaced by integers.
 pub trait NodeHash: Hash + Eq + Sized {
+  /// A variant for invalidated nodes.
+  const NONE: Self;
   /// The variant that constructs a variable from an index.
   const REF: fn(ProofKind, usize) -> Self;
 
   /// Given a lisp expression `r` representing an element of the type,
   /// parse it into a [`NodeHash`] object. If the object has already been constructed,
   /// it may also return an index to the element in the [`Dedup`].
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
-    de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>>;
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
+    de: &mut Dedup<Self>) -> Result<Result<Self, usize>>;
 
   /// Calculate the variable dependence of a [`NodeHash`] object, given a function
   /// `deps` that will provide the dependencies of elements. Bump `bv` if this object
   /// is a dummy variable.
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64;
+
+  /// Convert this value back into a [`LispVal`]. This function is normally not called directly;
+  /// instead use [`ToLisp::get`].
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal;
+
+  /// Calls the given function on all direct children of the node.
+  fn on_children(&self, f: impl FnMut(usize));
 }
 
-/// The main hash-consing state object. This tracks previously hash-consed elements
-/// and uses the [`Hash`] implementation required by [`NodeHash`] to hash elements of
-/// the hash type `H`. (Since these objects may be somewhat large, we store them
+/// The main hash-consing state object.
+///
+/// This tracks previously hash-consed elements and uses the [`Hash`] implementation
+/// required by [`NodeHash`] to hash elements of the hash type `H`.
+/// (Since these objects may be somewhat large, we store them
 /// behind an [`Rc`] so that they can go in both the map and the vec.)
 #[derive(Debug)]
 pub struct Dedup<H: NodeHash> {
@@ -128,7 +173,7 @@ pub struct Dedup<H: NodeHash> {
   pub vec: Vec<(Rc<H>, bool, u64)>,
   /// `2 ^ n` where `n` is the number of bound variables currently allocated.
   /// (Yes, this puts a limit of 64 simultaneous bound variables. In fact the limit is
-  /// lower than that, [55](super::local_context::MAX_BOUND_VARS),
+  /// lower than that, [55](mm0b_parser::MAX_BOUND_VARS),
   /// due to the way BV sets are stored in the compiled `.mmb` format.)
   bv: u64,
 }
@@ -151,11 +196,14 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
+  /// Returns an iterator over the elements allocated by the [`Dedup`].
+  pub fn iter(&self) -> DedupIter<'_, H> { self.into_iter() }
+
   /// Insert a new hash object `v`, originating from lisp object `p`,
   /// into the [`Dedup`], returning the allocated index.
   pub fn add(&mut self, kind: ProofKind, p: LispVal, v: H) -> usize {
     let n = self.add_direct(v);
-    self.prev.get_mut(kind).insert(&*p, Some((p, n)));
+    self.prev.get_mut(kind).insert(&raw const *p, Some((p, n)));
     n
   }
 
@@ -163,7 +211,7 @@ impl<H: NodeHash> Dedup<H> {
   /// into the [`Dedup`], returning the allocated index.
   pub fn dedup(&mut self, nh: &NodeHasher<'_>, kind: ProofKind, e: &LispVal) -> Result<usize> {
     let arc = e.unwrapped_arc();
-    let ptr: *const _ = &*arc;
+    let ptr = &raw const *arc;
     Ok(match self.prev.get_mut(kind).entry(ptr) {
       Entry::Occupied(o) => match o.get() {
         &Some((_, n)) => self.reuse(n),
@@ -192,6 +240,40 @@ impl<H: NodeHash> Dedup<H> {
     }).collect();
     Dedup { map, prev: self.prev.clone(), vec, bv: self.bv }
   }
+
+  /// Construct a new [`ToLisp`] for converting elements in this [`Dedup`] into lisp values.
+  #[must_use] pub fn to_lisp_builder(&self) -> ToLisp {
+    ToLisp { cache: vec![None; self.vec.len()], hyps: vec![] }
+  }
+
+  /// Ensure that any node reachable by more than one path from the given roots is marked as
+  /// shared, and every unreachable node is marked as [`NodeHash::NONE`].
+  /// This can be used instead of [`IDedup::reuse`] when reuse patterns are not
+  /// easily determinable.
+  pub fn calc_use(&mut self, num_args: usize, roots: impl IntoIterator<Item=usize>) {
+    use bit_set::BitSet;
+    fn check<H: NodeHash>(de: &mut Dedup<H>, used: &mut BitSet, n: usize) {
+      let val = &mut de.vec[n];
+      if used.insert(n) {
+        val.0.clone().on_children(|i| check(de, used, i))
+      } else {
+        val.1 = true
+      }
+    }
+    let mut used = BitSet::with_capacity(self.vec.len());
+    for i in 0..num_args { used.insert(i); }
+    for val in &mut self.vec[num_args..] { val.1 = false }
+    for i in roots { check(self, &mut used, i) }
+    for (n, val) in self.vec.iter_mut().enumerate() {
+      if !used.contains(n) {
+        if let Some(val) = Rc::get_mut(&mut val.0) {
+          *val = H::NONE
+        } else {
+          val.0 = Rc::new(H::NONE)
+        }
+      }
+    }
+  }
 }
 
 /// A trait that abstracts a few functions on `Dedup<H>`.
@@ -213,10 +295,9 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   fn add_direct(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
-        let vec = &mut self.vec;
-        let n = vec.len();
-        let vars = e.key().vars(&mut self.bv, |i| vec[i].2);
-        vec.push((e.key().clone(), false, vars));
+        let n = self.vec.len();
+        let vars = e.key().vars(&mut self.bv, |i| self.vec[i].2);
+        self.vec.push((e.key().clone(), false, vars));
         e.insert(n);
         n
       }
@@ -236,7 +317,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
 
 /// An iterator over the elements allocated by a [`Dedup`], created by
 /// the [`IntoIterator`] implementation for [`Dedup`].
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool, u64)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
@@ -246,7 +327,7 @@ impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
   }
 }
 
-impl<'a, H: NodeHash> ExactSizeIterator for DedupIter<'a, H> {
+impl<H: NodeHash> ExactSizeIterator for DedupIter<'_, H> {
   fn len(&self) -> usize { self.0.len() }
 }
 
@@ -256,10 +337,22 @@ impl<'a, H: NodeHash> IntoIterator for &'a Dedup<H> {
   fn into_iter(self) -> DedupIter<'a, H> { DedupIter(self.vec.iter()) }
 }
 
+#[inline] fn push_one<T>(vec: &mut Vec<T>, t: T) -> usize {
+  let n = vec.len();
+  vec.push(t);
+  n
+}
+
+#[inline] fn push_iter<T>(vec: &mut Vec<T>, it: impl Iterator<Item=T>) -> usize {
+  let n = vec.len();
+  vec.extend(it);
+  n
+}
 
 /// A "hash-consable" type. We use this to abstract the difference between
-/// [`ExprNode`] and [`ProofNode`]. The [`Hash`] type here
-/// ([`ExprHash`] and [`ProofHash`]) is a de-recursified
+/// [`ExprNode`] and [`ProofNode`].
+///
+/// The [`Hash`] type here ([`ExprHash`] and [`ProofHash`]) is a de-recursified
 /// version of the type where all recursive occurrences are replaced by `usize`
 /// indexes. This trait describes how hash objects can be reconstituted
 /// into node objects.
@@ -270,30 +363,27 @@ pub trait Node: Sized {
   type Hash: NodeHash;
   /// The variant constuctor of this type for variables and backreferences.
   const REF: fn(usize) -> Self;
-  /// Given a hash object, and a list of ids containing values that
-  /// have previously been computed, reconstruct an element of the
-  /// recursive type.
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self;
+  /// Given a hash object, a list of ids containing values that
+  /// have previously been computed, and an allocator for nested values,
+  /// reconstruct an element of the recursive type.
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>], store: &mut Vec<Self>) -> Self;
 }
 
 /// A constructed value corresponding to one index of a [`Dedup`].
+///
 /// For unshared values, we use the [`Built`](Val::Built) constructor to store
 /// a value of type `T` directly, while for shared values we only
 /// store a reference to the [`Ref`](Val::Ref) node index that was allocated to it.
 /// The [`Done`](Val::Done) constructor represents an unshared value that has
 /// already been "used up" by its referent.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Val<T: Node> {
   /// An unshared value.
   Built(T),
   /// A shared value; the corresponding node is `T::REF(n)`.
   Ref(usize),
   /// An unshared value that has been moved away.
-  Done,
-}
-
-impl<T: Node> Default for Val<T> {
-  fn default() -> Self {Val::Done}
+  #[default] Done,
 }
 
 impl<T: Node> Val<T> {
@@ -312,15 +402,21 @@ impl<T: Node> Val<T> {
       Val::Done => panic!("taking a value twice")
     }
   }
+
+  /// Returns true if this value is unshared.
+  pub fn is_unshared(&self) -> bool { matches!(self, Val::Built(_)) }
 }
 
+/// Main function for building results from a [`Dedup`].
+///
 /// Given a [`Dedup`] (or something that looks like one), consume it
 /// and produce a pair `(ids, heap)` where `ids` is a set of
 /// `Val<T>` nodes and `heap` is a list of shared values,
 /// using the sharing annotations to determine whether to put the
 /// values directly in [`Built`](Val::Built) nodes (for unshared nodes) or in
 /// the `heap` with [`Ref`](Val::Ref) nodes in the `ids`.
-pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>)
+#[allow(clippy::type_complexity)]
+pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>, Vec<T>)
 where
   T::Hash: 'a,
   D: IntoIterator<Item=(&'a T::Hash, bool)>,
@@ -329,23 +425,31 @@ where
   let it = de.into_iter();
   let mut ids: Vec<Val<T>> = Vec::with_capacity(it.len());
   let mut heap = Vec::new();
+  let mut store = Vec::new();
   for (e, b) in it {
-    let node = T::from(e, &mut ids);
-    if b {
-      ids.push(Val::Ref(heap.len()));
-      heap.push(node);
+    if *e == T::Hash::NONE {
+      ids.push(Val::Done)
     } else {
-      ids.push(Val::Built(node))
+      let node = T::from(e, &mut ids, &mut store);
+      if b {
+        ids.push(Val::Ref(heap.len()));
+        heap.push(node);
+      } else {
+        ids.push(Val::Built(node))
+      }
     }
   }
-  (ids.into(), heap.into())
+  (ids.into(), heap.into(), store)
 }
 
 /// The [`NodeHash`] version of [`ExprNode`]. It has the same structure except that
 /// all internal references to [`ExprNode`] are replaced by `usize` indexes.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum ExprHash {
-  /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
+  /// An invalid expression.
+  None,
+  /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
+  /// `ProofKind` is here for consistency, but the only valid kind is [`ProofKind::Expr`].
   Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),
@@ -354,15 +458,18 @@ pub enum ExprHash {
 }
 
 impl NodeHash for ExprHash {
+  const NONE: Self = Self::None;
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
-      de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
+      de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
+      LispKind::Atom(AtomId::SORRY) =>
+        return Err(ElabError::warn(try_get_span_from(&nh.fsp, fsp), "proof uses sorry")),
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
         None => match nh.lc.vars.get(&a) {
-          Some(&(true, InferSort::Bound(sort))) => {
+          Some(&(true, InferSort::Bound { sort, .. })) => {
             if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
               return Err(nh.err_sp(fsp,
                 format!("dummy variable {{{}: {}}} not permitted for sort",
@@ -394,9 +501,29 @@ impl NodeHash for ExprHash {
 
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64 {
     match self {
+      Self::None => 0,
       &Self::Ref(_, n) => deps(n),
       &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
       Self::App(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
+    }
+  }
+
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
+    match *self {
+      Self::None => LispVal::undef(),
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{i}").as_bytes())),
+      Self::Dummy(a, _) => LispVal::atom(a),
+      Self::App(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+    }
+  }
+
+  fn on_children(&self, f: impl FnMut(usize)) {
+    if let ExprHash::App(_, es) = self {
+      es.iter().copied().for_each(f)
     }
   }
 }
@@ -404,12 +531,13 @@ impl NodeHash for ExprHash {
 impl Node for ExprNode {
   type Hash = ExprHash;
   const REF: fn(usize) -> Self = ExprNode::Ref;
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>], store: &mut Vec<Self>) -> Self {
     match *e {
+      ExprHash::None => panic!("value missing"),
       ExprHash::Ref(_, i) => ExprNode::Ref(i),
       ExprHash::Dummy(a, s) => ExprNode::Dummy(a, s),
       ExprHash::App(t, ref ns) => ExprNode::App(t,
-        ns.iter().map(|&i| Val::take(&mut ids[i])).collect()),
+        push_iter(store, ns.iter().map(|&i| Val::take(&mut ids[i])))),
     }
   }
 }
@@ -447,7 +575,9 @@ impl Environment {
   /// Convert an [`ExprNode`] object to a [`LispVal`], under a context `heap`. If
   /// `ds` is set, it will accumulate any [`Dummy`](ExprNode::Dummy)
   /// nodes that are encountered.
-  pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
+  pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>,
+    store: &[ExprNode], e: &ExprNode
+  ) -> LispVal {
     match *e {
       ExprNode::Ref(n) => heap[n].clone(),
       ExprNode::Dummy(a, s) => {
@@ -457,10 +587,70 @@ impl Environment {
         }
         a
       }
-      ExprNode::App(t, ref es) => {
-        let mut args = vec![LispVal::atom(self.terms[t].atom)];
-        args.extend(es.iter().map(|e| self.expr_node(heap, ds, e)));
+      ExprNode::App(t, p) => {
+        let td = &self.terms[t];
+        let es = td.unpack_app(&store[p..]);
+        let mut args = vec![LispVal::atom(td.atom)];
+        args.extend(es.iter().map(|e| self.expr_node(heap, ds, store, e)));
         LispVal::list(args)
+      }
+    }
+  }
+
+  /// Convert a [`ProofNode`] object to a [`LispVal`], under a context `heap`. If
+  /// `ds` is set, it will accumulate any [`Dummy`](ExprNode::Dummy)
+  /// nodes that are encountered.
+  pub fn proof_node(&self, hyps: &[(Option<AtomId>, ExprNode)],
+    heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>,
+    store: &[ProofNode], p: &ProofNode
+  ) -> LispVal {
+    match *p {
+      ProofNode::Ref(n) => heap[n].clone(),
+      ProofNode::Dummy(a, s) => {
+        let a = LispVal::atom(a);
+        if let Some(ds) = ds {
+          ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.sorts[s].atom)]));
+        }
+        a
+      }
+      ProofNode::Term(term, p) |
+      ProofNode::Cong(term, p) => {
+        let td = &self.terms[term];
+        let mut args = vec![LispVal::atom(td.atom)];
+        args.extend(td.unpack_term(&store[p..]).iter()
+          .map(|e| self.proof_node(hyps, heap, ds, store, e)));
+        LispVal::list(args)
+      }
+      ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
+      ProofNode::Thm(thm, p) => {
+        let td = &self.thms[thm];
+        let es = &store[p+1..][..td.args.len()+td.hyps.len()];
+        let mut args = vec![LispVal::atom(td.atom)];
+        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, store, e)));
+        LispVal::list(args)
+      }
+      ProofNode::Conv(p) => {
+        let (t, c, p) = ProofNode::unpack_conv(&store[p..]);
+        LispVal::list(vec![LispVal::atom(AtomId::CONV),
+          self.proof_node(hyps, heap, ds, store, t),
+          self.proof_node(hyps, heap, ds, store, c),
+          self.proof_node(hyps, heap, ds, store, p),
+        ])
+      }
+      ProofNode::Refl(p) => self.proof_node(hyps, heap, ds, store, &store[p]),
+      ProofNode::Sym(p) =>
+        LispVal::list(vec![LispVal::atom(AtomId::SYM),
+          self.proof_node(hyps, heap, ds, store, &store[p])
+        ]),
+      ProofNode::Unfold(term, p) => {
+        let td = &self.terms[term];
+        let (_, c, args) = td.unpack_unfold(&store[p..]);
+        LispVal::list(vec![LispVal::atom(AtomId::UNFOLD),
+          LispVal::atom(td.atom),
+          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, store, e))
+            .collect::<Vec<_>>()),
+          self.proof_node(hyps, heap, ds, store, c)
+        ])
       }
     }
   }
@@ -470,6 +660,8 @@ impl Environment {
 /// all internal references to [`ProofNode`] are replaced by `usize` indexes.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ProofHash {
+  /// An invalid proof node.
+  None,
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
   Ref(ProofKind, usize),
@@ -499,20 +691,23 @@ pub enum ProofHash {
 impl ProofHash {
   /// Apply a substitution, while preserving sharing. The `n_heap` array contains
   /// indexes for substituted subterms, in case we see the same subterm multiple times.
-  pub fn subst(de: &mut impl IDedup<Self>,
-    heap: &[ExprNode], n_heap: &mut [Option<usize>], e: &ExprNode) -> usize {
+  pub fn subst(env: &Environment, de: &mut impl IDedup<Self>,
+    heap: &[ExprNode], n_heap: &mut [Option<usize>],
+    store: &[ExprNode], e: &ExprNode
+  ) -> usize {
     match *e {
       ExprNode::Ref(i) =>
         if let Some(n) = n_heap[i] {
           de.reuse(n)
         } else {
-          let n = Self::subst(de, heap, n_heap, &heap[i]);
+          let n = Self::subst(env, de, heap, n_heap, store, &heap[i]);
           n_heap[i] = Some(n);
           n
         },
       ExprNode::Dummy(_, _) => unreachable!(),
-      ExprNode::App(t, ref es) => {
-        let es2 = es.iter().map(|e| Self::subst(de, heap, n_heap, e)).collect();
+      ExprNode::App(t, p) => {
+        let es = env.terms[t].unpack_app(&store[p..]);
+        let es2 = es.iter().map(|e| Self::subst(env, de, heap, n_heap, store, e)).collect();
         de.add_direct(ProofHash::Term(t, es2))
       }
     }
@@ -521,37 +716,40 @@ impl ProofHash {
   /// Returns true if this proof term represents a conversion.
   pub fn is_conv(de: &impl IDedup<Self>, i: usize) -> bool {
     match de[i] {
-      ProofHash::Ref(k, _) => k == ProofKind::Conv,
-      ProofHash::Dummy(..) |
-      ProofHash::Term(..) |
-      ProofHash::Hyp(..) |
-      ProofHash::Thm(..) |
-      ProofHash::Conv(..) => false,
-      ProofHash::Refl(..) |
-      ProofHash::Sym(..) |
-      ProofHash::Cong(..) |
-      ProofHash::Unfold(..) => true,
+      Self::None => panic!("value missing"),
+      Self::Ref(k, _) => k == ProofKind::Conv,
+      Self::Dummy(..) |
+      Self::Term(..) |
+      Self::Hyp(..) |
+      Self::Thm(..) |
+      Self::Conv(..) => false,
+      Self::Refl(..) |
+      Self::Sym(..) |
+      Self::Cong(..) |
+      Self::Unfold(..) => true,
     }
   }
 
   /// Get the LHS (if `right = false`) or RHS (if `right = true`) of the conversion
   /// represented by proof term index `i`.
   pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
+    debug_assert!(Self::is_conv(de, i));
     match de[i] {
-      ProofHash::Ref(_, j) => Self::conv_side(de, j, right),
-      ProofHash::Dummy(..) |
-      ProofHash::Term(..) |
-      ProofHash::Hyp(..) |
-      ProofHash::Thm(..) |
-      ProofHash::Conv(..) => unreachable!(),
-      ProofHash::Refl(e) => de.reuse(e),
-      ProofHash::Sym(c) => Self::conv_side(de, c, !right),
-      ProofHash::Cong(t, ref cs) => {
+      Self::None => panic!("value missing"),
+      Self::Ref(_, j) => { assert!(j < i); Self::conv_side(de, j, right) }
+      Self::Dummy(..) |
+      Self::Term(..) |
+      Self::Hyp(..) |
+      Self::Thm(..) |
+      Self::Conv(..) => unreachable!(),
+      Self::Refl(e) => de.reuse(e),
+      Self::Sym(c) => Self::conv_side(de, c, !right),
+      Self::Cong(t, ref cs) => {
         let ns = cs.clone().iter().map(|&c| Self::conv_side(de, c, right)).collect::<Vec<_>>();
-        de.add_direct(ProofHash::Term(t, ns.into()))
+        de.add_direct(Self::Term(t, ns.into()))
       }
-      ProofHash::Unfold(_, _, _, _, c) if right => Self::conv_side(de, c, true),
-      ProofHash::Unfold(_, _, lhs, _, _) => de.reuse(lhs),
+      Self::Unfold(_, _, _, _, c) if right => Self::conv_side(de, c, true),
+      Self::Unfold(_, _, lhs, _, _) => de.reuse(lhs),
     }
   }
 
@@ -569,27 +767,32 @@ impl ProofHash {
 }
 
 impl NodeHash for ProofHash {
+  const NONE: Self = Self::None;
   const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
-      de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
+  fn from(nh: &NodeHasher<'_>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
+      de: &mut Dedup<Self>) -> Result<Result<Self, usize>> {
     Ok(Ok(match &**r {
+      LispKind::Atom(AtomId::SORRY) =>
+        return Err(ElabError::warn(try_get_span_from(&nh.fsp, fsp), "proof uses sorry")),
       &LispKind::Atom(a) => match kind {
-        ProofKind::Expr | ProofKind::Conv => match nh.var_map.get(&a) {
-          Some(&i) => ProofHash::Ref(kind, i),
-          None => match nh.lc.vars.get(&a) {
-            Some(&(true, InferSort::Bound(sort))) => {
-              if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
-                return Err(nh.err_sp(fsp,
-                  format!("dummy variable {{{}: {}}} not permitted for sort",
-                    nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+        ProofKind::Expr | ProofKind::Conv => {
+          let e = match nh.var_map.get(&a) {
+            Some(&i) => ProofHash::Ref(ProofKind::Expr, i),
+            None => match nh.lc.vars.get(&a) {
+              Some(&(true, InferSort::Bound { sort, .. })) => {
+                if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
+                  return Err(nh.err_sp(fsp,
+                    format!("dummy variable {{{}: {}}} not permitted for sort",
+                      nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+                }
+                ProofHash::Dummy(a, sort)
               }
-              let e = ProofHash::Dummy(a, sort);
-              if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else {e}
+              _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
             }
-            _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
-          }
-        },
+          };
+          if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else { e }
+        }
         ProofKind::Proof => match nh.lc.get_proof(a) {
           Some((_, _, p)) => return Ok(Err(de.dedup(nh, ProofKind::Proof, p)?)),
           None => return Err(nh.err_sp(fsp, format!("hypothesis '{}' not found", nh.fe.data[a].name))),
@@ -665,13 +868,13 @@ impl NodeHash for ProofHash {
                     write!(err, "\n  ({}, {}) -> ({}, {})",
                       nh.fe.to(&td.args[i].0.unwrap_or(AtomId::UNDER)),
                       nh.fe.to(&td.args[j].0.unwrap_or(AtomId::UNDER)),
-                      nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
+                      nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).expect("unreachable");
                   }
                 }
                 return Err(nh.err(&th_head, err))
               }
             }
-            let rhs = Self::subst(de, &td.heap, &mut heap, &td.ret);
+            let rhs = Self::subst(nh.fe.env, de, &td.heap, &mut heap, &td.store, &td.ret);
             ProofHash::Thm(tid, ns.into(), rhs)
           },
           None => match a {
@@ -723,6 +926,65 @@ impl NodeHash for ProofHash {
       _ => 0,
     }
   }
+
+  fn to_lisp(&self, builder: &mut ToLisp, env: &mut Environment, de: &Dedup<Self>) -> LispVal {
+    match *self {
+      Self::None => LispVal::undef(),
+      Self::Ref(_, i) => LispVal::atom(env.get_atom(format!("v{i}").as_bytes())),
+      Self::Dummy(a, _) => LispVal::atom(a),
+      Self::Term(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Hyp(i, _) => match builder.hyps.get(i) {
+        Some(Some(e)) => e.clone(),
+        _ => LispVal::atom(env.get_atom(format!("h{i}").as_bytes()))
+      },
+      Self::Thm(t, ref es, _) => {
+        let mut args = vec![LispVal::atom(env.thms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Conv(tgt, conv, prf) => LispVal::list([
+        LispVal::atom(AtomId::CONV),
+        builder.get(env, de, tgt),
+        builder.get(env, de, conv),
+        builder.get(env, de, prf),
+      ]),
+      Self::Refl(e) => builder.get(env, de, e),
+      Self::Sym(e) => LispVal::list([LispVal::atom(AtomId::SYM), builder.get(env, de, e)]),
+      Self::Cong(t, ref es) => {
+        let mut args = vec![LispVal::atom(env.terms[t].atom)];
+        args.extend(es.iter().map(|&i| builder.get(env, de, i)));
+        LispVal::list(args)
+      }
+      Self::Unfold(t, ref es, _, _, c) => LispVal::list([
+        LispVal::atom(AtomId::UNFOLD),
+        LispVal::atom(env.terms[t].atom),
+        LispVal::list(es.iter().map(|&i| builder.get(env, de, i)).collect::<Box<[_]>>()),
+        builder.get(env, de, c),
+      ])
+    }
+  }
+
+  fn on_children(&self, mut f: impl FnMut(usize)) {
+    match *self {
+      Self::None |
+      Self::Ref(_, _) |
+      Self::Dummy(_, _) => {}
+      Self::Hyp(_, e) |
+      Self::Refl(e) |
+      Self::Sym(e) => f(e),
+      Self::Term(_, ref ns) => ns.iter().copied().for_each(&mut f),
+      Self::Thm(_, ref ns, r) => { ns.iter().copied().for_each(&mut f); f(r) }
+      Self::Conv(i, j, k) => { f(i); f(j); f(k) }
+      Self::Cong(_, ref ns) => ns.iter().copied().for_each(&mut f),
+      Self::Unfold(_, ref ns, _, m, c) => {
+        ns.iter().copied().for_each(&mut f); f(m); f(c)
+      }
+    }
+  }
 }
 
 impl ExprHash {
@@ -730,6 +992,7 @@ impl ExprHash {
   /// so it can be used with [`map_inj`](Dedup::map_inj).
   #[must_use] pub fn to_proof(&self) -> ProofHash {
     match *self {
+      ExprHash::None => ProofHash::None,
       ExprHash::Ref(k, i) => ProofHash::Ref(k, i),
       ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
       ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
@@ -749,29 +1012,35 @@ impl Dedup<ExprHash> {
 impl Node for ProofNode {
   type Hash = ProofHash;
   const REF: fn(usize) -> Self = ProofNode::Ref;
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>], store: &mut Vec<Self>) -> Self {
     match *e {
+      ProofHash::None => panic!("value missing"),
       ProofHash::Ref(_, i) => ProofNode::Ref(i),
       ProofHash::Dummy(a, s) => ProofNode::Dummy(a, s),
-      ProofHash::Term(term, ref ns) => ProofNode::Term {
-        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
-      },
-      ProofHash::Hyp(i, e) => ProofNode::Hyp(i, Box::new(Val::take(&mut ids[e]))),
-      ProofHash::Thm(thm, ref ns, r) => ProofNode::Thm {
-        thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
-        res: Box::new(Val::take(&mut ids[r]))
-      },
-      ProofHash::Conv(i, j, k) => ProofNode::Conv(Box::new((
-        Val::take(&mut ids[i]), Val::take(&mut ids[j]), Val::take(&mut ids[k])))),
-      ProofHash::Refl(i) => ProofNode::Refl(Box::new(Val::take(&mut ids[i]))),
-      ProofHash::Sym(i) => ProofNode::Sym(Box::new(Val::take(&mut ids[i]))),
-      ProofHash::Cong(term, ref ns) => ProofNode::Cong {
-        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
-      },
-      ProofHash::Unfold(term, ref ns, _, m, c) => ProofNode::Unfold {
-        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
-        res: Box::new((Val::take(&mut ids[m]), Val::take(&mut ids[c])))
-      },
+      ProofHash::Term(term, ref ns) => ProofNode::Term(term,
+        push_iter(store, ns.iter().map(|&i| Val::take(&mut ids[i])))),
+      ProofHash::Hyp(i, e) => ProofNode::Hyp(i, push_one(store, Val::take(&mut ids[e]))),
+      ProofHash::Thm(thm, ref ns, r) => {
+        let p = push_one(store, Val::take(&mut ids[r]));
+        push_iter(store, ns.iter().map(|&i| Val::take(&mut ids[i])));
+        ProofNode::Thm(thm, p)
+      }
+      ProofHash::Conv(tgt, conv, proof) => {
+        let p = push_one(store, Val::take(&mut ids[tgt]));
+        let _ = push_one(store, Val::take(&mut ids[conv]));
+        let _ = push_one(store, Val::take(&mut ids[proof]));
+        ProofNode::Conv(p)
+      }
+      ProofHash::Refl(i) => ProofNode::Refl(push_one(store, Val::take(&mut ids[i]))),
+      ProofHash::Sym(i) => ProofNode::Sym(push_one(store, Val::take(&mut ids[i]))),
+      ProofHash::Cong(term, ref ns) => ProofNode::Cong(term,
+        push_iter(store, ns.iter().map(|&i| Val::take(&mut ids[i])))),
+      ProofHash::Unfold(term, ref ns, _, m, c) => {
+        let p = push_one(store, Val::take(&mut ids[m]));
+        let _ = push_one(store, Val::take(&mut ids[c]));
+        let _ = push_iter(store, ns.iter().map(|&i| Val::take(&mut ids[i])));
+        ProofNode::Unfold(term, p)
+      }
     }
   }
 }
@@ -783,17 +1052,21 @@ pub struct Subst<'a> {
   env: &'a Environment,
   /// The heap (from the theorem statement).
   heap: &'a [ExprNode],
+  /// The store (from the theorem statement).
+  store: &'a [ExprNode],
   /// The already computed substitutions for elements of the heap, with unknown
   /// values set to `#undef`.
-  subst: Vec<LispVal>,
+  result: Vec<LispVal>,
 }
 
 impl<'a> Subst<'a> {
   /// Contruct a new [`Subst`] object. `args` should be initialized to
   /// the arguments to the theorem application (possibly metavariables).
-  #[must_use] pub fn new(env: &'a Environment, heap: &'a [ExprNode], mut args: Vec<LispVal>) -> Subst<'a> {
+  #[must_use] pub fn new(env: &'a Environment,
+    heap: &'a [ExprNode], store: &'a [ExprNode], mut args: Vec<LispVal>
+  ) -> Subst<'a> {
     args.resize(heap.len(), LispVal::undef());
-    Subst {env, heap, subst: args}
+    Subst {env, heap, store, result: args}
   }
 
   /// Substitute in an [`ExprNode`]. This version does not support dummy variables,
@@ -801,16 +1074,17 @@ impl<'a> Subst<'a> {
   pub fn subst(&mut self, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(i) => {
-        let e = &self.subst[i];
+        let e = &self.result[i];
         if e.is_def() {return e.clone()}
         let e = self.subst(&self.heap[i]);
-        self.subst[i] = e.clone();
+        self.result[i] = e.clone();
         e
       }
       ExprNode::Dummy(_, _) => unreachable!(),
-      ExprNode::App(t, ref es) => {
-        let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
-        args.extend(es.iter().map(|e| self.subst(e)));
+      ExprNode::App(t, p) => {
+        let td = &self.env.terms[t];
+        let mut args = vec![LispVal::atom(td.atom)];
+        args.extend(td.unpack_app(&self.store[p..]).iter().map(|e| self.subst(e)));
         LispVal::list(args)
       }
     }
@@ -821,16 +1095,17 @@ impl<'a> Subst<'a> {
   pub fn subst_mut(&mut self, lc: &mut LocalContext, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(i) => {
-        let e = &self.subst[i];
+        let e = &self.result[i];
         if e.is_def() {return e.clone()}
         let e = self.subst_mut(lc, &self.heap[i]);
-        self.subst[i] = e.clone();
+        self.result[i] = e.clone();
         e
       }
       ExprNode::Dummy(_, s) => lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom), None),
-      ExprNode::App(t, ref es) => {
-        let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
-        args.extend(es.iter().map(|e| self.subst_mut(lc, e)));
+      ExprNode::App(t, p) => {
+        let td = &self.env.terms[t];
+        let mut args = vec![LispVal::atom(td.atom)];
+        args.extend(td.unpack_app(&self.store[p..]).iter().map(|e| self.subst_mut(lc, e)));
         LispVal::list(args)
       }
     }

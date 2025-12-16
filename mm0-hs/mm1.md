@@ -137,9 +137,9 @@ Annotations are uninterpreted markers that may be applied to statements. They ca
 Do blocks
 ---
 
-    do-stmt ::= 'do' '{' (sexpr)* '}' ';'
+    do-stmt ::= 'do' ('{' (sexpr)* '}' | sexpr) ';'
 
-This command executes some lisp code at the top level, meaning that any definitions `(def x foo)` will not go out of scope at the end of the block but will instead define a global variable which will be visible in later theorem proofs and `do` blocks. See [Evaluation](#evaluation) for more on lisp code.
+This command executes some lisp code at the top level, meaning that any definitions `(def x foo)` will not go out of scope at the end of the block but will instead define a global variable which will be visible in later theorem proofs and `do` blocks. See [Evaluation](#evaluation) for more on lisp code. `do` can also take a single s-expression, but the do-block interpretation of curly braces as a list of s-expressions takes precedence over the curly list transformation.
 
 S-expressions
 ---
@@ -540,7 +540,11 @@ MM0-specific builtin functions
 
 * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`) error reporting for error type `type`, which can be `'error`, `'info` or `'warn`. (Compilation will still be aborted if there are errors, even if the display is suppressed.) `(set-reporting b)` will set the error reporting to `b` for all error types.
 
-* `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
+* `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems. Enabled by default.
+
+* `(warn-unnecessary-parens b)` turns on (`b = #t`) or off (`b = #f`) the warning for using unnecessary parentheses in math expressions. Disabled by default.
+
+* `(warn-unused-vars b)` turns on (`b = #t`) or off (`b = #f`) the warning for unused variables in definitions and theorems. Enabled by default.
 
 * `(set-backtrace b)` turns on (`b = #t`) or off (`b = #f`) backtraces in lisp for theorems.
   `(set-backtrace type b)` does the same but for specific error type `type`,
@@ -609,6 +613,8 @@ MM0-specific builtin functions
 
   * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the same format as in `axiom`, `vis` is the visibility in the same format as in `def`, and `vtask` is a thunk that will return a list `(ds proof)` where `ds` is the list or atom map of dummy variables, and `proof` is the proof s-expression. `vtask` can also have the form `(ds proof)` itself.
 
+* `(on-decls f)` calls `f` on every declaration in the environment, in declaration order. More precisely, `f` will be called with `('sort x)` for a sort declaration `x`, and with the atom `x` if `x` is a regular declaration (term, def, axiom, theorem); one can use `(get-decl x)` to get additional information about these declarations. The return value of `f` is ignored, and the `on-decls` expression itself returns nothing.
+
 * `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem` declaration was created. This does not do any elaboration - all information is expected to be fully elaborated. The input format is the same as the output format of `get-decl`. For example, `(add-decl! 'term 'foo '([_ wff ()]) 'wff)` creates a new term `term foo: wff > wff;`.
 
   * `(add-term! x bis ret)` is the same as `(add-decl! 'term x bis ret)`.
@@ -616,9 +622,20 @@ MM0-specific builtin functions
   * `(add-thm! x bis hyps ret)` is the same as `(add-decl! 'axiom x bis hyps ret)`.
   * `(add-thm! x bis hyps ret vis vtask)` is the same as `(add-decl! 'theorem x bis hyps ret vis vtask)`.
 
+* `(get-doc k x)` returns the documentation comment on item `x` in namespace `k`. The namespace can be:
+  * `'lisp`: the namespace for lisp values
+  * `'term`/`'def`/`'axiom`/`'theorem`: the namespace for terms and theorems
+  * `'sort`: the namespace for sorts
+  * `_` or omitted: tries all of the above in order
+* `(set-doc! k x "doc")` sets the documentation comment on item `x` in namspace `k` to `"doc"`.
+
 * `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`; `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
 
 * `(eval-string s1 ... sn)` will elaborate expressions `s1` ... `sn` as type `string`, assuming the string preamble has been set up (see the spec for [`output string`](https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#string-io)), returning a string containing the result of evaluating the string expressions. This has exactly the same effect as `output string: s1 ... sn;`, except the string is returned to the caller instead of output by the verifier.
+
+* `axiom-sets` is not a defined value, but the documentation generator will look for a global definition by this name. It should be assigned to an atom map, where each key is the identifier of an axiom set and the value is a list `("doc" ax1 ax2 ... axn)`, where `"doc"` is a short description of the axiom set and `ax1 ... axn` are the axioms in the set.
+
+  The interpretation of these sets is that in the "Axiom Use" section of a theorem, if the theorem uses one or more axioms from the set then all axioms in the set will be grouped under this set as heading. (The detailed breakdown of axioms used in the set is hidden by default but can still be displayed.)
 
 Compilation
 ===

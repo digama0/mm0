@@ -45,12 +45,16 @@
 
 \begin{document}
 
+\acmJournal{JACM}
+
 \title{Metamath C technical appendix}
 
 %% Author with single affiliation.
 \author{Mario Carneiro}
 \affiliation{
   \institution{Carnegie Mellon University}
+  \city{Pittsburgh}
+  \country{USA}
 }
 
 % \begin{abstract}
@@ -586,22 +590,22 @@ Thus far the rules have only talked about local variables and mutation of local 
 
 \subsubsection{Singleton pointers}
 
-The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x$, where $\eta\mathrel{@}x$ means that $\eta$ is stored in memory at location $x$; see section \ref{sec:semantics}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
+The simplest pointer type is $\&^\mathbf{sn}\eta$, which is defined as $\mathsf{sn}\;\&\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=(x=\&\eta)$, where $\&\eta$ is the location that $\eta$ is stored in memory; see section \ref{sec:semantics}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^\mathbf{sn}\eta\and
   \mathrm{Expr}::=\dots\mid {}^\ast e\mid \& e\and
-  \&^\mathbf{sn}\eta\;\mathsf{copy}\and
-  \boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x\\
-  \infer[ty-snp]
+  \mathrm{PureExpr}::=\dots\mid \&\eta\and
+  \&^\mathbf{sn}\eta:=\mathsf{sn}\;\&\eta\\
+  \infer[tye-snp]
     {\Gamma \proves \eta\;\mathsf{place}}
-    {\Gamma \proves \&^\mathbf{sn}\eta\;\mathsf{type}}\and
+    {\Gamma \proves \&\eta:\N_{64}}\and
   \infer[tye-deref]
     {\Gamma;\delta \proves e:\&^\mathbf{sn}\eta\makes\delta'}
     {\Gamma;\delta \proves {}^* e\Rightarrow \eta\makes\delta'\;\mathsf{place}}\and
   \infer[tye-shr]
     {\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}}
-    {\Gamma;\delta \proves \&e:\&^\mathbf{sn}\eta\makes\delta'}\and
+    {\Gamma;\delta \proves \&e\Rightarrow\&\eta:\&^\mathbf{sn}\eta\makes\delta'}\and
 \end{mathparpagebreakable}
 To use these generalized lvalues, we need operations to read and write them:
 
@@ -712,8 +716,8 @@ In fact, we can't even really read a ref; the value read is only available as a 
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^a\tau\and
-  \core{\&^a\tau}=\N_{64}\and
-  \boxed{x:\&^a\tau}=\exists v:\mathsf{ref}^a\;\tau,x\mapsto v\\
+  \&^a\tau:=\exists v:\mathsf{ref}^a\;\tau,\ \&^\mathbf{sn}v\and
+  \core{\&^a\tau}=\N_{64}\\
   \infer[ty-shr]
     {\mathrm{Var}(a)\subseteq \Gamma\quad
       \Gamma \proves \tau\;\mathsf{type}}
@@ -795,11 +799,11 @@ The types that show up in the expression judgment are annotated with $\gamma$ gh
     {\langle t,\overline{t'}\rangle:(\textstyle\sum x^{\gamma_1}:{\tau^{\gamma_2}},\tau')^{\gamma_3}\Rightarrow \overline{R^\gamma},\overline{R^\gamma}'}\and
 \end{mathparpagebreakable}
 
-The intuitive meaning of $\tau^\gamma$ is that $\tau^\top$ is a value that will actually have storage space allocated for it, while $\tau^\bot$ is a value that will not need to be calculated (even if it is stored in a non-ghost variable). These rules assume that the full ghost annotation assignment is known and just give constraints on that assignment, but in practice we will start from an assignment that makes everything ghost, and incrementally shift this upward in a coordinated fashion, causing an error if we run afoul of the $\gamma_2\le\gamma_1$ requirement in \textsc{carg-type} or $\gamma\to s\ne\infty$ in \textsc{cty-nat} or \textsc{cty-int} (which express that unbounded integers are not representable in the physical machine).
+The intuitive meaning of $\tau^\gamma$ is that $\tau^\top$ is a value that will actually have storage space allocated for it, while $\tau^\bot$ is a value that will not need to be calculated (even if it is stored in a non-ghost variable). These rules assume that the full ghost annotation assignment is known and just give constraints on that assignment, but in practice we will start from an assignment that makes everything ghost, and incrementally shift this upward in a coordinated fashion. At the end we may end up with an impossible constraint such as a computationally relevant unbounded integer value, which will cause an error during legalization.
 
 \subsection{The expression typing judgment}
 
-For the expression judgment $\Gamma^\alpha;\delta^{\rho} \proves e:\tau^\gamma\makes{\delta'}^{\rho'}$, we have $\Gamma,\delta,e,\tau$ as inputs and $\delta$ as output, with the annotations $\alpha,\rho,\rho',\gamma$ being solved for by a fixed point algorithm. It is safe to assume that $\gamma\le \rho'\le \rho$ and $\gamma\le \alpha$ in this judgment (that is, the end of a statement is only reachable if the beginning is, and the return value is only needed if the end of the statement is reached), unless $\tau$ is a ghost type like $\mathbf{1}$ or $A$ in which case $\gamma\le \rho',\alpha$ need not hold.
+For the expression judgment $\Gamma^\alpha;\delta^{\rho} \proves e:\tau^\gamma\makes{\delta'}^{\rho'}$, we have $\Gamma,\delta,e,\tau$ as inputs and $\delta'$ as output, with the annotations $\alpha,\rho,\rho',\gamma$ being solved for by a fixed point algorithm. It is safe to assume that $\gamma\le \rho'\le \rho$ and $\gamma\le \alpha$ in this judgment (that is, the end of a statement is only reachable if the beginning is, and the return value is only needed if the end of the statement is reached), unless $\tau$ is a ghost type like $\mathbf{1}$ or $A$ in which case $\gamma\le \rho',\alpha$ need not hold.
 
 We also add an annotation $\sigma\in\{\bot,\top\}$ on functions (including $\mathsf{self}$), which can be seen in rule \textsc{tyc-proc-call}, for example; this is the side effect analysis, see section \ref{sec:sideeffect}.
 

@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module MM0.HOL.ToHol where
 
 import Control.Monad.RWS.Strict hiding (local, asks)

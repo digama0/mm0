@@ -26,7 +26,7 @@ data Notation =
 
 data Literal = NConst Const Prec | NVar Ident
 
-data Const = Const T.Text
+newtype Const = Const T.Text
 type Prec = Int
 
 instance Show Const where
@@ -53,7 +53,7 @@ instance Show Type where
   showsPrec _ (TType ty) = shows ty
   showsPrec _ (TFormula f) = shows f
 
-data Formula = Formula T.Text
+newtype Formula = Formula T.Text
 
 instance Show Formula where
   showsPrec _ (Formula f) r =  '$' : T.unpack f ++ '$' : r

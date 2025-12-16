@@ -4,13 +4,13 @@ name = "mm1_parser-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
-edition = "2018"
+edition = "2024"
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.3"
+libfuzzer-sys = "0.4"
 mm0_util = { path = "../mm0_util" }
 
 [dependencies.mm1_parser]

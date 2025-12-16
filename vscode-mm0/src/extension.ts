@@ -6,7 +6,7 @@ import {
 	ServerOptions,
 	ErrorAction,
 	CloseAction
-} from 'vscode-languageclient';
+} from 'vscode-languageclient/node';
 
 let client: LanguageClient;
 

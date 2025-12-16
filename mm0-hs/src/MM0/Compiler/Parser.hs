@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
 module MM0.Compiler.Parser (parseAST, runParser, PosState(..),
   ParseError, Parser, errorOffset, initialPosState, atPos,
   lispVal, identStart, identRest) where
@@ -42,7 +44,7 @@ parseAST :: String -> T.Text -> ([ParseError], Offset, AST)
 parseAST n t = mapThd3 fromJust $ runParser (sc *> (V.fromList <$> stmts)) n 0 t where
   stmts = ([] <$ eof) <|> do
     res <- withRecovery
-      (\err -> maybe (Just Nothing) (const Nothing) <$> recoverToSemi' err)
+      (fmap (maybe (Just Nothing) (const Nothing)) . recoverToSemi')
       ((do
         o <- getOffset <* kw "exit"
         semi >> failAt o "early exit on 'exit' command"
@@ -66,7 +68,7 @@ lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
 symbol :: T.Text -> Parser ()
-symbol s = () <$ L.symbol sc s
+symbol = void . L.symbol sc
 
 semi :: Parser ()
 semi = symbol ";"
@@ -129,7 +131,7 @@ recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
 commit' :: Parser (Maybe a) -> Parser (Maybe (a, Offset))
 commit' p = withRecovery (recoverToSemi Nothing)
-  (liftA2 (\a o -> flip (,) (o+1) <$> a) p getOffset <* semi)
+  (liftA2 (\a o -> (, o+1) <$> a) p getOffset <* semi)
 
 commit :: Parser a -> Parser (Maybe (a, Offset))
 commit p = commit' (Just <$> p)
@@ -220,7 +222,7 @@ declStmt = fmap toSpan <$> do
       _ -> errs}
     if null errs' then
       return $ Just (AtPos ostmt (Decl vis dk px x bis ret val))
-    else Nothing <$ mapM_ (\(o', msg) -> failAt o' msg) errs'
+    else Nothing <$ mapM_ (uncurry failAt) errs'
   where
 
   checkBinders :: Maybe a -> DeclKind -> Maybe Offset -> [Binder] -> [(Offset, String)]
@@ -229,32 +231,26 @@ declStmt = fmap toSpan <$> do
     (o, "Use regular binders for formula hypotheses") :
     checkBinders val dk (Just o) bis
   checkBinders val dk _ (Binder (o, _) _ (Just (TFormula _)) : bis) =
-    if dk == DKTerm || dk == DKDef then
-      [(o, "A term/def does not take formula hypotheses")] else [] ++
+    [(o, "A term/def does not take formula hypotheses") | dk == DKTerm || dk == DKDef] ++
     checkBinders val dk (Just o) bis
   checkBinders val dk loff (Binder (o, _) _ Nothing : bis) =
-    if dk == DKTerm then [(o, "Cannot infer binder type")] else [] ++
+    [(o, "Cannot infer binder type") | dk == DKTerm] ++
     checkBinders val dk loff bis
   checkBinders val dk off (Binder (o2, _) l (Just (TType (AtDepType _ ts))) : bis) =
     maybe [] (\o ->
       [(o, "Hypotheses must come after term variables"),
        (o2, "All term variables must come before all hypotheses")]) off ++
-    if isLCurly l && not (null ts) then
-      [(o2, "Bound variable has dependent type")]
-    else if case l of LDummy _ -> isNothing val; _ -> False then
-      [(o2, "An axiom/theorem does not take dummy variables")]
-    else []
-      ++
+    [(o2, "Bound variable has dependent type") | isLCurly l && not (null ts)] ++
+    [(o2, "An axiom/theorem does not take dummy variables") |
+      case l of LDummy _ -> isNothing val; _ -> False] ++
     checkBinders val dk Nothing bis
 
   checkRet :: DeclKind -> [Type] -> [(Offset, String)]
   checkRet _ [] = []
   checkRet dk [t@(TFormula _)] =
-    if dk == DKTerm || dk == DKDef then
-      [(tyOffset t, "A term/def does not return a formula")] else []
+    [(tyOffset t, "A term/def does not return a formula") | dk == DKTerm || dk == DKDef]
   checkRet dk (t@(TFormula _) : tys) =
-    if dk == DKTerm || dk == DKDef then
-      [(tyOffset t, "A term/def does not take formula hypotheses")] else [] ++
+    [(tyOffset t, "A term/def does not take formula hypotheses") | dk == DKTerm || dk == DKDef] ++
     checkRet dk tys
   checkRet dk (_ : tys) = checkRet dk tys
 
@@ -309,12 +305,12 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
   genNota :: Parser (Maybe (Notation, Offset))
   genNota = kw "notation" >> commit
     (NNotation <$> getOffset <*> ident <*> binders <*>
-      (optional (symbol ":" *> ptype)) <*>
+      optional (symbol ":" *> ptype) <*>
       (symbol "=" *> some (atPos $
         parens (liftA2 NConst constant (symbol ":" *> prec)) <|>
         (NVar <$> ident))) <*>
-      (optional (symbol ":" *> ((,) <$> prec <*>
-        (False <$ kw "lassoc" <|> True <$ kw "rassoc")))))
+      optional (symbol ":" *> ((,) <$> prec <*>
+        (False <$ kw "lassoc" <|> True <$ kw "rassoc"))))
 
 inout :: Parser (Maybe (Inout, Offset))
 inout = do
@@ -327,7 +323,7 @@ annot = mSpan (symbol "@" >>
 
 doStmt :: Parser (Maybe (Span Stmt))
 doStmt = mSpan (kw "do" >> commit (Do <$>
-  (braces (many lispVal) <|> (\x -> [x]) <$> lispVal)))
+  (braces (many lispVal) <|> (: []) <$> lispVal)))
 
 importStmt :: Parser (Maybe (Span Stmt))
 importStmt = mSpan (kw "import" >> commit (Import <$> lexeme (span strLit)))
@@ -352,12 +348,12 @@ lispVal =
   (fmap ANumber <$> lexeme (span L.decimal)) <|>
   (fmap AString <$> lexeme (span strLit)) <|>
   (fmap AFormula <$> lexeme (span formula')) <|>
-  (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
-    Span (fst o, o2) $ AList [Span o (AAtom False "quote"), v]) (span (single '\'')) lispVal) <|>
-  (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
-    Span (fst o, o2) $ AList [Span o (AAtom False "unquote"), v]) (span (single ',')) lispVal) <|>
-  (lexeme (span (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom))) <|>
-  (lexeme (span (takeWhileP (Just "identifier char") lispIdent >>= atom)))
+  liftA2 (\(Span o _) v@(Span (_, o2) _) ->
+    Span (fst o, o2) $ AList [Span o (AAtom False "quote"), v]) (span (single '\'')) lispVal <|>
+  liftA2 (\(Span o _) v@(Span (_, o2) _) ->
+    Span (fst o, o2) $ AList [Span o (AAtom False "unquote"), v]) (span (single ',')) lispVal <|>
+  lexeme (span (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom)) <|>
+  lexeme (span (takeWhileP (Just "identifier char") lispIdent >>= atom))
 
 listVal :: Parser LispAST
 listVal =
@@ -387,7 +383,7 @@ toCurlyList (Span r@(o, _) e@(AList (e1 : op@(Span _ (AAtom _ tk)) : es))) =
   go (e2 : Span _ (AAtom _ tk') : es') | tk' == tk = (e2 :) <$> go es'
   go _ = Nothing
 toCurlyList (Span r@(o, _) e) =
-  (Span r (cons (Span (o, o + 1) (AAtom False ":nfx")) e))
+  Span r (cons (Span (o, o + 1) (AAtom False ":nfx")) e)
 
 hashAtom :: T.Text -> Parser LispAST
 hashAtom "t" = return (ABool True)

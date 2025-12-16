@@ -9,25 +9,26 @@
 pub mod environment;
 pub mod spans;
 pub mod lisp;
-#[macro_use] pub mod frozen;
+pub mod frozen;
 pub mod math_parser;
 pub mod local_context;
 pub mod refine;
 pub mod proof;
 pub mod inout;
+pub mod verify;
 
 
 use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::result::Result as StdResult;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-use std::{future::Future, pin::Pin, task::{Context, Poll}};
-use std::time::{Duration, Instant};
+use std::{future::Future, pin::Pin, task::{Context, Poll, ready}};
+use std::time::Duration;
+use instant::Instant;
 use futures::channel::oneshot::Receiver;
-use owning_ref::{ArcRef, OwningRef};
 use spans::Spans;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 use crate::ast::{self, Ast, DeclKind, Delimiter, GenNota, Literal as ALiteral,
   LocalKind, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind};
 use inout::InoutHandlers;
@@ -36,29 +37,38 @@ use lisp::LispVal;
 use local_context::try_get_span_opt;
 use crate::{ArcList, ArcString, AtomId, BoxError, Coe, DeclKey, DocComment, EnvMergeIter,
   Environment, ErrorLevel, Expr, ExprNode, FileRef, FileSpan, FrozenEnv,
-  FrozenLispVal, LinedString, LocalContext, Modifiers, NotaInfo, ObjectKind, Prec,
+  FrozenLispVal, LocalContext, Modifiers, NotaInfo, ObjectKind, OneOrMore, Prec,
   Proof, ProofNode, Remap, Remapper, SortId, Span, Term, TermId, Thm, ThmId};
 
 #[cfg(feature = "server")]
-use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
+use {crate::LinedString, lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location}};
 
 /// An error payload.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ElabErrorKind {
   /// A boxed error. The main [`BoxError`] is the error message,
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
   /// related to the error, along with short descriptions.
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
-  /// This is an error from a file upstream. The `usize` is the number of
-  /// number of upstream errors after the first one.
-  Upstream(FileRef, ArcRef<[ElabError], ElabError>, usize)
+  /// This is an error from a file upstream.
+  Upstream {
+    /// The file that produced the error.
+    file: FileRef,
+    /// A reference to the file's error list, for drop purposes.
+    owner: Arc<[ElabError]>,
+    /// The actual error is `owner[idx]`.
+    idx: usize,
+    /// The `usize` is the number of number of upstream errors after the first one.
+    n: usize,
+  }
 }
 impl ElabErrorKind {
   /// Converts the error message to a [`String`].
   #[must_use] pub fn raw_msg(&self) -> String {
     match self {
-      ElabErrorKind::Boxed(e, _) => format!("{}", e),
-      ElabErrorKind::Upstream(_, e, _) => e.kind.raw_msg(),
+      ElabErrorKind::Boxed(e, _) => format!("{e}"),
+      &ElabErrorKind::Upstream { ref owner, idx, .. } => owner[idx].kind.raw_msg(),
     }
   }
 
@@ -66,11 +76,12 @@ impl ElabErrorKind {
   #[must_use] pub fn msg(&self) -> String {
     use std::fmt::Write;
     match self {
-      ElabErrorKind::Boxed(e, _) => format!("{}", e),
-      &ElabErrorKind::Upstream(ref file, ref e, n) => {
+      ElabErrorKind::Boxed(e, _) => format!("{e}"),
+      &ElabErrorKind::Upstream { ref file, ref owner, idx, n } => {
+        let e = &owner[idx];
         let mut s = format!("file contains errors:\n{}:{:#x}: {}",
           file, e.pos.start, e.kind.raw_msg());
-        if n != 0 { write!(&mut s, "\n + {} more", n).unwrap() }
+        if n != 0 { write!(s, "\n + {n} more").expect("unreachable") }
         s
       }
     }
@@ -92,7 +103,7 @@ impl ElabErrorKind {
       ElabErrorKind::Boxed(_, Some(info)) =>
         Some(info.iter().map(|(fs, e)| DiagnosticRelatedInformation {
           location: to_loc(fs),
-          message: format!("{}", e),
+          message: format!("{e}"),
         }).collect()),
       _ => None
     }
@@ -103,10 +114,13 @@ impl From<BoxError> for ElabErrorKind {
   fn from(e: BoxError) -> ElabErrorKind { ElabErrorKind::Boxed(e, None) }
 }
 
-/// The main error type for the elaborator. Each error has a location (which must be in
-/// the currently elaborating file), an error level, a message, and an optional list of
-/// related locations (possibly in other files) along with short messages.
-#[derive(Debug, DeepSizeOf)]
+/// The main error type for the elaborator.
+///
+/// Each error has a location (which must be in the currently elaborating file),
+/// an error level, a message, and an optional list of related locations
+/// (possibly in other files) along with short messages.
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ElabError {
   /// The location of the error in the current file.
   pub pos: Span,
@@ -117,7 +131,7 @@ pub struct ElabError {
 }
 
 /// The main result type used by functions in the elaborator.
-pub type Result<T> = StdResult<T, ElabError>;
+pub type Result<T, E = ElabError> = std::result::Result<T, E>;
 
 impl ElabError {
 
@@ -172,7 +186,7 @@ impl From<mm1_parser::ParseError> for ElabError {
 }
 
 impl From<mm0b_parser::ParseError> for ElabError {
-  fn from(e: mm0b_parser::ParseError) -> Self { Self::new_e(0, format!("{:?}", e)) }
+  fn from(e: mm0b_parser::ParseError) -> Self { Self::new_e(0, format!("{e:?}")) }
 }
 
 /// Records the current reporting setting. A report that is suppressed by the reporting mode
@@ -217,13 +231,30 @@ impl std::fmt::Debug for GoalListener {
   }
 }
 
+/// The persistent elaborator options (which can be set at the command line)
+#[derive(Copy, Clone, Debug)]
+pub struct ElabOptions {
+  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
+  pub check_proofs: bool,
+  /// If true, the math parser will report a warning on unnecessary parentheses.
+  pub check_parens: bool,
+  /// If true, we will report a warning on declarations with unused variables.
+  pub unused_vars: bool,
+}
+
+impl Default for ElabOptions {
+  fn default() -> Self {
+    Self { check_proofs: true, check_parens: false, unused_vars: true }
+  }
+}
+
 /// The [`Elaborator`] struct contains the working data for elaboration, and is the
 /// main interface to MM1 operations (along with [`Evaluator`](lisp::eval::Evaluator),
 /// which a lisp execution context).
 #[derive(Debug)]
 pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
-  ast: Arc<Ast>,
+  pub(crate) ast: Arc<Ast>,
   /// The location and name of the currently elaborating file
   pub(crate) path: FileRef,
   /// A flag that will be flipped from another thread to signal that this elaboration
@@ -245,8 +276,8 @@ pub struct Elaborator {
   pub(crate) spans: Spans<ObjectKind>,
   /// True if we are currently elaborating an MM0 file
   mm0_mode: bool,
-  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
-  check_proofs: bool,
+  /// The persistent elaborator options (which can be set at the command line)
+  options: ElabOptions,
   /// The current reporting mode, whether we will report each severity of error
   reporting: ReportMode,
   /// Should we report backtraces in lisp errors?
@@ -272,7 +303,7 @@ impl Elaborator {
   ///
   /// # Parameters
   ///
-  /// - `ast`: The [`Ast`] of the parsed MM1/MM0 file (as created by [`parser::parse`](super::parser::parse))
+  /// - `ast`: The [`Ast`] of the parsed MM1/MM0 file (as created by [`mm1_parser::parse`])
   /// - `path`: The location of the file being elaborated.
   /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
   ///   the `do` command is disabled, type inference is disabled, modifiers are treated
@@ -283,7 +314,7 @@ impl Elaborator {
   ///   the elaboration before completion.
   /// - `recv_goal`: A listener for goal view events.
   #[must_use] pub fn new(ast: Arc<Ast>, path: FileRef,
-      mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
+      mm0_mode: bool, options: ElabOptions, cancel: Arc<AtomicBool>,
       recv_goal: Option<GoalListener>,
     ) -> Elaborator {
     Elaborator {
@@ -296,7 +327,7 @@ impl Elaborator {
       lc: LocalContext::new(),
       spans: Spans::new(),
       mm0_mode,
-      check_proofs,
+      options,
       backtrace: ReportMode {error: true, warn: false, info: false},
       inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
@@ -339,7 +370,7 @@ impl Elaborator {
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
     let a = self.env.get_atom(self.ast.span(n.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    self.spans.insert(n.id, ObjectKind::Term(term, n.id));
+    self.spans.insert(n.id, ObjectKind::Term(false, term));
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => {
@@ -370,7 +401,7 @@ impl Elaborator {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
       SimpleNotaKind::Infix {..} => self.pe.add_infix(tk.clone(), info),
     }.map_err(|r| ElabError::with_info(n.id,
-      format!("constant '{}' already declared", tk).into(),
+      format!("constant '{tk}' already declared").into(),
       vec![(r.decl1, "declared here".into())]))
   }
 
@@ -382,9 +413,9 @@ impl Elaborator {
     let s1 = self.data[a_from].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
     let s2 = self.data[a_to].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     self.check_term_nargs(id, t, 1)?;
-    self.spans.insert(id, ObjectKind::Term(t, id));
-    self.spans.insert(from, ObjectKind::Sort(s1));
-    self.spans.insert(to, ObjectKind::Sort(s2));
+    self.spans.insert(id, ObjectKind::Term(false, t));
+    self.spans.insert(from, ObjectKind::Sort(false, s1));
+    self.spans.insert(to, ObjectKind::Sort(false, s2));
     let fsp = self.fspan(id);
     self.add_coe(s1, s2, fsp, t)
   }
@@ -412,9 +443,9 @@ impl Elaborator {
 
     let a = self.env.get_atom(self.ast.span(nota.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
-    let nargs = nota.bis.len();
+    let nargs = nota.bis.iter().filter(|bi| bi.kind != LocalKind::Dummy).count();
     self.check_term_nargs(nota.id, term, nargs)?;
-    self.spans.insert(nota.id, ObjectKind::Term(term, nota.id));
+    self.spans.insert(nota.id, ObjectKind::Term(false, term));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&[u8], (usize, bool)>::new();
     for (idx, bi) in nota.bis.iter().enumerate() {
@@ -435,6 +466,7 @@ impl Elaborator {
     let mut get_var = |sp: Span| -> Result<usize> {
       let v = vars.get_mut(ast.span(sp))
         .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
+      if v.1 { return Err(ElabError::new_e(sp, "variable used twice in notation")) }
       v.1 = true;
       Ok(v.0)
     };
@@ -468,7 +500,6 @@ impl Elaborator {
     };
 
     self.add_const(tk.trim, prec)?;
-    if infix && it.peek().is_none() { rassoc = Some(false) }
     while let Some(lit) = it.next() {
       match *lit {
         ALiteral::Const(ref cnst, prec) => {
@@ -495,6 +526,7 @@ impl Elaborator {
         }
       }
     }
+    if infix && rassoc.is_none() { rassoc = Some(false) }
 
     for (_, (i, b)) in vars {
       if !b {
@@ -507,12 +539,12 @@ impl Elaborator {
     if infix { self.pe.add_infix(s.clone(), info) }
     else { self.pe.add_prefix(s.clone(), info) }
       .map_err(|r| ElabError::with_info(nota.id,
-        format!("constant '{}' already declared", s).into(),
+        format!("constant '{s}' already declared").into(),
         vec![(r.decl1, "declared here".into())]))
   }
 
   fn parse_and_print(&mut self, e: &SExpr, doc: String) -> Result<()> {
-    let val = self.eval_lisp_doc(e, doc)?;
+    let val = self.eval_lisp_doc(true, e, doc)?;
     if val.is_def() {
       // add hover info / go to definition for `do 'thm_name;`
       // to make it easy to look up theorems by name
@@ -523,12 +555,12 @@ impl Elaborator {
         ) {
           let ad = &self.env.data[a];
           if let Some(s) = ad.sort {
-            self.spans.insert(sp, ObjectKind::Sort(s));
+            self.spans.insert(sp, ObjectKind::Sort(false, s));
           }
           if let Some(k) = ad.decl {
             match k {
-              DeclKey::Term(t) => {self.spans.insert(sp, ObjectKind::Term(t, sp));}
-              DeclKey::Thm(t) => {self.spans.insert(sp, ObjectKind::Thm(t));}
+              DeclKey::Term(t) => {self.spans.insert(sp, ObjectKind::Term(false, t));}
+              DeclKey::Thm(t) => {self.spans.insert(sp, ObjectKind::Thm(false, t));}
             }
           }
         }
@@ -564,7 +596,7 @@ impl Elaborator {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
         let id = self.add_sort(a, fsp, span, sd, to_doc(doc)).map_err(|e| e.into_elab_error(sp))?;
-        self.spans.insert(sp, ObjectKind::Sort(id));
+        self.spans.insert(sp, ObjectKind::Sort(true, id));
       }
       StmtKind::Decl(d) => self.elab_decl(span, d, to_doc(doc))?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
@@ -580,14 +612,17 @@ impl Elaborator {
         for e in es { self.parse_and_print(e, mem::take(&mut doc))? }
       }
       StmtKind::Annot(e, s) => {
-        let v = self.eval_lisp(e)?;
+        if self.mm0_mode {
+          self.report(ElabError::warn(e.span, "(MM0 mode) annotations not allowed"))
+        }
+        let v = self.eval_lisp(false, e)?;
         self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomId::ANNOTATE].lisp {
           Some(e) => e.val.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];
-        self.call_func(e.span, ann, args)?;
+        self.call_func(e.span, &ann, args)?;
       },
       StmtKind::DocComment(doc2, s) => {
         // push an extra newline to separate multiple doc comments
@@ -604,7 +639,8 @@ impl Elaborator {
 }
 
 /// The result of elaboration of a dependent file.
-#[derive(Debug, Clone, DeepSizeOf)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ElabResult<T> {
   /// Elaboration was successful; this carries the environment, plus additional user data.
   Ok(T, Option<Arc<[ElabError]>>, FrozenEnv),
@@ -626,8 +662,8 @@ pub struct ElaborateBuilder<'a, F> {
   pub path: FileRef,
   /// True if we are currently elaborating an MM0 file
   pub mm0_mode: bool,
-  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
-  pub check_proofs: bool,
+  /// The initial elaborator options.
+  pub options: ElabOptions,
   /// If true, an error will be reported if a file in an import itself
   /// has an error. This can be disabled to avoid reporting the same error many times.
   pub report_upstream_errors: bool,
@@ -644,15 +680,12 @@ pub struct ElaborateBuilder<'a, F> {
   /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
   /// extra data `T`, which is collected and passed through the function.
   pub recv_dep: F,
-  /// A function which is called when an `import` is encountered, with the [`FileRef`] of
-  /// the file being imported. It sets up a channel and passes the [`Receiver`] end here,
-  /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
-  /// extra data `T`, which is collected and passed through the function.
+  /// A listener for goal view events.
   pub recv_goal: Option<GoalListener>,
 }
 
-impl<'a, T: Send, F> ElaborateBuilder<'a, F>
-where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
+impl<T: Send, F> ElaborateBuilder<'_, F>
+where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
   /// Creates a future to poll for the completed environment, given an import resolver.
   ///
   /// # Returns
@@ -672,6 +705,8 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
 
     type ImportMap<D> = HashMap<Span, (FileRef, D)>;
     struct FrozenElaborator(Elaborator);
+    #[allow(unknown_lints)] #[allow(clippy::non_send_fields_in_send_ty)]
+    // Safety: The Rcs are not held in other threads
     unsafe impl Send for FrozenElaborator {}
 
     enum UnfinishedStmt<T> {
@@ -694,6 +729,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
     impl<T> Future for ElabFuture<T> {
       type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
       fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Safety: We don't move `this` out of the pin
         let this = &mut unsafe { self.get_unchecked_mut() }.0;
         let ElabFutureInner {
           elab: FrozenElaborator(elab),
@@ -704,6 +740,8 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
           match progress {
             UnfinishedStmt::None => {},
             UnfinishedStmt::Import(sp, p, other) => {
+              // Safety: `other` is pinned because it is projected from
+              // `this.progress` which is pinned
               match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
                 Ok(ElabResult::Ok(t, errors, env)) => {
                   toks.push(t);
@@ -713,14 +751,16 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                         let mut it = errs.iter().enumerate().filter(|(_, e)| e.level == level);
                         if let Some((i, first)) = it.next() {
                           let mut n = it.count();
-                          let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
+                          let file = if let ElabErrorKind::Upstream { ref file, n: m, .. } = first.kind {
                             n += m;
                             file.clone()
                           } else {
                             p.clone()
                           };
-                          let e = OwningRef::new(errs).map(|errs| &errs[i]);
-                          elab.report(ElabError {pos: *sp, level, kind: ElabErrorKind::Upstream(file, e, n)});
+                          elab.report(ElabError {
+                            pos: *sp, level,
+                            kind: ElabErrorKind::Upstream { file, owner: errs, idx: i, n }
+                          });
                           break
                         }
                       }
@@ -735,7 +775,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                         merge.val = elab.apply_merge(*sp,
                             merge.strat.as_deref(), merge.val.clone(), merge.new.val.clone())
                           .unwrap_or_else(|e| {elab.report(e); merge.new.val.clone()});
-                        it.apply_merge(&mut elab.env, merge);
+                        merge.apply(&mut elab.env);
                       }
                     }
                   }
@@ -748,7 +788,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                 Ok(ElabResult::ImportCycle(cyc2)) => {
                   use std::fmt::Write;
                   let mut s = format!("import cycle: {}", p.clone());
-                  for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
+                  for p2 in &cyc2 { write!(s, " -> {p2}").expect("unreachable") }
                   elab.report(ElabError::new_e(*sp, s));
                   if cyc.is_none() { *cyc = Some(cyc2) }
                 }
@@ -788,7 +828,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
     let mut recv_dep = self.recv_dep;
     let mut recv = HashMap::new();
     let mut elab = Elaborator::new(self.ast.clone(),
-      self.path, self.mm0_mode, self.check_proofs, self.cancel, self.recv_goal);
+      self.path, self.mm0_mode, self.options, self.cancel, self.recv_goal);
     elab.arena.install_thread_local();
     for &(sp, ref f) in &self.ast.imports {
       (|| -> Result<_> {

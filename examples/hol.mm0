@@ -1,0 +1,255 @@
+-- An axiomatization of (HOL light styled) HOL. The intent is to use this file as the core theory
+-- and hol.mm1 as the proof of the core lemmas, and https://github.com/digama0/hz-to-mm0 will
+-- translate proofs using these theorems when performing HOL kernel steps.
+-- The named theorems in this file correspond roughly to the theorems in the Common HOL platform.
+
+delimiter $ ( @ [ ! ? ~ $ $ . : ; ) ] $;
+strict provable sort wff;
+
+term im: wff > wff > wff; infixr im: $|-$ prec 0;
+term an: wff > wff > wff; infixl an: $;$ prec 1;
+
+axiom id (P: wff): $ P |- P $;
+-- axiom mp (P Q: wff): $ P |- Q $ > $ P $ > $ Q $;
+axiom syl (P Q R: wff): $ P |- Q $ > $ Q |- R $ > $ P |- R $;
+axiom ian (G P Q: wff): $ G |- P $ > $ G |- Q $ > $ G |- P; Q $;
+axiom anl (P Q: wff): $ P; Q |- P $;
+axiom anr (P Q: wff): $ P; Q |- Q $;
+
+strict sort type;
+
+term bool: type;
+term fun: type > type > type; infixr fun: $->$ prec 25;
+
+sort term;
+term ty: term > type > wff; infixl ty: $:$ prec 2;
+
+term app: term > term > term; infixl app: $@$ prec 1000;
+term lam {x: term}: type > term x > term;
+notation lam {x: term} (t: type) (e: term x): term =
+  ($\$:20) x ($:$:2) t ($.$:0) e;
+
+axiom appT (G: wff) (A B: type) (f x: term):
+  $ G |- f: A -> B $ > $ G |- x: A $ > $ G |- f @ x: B $;
+
+axiom lamT (G: wff) (A B: type) {x: term} (t: term x):
+  $ G; x: A |- t: B $ > $ G |- \ x: A. t: A -> B $;
+
+-- These are not a complete set of inversion principles, but they are
+-- enough for the core theory. We need existential type variables for the general case
+axiom appTR1 (G: wff) (A B: type) (f x: term):
+  $ G |- f @ x: B $ > $ G |- x: A $ > $ G |- f: A -> B $;
+axiom appTR2 (G: wff) (A B: type) (f x: term):
+  $ G |- f @ x: B $ > $ G |- f: A -> B $ > $ G |- x: A $;
+axiom appTR22 (G: wff) (A B C: type) (f x y: term):
+  $ G |- f @ x @ y: C $ > $ G |- f: A -> B -> C $ > $ G |- x: A; y: B $;
+
+term eq: type > term;
+axiom eqT (G: wff) (A: type): $ G |- eq A: A -> A -> bool $;
+def eqc (A: type) (e1 e2: term): term = $ eq A @ e1 @ e2 $;
+notation eqc (A: type) (e1 e2: term): term =
+  ($=[$:50) A ($]$:0) e1 ($=$:50) e2;
+
+term thm: term > wff; coercion thm: term > wff;
+
+axiom thmR (G: wff) (A: term): $ G |- A $ > $ G |- A: bool $;
+
+axiom refl (G: wff) (A: type) (t: term):
+  $ G |- t: A $ > $ G |- =[A] t = t $;
+
+axiom aeq (G: wff) (A B: type) (f g a b: term):
+  $ G |- =[A -> B] f = g $ > $ G |- =[A] a = b $ >
+  $ G |- =[B] f @ a = g @ b $;
+
+axiom leq (G: wff) (A B: type) {x: term} (a b: term x):
+  $ G; x: A |- =[B] a = b $ >
+  $ G |- =[A -> B] (\ x: A. a) = (\ x: A. b) $;
+
+axiom beta (A B: type) {x: term} (G: wff x) (e: term x):
+  $ G |- (\ x: A. e) @ x: B $ > $ G |- =[B] (\ x: A. e) @ x = e $;
+
+theorem lamTR (A B: type) {x: term} (G: wff x) (t: term x):
+  $ G |- \ x: A. t: A -> B $ > $ G; x: A |- t: B $;
+
+def bi (a b: term): term = $ =[bool] a = b $;
+infixl bi: $<=>$ prec 21;
+
+axiom eqmp (G: wff) (A B: term):
+  $ G |- A <=> B $ > $ G |- A $ > $ G |- B $;
+
+theorem trans (G: wff) (A: type) (a b c: term):
+  $ G |- =[A] a = b $ > $ G |- =[A] b = c $ > $ G |- =[A] a = c $;
+
+axiom ded (G: wff) (A B: term):
+  $ G; A |- B $ > $ G; B |- A $ > $ G |- A <=> B $;
+
+axiom cbvv (G: wff) (A B: type) {x y: term} (t: term x y):
+  $ G |- t: B $ > $ G |- =[A -> B] (\ x: A. t) = (\ y: A. t) $;
+
+axiom inst (G: wff) (A: type) {x: term} (t a: term x):
+  $ G |- a: bool $ > $ G |- t: A $ > $ G; =[A] x = t |- a $ > $ G |- a $;
+
+def T: term;
+theorem T_DEF (G: wff) {x: term}: $ G |- T <=> =[bool -> bool] (\ x: bool. x) = (\ x: bool. x) $;
+theorem TT (G: wff): $ G |- T: bool $;
+theorem TRUTH (G: wff): $ G |- T $;
+theorem EQT_ELIM (G: wff) (P: term): $ G |- P <=> T $ > $ G |- P $;
+theorem EQT_INTRO (G: wff) (P: term): $ G |- P $ > $ G |- P <=> T $;
+
+term tydef: term > type;
+term abs: term > term;
+term rep: term > term;
+axiom absT (G: wff) (A: type) (P t: term):
+  $ T |- P: A -> bool $ > $ G |- P @ t $ >
+  $ G |- abs P: A -> tydef P $;
+axiom repT (G: wff) (A: type) (P t: term):
+  $ T |- P: A -> bool $ > $ G |- P @ t $ >
+  $ G |- rep P: tydef P -> A $;
+axiom abs_rep (G: wff) (A: type) (P t a: term):
+  $ T |- P: A -> bool $ > $ G |- P @ t $ >
+  $ G; a: tydef P |- =[A] abs P @ (rep P @ a) = a $;
+axiom rep_abs (G: wff) (A: type) (P t r: term):
+  $ T |- P: A -> bool $ > $ G |- P @ t $ >
+  $ G; r: A |- P @ r <=> =[A] rep P @ (abs P @ r) = r $;
+
+axiom eta (G: wff) (A B: type) {x: term} (e: term x):
+  $ G |- e: A -> B $ > $ G |- =[A -> B] (\ x: A. e @ x) = e $;
+
+term sel: type > term;
+axiom selT (G: wff) (A: type): $ G |- sel A: (A -> bool) -> A $;
+axiom ax_sel (G: wff) (A: type) (P x: term):
+  $ G |- P: A -> bool $ > $ G |- P @ x $ >
+  $ G |- P @ (sel A @ P) $;
+
+def and: term;
+theorem AND_DEF (G: wff) {p q f: term}:
+  $ G |- =[bool -> bool -> bool] and =
+    (\ p: bool. \ q: bool. =[(bool -> bool -> bool) -> bool]
+      (\ f: bool -> bool -> bool. f @ p @ q) =
+      (\ f: bool -> bool -> bool. f @ T @ T)) $;
+theorem andT (G: wff): $ G |- and: bool -> bool -> bool $;
+
+def andc (a b: term): term = $ and @ a @ b $; infixl andc: $/\ $ prec 35;
+
+theorem CONJ (G: wff) (a b: term):
+  $ G |- a $ > $ G |- b $ > $ G |- a /\ b $;
+theorem CONJ_PAIR (G: wff) (a b: term):
+  $ G |- a /\ b $ > $ G |- a; b $;
+theorem CONJUNCT1 (G: wff) (a b: term): $ G |- a /\ b $ > $ G |- a $;
+theorem CONJUNCT2 (G: wff) (a b: term): $ G |- a /\ b $ > $ G |- b $;
+
+def imp: term;
+theorem IMP_DEF (G: wff) {p q: term}:
+  $ G |- =[bool -> bool -> bool] imp =
+    (\ p: bool. \ q: bool. (p /\ q) <=> p) $;
+theorem impT (G: wff): $ G |- imp: bool -> bool -> bool $;
+
+def impc (a b: term): term = $ imp @ a @ b $; infixr impc: $==>$ prec 30;
+
+theorem MP (G: wff) (p q: term): $ G |- p ==> q $ > $ G |- p $ > $ G |- q $;
+
+theorem DISCH (G: wff) (p q: term):
+  $ G |- p: bool $ > $ G |- q: bool $ > $ G; p |- q $ > $ G |- p ==> q $;
+theorem UNDISCH (G: wff) (p q: term): $ G |- p ==> q $ > $ G; p |- q $;
+
+theorem IMP_ANTISYM (G: wff) (p q: term):
+  $ G |- p ==> q $ > $ G |- q ==> p $ > $ G |- p <=> q $;
+
+theorem EQ_IMP1 (G: wff) (p q: term): $ G |- p <=> q $ > $ G |- p ==> q $;
+theorem EQ_IMP2 (G: wff) (p q: term): $ G |- p <=> q $ > $ G |- q ==> p $;
+
+theorem IMP_ID (G: wff) (p: term): $ G |- p: bool $ > $ G |- p ==> p $;
+theorem IMP_TRANS (G: wff) (p q r: term): $ G |- p ==> q $ > $ G |- q ==> r $ > $ G |- p ==> r $;
+
+def all: type > term;
+theorem FORALL_DEF (G: wff) (A: type) {P x: term}:
+  $ G |- =[(A -> bool) -> bool] all A = (\ P: A -> bool. =[A -> bool] P = (\ x: A. T)) $;
+theorem allT (G: wff) (A: type): $ G |- all A: (A -> bool) -> bool $;
+
+def allc {x: term} (A: type) (t: term x): term = $ all A @ (\ x: A. t) $;
+notation allc {x: term} (t: type) (e: term x): term = ($!$:20) x ($:$:2) t ($.$:0) e;
+
+theorem SPEC (G: wff) (A: type) {x: term} (t a b: term x):
+  $ G |- t: A $ > $ G |- b: bool $ >
+  $ G; =[A] x = t |- a <=> b $ > $ G |- !x: A. a $ > $ G |- b $;
+
+theorem GEN (G: wff) (A: type) {x: term} (a: term x): $ G; x: A |- a $ > $ G |- !x: A. a $;
+
+def ex: type > term;
+theorem EXISTS_DEF (G: wff) (A: type) {P q x: term}:
+  $ G |- =[(A -> bool) -> bool] ex A =
+    (\ P: A -> bool. !q: bool. (!x: A. P @ x ==> q) ==> q) $;
+theorem exT (G: wff) (A: type): $ G |- ex A: (A -> bool) -> bool $;
+
+def exc {x: term} (A: type) (t: term x): term = $ ex A @ (\ x: A. t) $;
+notation exc {x: term} (t: type) (e: term x): term = ($?$:20) x ($:$:2) t ($.$:0) e;
+
+theorem CHOOSE (G: wff) (A: type) {x: term} (p: term x) (q: term):
+  $ G |- q: bool $ > $ G |- ?x: A. p $ > $ G; x: A; p |- q $ > $ G |- q $;
+
+theorem EXISTS (G: wff) (A: type) {x: term} (t a b: term x):
+  $ G; x: A |- a: bool $ > $ G |- t: A $ >
+  $ G; =[A] x = t |- a <=> b $ > $ G |- b $ > $ G |- ?x: A. a $;
+
+def or: term;
+theorem OR_DEF (G: wff) {p q r: term}:
+  $ G |- =[bool -> bool -> bool] or =
+    (\ p: bool. \ q: bool. !r: bool. (p ==> r) ==> (q ==> r) ==> r) $;
+theorem orT (G: wff): $ G |- or: bool -> bool -> bool $;
+
+def orc (a b: term): term = $ or @ a @ b $; infixl orc: $\/$ prec 31;
+
+theorem DISJ1 (G: wff) (p q: term): $ G |- p $ > $ G |- q: bool $ > $ G |- p \/ q $;
+theorem DISJ2 (G: wff) (p q: term): $ G |- p: bool $ > $ G |- q $ > $ G |- p \/ q $;
+theorem DISJ_CASES (G: wff) (p q r: term):
+  $ G |- p \/ q $ > $ G |- r: bool $ > $ G; p |- r $ > $ G; q |- r $ > $ G |- r $;
+
+def F: term;
+theorem F_DEF (G: wff) {p: term}: $ G |- F <=> (!p: bool. p) $;
+theorem FT (G: wff): $ G |- F: bool $;
+theorem CONTR (G: wff) (p: term): $ G |- p: bool $ > $ G |- F $ > $ G |- p $;
+
+def not: term;
+theorem NOT_DEF (G: wff) {p: term}: $ G |- =[bool -> bool] not = (\ p: bool. p ==> F) $;
+theorem notT (G: wff): $ G |- not: bool -> bool $;
+
+def notc (p: term): term = $ not @ p $; prefix notc: $~$ prec 100;
+
+theorem NOT_ELIM (G: wff) (p: term): $ G |- ~p $ > $ G |- p ==> F $;
+theorem NOT_INTRO (G: wff) (p: term): $ G |- p ==> F $ > $ G |- ~p $;
+theorem EQF_INTRO (G: wff) (p: term): $ G |- ~p $ > $ G |- p <=> F $;
+theorem EQF_ELIM (G: wff) (p: term): $ G |- p <=> F $ > $ G |- ~p $;
+theorem NOT_FALSE (G: wff): $ G |- ~F $;
+
+def eu: type > term;
+theorem EXISTS_UNIQUE_DEF (G: wff) (A: type) {P x y: term}:
+  $ G |- =[(A -> bool) -> bool] eu A =
+    (\ P: A -> bool. ex A @ P /\ (!x: A. !y: A. P @ x /\ P @ y ==> =[A] x = y)) $;
+theorem euT (G: wff) (A: type): $ G |- eu A: (A -> bool) -> bool $;
+
+theorem SELECT_AX (G: wff) (A: type) {P x: term}:
+  $ G |- !P: A -> bool. !x: A. P @ x ==> P @ (sel A @ P) $;
+
+theorem em (G: wff) (p: term): $ G |- p: bool $ > $ G |- p \/ ~p $;
+
+theorem CCONTR (G: wff) (p: term): $ G |- p: bool $ > $ G; ~p |- F $ > $ G |- p $;
+
+def COND (A: type) {.t .t1 .t2 .x: term}: term =
+$ \ t: bool. \ t1: A. \ t2: A. sel A @ (\ x: A.
+  ((t <=> T) ==> =[A] x = t1) /\ ((t <=> F) ==> =[A] x = t2)) $;
+
+def one_one: type > type > term;
+theorem one_one_T (G: wff) (A B: type): $ G |- one_one A B: (A -> B) -> bool $;
+theorem ONE_ONE (G: wff) (A B: type) (f: term) {x1 x2: term}:
+  $ G |- f: A -> B $ >
+  $ G |- one_one A B @ f <=> (!x1: A. !x2: A.
+    =[B] f @ x1 = f @ x2 ==> =[A] x1 = x2) $;
+
+def onto: type > type > term;
+theorem onto_T (G: wff) (A B: type): $ G |- onto A B: (A -> B) -> bool $;
+theorem ONTO (G: wff) (A B: type) (f: term) {x y: term}: $ G |- f: A -> B $ >
+  $ G |- onto A B @ f <=> (!y: B. ?x: A. =[B] y = f @ x) $;
+
+term ind: type;
+axiom inf (G: wff) {f: term}:
+  $ G |- ?f: ind -> ind. one_one ind ind @ f /\ ~(onto ind ind @ f) $;

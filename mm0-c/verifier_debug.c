@@ -159,11 +159,14 @@ void debug_print_ustack() {
 void debug_print_uheap() {
   fprintf(stderr, "unify heap:\n");
   for (int i = 0; i < g_uheap_size; i++) {
-    fprintf(stderr, "%d: ", i);
-    if (g_parsing)
-      debug_print_parse_expr(g_uheap[i]);
+    if (g_uheap[i] & UHEAP_SAVED_TAG)
+      fprintf(stderr, "%d* ", i);
     else
-      debug_print_expr(g_uheap[i], g_store_size, true);
+      fprintf(stderr, "%d: ", i);
+    if (g_parsing)
+      debug_print_parse_expr(get_uheap(i));
+    else
+      debug_print_expr(get_uheap(i), g_store_size, true);
     fprintf(stderr, "\n");
   }
 }

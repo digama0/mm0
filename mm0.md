@@ -13,7 +13,7 @@ From the conjunction of these properties, the auditor finds that `A |- T1,...,Tn
 
 Input to a Metamath Zero verifier consists of two parts: a "specification" or "header file", with extension `.mm0`, and a "proof" file with implementation-defined extension. The specification file contains axioms, definitions, and theorem statements, while the proof file contains proofs of the theorems and auxiliary data.
 
-The major distinction between the two files is that in the hypothetical auditing  process above, *the proof file plays no role*. All information relevant to correctness of the final result is put in the `.mm0` file, and the proof file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mm0` file are true. As such, the format of the proof file is not officially specified, although there is a recommended format (see [?]).
+The major distinction between the two files is that in the hypothetical auditing  process above, *the proof file plays no role*. All information relevant to correctness of the final result is put in the `.mm0` file, and the proof file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mm0` file are true. As such, the format of the proof file is not officially specified, although there is a recommended format (see [the MMB file format](mm0-c/mmb.md)).
 
 See [examples/set.mm0](examples/set.mm0) for an example of a `.mm0` file.
 
@@ -121,7 +121,7 @@ Notations
 ---
 The notation system is intended to be a minimal operator precedence parser. There is support for `prefix` and `infix` notations, `coercion` (nameless notation), and `notation` for everything else. The precedence levels are nonnegative integers, or `max`, representing infinity.
 
-* A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation commmand) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
+* A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation command) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
 
 * A `prefix` constructor parses its argument with the given precedence.
 

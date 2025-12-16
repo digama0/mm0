@@ -1,5 +1,5 @@
 -- import data.bitvec
-import data.vector order.basic algebra.group_power
+import data.vector.basic order.basic algebra.group_power.lemmas
 
 @[reducible] def bitvec (n : ℕ) := vector bool n
 
@@ -12,7 +12,7 @@ open vector nat
 -- Create a bitvector with the constant one.
 @[reducible] protected def one : Π (n : ℕ), bitvec n
 | 0        := nil
-| (succ n) := tt :: repeat ff n
+| (succ n) := tt ::ᵥ repeat ff n
 
 -- bitvec specific version of vector.append
 def append {m n} : bitvec m → bitvec n → bitvec (m + n) := vector.append
@@ -46,7 +46,7 @@ end bitwise
 
 protected def of_nat : Π (n : ℕ), nat → bitvec n
 | 0        x := nil
-| (succ n) x := let ⟨b, y⟩ := bodd_div2 x in b :: of_nat n y
+| (succ n) x := let ⟨b, y⟩ := bodd_div2 x in b ::ᵥ of_nat n y
 
 def bits_to_nat (v : list bool) : nat := v.foldr nat.bit 0
 
@@ -190,7 +190,7 @@ structure pstate_result (σ α : Type*) :=
 
 def pstate (σ α : Type*) := σ → pstate_result σ α
 
-instance (σ) : has_coe_to_fun (pstate_result σ unit) := ⟨_, λ r, r.P ()⟩
+instance (σ) : has_coe_to_fun (pstate_result σ unit) (λ _, σ → Prop) := ⟨λ r, r.P ()⟩
 
 inductive pstate_pure_P {σ α : Type*} (a : α) (s : σ) : α → σ → Prop
 | mk {} : pstate_pure_P a s

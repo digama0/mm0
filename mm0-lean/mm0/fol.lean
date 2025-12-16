@@ -1,4 +1,4 @@
-import zfc
+import model_theory.syntax
 
 def deps := list bool
 
@@ -45,7 +45,7 @@ def mm0_context.sort_rev : ∀ {n} (c : mm0_context n), ℕ → option mm0_sort
 | _ (mm0_context.rvar d s h c) (i+1) := c.sort_rev i
 
 def mm0_context.sort {n} (c : mm0_context n) (i : ℕ) : option mm0_sort :=
-c.rsize.psub i.succ >>= c.sort_rev
+if i < c.rsize then c.sort_rev (c.rsize - i.succ) else none
 
 def mm0_context.rvar_deps_rev : ∀ {n} (c : mm0_context n), ℕ → deps
 | _ mm0_context.empty _ := ([])
@@ -56,17 +56,27 @@ def mm0_context.rvar_deps_rev : ∀ {n} (c : mm0_context n), ℕ → deps
 def mm0_context.rvar_deps {n} (c : mm0_context n) (i : ℕ) : deps :=
 c.rvar_deps_rev (c.rsize - i.succ)
 
-def mm0_value : mm0_sort → Type 1
-| mm0_sort.set := ulift ℕ
-| mm0_sort.wff := fol.formula zfc.L_ZFC
-| mm0_sort.Class := fol.formula zfc.L_ZFC
-local infix ` ∈' `:100 := fol.formula_of_relation zfc.ZFC_el
+open first_order first_order.language
 
+inductive zfc.relations : ℕ → Type
+| el : zfc.relations 2
+
+def zfc.L_ZFC : language := { functions := λ _, empty, relations := zfc.relations }
+def zfc.ZFC_el : zfc.L_ZFC.relations 2 := zfc.relations.el
+
+def mm0_value : mm0_sort → Type
+| mm0_sort.set := ℕ
+| mm0_sort.wff := formula.{0} zfc.L_ZFC ℕ
+| mm0_sort.Class := formula.{0} zfc.L_ZFC ℕ
+
+local infix ` ∈' `:100 := relations.formula₂ zfc.ZFC_el
+
+/-
 namespace fol
 
 def move0 (k n : ℕ) : ℕ := if n = k then 0 else n + 1
 def map_lift (f : ℕ → ℕ) (k n : ℕ) : ℕ := if n < k then n else f (n - k) + k
-def subst_lift {L} (f : ℕ → term L) (k n : ℕ) : term L := if n < k then &n else f (n - k) ↑ k
+def subst_lift {L} (f : ℕ → L.term) (k n : ℕ) : L.term := if n < k then var n else f (n - k) ↑ k
 
 theorem subst_lift_zero {L} (f : ℕ → term L) : subst_lift f 0 = f :=
 by funext; rw [subst_lift, if_neg (nat.not_lt_zero _), lift_term_zero]; refl
@@ -618,3 +628,4 @@ def mm0_preproof.sound {γ Γ hyps} :
 | _ _ (mm0_preproof.Axiom _ A σ) := mm0_thm.weaken $ σ.sound A.sound
 | _ _ (mm0_preproof.app P p) := mm0_preproof.app_sound _ P.sound p.sound
 | _ _ (mm0_preproof.hyp i h) := mm0_preproof.hyp_sound _ _ _
+-/

@@ -1,0 +1,11 @@
+strict provable sort wff;
+term A: wff;
+def B: wff = $ A $;
+def C: wff = $ B $;
+theorem _ (a: $ A $): $ C $ =
+(focus
+  (have 'b $ B $ 'a)
+  'b);
+
+theorem _ (a: $ A $): $ C $ =
+'(:verb (:conv (C) (:unfold C () (B)) (:conv (B) (:unfold B () (A)) a)));

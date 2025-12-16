@@ -18,6 +18,7 @@
   unused,
   missing_docs
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
@@ -30,16 +31,16 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::undocumented_unsafe_blocks,
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
+  clippy::manual_filter_map,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
   clippy::missing_errors_doc,
@@ -47,6 +48,8 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::redundant_pub_crate,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -56,13 +59,11 @@ mod parser;
 mod ty;
 mod write;
 
-use std::convert::{TryFrom, TryInto};
 use std::ffi::CStr;
 use std::mem::size_of;
 
-use byteorder::LE;
 use mm0_util::{Modifiers, SortId, TermId, ThmId};
-use zerocopy::{AsBytes, FromBytes, Unaligned, U16, U32, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, U64, Unaligned};
 
 pub use mm0_util::u32_as_usize;
 pub use {parser::*, ty::*, write::*};
@@ -163,17 +164,16 @@ fn u64_as_usize(n: U64<LE>) -> usize {
   n.get().try_into().expect("here's a nickel, get a better computer")
 }
 
-/// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
+/// Construct a <code>&amp;[CStr]</code> from a prefix byte slice, by terminating at
 /// the first nul character. The second output is the remainder of the slice.
 #[must_use]
 pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
   let mid = memchr::memchr(0, bytes)? + 1;
-  unsafe {
-    Some((
-      CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
-      bytes.get_unchecked(..mid),
-    ))
-  }
+  // Safety: mid <= bytes.len()
+  let (left, right) = unsafe { (bytes.get_unchecked(..mid), bytes.get_unchecked(mid..)) };
+  // Safety: memchr ensures there are no internal NUL characters
+  let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(left) };
+  Some((cstr, right))
 }
 
 /// The main part of the proof consists of a sequence of declarations,
@@ -268,7 +268,7 @@ impl NumdStmtCmd {
   }
 }
 
-impl std::convert::TryFrom<u8> for StmtCmd {
+impl TryFrom<u8> for StmtCmd {
   type Error = ParseError;
   fn try_from(cmd: u8) -> Result<Self, Self::Error> {
     Ok(match cmd {
@@ -328,7 +328,7 @@ pub enum ProofCmd {
   /// ```
   /// Pop `n` elements from the stack and put them on the unify heap, then call the
   /// unifier for `T` with `e` as the target. The unifier will pop additional
-  /// proofs from the stack if the UHyp command is used, and when it is done,
+  /// proofs from the stack if the `UHyp` command is used, and when it is done,
   /// the conclusion is pushed as a proven statement.
   ///
   /// When Save is used, the proven statement is also saved to the heap.
@@ -397,16 +397,16 @@ pub enum ProofCmd {
   /// Sorry: S, e -> S, |- e
   /// ConvSorry: S, e1 =?= e2 -> S
   /// ```
-  /// * Sorry: Pop an expression `e` from the stack, and push `|- e`. This step exists
+  /// * `Sorry`: Pop an expression `e` from the stack, and push `|- e`. This step exists
   ///   only for debugging purposes and incomplete proofs, it is not a valid step
   ///   under any circumstances, and verifiers are free to pretend it doesn't exist.
   ///
-  /// * ConvSorry: Pop a convertibility obligation `e1 =?= e2`. This reuses the Sorry
+  /// * `ConvSorry`: Pop a convertibility obligation `e1 =?= e2`. This reuses the `Sorry`
   ///   command, and depends on the type of the head of stack for its behavior.
   Sorry,
 }
 
-impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
+impl TryFrom<(u8, u32)> for ProofCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     Ok(match cmd {
@@ -432,6 +432,8 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   }
 }
 
+/// A command in the unify stream.
+///
 /// Unify commands appear in the header data for a `def` or `axiom`/`theorem`.
 /// They are executed by the [`ProofCmd::Thm`] command in order to perform
 /// substitutions. The state of the unify stack machine is:
@@ -494,7 +496,7 @@ pub enum UnifyCmd {
   Hyp,
 }
 
-impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
+impl TryFrom<(u8, u32)> for UnifyCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     Ok(match cmd {
@@ -510,10 +512,10 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
 }
 
 /// The header of an MMB file, which is always in the first bytes of the file.
-/// It is followed by a `sorts: [`[`SortData`]`; num_sorts]` array
+/// It is followed by a <code>sorts: [[SortData]; num_sorts]</code> array
 /// (which we keep separate because of the dependency).
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, Default, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, Default, FromBytes, Immutable, KnownLayout)]
 pub struct Header {
   /// The magic number, which is used to identify this as an mmb file. Must be
   /// equal to [`MM0B_MAGIC`](cmd::MM0B_MAGIC) = `"MM0B"`.
@@ -528,16 +530,16 @@ pub struct Header {
   pub num_terms: U32<LE>,
   /// The number of axioms and theorems in the file.
   pub num_thms: U32<LE>,
-  /// The pointer to the term table of type `[`[`TermEntry`]`; num_terms]`.
+  /// The pointer to the term table of type <code>[[TermEntry]; num_terms]</code>.
   pub p_terms: U32<LE>,
-  /// The pointer to the theorem table of type `[`[`ThmEntry`]`; num_thms]`.
+  /// The pointer to the theorem table of type <code>[[ThmEntry]; num_thms]</code>.
   pub p_thms: U32<LE>,
   /// The pointer to the declaration stream.
   pub p_proof: U32<LE>,
   /// Padding.
   pub reserved2: [u8; 4],
-  /// The pointer to the index header, an array of `1 + num_sorts + num_terms + num_thms`
-  /// pointers to [`IndexEntry`] nodes.
+  /// The pointer to the index header, an array of `id, data` fields that are parsed by
+  /// [`MmbIndexBuilder::build`].
   pub p_index: U64<LE>,
 }
 
@@ -579,11 +581,13 @@ impl Header {
   }
 }
 
-/// A sort entry in the file header. Each sort is one byte, which can be any combination
+/// A sort entry in the file header.
+///
+/// Each sort is one byte, which can be any combination
 /// of the modifiers in [`Modifiers::sort_data`]: [`PURE`](Modifiers::PURE),
 /// [`STRICT`](Modifiers::STRICT), [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, Unaligned)]
 pub struct SortData(pub u8);
 
 impl TryFrom<SortData> for Modifiers {
@@ -591,18 +595,14 @@ impl TryFrom<SortData> for Modifiers {
   #[inline]
   fn try_from(s: SortData) -> Result<Modifiers, ()> {
     let m = Modifiers::new(s.0);
-    if Modifiers::sort_data().contains(m) {
-      Ok(m)
-    } else {
-      Err(())
-    }
+    if Modifiers::sort_data().contains(m) { Ok(m) } else { Err(()) }
   }
 }
 
 /// An entry in the term table, which describes the "signature" of the term/def,
 /// the information needed to apply the term and use it in theorems.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable)]
 pub struct TermEntry {
   /// The number of arguments to the term.
   pub num_args: U16<LE>,
@@ -611,22 +611,22 @@ pub struct TermEntry {
   pub sort: u8,
   /// Padding.
   pub reserved: u8,
-  /// The pointer to an `args: [`[`Arg`]`; num_args + 1]` array, followed by the
+  /// The pointer to an <code>args: [[Arg]; num_args + 1]</code> array, followed by the
   /// term's unify command sequence. `args[num_args]` is the return type and dependencies,
   /// and `args[..num_args]` are the actual arguments.
   pub p_args: U32<LE>,
 }
 
-/// An entry in the term table, which describes the "signature" of the axiom/theorem,
+/// An entry in the theorem table, which describes the "signature" of the axiom/theorem,
 /// the information needed to apply the theorem to use it in other theorems.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable)]
 pub struct ThmEntry {
   /// The number of arguments to the theorem (exprs, not hyps).
   pub num_args: U16<LE>,
   /// Padding.
   pub reserved: [u8; 2],
-  /// The pointer to an `args: [`[`Arg`]`; num_args]` array, followed by the
+  /// The pointer to an <code>args: [[Arg]; num_args]</code> array, followed by the
   /// theorem's unify command sequence.
   pub p_args: U32<LE>,
 }
@@ -634,21 +634,21 @@ pub struct ThmEntry {
 /// An index table entry, which is essentially an ID describing the table format, and some
 /// additional data to find the actual table.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable)]
 pub struct TableEntry {
   /// A magic number that identifies this table entry, and determines the interpretation of the
   /// rest of the data.
-  id: [u8; 4],
+  pub id: [u8; 4],
   /// A 4 byte data field whose interpretation depends on the entry type.
-  data: U32<LE>,
+  pub data: U32<LE>,
   /// An 8 byte data field whose interpretation depends on the entry type, but is generally a
   /// pointer to the actual table data.
-  ptr: U64<LE>,
+  pub ptr: U64<LE>,
 }
 
 /// An individual symbol name entry in the index.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable)]
 pub struct NameEntry {
   /// A pointer to the location in the proof stream which introduced this entity.
   pub p_proof: U64<LE>,

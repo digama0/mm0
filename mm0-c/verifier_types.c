@@ -37,20 +37,20 @@ u8 g_store[STORE_SIZE];
 u32 g_store_size = 0;
 
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag;
 } store_expr;
 
 #define EXPR_VAR 0
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag; // = EXPR_VAR
   u16 var;
 } store_var;
 
 #define EXPR_TERM 1
 typedef struct {
-  u64 type;
+  u64 PACKED ALIGNED(4) type;
   u8 tag; // = EXPR_TERM
   u16 num_args;
   u32 termid;
@@ -70,9 +70,14 @@ u32* g_hstack_top = g_hstack;
 u32 g_ustack[UNIFY_STACK_SIZE];
 u32* g_ustack_top = g_ustack;
 
+#define UHEAP_SAVED_TAG ((u32)1<<31)
+
 #define UNIFY_HEAP_SIZE 65536
 u32 g_uheap[UNIFY_HEAP_SIZE];
 u32 g_uheap_size = 0;
+
+// Get the value at index `i` of the unify stack.
+#define get_uheap(i) (g_uheap[i] & ~UHEAP_SAVED_TAG)
 
 /****************
   Parser types
@@ -194,6 +199,7 @@ typedef struct {
 typedef struct {
   u32 termid;
   u8 rassoc;
+  u8 pad[3];
 } infix_info;
 
 typedef struct {
@@ -201,6 +207,7 @@ typedef struct {
   u32 infix;
   u16 prec;
   u8 prec_set;
+  u8 pad;
 } token_info;
 
 // For simplicity, we rely on paging for the input,

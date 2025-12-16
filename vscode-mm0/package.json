@@ -1,137 +1,135 @@
 {
-	"name": "metamath-zero",
-	"displayName": "Metamath Zero",
-	"description": "Language support for Metamath Zero",
-	"author": "Mario Carneiro",
-	"publisher": "digama0",
-	"version": "1.0.3",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/digama0/mm0"
-	},
-	"engines": {
-		"vscode": "^1.51.0"
-	},
-	"categories": [
-		"Programming Languages"
-	],
-	"activationEvents": [
-		"onLanguage:metamath-zero"
-	],
-	"main": "./build/extension.js",
-	"contributes": {
-		"languages": [
-			{
-				"id": "metamath-zero",
-				"aliases": [
-					"Metamath Zero",
-					"metamath-zero"
-				],
-				"extensions": [
-					".mm0",
-					".mm1"
-				],
-				"configuration": "./language-configuration.json"
-			}
-		],
-		"grammars": [
-			{
-				"language": "metamath-zero",
-				"scopeName": "source.mm0",
-				"path": "./syntaxes/mm0.json"
-			}
-		],
-		"configuration": {
-			"type": "object",
-			"title": "Metamath Zero",
-			"properties": {
-				"metamath-zero.executablePath": {
-					"type": "string",
-					"default": "mm0-rs",
-					"description": "Path to the MM0 server."
-				},
-				"metamath-zero.maxNumberOfProblems": {
-					"scope": "resource",
-					"type": "number",
-					"default": 100,
-					"description": "Controls the maximum number of problems produced by the server."
-				},
-				"metamath-zero.trace.server": {
-					"scope": "window",
-					"type": "string",
-					"enum": [
-						"off",
-						"messages",
-						"verbose"
-					],
-					"default": "off",
-					"description": "Traces the communication between VS Code and the language server."
-				},
-				"metamath-zero.elabOn": {
-					"scope": "window",
-					"type": "string",
-					"enum": [
-						"change",
-						"save"
-					],
-					"default": "change",
-					"description": "Set the server to elaborate changes either on every change/keystroke, or on save."
-				},
-				"metamath-zero.syntaxDocs": {
-					"scope": "window",
-					"type": "boolean",
-					"default": true,
-					"description": "If true (the default), the server will show syntax documentation on hover."
-				},
-				"metamath-zero.logErrors": {
-					"scope": "window",
-					"type": "boolean",
-					"default": true,
-					"description": "If true (the default), errors will also be sent to the 'output' panel."
-				},
-				"metamath-zero.reportUpstreamErrors": {
-					"scope": "window",
-					"type": "boolean",
-					"default": true,
-					"description": "If true (the default), errors in imported files will be reported on the 'import' command (in addition to the files themselves)."
-				}
-			}
-		},
-		"commands": [
-			{
-				"command": "metamath-zero.restartServer",
-				"category": "MM0",
-				"title": "Restart",
-				"description": "Restart the Language Server."
-			},
-			{
-				"command": "metamath-zero.shutdownServer",
-				"category": "MM0",
-				"title": "Shutdown",
-				"description": "Shut down the Language Server."
-			}
-		]
-	},
-	"scripts": {
-		"vscode:prepublish": "npm run compile",
-		"package": "vsce package -o metamath-zero.vsix",
-		"compile": "tsc -p ./",
-		"lint": "tslint -p ./",
-		"watch": "tsc -watch -p ./"
-	},
-	"dependencies": {
-		"vscode-languageclient": "^6.1.3"
-	},
-	"devDependencies": {
-		"@types/node": "^14.14.9",
-		"@types/vscode": "^1.51.0",
-		"tslint": "^6.1.3",
-		"typescript": "^4.1.2",
-		"vsce": "^1.79.5"
-	},
-	"__metadata": {
-		"id": "4b788446-2267-4925-ae0c-32a1f373bb11",
-		"publisherDisplayName": "Mario Carneiro",
-		"publisherId": "47d989d0-9b4b-49c4-b6e4-4b9fb46c0ede"
-	}
+  "name": "metamath-zero",
+  "displayName": "Metamath Zero",
+  "description": "Language support for Metamath Zero",
+  "author": "Mario Carneiro",
+  "publisher": "digama0",
+  "version": "1.0.4",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/digama0/mm0"
+  },
+  "engines": {
+    "vscode": "^1.51.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./build/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "metamath-zero",
+        "aliases": [
+          "Metamath Zero",
+          "metamath-zero"
+        ],
+        "extensions": [
+          ".mm0",
+          ".mm1"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "metamath-zero",
+        "scopeName": "source.mm0",
+        "path": "./syntaxes/mm0.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Metamath Zero",
+      "properties": {
+        "metamath-zero.executablePath": {
+          "type": "string",
+          "default": "mm0-rs",
+          "description": "Path to the MM0 server."
+        },
+        "metamath-zero.maxNumberOfProblems": {
+          "scope": "resource",
+          "type": "number",
+          "default": 100,
+          "description": "Controls the maximum number of problems produced by the server."
+        },
+        "metamath-zero.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server."
+        },
+        "metamath-zero.elabOn": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "change",
+            "save"
+          ],
+          "default": "change",
+          "description": "Set the server to elaborate changes either on every change/keystroke, or on save."
+        },
+        "metamath-zero.syntaxDocs": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "description": "If true (the default), the server will show syntax documentation on hover."
+        },
+        "metamath-zero.logErrors": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "description": "If true (the default), errors will also be sent to the 'output' panel."
+        },
+        "metamath-zero.reportUpstreamErrors": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "description": "If true (the default), errors in imported files will be reported on the 'import' command (in addition to the files themselves)."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "metamath-zero.restartServer",
+        "category": "MM0",
+        "title": "Restart",
+        "description": "Restart the Language Server."
+      },
+      {
+        "command": "metamath-zero.shutdownServer",
+        "category": "MM0",
+        "title": "Shutdown",
+        "description": "Shut down the Language Server."
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package -o metamath-zero.vsix",
+    "compile": "tsc -p ./",
+    "lint": "tslint -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.9",
+    "@types/vscode": "^1.51.0",
+    "tslint": "^6.1.3",
+    "typescript": "^4.1.2",
+    "vsce": "^2.6.7"
+  },
+  "__metadata": {
+    "id": "4b788446-2267-4925-ae0c-32a1f373bb11",
+    "publisherDisplayName": "Mario Carneiro",
+    "publisherId": "47d989d0-9b4b-49c4-b6e4-4b9fb46c0ede"
+  }
 }

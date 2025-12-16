@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, render',
   renderNoBreak, ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc,
   ppStmt, ppBinder, ppPBinder, ppGroupedBinders, ppDecl, ppDeclType) where
@@ -71,8 +73,7 @@ ppExprCyc :: LispVal -> ElabM PP
 ppExprCyc v = do env <- get; liftIO $ ppExpr1 True env v
 
 ppExpr1 :: Bool -> Env -> LispVal -> IO PP
-ppExpr1 cyc env = \v ->
-  ppExpr2 (if cyc then Just [] else Nothing) (Prec 0) v where
+ppExpr1 cyc env = ppExpr2 (if cyc then Just [] else Nothing) (Prec 0) where
 
   delims = pDelims (ePE env)
 

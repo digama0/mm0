@@ -8,6 +8,7 @@ import MM0.HOL.ToHol
 import MM0.HOL.Check
 import MM0.HOL.ToOpenTheory
 import MM0.HOL.ToLean
+import MM0.HOL.ToLisp
 import MM0.Util
 
 toHolIO :: [String] -> IO ()
@@ -43,10 +44,23 @@ toLean (mmp : rest) = do
   (cs, rest3) <- return $ case rest2 of
     "-c" : n : rest3 -> (read n, rest3)
     _ -> (maxBound, rest2)
-  bn <- case rest3 of
+  (ns, rest4) <- return $ case rest3 of
+    "-n" : n : rest4 -> (n, rest4)
+    _ -> ("mm0", rest3)
+  bn <- case rest4 of
     "-o" : file : _ -> return file
     _ -> die "to-lean: -o FILE.LEAN required"
   pf <- parseProofOrDie <$> B.readFile mmp
   hol <- liftIO' $ toHol pf
-  writeLean nax bn cs hol
+  writeLean nax bn ns cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MMU-FILE [-o out.lean]'"
+
+toLispIO :: [String] -> IO ()
+toLispIO (mmp : rest) = do
+  let write = case rest of
+        "-o" : hol : _ -> withFile hol WriteMode
+        _ -> \k -> k stdout
+  pf <- parseProofOrDie <$> B.readFile mmp
+  hol <- liftIO' $ toHol pf
+  write $ \h -> mapM_ (hPutStrLn h . flip toLisp "\n") hol
+toLispIO _ = die "to-lisp: incorrect args; use 'to-lisp MMU-FILE [-o out.lisp]'"

@@ -21,6 +21,7 @@
   unused,
   missing_docs
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
@@ -33,15 +34,15 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::undocumented_unsafe_blocks,
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
@@ -50,6 +51,7 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
@@ -57,16 +59,14 @@
 
 pub mod ast;
 
-use annotate_snippets::snippet::AnnotationType;
+use annotate_snippets::Level;
 use ast::{
   Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal, LocalKind,
   SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
 };
-use mm0_util::{
-  let_unchecked, unwrap_unchecked, BoxError, LinedString, Modifiers, Position, Prec, Span,
-};
-use num::cast::ToPrimitive;
+use mm0_util::{BoxError, LinedString, Modifiers, Position, Prec, Span};
 use num::BigUint;
+use num::cast::ToPrimitive;
 use std::mem;
 use std::sync::Arc;
 
@@ -86,14 +86,15 @@ pub type DocComment = Arc<str>;
 /// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
 /// [`to_diag_severity`](ErrorLevel::to_diag_severity).
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum ErrorLevel {
   /// Error level for informational messages, such as the result of `(display)`.
-  Info,
+  Info = 1,
   /// Error level for warnings, such as an unfinished proof.
-  Warning,
+  Warning = 2,
   /// Error level for errors (which may or may not be fatal).
-  Error,
+  Error = 3,
 }
 impl ErrorLevel {
   /// Convert an [`ErrorLevel`] to the LSP [`DiagnosticSeverity`] type.
@@ -101,19 +102,19 @@ impl ErrorLevel {
   #[must_use]
   pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
-      ErrorLevel::Info => DiagnosticSeverity::Information,
-      ErrorLevel::Warning => DiagnosticSeverity::Warning,
-      ErrorLevel::Error => DiagnosticSeverity::Error,
+      ErrorLevel::Info => DiagnosticSeverity::INFORMATION,
+      ErrorLevel::Warning => DiagnosticSeverity::WARNING,
+      ErrorLevel::Error => DiagnosticSeverity::ERROR,
     }
   }
 
-  /// Convert an [`ErrorLevel`] to [`AnnotationType`], used by the CLI compiler.
+  /// Convert an [`ErrorLevel`] to [`annotate_snippets::Level`], used by the CLI compiler.
   #[must_use]
-  pub fn to_annotation_type(self) -> AnnotationType {
+  pub fn to_annotation_type(self) -> Level {
     match self {
-      ErrorLevel::Info => AnnotationType::Info,
-      ErrorLevel::Warning => AnnotationType::Warning,
-      ErrorLevel::Error => AnnotationType::Error,
+      ErrorLevel::Info => Level::Info,
+      ErrorLevel::Warning => Level::Warning,
+      ErrorLevel::Error => Level::Error,
     }
   }
 }
@@ -148,7 +149,7 @@ type Result<T> = std::result::Result<T, ParseError>;
 impl Clone for ParseError {
   fn clone(&self) -> Self {
     let &ParseError { pos, level, ref msg } = self;
-    ParseError { pos, level, msg: format!("{}", msg).into() }
+    ParseError { pos, level, msg: format!("{msg}").into() }
   }
 }
 
@@ -197,13 +198,11 @@ pub struct Parser<'a> {
 
 /// return true iff a given character is an acceptable ident starter.
 #[must_use]
-pub fn ident_start(c: u8) -> bool {
-  (b'a'..=b'z').contains(&c) || (b'A'..=b'Z').contains(&c) || c == b'_'
-}
+pub fn ident_start(c: u8) -> bool { c.is_ascii_alphabetic() || c == b'_' }
 
 /// return true iff a given character is an acceptable ident character.
 #[must_use]
-pub fn ident_rest(c: u8) -> bool { ident_start(c) || (b'0'..=b'9').contains(&c) }
+pub fn ident_rest(c: u8) -> bool { ident_start(c) || c.is_ascii_digit() }
 
 /// return true iff a given character is an acceptable lisp ident.
 #[must_use]
@@ -265,7 +264,7 @@ impl<'a> Parser<'a> {
   pub fn cur(&self) -> u8 { self.source[self.idx] }
   /// Attempt to get the character at the parser's index. Does not advance.
   #[must_use]
-  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).copied() }
 
   /// Create a parse error at the current location.
   #[must_use]
@@ -309,6 +308,7 @@ impl<'a> Parser<'a> {
       None
     } else {
       self.ws();
+      // Safety: if doc is not empty then end was initialized
       Some((String::from_utf8(doc).ok()?.into(), unsafe { end.assume_init() }))
     }
   }
@@ -319,14 +319,11 @@ impl<'a> Parser<'a> {
     while self.idx < self.source.len() {
       let c = self.cur();
       match c {
-        b' ' | b'\n' => {
-          self.idx += 1;
-          continue
-        }
+        b' ' | b'\n' => self.idx += 1,
         b'\t' => {
           let start = self.idx;
           self.idx += 1;
-          while let Some(b'\t') = self.cur_opt() {
+          while self.cur_opt() == Some(b'\t') {
             self.idx += 1
           }
           self
@@ -395,7 +392,7 @@ impl<'a> Parser<'a> {
     let start = self.idx;
     loop {
       self.idx += 1;
-      if !self.cur_opt().map_or(false, ident_rest) {
+      if !self.cur_opt().is_some_and(ident_rest) {
         let sp = (start..self.idx).into();
         if self.restart_pos.is_none() && CommandKeyword::parse(self.span(sp)).is_some() {
           self.restart_pos = Some(start);
@@ -450,7 +447,7 @@ impl<'a> Parser<'a> {
     loop {
       match self.ident_() {
         None => return (modifiers, None),
-        Some(id) => match Modifiers::from_name(self.span(id)) {
+        Some(id) => match Modifiers::from_keyword(self.span(id)) {
           Modifiers::NONE => return (modifiers, Some(id)),
           m => {
             if modifiers.intersects(m) {
@@ -506,7 +503,11 @@ impl<'a> Parser<'a> {
     }
     let ty = if self.chr(b':').is_some() { Some(self.ty()?) } else { None };
     let end = self.chr_err(if curly { b'}' } else { b')' })?;
-    Ok(Some(((start..end).into(), locals, ty)))
+    let span = (start..end).into();
+    if curly && matches!(ty, Some(Type::Formula(_))) {
+      return Err(ParseError::new(span, "formulas must be in regular binders".into()))
+    }
+    Ok(Some((span, locals, ty)))
   }
 
   fn binders(&mut self) -> Result<Vec<Binder>> {
@@ -565,7 +566,7 @@ impl<'a> Parser<'a> {
           Some(b'n') => b'\n',
           Some(b'r') => b'\r',
           Some(b'\"') => b'\"',
-          Some(b'x') | Some(b'X') if self.idx + 2 <= self.source.len() => {
+          Some(b'x' | b'X') if self.idx + 2 <= self.source.len() => {
             let c1 = (self.cur(), self.idx += 1).0;
             let c2 = (self.cur(), self.idx += 1).0;
             if let (Some(h1), Some(h2)) = ((c1 as char).to_digit(16), (c2 as char).to_digit(16)) {
@@ -609,7 +610,7 @@ impl<'a> Parser<'a> {
   fn decimal(&mut self, mut val: BigUint) -> BigUint {
     while self.idx < self.source.len() {
       let c = self.cur();
-      if !(b'0'..=b'9').contains(&c) {
+      if !c.is_ascii_digit() {
         break
       }
       self.idx += 1;
@@ -628,11 +629,11 @@ impl<'a> Parser<'a> {
     if self.cur() == b'0' {
       self.idx += 1;
       match self.cur_opt() {
-        Some(b'x') | Some(b'X') => {
+        Some(b'x' | b'X') => {
           self.idx += 1;
           while self.idx < self.source.len() {
             let c = self.cur();
-            if (b'0'..=b'9').contains(&c) {
+            if c.is_ascii_digit() {
               self.idx += 1;
               val = 16_u8 * val + (c - b'0');
             } else if (b'A'..=b'F').contains(&c) {
@@ -764,16 +765,16 @@ impl<'a> Parser<'a> {
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
-            msg: format!("unknown keyword '{}'", unsafe { std::str::from_utf8_unchecked(k) })
-              .into(),
+            msg: format!("unknown keyword '{}'", String::from_utf8_lossy(k)).into(),
           }),
         }
       }
       Some(b'$') => {
-        let f = unwrap_unchecked!(self.formula()?);
+        // Safety: `formula()` only returns `Ok(None)` on non-`$` input
+        let f = unsafe { self.formula()?.unwrap_unchecked() };
         Ok(SExpr { span: f.0, k: SExprKind::Formula(f) })
       }
-      Some(c) if (b'0'..=b'9').contains(&c) => {
+      Some(c) if c.is_ascii_digit() => {
         let (span, n) = self.number()?;
         Ok(SExpr { span, k: SExprKind::Number(n) })
       }
@@ -803,7 +804,7 @@ impl<'a> Parser<'a> {
     if ty.is_none() && val.is_none() {
       return self.err_str("type or value expected")
     }
-    Ok((self.chr_err(b';')?, Decl { mods, k, bis, id, ty, val }))
+    Ok((self.chr_err(b';')?, Decl { mods, k, id, bis, ty, val }))
   }
 
   fn decl_stmt(
@@ -817,18 +818,10 @@ impl<'a> Parser<'a> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
     for i in trim.into_iter().rev() {
-      if whitespace(self.source[i]) {
-        trim.end -= 1
-      } else {
-        break
-      }
+      if whitespace(self.source[i]) { trim.end -= 1 } else { break }
     }
     for i in trim {
-      if whitespace(self.source[i]) {
-        trim.start += 1
-      } else {
-        break
-      }
+      if whitespace(self.source[i]) { trim.start += 1 } else { break }
     }
     if { trim }.any(|i| whitespace(self.source[i])) {
       return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))
@@ -841,7 +834,7 @@ impl<'a> Parser<'a> {
 
   fn prec(&mut self) -> Result<Prec> {
     match self.cur_opt() {
-      Some(c) if (b'0'..=b'9').contains(&c) => {
+      Some(c) if c.is_ascii_digit() => {
         let (span, n) = self.number()?;
         Ok(Prec::Prec(
           n.to_u32().ok_or_else(|| ParseError::new(span, "precedence out of range".into()))?,
@@ -939,9 +932,8 @@ impl<'a> Parser<'a> {
                 delim_end += 1
               }
               _ =>
-                break self
-                  .errors
-                  .push(ParseError::new(start..end, "delimiter must have one character".into())),
+                break self.errors.push(
+                  ParseError::new(start..delim_end, "delimiter must have one character".into())),
             }
           }
         }
@@ -1084,8 +1076,7 @@ impl<'a> Parser<'a> {
             Err(ParseError {
               pos: id,
               level: ErrorLevel::Error,
-              msg: format!("unknown command '{}'", unsafe { std::str::from_utf8_unchecked(k) })
-                .into(),
+              msg: format!("unknown command '{}'", String::from_utf8_lossy(k)).into(),
             })
           }
         }
@@ -1144,6 +1135,7 @@ impl<'a> Parser<'a> {
 }
 
 /// Main entry-point. Creates a [`Parser`] and parses a passed file.
+///
 /// `old` contains the last successful parse of the same file, in order to reuse
 /// previous parsing work. The [`Position`] denotes the first byte where the
 /// new file differs from the old one.

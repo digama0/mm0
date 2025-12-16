@@ -12,7 +12,7 @@ macro_rules! id_wrapper {
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]
-    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
+    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
     pub struct $id(pub $ty);
     #[cfg(feature = "memory")]
     mm0_deepsize::deep_size_0!($id);
@@ -21,6 +21,11 @@ macro_rules! id_wrapper {
       /// Convert this newtyped integer into its underlying integer.
       #[must_use]
       pub fn into_inner(self) -> $ty { self.0 }
+      /// An invalid ID value.
+      pub const INVALID: Self = Self(<$ty>::MAX);
+    }
+    impl Default for $id {
+      fn default() -> Self { Self::INVALID }
     }
 
     impl fmt::Debug for $id {
@@ -43,8 +48,27 @@ macro_rules! id_wrapper {
       pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
 
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
+      #[allow(clippy::cast_possible_truncation)]
       pub fn enum_iter(&self) -> impl Iterator<Item = ($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
+      }
+
+      /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
+      #[allow(clippy::cast_possible_truncation)]
+      pub fn enum_iter_mut(&mut self) -> impl Iterator<Item = ($id, &mut T)> {
+        self.0.iter_mut().enumerate().map(|(i, t)| ($id(i as $ty), t))
+      }
+
+      /// Returns the index that will be returned by the next call to `push`.
+      #[must_use]
+      #[allow(clippy::cast_possible_truncation)]
+      pub fn peek(&self) -> $id { $id(self.0.len() as $ty) }
+
+      /// Push a new element to the vector, and return the ID of the element just pushed.
+      pub fn push(&mut self, t: T) -> $id {
+        let n = self.peek();
+        self.0.push(t);
+        n
       }
     }
 
@@ -81,8 +105,9 @@ id_wrapper!(TermId: u32, TermVec);
 id_wrapper!(ThmId: u32, ThmVec);
 id_wrapper!(AtomId: u32, AtomVec);
 
-bitflags! {
+bitflags::bitflags! {
   /// Visibility and sort modifiers for Sort statements and Declarations.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
   pub struct Modifiers: u8 {
     // Note: These particular values are important because they are used in the MMB format.
 
@@ -129,7 +154,7 @@ impl Modifiers {
 
   /// Construct a [`Modifiers`] from a byte.
   #[must_use]
-  pub fn new(bits: u8) -> Self { Self { bits } }
+  pub fn new(bits: u8) -> Self { Self::from_bits_retain(bits) }
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
@@ -140,7 +165,7 @@ impl Modifiers {
 
   /// Parses a string into a singleton [`Modifiers`], or [`NONE`](Self::NONE) if the string is not valid.
   #[must_use]
-  pub fn from_name(s: &[u8]) -> Modifiers {
+  pub fn from_keyword(s: &[u8]) -> Modifiers {
     match s {
       b"pure" => Modifiers::PURE,
       b"strict" => Modifiers::STRICT,

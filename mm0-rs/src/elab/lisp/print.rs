@@ -12,6 +12,7 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
+use mm0_util::alphanumber;
 use crate::{AtomId, LispKind, LispVal, lisp::{Uncons, InferTarget, Proc, ProcPos},
   LinedString, Environment, Elaborator, TermId, ThmId, SortId,
   Sort, Term, Thm, DeclKey, ast::{SExpr, SExprKind, span_atom}};
@@ -48,7 +49,7 @@ impl<'a> FormatEnv<'a> {
   }
 }
 
-impl<'a> Deref for FormatEnv<'a> {
+impl Deref for FormatEnv<'_> {
   type Target = Environment;
   fn deref(&self) -> &Environment {self.env}
 }
@@ -65,12 +66,12 @@ impl Elaborator {
   }
 }
 
-impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
+impl<D: EnvDisplay + ?Sized> fmt::Display for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
 /// Items implementing [`EnvDebug`] can be put in formatters using `{:#?}`.
-impl<'a, D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'a, D> {
+impl<D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.e.env_dbg(self.fe, f)
   }
@@ -93,24 +94,6 @@ fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv<'
     Some(e) if e.exactly(0) => if start {write!(f, "()")} else {write!(f, ")")},
     Some(e) => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
   }
-}
-
-/// Translate a number into an alphabetic numbering system, indexing into the following infinite
-/// sequence:
-/// ```ignore
-/// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
-/// ```
-pub(crate) fn alphanumber(n: usize) -> String {
-  let mut out = Vec::with_capacity(2);
-  let mut n = n + 1;
-  while n != 0 {
-    #[allow(clippy::cast_possible_truncation)]
-    { out.push(b'a' + ((n - 1) % 26) as u8); }
-    #[allow(clippy::integer_division)]
-    { n = (n - 1) / 26; }
-  }
-  out.reverse();
-  unsafe { String::from_utf8_unchecked(out) }
 }
 
 impl EnvDisplay for AtomId {
@@ -166,7 +149,7 @@ impl EnvDisplay for LispKind {
             b'\r' => write!(f, "\\r")?,
             b'\"' => write!(f, "\\\"")?,
             0x20..=0x7e => write!(f, "{}", c as char)?,
-            _ => write!(f, "\\x{:02x}", c)?,
+            _ => write!(f, "\\x{c:02x}")?,
           }
         }
         write!(f, "\"")
@@ -175,30 +158,29 @@ impl EnvDisplay for LispKind {
       LispKind::Bool(false) => "#f".fmt(f),
       LispKind::Syntax(s) => s.fmt(f),
       LispKind::Undef => write!(f, "#undef"),
-      LispKind::Proc(Proc::Builtin(p)) => p.fmt(f),
+      &LispKind::Proc(Proc::Builtin(p) | Proc::Lambda {pos: ProcPos::Builtin(p), ..}) => p.fmt(f),
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
-        write!(f, "#[fn at {} {}:{}]", fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn at {fname} {}:{}>", r.line + 1, r.character + 1)
       }
       &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, _, a), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
         let x = &fe.data[a].name;
-        write!(f, "#[fn {} at {} {}:{}]", x, fname, r.line + 1, r.character + 1)
+        write!(f, "#<fn {x} at {fname} {}:{}>", r.line + 1, r.character + 1)
       }
-      LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#[match cont]"),
-      LispKind::Proc(Proc::RefineCallback) => write!(f, "#[refine]"),
-      LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
-      LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#[merge-map]"),
-      #[cfg(feature = "mmc")]
-      LispKind::Proc(Proc::MmcCompiler(_)) => write!(f, "#[mmc-compiler]"),
+      LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#<match cont>"),
+      LispKind::Proc(Proc::RefineCallback) => write!(f, "#<refine>"),
+      LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#<proof of {}>", fe.to(x)),
+      LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#<merge-map>"),
+      LispKind::Proc(Proc::Dyn(c)) => EnvDisplay::fmt(&**c.borrow(), fe, f),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;
         for (a, v) in m {write!(f, " [{} {}]", fe.data[*a].name, fe.to(v))?}
         write!(f, ")")
       }
-      LispKind::Ref(m) if m.too_many_readers() => write!(f, "#[ref]"),
+      LispKind::Ref(m) if m.too_many_readers() => write!(f, "#<ref>"),
       LispKind::Ref(m) => m.get(|e| e.fmt(fe, f)),
       &LispKind::MVar(n, _) => write!(f, "?{}", alphanumber(n)),
       LispKind::Goal(e) => write!(f, "(goal {})", fe.to(e)),
@@ -208,10 +190,10 @@ impl EnvDisplay for LispKind {
 
 impl EnvDisplay for Uncons {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Uncons::New(e) => e.fmt(fe, f),
-      Uncons::List(es) => list(es, None, true, fe, f),
-      Uncons::DottedList(es, r) => list(es, Some(r), true, fe, f),
+    match &*self.e {
+      LispKind::List(es) => list(&es[self.offset as usize..], None, true, fe, f),
+      LispKind::DottedList(es, r) => list(&es[self.offset as usize..], Some(r), true, fe, f),
+      _ => self.e.fmt(fe, f),
     }
   }
 }
@@ -261,7 +243,7 @@ impl Display for Sort {
 impl EnvDisplay for Term {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     if let Some(DeclKey::Term(tid)) = fe.env.data[self.atom].decl {
-      fe.pretty(|p| p.term(tid, true).render_fmt(80, f))
+      fe.pretty(|p| p.term_and_notations(tid, true).render_fmt(80, f))
     } else { panic!("undeclared term") }
   }
 }
@@ -278,7 +260,8 @@ impl EnvDisplay for SExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
       &SExprKind::Atom(a) => {
-        unsafe {std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a))}.fmt(f)
+        // Safety: Atoms are ASCII
+        unsafe { std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a)) }.fmt(f)
       }
       SExprKind::List(es) => {
         let mut it = es.iter();
@@ -297,7 +280,7 @@ impl EnvDisplay for SExpr {
         write!(f, ". {})", fe.to(r))
       }
       SExprKind::Number(n) => n.fmt(f),
-      SExprKind::String(s) => write!(f, "{:?}", s),
+      SExprKind::String(s) => write!(f, "{s:?}"),
       SExprKind::Bool(true) => "#t".fmt(f),
       SExprKind::Bool(false) => "#f".fmt(f),
       SExprKind::DocComment(_, e) => e.fmt(fe, f),

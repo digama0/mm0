@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Eta reduce" #-}
 module MM0.FrontEnd.MathParser (parseFormula, parseFormulaProv, appPrec) where
 
 import Control.Monad.Except
@@ -32,7 +34,7 @@ parseFormula :: Sort -> Formula -> LocalCtxM SExpr
 parseFormula s = parseFormulaWith (coerce s)
 
 parseFormulaProv :: Formula -> LocalCtxM SExpr
-parseFormulaProv = parseFormulaWith (\t -> fst <$> coerceProv t)
+parseFormulaProv = parseFormulaWith (fmap fst . coerceProv)
 
 tkMatch :: (Token -> Maybe b) -> (Token -> b -> ParserM a) -> ParserM a -> ParserM a
 tkMatch f yes no = StateT $ \case
@@ -91,7 +93,7 @@ parseLiterals' n1 lhs ls ll = do
   go (I.singleton n1 lhs') ll
   where
   go :: I.IntMap SExpr -> [PLiteral] -> ParserM (I.IntMap SExpr, Int, (SExpr, Sort))
-  go m [] = throwError "bad literals"
+  go _ [] = throwError "bad literals"
   go m [PVar n p] = (m,n,) <$> parsePrefix p
   go m (PConst t : lits) = tk t >> go m lits
   go m (PVar n p : lits) = do

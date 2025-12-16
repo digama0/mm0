@@ -1,4 +1,4 @@
-import mm0.basic
+import mm0.meta.meta
 
 namespace mm0
 
@@ -7,7 +7,7 @@ namespace mm0
 @[mm0 ax] def neg : wff → wff := not
 attribute [mm0_alias neg] not
 local infixr ` => `:30 := imp
-local prefix `~` := neg
+local prefix `~`:90 := neg
 notation `wi` := imp
 notation `wn` := neg
 
@@ -21,7 +21,7 @@ notation `wn` := neg
 @[mm0] theorem a1i {ph ps: wff} (h : ph) : ps => ph := ax_mp h ax_1
 
 @[mm0] def iff (ph ps : wff) := ~((ph => ps) => ~(ps => ph))
-local infix ` <-> `:20 := iff
+local infix (name := mm0.iff) ` <-> `:20 := iff
 
 @[mm0] theorem a2i {ph ps ch: wff} (h: (imp ph (imp ps ch))):
   (imp (imp ph ps) (imp ph ch)) :=

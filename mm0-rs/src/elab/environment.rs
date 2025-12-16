@@ -1,19 +1,22 @@
 //! The [`Environment`] contains all elaborated proof data, as well as the lisp global context.
 
 use std::ops::Deref;
-use std::convert::TryInto;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
 use std::collections::HashMap;
-use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
+use debug_derive::EnvDebug;
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use mm0b_parser::MAX_BOUND_VARS;
+use super::{BoxError, ElabError, FrozenEnv, FrozenLispVal, spans::Spans, verify::VERIFY_ON_ADD};
 use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
   Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
-  lisp::{LispVal, RefineSyntax, Syntax}};
+  elab::verify::VerifyError, lisp::{LispVal, RefineSyntax, Syntax, PatternSyntax}};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 
 /// The information associated to a defined [`Sort`].
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomId,
@@ -35,6 +38,7 @@ pub struct Sort {
 }
 
 /// The type of a variable in the binder list of an `axiom`/`term`/`def`/`theorem`.
+///
 /// The variables themselves are not named because their names are derived from their
 /// positions in the binder list (i.e. `{v0 : s} (v1 : t v0) (v2 : t)`)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -65,31 +69,41 @@ impl Type {
   #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
-/// An [`ExprNode`] is interpreted inside a context containing the `Vec<`[`Type`]`>`
-/// args and the `Vec<ExprNode>` heap.
-#[derive(Clone, Debug, DeepSizeOf)]
+/// An [`ExprNode`] is interpreted inside a context containing the <code>[[Type]]</code>
+/// args, the <code>[[ExprNode]]</code> heap and the <code>[[ExprNode]]</code> store for subterms.
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),
-  /// `App(t, nodes)` is an application of term constructor `t` to subterms
-  App(TermId, Box<[ExprNode]>),
+  /// `App(t, [nodes..])` is an application of term constructor `t` to subterms
+  App(TermId, usize),
 }
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
 /// and a final expression. See [`ExprNode`] for explanation of the variants.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ExprNode]>,
-  /// The target expression.
-  pub head: ExprNode,
+  /// The store, which is used for subexpressions that only appear once.
+  /// References in `ExprNode` other than `Ref(_)` refer to the store.
+  /// The last expression in the store is the head expression.
+  pub store: Box<[ExprNode]>,
+}
+
+impl Expr {
+  /// Retrieve the head expression node.
+  #[must_use] pub fn head(&self) -> &ExprNode { self.store.last().expect("bad store") }
 }
 
 /// The value of a term or def.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TermKind {
   /// This is a `term`, which has no definition
   Term,
@@ -100,7 +114,8 @@ pub enum TermKind {
 }
 
 /// The data associated to a `term` or `def` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Term {
   /// The name of the term, as an atom.
   pub atom: AtomId,
@@ -126,58 +141,51 @@ pub struct Term {
   pub kind: TermKind,
 }
 
-/// A [`ProofNode`] is a stored proof term. This is an extension of [`ExprNode`] with
-/// more constructors, so a [`ProofNode`] can represent an expr, a proof, or a conversion,
-/// and the typing determines which. A [`ProofNode`] is interpreted in a context of
-/// variables `Vec<Type>`, and a heap `Vec<ProofNode>`.
-#[derive(Clone, Debug, DeepSizeOf)]
+/// A [`ProofNode`] is a stored proof term.
+///
+/// This is an extension of [`ExprNode`] with more constructors, so a [`ProofNode`] can
+/// represent an expr, a proof, or a conversion, and the typing determines which.
+/// A [`ProofNode`] is interpreted in a context of variables <code>[[Type]]</code>,
+/// a heap <code>[[ProofNode]]</code>, and a store <code>[[ProofNode]]</code> for subterms.
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProofNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomId, SortId),
-  /// `Term {term, args}` is an application of term constructor `term` to subterms
-  Term {
-    /** the term constructor */ term: TermId,
-    /** the subterms */ args: Box<[ProofNode]>,
-  },
+  /// `Term(term, [args..])` is an application of term constructor `term` to subterms.
+  /// The arguments are packed into storage with `args = store[p..][..args.len]`.
+  Term(TermId, usize),
   /// `Hyp(i, e)` is hypothesis `i` (`hyps[i]` will be a reference to element),
   /// which is a proof of `|- e`.
-  Hyp(usize, Box<ProofNode>),
-  /// `Thm {thm, args, res}` is a proof of `|- res` by applying theorem `thm` to arguments
-  /// `args`. `args` is a list of length `thm.args.len() + thm.hyps.len()` containing the
-  /// substitution, followed by the hypothesis subproofs, and it is required that `res`
-  /// and the subproofs be the result of substitution of the theorem conclusion and hypotheses
-  /// under the substitution.
-  Thm {
-    /** the theorem to apply */ thm: ThmId,
-    /** the substitution, and the subproofs */ args: Box<[ProofNode]>,
-    /** the substituted conclusion */ res: Box<ProofNode>,
-  },
-  /// `Conv(tgt, conv, proof)` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
-  Conv(Box<(ProofNode, ProofNode, ProofNode)>),
+  Hyp(usize, usize),
+  /// `Thm(thm, [res, args.., hyps..])` is a proof of `|- res` by applying theorem `thm` to
+  /// arguments `args` and `hyps`. `args` is a list of length `thm.args.len()` containing the
+  /// substitution, and `hyps` is a list of length `thm.hyps.len()` containing by the hypothesis
+  /// subproofs, and it is required that `res` and the subproofs be the result of substitution
+  /// of the theorem conclusion and hypotheses under the substitution.
+  /// The arguments are packed into storage with
+  /// `res = store[p], args = store[p+1..][..args.len], hyps = [p+1+args.len..][..hyps.len]`.
+  Thm(ThmId, usize),
+  /// `Conv([tgt, conv, proof])` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
+  /// The arguments are packed into storage with
+  /// `tgt = store[p], conv = store[p+1], proof = store[p+2]`.
+  Conv(usize),
   /// `Refl(e): e = e`
-  Refl(Box<ProofNode>),
-  /// `Refl(p): e2 = e1` if `p: e1 = e2`
-  Sym(Box<ProofNode>),
-  /// `Cong {term, args}: term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
-  Cong {
-    /** the term constructor */ term: TermId,
-    /** the conversion proofs for the arguments */ args: Box<[ProofNode]>,
-  },
-  /// `Unfold {term, args, res: (sub_lhs, p)}` is a proof of `term args = rhs` if
+  Refl(usize),
+  /// `Sym(p): e2 = e1` if `p: e1 = e2`
+  Sym(usize),
+  /// `Cong(term, [args..]): term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
+  /// The arguments are packed into storage with `args = store[p..][..args.len]`.
+  Cong(TermId, usize),
+  /// `Unfold {term, (sub_lhs, c, args)}` is a proof of `term args = rhs` if
   /// `term` is a definition and `sub_lhs` is the result of
-  /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
-  Unfold {
-    /// the definition to unfold
-    term: TermId,
-    /// the (non-dummy) parameters to the term
-    args: Box<[ProofNode]>,
-    /// - `sub_lhs`: the result of unfolding the definition (for some choice of dummy names)
-    /// - `p`: the proof that `sub_lhs = rhs`
-    res: Box<(ProofNode, ProofNode)>,
-  },
+  /// substituting `args` into the definition of `term`, and `c: sub_lhs = rhs`.
+  /// The arguments are packed into storage with
+  /// `sub_lhs = store[p], c = store[p+1], args = store[p+2..p+2+term.args.len]`.
+  Unfold(TermId, usize),
 }
 
 impl ProofNode {
@@ -191,28 +199,53 @@ impl ProofNode {
       }
     }
   }
+
+  /// Unpack the arguments to a [`ProofNode::Conv`]
+  #[inline] #[must_use] pub fn unpack_conv(args: &[ProofNode]) -> (&ProofNode, &ProofNode, &ProofNode) {
+    if let [tgt, conv, proof, ..] = args { (tgt, conv, proof) } else { panic!("invalid store") }
+  }
 }
 
-impl From<&ExprNode> for ProofNode {
-  fn from(e: &ExprNode) -> ProofNode {
-    match *e {
-      ExprNode::Ref(n) => ProofNode::Ref(n),
-      ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
-      ExprNode::App(term, ref es) => ProofNode::Term {
-        term, args: es.iter().map(|e| e.into()).collect()
-      }
-    }
+impl Term {
+  /// Unpack the arguments to a [`ExprNode::App`]
+  #[inline] #[must_use] pub fn unpack_app<'a>(&self, args: &'a [ExprNode]) -> &'a [ExprNode] {
+    &args[..self.args.len()]
+  }
+  /// Unpack the arguments to a [`ProofNode::Term`] or [`ProofNode::Cong`]
+  #[inline] #[must_use] pub fn unpack_term<'a>(&self, args: &'a [ProofNode]) -> &'a [ProofNode] {
+    &args[..self.args.len()]
+  }
+  /// Unpack the arguments to a [`ProofNode::Unfold`]
+  #[inline] #[must_use] pub fn unpack_unfold<'a>(&self,
+    args: &'a [ProofNode]
+  ) -> (&'a ProofNode, &'a ProofNode, &'a [ProofNode]) {
+    if let [sub_lhs, c, args @ ..] = args {
+      (sub_lhs, c, &args[..self.args.len()])
+    } else { panic!("invalid store") }
+  }
+}
+
+impl Thm {
+  /// Unpack the arguments to a [`ProofNode::Thm`]
+  #[inline] #[must_use] pub fn unpack_thm<'a>(&self,
+    args: &'a [ProofNode]
+  ) -> (&'a ProofNode, &'a [ProofNode], &'a [ProofNode]) {
+    if let [res, args @ ..] = args {
+      let (args, hyps) = args.split_at(self.args.len());
+      (res, args, &hyps[..self.hyps.len()])
+    } else { panic!("invalid store") }
   }
 }
 
 /// The [`Proof`] type stores proof term dags using a local context of proof nodes
 /// and a final proof. See [`ProofNode`] for explanation of the variants.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ProofNode]>,
-  /// The hypotheses, where `hyps[i]` points to [`Hyp`]`(i, e)`. Because these terms
+  /// The hypotheses, where `hyps[i]` points to <code>[Hyp](i, e)</code>. Because these terms
   /// are deduplicated with everything else, the [`Hyp`] itself will probably be
   /// on the heap (unless it is never used), and then a [`Ref`] will be stored
   /// in the `hyps` array.
@@ -220,12 +253,20 @@ pub struct Proof {
   /// [`Hyp`]: ProofNode::Hyp
   /// [`Ref`]: ProofNode::Ref
   pub hyps: Box<[ProofNode]>,
-  /// The target proof term.
-  pub head: ProofNode,
+  /// The store, which is used for subexpressions that only appear once.
+  /// References in `ProofNode` other than `Ref` refer to the store.
+  /// The last expression in the store is the head expression.
+  pub store: Box<[ProofNode]>,
+}
+
+impl Proof {
+  /// Retrieve the head proof node.
+  #[must_use] pub fn head(&self) -> &ProofNode { self.store.last().expect("bad store") }
 }
 
 /// The proof of the axiom or theorem.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ThmKind {
   /// This is an `axiom`, which has no proof.
   Axiom,
@@ -236,14 +277,15 @@ pub enum ThmKind {
 }
 
 /// The data associated to an `axiom` or `theorem` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Thm {
   /// The name of the theorem, as an atom.
   pub atom: AtomId,
   /// The span around the name of the theorem. This is the `"foo"` in `theorem foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `theorem`, the only allowed modifier is
-  /// [`PUB`](Modifiers::PUB), and for `term` no modifiers are permitted.
+  /// [`PUB`](Modifiers::PUB), and for `axiom` no modifiers are permitted.
   pub vis: Modifiers,
   /// The span around the entire declaration for the theorem, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
@@ -256,6 +298,8 @@ pub struct Thm {
   pub args: Box<[(Option<AtomId>, Type)]>,
   /// The heap used as the context for the `hyps` and `ret`.
   pub heap: Box<[ExprNode]>,
+  /// The store used as the context for the `hyps` and `ret`.
+  pub store: Box<[ExprNode]>,
   /// The expressions for the hypotheses (and their names, which are not used except
   /// in pretty printing and conversion back to s-exprs).
   pub hyps: Box<[(Option<AtomId>, ExprNode)]>,
@@ -272,19 +316,23 @@ pub struct Thm {
 
 /// An `output string` directive, which is anonymous and hence stored directly
 /// in the [`StmtTrace`] list.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct OutputString {
   /// The span of the full statement.
   pub span: FileSpan,
   /// The heap of expressions used in the `exprs`.
   pub heap: Box<[ExprNode]>,
-  /// The expressions to output.
-  pub exprs: Box<[ExprNode]>,
+  /// The store of expressions used in the `exprs`.
+  pub store: Box<[ExprNode]>,
+  /// The last `exprs` expressions in the store are the expressions to output.
+  pub exprs: usize,
 }
 
 /// A global order on sorts, declarations ([`Term`] and [`Thm`]), and lisp
 /// global definitions based on declaration order.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum StmtTrace {
   /// A `sort foo;` declaration
   Sort(AtomId),
@@ -310,7 +358,8 @@ crate::deep_size_0!(DeclKey);
 
 /// A [`Literal`] is an element in a processed `notation` declaration. It is either a
 /// constant symbol, or a variable with associated parse precedence.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Literal {
   /// `Var(i, p)` means that we should parse at precedence `p` at this position,
   /// and the resulting expression should be inserted as the `i`th subexpression of
@@ -321,7 +370,8 @@ pub enum Literal {
 }
 
 /// The data associated to a `notation`, `infixl`, `infixr`, or `prefix` declaration.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct NotaInfo {
   /// The span around the name of the term. This is the `"foo"` in `notation foo ...;`
   pub span: FileSpan,
@@ -335,12 +385,47 @@ pub struct NotaInfo {
   pub rassoc: Option<bool>,
   /// The literals of the notation declaration. For a `notation` these are declared directly,
   /// but for a `prefix` or `infix`, the equivalent notation literals are generated.
+  ///
+  /// For (generalized) infix notations, this list starts with `Var, Const` corresponding
+  /// to the first variable and then the main constant, while for prefix notations
+  /// the leading constant is omitted from the list.
   pub lits: Vec<Literal>,
+}
+
+impl NotaInfo {
+  /// Returns `Some(prec)` if this generalized infix notation is equivalent to a
+  /// plain infix declaration with the given `rassoc, tk, prec`.
+  #[must_use] pub fn is_infix(&self) -> Option<(bool, &ArcString, u32)> {
+    let rassoc = self.rassoc?;
+    if let [
+      Literal::Var(0, Prec::Prec(mut prec)),
+      Literal::Const(ref tk),
+      Literal::Var(1, Prec::Prec(mut prec2))
+    ] = *self.lits {
+      if rassoc { std::mem::swap(&mut prec, &mut prec2) }
+      if prec2 != prec + 1 { return None }
+      Some((rassoc, tk, prec))
+    } else { None }
+  }
+
+  /// Returns `Some(prec)` if this prefix notation is equivalent to a prefix declaration.
+  #[must_use] pub fn is_prefix(&self, lead_prec: Prec) -> bool {
+    if let Some((last, rest)) = self.lits.split_last() {
+      if self.rassoc != Some(true) { return false }
+      for (i, lit) in rest.iter().enumerate() {
+        if !matches!(*lit, Literal::Var(j, Prec::Max) if j == i) { return false }
+      }
+      matches!(*last, Literal::Var(j, prec) if j == rest.len() && prec == lead_prec)
+    } else {
+      true
+    }
+  }
 }
 
 /// A coercion between two sorts. These are interpreted in a context `c: s1 -> s2` where `s1` and
 /// `s2` are known.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum Coe {
   /// This asserts `t` is a unary term constructor from `s1` to `s2`.
   One(FileSpan, TermId),
@@ -372,7 +457,8 @@ impl Coe {
 }
 
 /// The (non-logical) data used by the dynamic parser to interpret formulas.
-#[derive(Default, Clone, Debug, DeepSizeOf)]
+#[derive(Default, Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ParserEnv {
   /// A bitset of all left delimiters.
   pub delims_l: Delims,
@@ -403,9 +489,11 @@ pub struct ParserEnv {
 
 /// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
 /// with the results being merged according to this strategy.
+///
 /// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
 /// which is to overwrite the original definition.
-#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum MergeStrategyInner {
   /// The `atom-map` merge strategy, which assumes that both the stored value and
   /// the new value are atom maps, and overwrites or inserts all keys in the old map
@@ -419,12 +507,14 @@ pub enum MergeStrategyInner {
 
 /// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
 /// with the results being merged according to this strategy.
+///
 /// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
 /// which is to overwrite the original definition.
 pub type MergeStrategy = Option<Rc<MergeStrategyInner>>;
 
 /// A global lisp definition entry.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct LispData {
   /// A `(span, full)` pair where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
@@ -445,7 +535,8 @@ impl Deref for LispData {
 }
 
 /// The data associated to an atom.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct AtomData {
   /// The string form of the atom.
   pub name: ArcString,
@@ -470,23 +561,42 @@ impl AtomData {
 }
 
 /// The different kind of objects that can appear in a [`Spans`].
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
+  /// The bool is true if this is the definition itself.
   /// This sort must actually exist in the [`Environment`] if is constructed
-  Sort(SortId),
-  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
+  Sort(bool, SortId),
+  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition and rename work.
+  /// The bool is true if this is the definition itself.
   /// This term must actually exist in the [`Environment`] if is constructed
-  Term(TermId, Span),
+  Term(bool, TermId),
+  /// This is a term/def notation; hovering yields `term foo ...;` and go-to-definition works.
+  /// This term must actually exist in the [`Environment`] if is constructed
+  TermNota(TermId, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
+  /// The bool is true if this is the definition itself.
   /// This theorem must actually exist in the [`Environment`] if is constructed
-  Thm(ThmId),
+  Thm(bool, ThmId),
   /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder.
+  /// The bool is true if this is the definition itself.
   /// This should be a variable in the statement.
-  Var(AtomId),
+  Var(bool, AtomId),
+  /// This is a hypothesis; hovering yields `(h : $ ty $)` and go-to-definition takes you to the binder.
+  /// The bool is true if this is the definition itself.
+  /// This should be a variable in the statement.
+  Hyp(bool, AtomId),
   /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works.
+  /// The first bool is true if this is the definition itself.
+  /// The second bool is true if this is a call operation.
   /// Either `lisp` or `graveyard` for the atom must be non-`None` if this is constructed
-  Global(AtomId),
+  Global(bool, bool, AtomId),
+  /// This is a local lisp variable.
+  /// The first bool is true if this is the definition itself.
+  /// The second bool is true if this is a call operation.
+  /// The bool is true if this is the definition itself.
+  LispVar(bool, bool, AtomId),
   /// This is an expression; hovering shows the type and go-to-definition goes to the head term definition
   Expr(FrozenLispVal),
   /// This is a proof; hovering shows the intermediate statement
@@ -494,10 +604,14 @@ pub enum ObjectKind {
   Proof(FrozenLispVal),
   /// This is a lisp syntax item; hovering shows the doc comment
   Syntax(Syntax),
+  /// This is a syntax element in a pattern; hovering shows the doc comment
+  PatternSyntax(PatternSyntax),
   /// This is a refine tactic syntax item; hovering shows the doc comment
   RefineSyntax(RefineSyntax),
   /// This is an import; hovering does nothing and go-to-definition goes to the file
   Import(FileRef),
+  /// This is comment span in a math expression, tracked for semantic highlighting
+  MathComment,
 }
 
 impl ObjectKind {
@@ -506,22 +620,39 @@ impl ObjectKind {
   /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn expr(e: LispVal) -> ObjectKind {
-    ObjectKind::Expr(unsafe {FrozenLispVal::new(e)})
+    // Safety: ObjectKind objects are write-only during the construction phase
+    ObjectKind::Expr(unsafe { FrozenLispVal::new(e) })
   }
   /// Create an [`ObjectKind`] for a [`Proof`].
   /// # Safety
   /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn proof(e: LispVal) -> ObjectKind {
-    ObjectKind::Proof(unsafe {FrozenLispVal::new(e)})
+    // Safety: ObjectKind objects are write-only during the construction phase
+    ObjectKind::Proof(unsafe { FrozenLispVal::new(e) })
   }
 }
 
+/// A way to track the unique element of a set.
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+pub enum OneOrMore<T> {
+  /// There are no elements.
+  Zero,
+  /// There is one element, of type `T`.
+  One(T),
+  /// There is more than one element, and we do not track them.
+  More,
+}
+
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Environment {
   /// The sort map, which is a vector because sort names are allocated in order.
   pub sorts: SortVec<Sort>,
+  /// The unique provable sort, if one exists.
+  pub provable_sort: OneOrMore<SortId>,
   /// The dynamic parser environment, used for parsing math expressions
   pub pe: ParserEnv,
   /// The term/def map, which is a vector because term names are allocated in order.
@@ -548,11 +679,12 @@ impl Environment {
     AtomId::on_atoms(|name, a| {
       let s: ArcString = name.as_bytes().into();
       atoms.insert(s.clone(), a);
-      data.push(AtomData::new(s))
+      data.push(AtomData::new(s));
     });
     Environment {
       atoms, data,
       sorts: Default::default(),
+      provable_sort: OneOrMore::Zero,
       pe: Default::default(),
       terms: Default::default(),
       thms: Default::default(),
@@ -579,10 +711,11 @@ impl Delims {
   }
 }
 
-/// An auxiliary structure for performing [`Environment`] deep copies. This is needed
-/// because [`AtomId`]s from other, previously elaborated files may not be consistent with
-/// the current file, so we have to remap them to the current file's namespace
-/// during import.
+/// An auxiliary structure for performing [`Environment`] deep copies.
+///
+/// This is needed because [`AtomId`]s from other, previously elaborated files may
+/// not be consistent with the current file, so we have to remap them to the
+/// current file's namespace during import.
 #[derive(Default, Debug)]
 pub struct Remapper {
   /// A mapping of foreign sorts into local sort IDs
@@ -633,40 +766,52 @@ impl Remap for AtomId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.atom[*self] }
 }
+impl Remap for bool {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
+}
 impl<A: Remap, B: Remap> Remap for (A, B) {
   type Target = (A::Target, B::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r)) }
+}
+impl<A: Remap, const N: usize> Remap for [A; N] {
+  type Target = [A::Target; N];
+  fn remap(&self, r: &mut Remapper) -> Self::Target {
+    let arr = self.iter().map(|e| e.remap(r)).collect::<arrayvec::ArrayVec<_, N>>();
+    // Safety: We are collecting an iterator with exactly N elements, so it is initialized
+    unsafe { arr.into_inner_unchecked() }
+  }
 }
 impl<A: Remap, B: Remap, C: Remap> Remap for (A, B, C) {
   type Target = (A::Target, B::Target, C::Target);
   fn remap(&self, r: &mut Remapper) -> Self::Target { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }
 }
-impl<A: Remap> Remap for Option<A> {
-  type Target = Option<A::Target>;
+impl<T: Remap> Remap for Option<T> {
+  type Target = Option<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.as_ref().map(|x| x.remap(r)) }
 }
-impl<A: Remap> Remap for Vec<A> {
-  type Target = Vec<A::Target>;
+impl<T: Remap> Remap for Vec<T> {
+  type Target = Vec<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|x| x.remap(r)).collect() }
 }
-impl<A: Remap> Remap for Box<A> {
-  type Target = Box<A::Target>;
+impl<T: Remap> Remap for Box<T> {
+  type Target = Box<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Box::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Rc<A> {
-  type Target = Rc<A::Target>;
+impl<T: Remap> Remap for Rc<T> {
+  type Target = Rc<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Rc::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Arc<A> {
-  type Target = Arc<A::Target>;
+impl<T: Remap> Remap for Arc<T> {
+  type Target = Arc<T::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { Arc::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Box<[A]> {
-  type Target = Box<[A::Target]>;
+impl<T: Remap> Remap for Box<[T]> {
+  type Target = Box<[T::Target]>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
-impl<A: Remap> Remap for Arc<[A]> {
-  type Target = Arc<[A::Target]>;
+impl<T: Remap> Remap for Arc<[T]> {
+  type Target = Arc<[T::Target]>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
 impl Remap for Type {
@@ -681,10 +826,10 @@ impl Remap for Type {
 impl Remap for ExprNode {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &ExprNode::Ref(i) => ExprNode::Ref(i),
+    match *self {
+      ExprNode::Ref(i) => ExprNode::Ref(i),
       ExprNode::Dummy(a, s) => ExprNode::Dummy(a.remap(r), s.remap(r)),
-      ExprNode::App(t, es) => ExprNode::App(t.remap(r), es.remap(r)),
+      ExprNode::App(t, es) => ExprNode::App(t.remap(r), es),
     }
   }
 }
@@ -693,7 +838,7 @@ impl Remap for Expr {
   fn remap(&self, r: &mut Remapper) -> Self {
     Expr {
       heap: self.heap.remap(r),
-      head: self.head.remap(r),
+      store: self.store.remap(r),
     }
   }
 }
@@ -727,26 +872,25 @@ impl Remap for OutputString {
     OutputString {
       span: self.span.clone(),
       heap: self.heap.remap(r),
-      exprs: self.exprs.remap(r),
+      store: self.store.remap(r),
+      exprs: self.exprs,
     }
   }
 }
 impl Remap for ProofNode {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      &ProofNode::Ref(i) => ProofNode::Ref(i),
+    match *self {
+      ProofNode::Ref(i) => ProofNode::Ref(i),
       ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
-      ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
-      &ProofNode::Hyp(i, ref e) => ProofNode::Hyp(i, e.remap(r)),
-      ProofNode::Thm {thm, args, res} => ProofNode::Thm {
-        thm: thm.remap(r), args: args.remap(r), res: res.remap(r) },
-      ProofNode::Conv(p) => ProofNode::Conv(Box::new((p.0.remap(r), p.1.remap(r), p.2.remap(r)))),
-      ProofNode::Refl(p) => ProofNode::Refl(p.remap(r)),
-      ProofNode::Sym(p) => ProofNode::Sym(p.remap(r)),
-      ProofNode::Cong {term, args} => ProofNode::Cong { term: term.remap(r), args: args.remap(r) },
-      ProofNode::Unfold {term, args, res} => ProofNode::Unfold {
-        term: term.remap(r), args: args.remap(r), res: res.remap(r) },
+      ProofNode::Term(term, p) => ProofNode::Term(term.remap(r), p),
+      ProofNode::Hyp(i, e) => ProofNode::Hyp(i, e),
+      ProofNode::Thm(thm, p) => ProofNode::Thm(thm.remap(r), p),
+      ProofNode::Conv(p) => ProofNode::Conv(p),
+      ProofNode::Refl(p) => ProofNode::Refl(p),
+      ProofNode::Sym(p) => ProofNode::Sym(p),
+      ProofNode::Cong(term, p) => ProofNode::Cong(term.remap(r), p),
+      ProofNode::Unfold(term, p) => ProofNode::Unfold(term.remap(r), p),
     }
   }
 }
@@ -756,7 +900,7 @@ impl Remap for Proof {
     Proof {
       heap: self.heap.remap(r),
       hyps: self.hyps.remap(r),
-      head: self.head.remap(r),
+      store: self.store.remap(r),
     }
   }
 }
@@ -780,6 +924,7 @@ impl Remap for Thm {
       doc: self.doc.clone(),
       args: self.args.remap(r),
       heap: self.heap.remap(r),
+      store: self.store.remap(r),
       hyps: self.hyps.remap(r),
       ret: self.ret.remap(r),
       kind: self.kind.remap(r),
@@ -948,25 +1093,25 @@ impl ParserEnv {
     for (tk, &(ref fsp, p)) in &other.consts {
       self.add_const(tk.clone(), fsp.clone(), p).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared with two precedences", tk).into(),
+          format!("constant '{tk}' declared with two precedences").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&p, &(ref fsp, r)) in &other.prec_assoc {
       self.add_prec_assoc(p, fsp.clone(), r).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("precedence level {} has incompatible associativity", p).into(),
+          format!("precedence level {p} has incompatible associativity").into(),
           vec![(r.decl1, "left assoc here".into()), (r.decl2, "right assoc here".into())])))
     }
     for (tk, i) in &other.prefixes {
       self.add_prefix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared twice", tk).into(),
+          format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (tk, i) in &other.infixes {
       self.add_infix(tk.clone(), i.remap(r)).unwrap_or_else(|r|
         errors.push(ElabError::with_info(sp,
-          format!("constant '{}' declared twice", tk).into(),
+          format!("constant '{tk}' declared twice").into(),
           vec![(r.decl1, "declared here".into()), (r.decl2, "declared here".into())])))
     }
     for (&s1, m) in &other.coes {
@@ -1010,20 +1155,50 @@ impl Environment {
   }
 }
 
-/// Adding an item (sort, term, theorem, atom) can result in a redeclaration error,
-/// or an overflow error (especially for sorts, which can only have 128 due to the
-/// MMB format). The redeclaration case allows returning a value `A`.
+/// An error produced by adding an item (sort, term, theorem, atom).
+///
+/// This can be a redeclaration error, or an overflow error (especially for sorts,
+/// which can only have 128 due to the MMB format).
+/// The redeclaration case allows returning a value `A`.
 #[derive(Debug)]
 pub enum AddItemError<A> {
   /// The declaration overlaps with some previous declaration
   Redeclaration(A, RedeclarationError),
   /// Need more numbers
-  Overflow
+  Overflow,
+  /// A verification error occurred when checking the addition
+  Verify(String),
 }
 
-/// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
-/// redeclaration case they can still return an `A`, namely the ID of the old declaration
-type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
+/// Non-fatal errors produced by add item functions.
+#[allow(missing_copy_implementations)]
+#[derive(Debug)]
+pub enum AddItemNonFatalError {
+  /// The declaration used more bound variables than the verifier supports
+  MaxBoundVars,
+}
+
+impl AddItemNonFatalError {
+  fn from_verify_err(e: &VerifyError<'_>) -> Option<Self> {
+    match e {
+      VerifyError::MaxBoundVars => Some(Self::MaxBoundVars),
+      _ => None
+    }
+  }
+
+  /// Convert this error into an [`ElabError`] at the provided location.
+  #[must_use] pub fn into_elab_error(self, sp: Span) -> ElabError {
+    match self {
+      Self::MaxBoundVars =>
+        ElabError::new_e(sp, format!("too many bound variables (max {MAX_BOUND_VARS})")),
+    }
+  }
+}
+
+/// Most add item functions return <code>[AddItemError]&lt;Option&lt;A&gt;&gt;</code>,
+/// meaning that in the redeclaration case they can still return an `A`,
+/// namely the ID of the old declaration.
+type AddItemResult<A, B = Option<A>> = Result<(A, Option<AddItemNonFatalError>), AddItemError<B>>;
 
 impl<A> AddItemError<A> {
   /// Convert this error into an [`ElabError`] at the provided location.
@@ -1032,12 +1207,23 @@ impl<A> AddItemError<A> {
       AddItemError::Redeclaration(_, r) =>
         ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]),
       AddItemError::Overflow =>
-        ElabError::new_e(sp, "too many sorts"),
+        ElabError::new_e(sp, "too many items"),
+      AddItemError::Verify(e) => ElabError::new_e(sp, e),
     }
   }
 }
 
 impl Environment {
+  /// If this sort is a provable sort, returns that;
+  /// otherwise returns the provable sort that this would coerce to, if any
+  #[must_use] pub fn coe_prov_refl(&self, sort: SortId) -> Option<SortId> {
+    if self.sorts[sort].mods.contains(Modifiers::PROVABLE) {
+      Some(sort)
+    } else {
+      self.pe.coe_prov.get(&sort).copied()
+    }
+  }
+
   /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
   /// or if we hit the maximum number of sorts.
   pub fn add_sort(&mut self, a: AtomId, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<DocComment>) ->
@@ -1058,20 +1244,27 @@ impl Environment {
       data.sort = Some(new_id);
       self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, doc, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
+      if sd.contains(Modifiers::PROVABLE) {
+        match &mut self.provable_sort {
+          ps @ OneOrMore::Zero => *ps = OneOrMore::One(new_id),
+          ps @ OneOrMore::One(_) => *ps = OneOrMore::More,
+          OneOrMore::More => {}
+        }
+      }
       Ok(new_id)
     }
   }
 
   /// Add a term declaration to the environment. The [`Term`] is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
-  pub fn try_add_term(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
+  pub fn try_add_term(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
     let new_id = TermId(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    let data = &mut self.data[a];
+    let data = &self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Term(old_id) => {
           let sp = &self.terms[old_id].span;
-          if *sp == *new { return Ok(old_id) }
+          if *sp == *new { return Ok((old_id, None)) }
           (Some(old_id), sp)
         }
         DeclKey::Thm(old_id) => (None, &self.thms[old_id].span)
@@ -1082,50 +1275,80 @@ impl Environment {
         other: sp.clone()
       }))
     } else {
-      data.decl = Some(DeclKey::Term(new_id));
-      self.terms.push(t());
+      let t = t();
+      let mut err = None;
+      if verify {
+        match self.verify_termdef(&Default::default(), &t) {
+          Ok(()) | Err(VerifyError::UsesSorry) => {}
+          Err(e) => {
+            err = AddItemNonFatalError::from_verify_err(&e);
+            if err.is_none() {
+              let mut msg = format!("while adding {}: ", data.name);
+              e.render(self, &mut msg).expect("impossible");
+              return Err(AddItemError::Verify(msg))
+            }
+          }
+        }
+      }
+      self.data[a].decl = Some(DeclKey::Term(new_id));
+      self.terms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
-      Ok(new_id)
+      Ok((new_id, err))
     }
   }
 
   /// Specialization of [`try_add_term`](Self::try_add_term) when the term is constructed already.
   pub fn add_term(&mut self, t: Term) -> AddItemResult<TermId> {
     let fsp = t.span.clone();
-    self.try_add_term(t.atom, &fsp, || t)
+    self.try_add_term(VERIFY_ON_ADD, t.atom, &fsp, || t)
   }
 
   /// Add a theorem declaration to the environment. The [`Thm`] is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn try_add_thm(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
+  pub fn try_add_thm(&mut self, verify: bool, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId, DeclKey> {
     let new_id = ThmId(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    let data = &mut self.data[a];
+    let data = &self.data[a];
     if let Some(key) = data.decl {
-      let (res, sp) = match key {
+      let sp = match key {
         DeclKey::Thm(old_id) => {
           let sp = &self.thms[old_id].span;
-          if *sp == *new { return Ok(old_id) }
-          (Some(old_id), sp)
+          if *sp == *new { return Ok((old_id, None)) }
+          sp
         }
-        DeclKey::Term(old_id) => (None, &self.terms[old_id].span)
+        DeclKey::Term(old_id) => &self.terms[old_id].span
       };
-      Err(AddItemError::Redeclaration(res, RedeclarationError {
+      Err(AddItemError::Redeclaration(key, RedeclarationError {
         msg: format!("theorem '{}' redeclared", data.name),
         othermsg: "previously declared here".to_owned(),
         other: sp.clone()
       }))
     } else {
-      data.decl = Some(DeclKey::Thm(new_id));
-      self.thms.push(t());
+      let t = t();
+      let mut err = None;
+      if verify {
+        match self.verify_thmdef(&Default::default(), &t) {
+          Ok(()) | Err(VerifyError::UsesSorry) => {}
+          Err(e) => {
+            err = AddItemNonFatalError::from_verify_err(&e);
+            if err.is_none() {
+              let mut msg = format!("while adding {}: ", data.name);
+              e.render(self, &mut msg).expect("impossible");
+              return Err(AddItemError::Verify(msg))
+            }
+          }
+        }
+      }
+      self.data[a].decl = Some(DeclKey::Thm(new_id));
+      self.thms.push(t);
       self.stmts.push(StmtTrace::Decl(a));
-      Ok(new_id)
+      Ok((new_id, err))
     }
   }
 
   /// Specialization of [`try_add_thm`](Self::try_add_thm) when the term is constructed already.
-  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId> {
+  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId, DeclKey> {
     let fsp = t.span.clone();
-    self.try_add_thm(t.atom, &fsp, || t)
+    self.try_add_thm(VERIFY_ON_ADD, t.atom, &fsp, || t)
   }
 
   /// Add a coercion declaration to the environment.
@@ -1149,74 +1372,88 @@ impl Environment {
   /// Convert an [`ArcString`] to an [`AtomId`]. This version of [`get_atom`](Self::get_atom)
   /// avoids the string clone in the case that the atom is new.
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomId {
-    let ctx = &mut self.data;
-    *self.atoms.entry(s.clone()).or_insert_with(move ||
-      (AtomId(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
+    *self.atoms.entry(s.clone()).or_insert_with(|| {
+      let a = AtomId(self.data.len().try_into().expect("too many atoms"));
+      self.data.push(AtomData::new(s));
+      a
+    })
   }
 
-  /// Merge `other` into this environment. This merges definitions with the same name and type,
+  /// Merge statement `s` from `other` into this environment.
+  /// This merges definitions with the same name and type,
   /// and relabels lisp objects with the new [`AtomId`] mapping.
   ///
-  /// This function does not do any merging of lisp data. For this functionality see [`EnvMergeIter`].
-  fn merge_no_lisp(&mut self, remap: &mut Remapper, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
-    for s in other.stmts() {
-      match *s {
-        StmtTrace::Sort(a) => {
-          let i = other.data()[a].sort().expect("wf env");
-          let sort = other.sort(i);
-          let id = match self.add_sort(a.remap(remap), sort.span.clone(), sort.full, sort.mods, sort.doc.clone()) {
-            Ok(id) => id,
-            Err(AddItemError::Redeclaration(id, r)) => {
-              errors.push(ElabError::with_info(sp, r.msg.into(), vec![
-                (sort.span.clone(), r.othermsg.clone().into()),
-                (r.other, r.othermsg.into())
-              ]));
+  /// This function does not do any merging of lisp data.
+  /// For this functionality see [`EnvMergeIter`].
+  fn merge_no_lisp(&mut self,
+    remap: &mut Remapper, other: &FrozenEnv, s: &StmtTrace, sp: Span, errors: &mut Vec<ElabError>
+  ) -> Result<(), ElabError> {
+    match *s {
+      StmtTrace::Sort(a) => {
+        let i = other.data()[a].sort().expect("wf env");
+        let sort = other.sort(i);
+        let id = match self.add_sort(a.remap(remap),
+          sort.span.clone(), sort.full, sort.mods, sort.doc.clone())
+        {
+          Ok(id) => id,
+          Err(AddItemError::Redeclaration(id, r)) => {
+            errors.push(ElabError::with_info(sp, r.msg.into(), vec![
+              (sort.span.clone(), r.othermsg.clone().into()),
+              (r.other, r.othermsg.into())
+            ]));
+            id
+          }
+          Err(e) => return Err(e.into_elab_error(sp))
+        };
+        assert_eq!(remap.sort.len(), i.0 as usize);
+        remap.sort.push(id);
+      }
+      StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
+        DeclKey::Term(tid) => {
+          let otd: &Term = other.term(tid);
+          let id = match self.try_add_term(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
+            Ok((id, err)) => {
+              if let Some(e) = err { errors.push(e.into_elab_error(sp)) }
               id
             }
-            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many sorts"))
+            Err(AddItemError::Redeclaration(id, r)) => {
+              let e = ElabError::with_info(sp, r.msg.into(), vec![
+                (otd.span.clone(), r.othermsg.clone().into()),
+                (r.other, r.othermsg.into())
+              ]);
+              match id { None => return Err(e), Some(id) => {errors.push(e); id} }
+            }
+            Err(e) => return Err(e.into_elab_error(sp)),
           };
-          assert_eq!(remap.sort.len(), i.0 as usize);
-          remap.sort.push(id);
+          assert_eq!(remap.term.len(), tid.0 as usize);
+          remap.term.push(id);
         }
-        StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
-          DeclKey::Term(tid) => {
-            let otd: &Term = other.term(tid);
-            let id = match self.try_add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
-              Ok(id) => id,
-              Err(AddItemError::Redeclaration(id, r)) => {
-                let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (otd.span.clone(), r.othermsg.clone().into()),
-                  (r.other, r.othermsg.into())
-                ]);
-                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
+        DeclKey::Thm(tid) => {
+          let otd: &Thm = other.thm(tid);
+          let id = match self.try_add_thm(false, a.remap(remap), &otd.span, || otd.remap(remap)) {
+            Ok((id, err)) => {
+              if let Some(e) = err { errors.push(e.into_elab_error(sp)) }
+              id
+            }
+            Err(AddItemError::Redeclaration(id, r)) => {
+              let e = ElabError::with_info(sp, r.msg.into(), vec![
+                (otd.span.clone(), r.othermsg.clone().into()),
+                (r.other, r.othermsg.into())
+              ]);
+              match id {
+                DeclKey::Term(_) => return Err(e),
+                DeclKey::Thm(id) => {errors.push(e); id}
               }
-              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many terms"))
-            };
-            assert_eq!(remap.term.len(), tid.0 as usize);
-            remap.term.push(id);
-          }
-          DeclKey::Thm(tid) => {
-            let otd: &Thm = other.thm(tid);
-            let id = match self.try_add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
-              Ok(id) => id,
-              Err(AddItemError::Redeclaration(id, r)) => {
-                let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (otd.span.clone(), r.othermsg.clone().into()),
-                  (r.other, r.othermsg.into())
-                ]);
-                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
-              }
-              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many theorems"))
-            };
-            assert_eq!(remap.thm.len(), tid.0 as usize);
-            remap.thm.push(id);
-          }
-        },
-        StmtTrace::Global(_) => {}
-        StmtTrace::OutputString(ref e) => self.stmts.push(StmtTrace::OutputString(e.remap(remap))),
-      }
+            }
+            Err(e) => return Err(e.into_elab_error(sp)),
+          };
+          assert_eq!(remap.thm.len(), tid.0 as usize);
+          remap.thm.push(id);
+        }
+      },
+      StmtTrace::Global(_) => {}
+      StmtTrace::OutputString(ref e) => self.stmts.push(StmtTrace::OutputString(e.remap(remap))),
     }
-    self.pe.merge(other.pe(), remap, sp, &self.sorts, errors);
     Ok(())
   }
 
@@ -1229,9 +1466,11 @@ impl Environment {
   }
 }
 
-/// An iterator-like interface to environment merging. This is required because
-/// merging can involve calls into lisp when a custom `set-merge-strategy` is used,
-/// but the environment itself doesn't have the context required to perform this evaluation.
+/// An iterator-like interface to environment merging.
+///
+/// This is required because merging can involve calls into lisp when a custom
+/// `set-merge-strategy` is used, but the environment itself doesn't have the context
+/// required to perform this evaluation.
 /// So instead, we poll [`EnvMergeIter::next`], receiving [`AwaitingMerge`] objects
 /// that represent an unevaluated merge request; the request is fulfilled by calling
 /// [`EnvMergeIter::apply_merge`].
@@ -1240,15 +1479,18 @@ pub struct EnvMergeIter<'a> {
   remap: Remapper,
   other: &'a FrozenEnv,
   sp: Span,
-  it: std::iter::Enumerate<std::slice::Iter<'a, super::frozen::FrozenAtomData>>,
+  it: std::slice::Iter<'a, StmtTrace>,
 }
 
-/// A lisp merge request. The elaborator receives this struct containing a merge strategy
+/// A lisp merge request.
+///
+/// The elaborator receives this struct containing a merge strategy
 /// and the `old` and `new` values in `val` and `new.val` respectively, and it fills
 /// `val` with the result of the request and completes the request by calling
 /// [`EnvMergeIter::apply_merge`].
 #[derive(Debug)]
 pub struct AwaitingMerge<'a> {
+  /// The new atom ID
   a: AtomId,
   /// The merge strategy (always non-`None` because we handle `None` merge strategy
   /// directly without a request).
@@ -1268,7 +1510,7 @@ impl<'a> EnvMergeIter<'a> {
       atom: other.data().iter().map(|d| env.get_atom_arc(d.name().clone())).collect(),
       ..Default::default()
     };
-    Self {remap, other, sp, it: other.data().iter().enumerate()}
+    Self {remap, other, sp, it: other.stmts().iter()}
   }
 
   /// Poll the environment merge iterator for a result.
@@ -1276,29 +1518,37 @@ impl<'a> EnvMergeIter<'a> {
   /// * `Ok(None)` means that merging is complete. Non-fatal errors will be accumulated into `errors`.
   /// * `Ok(Some(req))` means that we need to handle a merge request `req`, see [`AwaitingMerge`].
   pub fn next(&mut self, env: &mut Environment, errors: &mut Vec<ElabError>) -> Result<Option<AwaitingMerge<'a>>, ElabError> {
-    #[allow(clippy::cast_possible_truncation)]
-    while let Some((i, d)) = self.it.next() {
-      let a = AtomId(i as u32);
-      let data = &mut env.data[self.remap.atom[a]];
-      let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
-      if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {
-        if let Some(new) = newlisp {
-          return Ok(Some(AwaitingMerge {a, strat: strat.clone(), val: val.clone(), new, d}))
+    while let Some(s) = self.it.next() {
+      if let StmtTrace::Global(a_old) = *s {
+        let d = &self.other.data()[a_old];
+        let a = self.remap.atom[a_old];
+        env.stmts.push(StmtTrace::Global(a));
+        let data = &mut env.data[a];
+        let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
+        if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {
+          if let Some(new) = newlisp {
+            return Ok(Some(AwaitingMerge {a, strat: strat.clone(), val: val.clone(), new, d}))
+          }
+        } else {
+          data.lisp = newlisp;
+          if data.lisp.is_none() {
+            data.graveyard.clone_from(d.graveyard());
+          }
         }
       } else {
-        data.lisp = newlisp;
-        if data.lisp.is_none() {
-          data.graveyard = d.graveyard().clone();
-        }
+        env.merge_no_lisp(&mut self.remap, self.other, s, self.sp, errors)?;
       }
     }
-    env.merge_no_lisp(&mut self.remap, self.other, self.sp, errors)?;
+    env.pe.merge(self.other.pe(), &mut self.remap, self.sp, &env.sorts, errors);
     Ok(None)
   }
+}
 
+impl AwaitingMerge<'_> {
   /// Apply a completed [`AwaitingMerge`] request to the current environment.
-  pub fn apply_merge(&self, env: &mut Environment, AwaitingMerge {a, val, new, d, ..}: AwaitingMerge<'a>) {
-    let data = &mut env.data[self.remap.atom[a]];
+  pub fn apply(self, env: &mut Environment) {
+    let AwaitingMerge {a, val, new, d, ..} = self;
+    let data = &mut env.data[a];
     if val.is_def_strict() {
       match data.lisp {
         ref mut o @ None => *o = Some(new),
@@ -1306,7 +1556,7 @@ impl<'a> EnvMergeIter<'a> {
       }
     } else {
       data.lisp = None;
-      data.graveyard = d.graveyard().clone();
+      data.graveyard.clone_from(d.graveyard());
     }
   }
 }

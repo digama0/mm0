@@ -31,7 +31,7 @@ compile args = do
   (name, mm0) <- case rest3 of
     [] -> return ("", stdin)
     (mm0:_) -> (,) mm0 <$> openFile mm0 ReadMode
-  let isMM0' = fromMaybe (isSuffixOf "mm0" name) isMM0
+  let isMM0' = fromMaybe ("mm0" `isSuffixOf` name) isMM0
   str <- T.hGetContents mm0
   let (errs, _, ast) = parseAST name str
       cfg n = ElabConfig isMM0' par False name (load n)

@@ -1,7 +1,8 @@
-import data.finset
+import data.finset.basic
 
 namespace mm0
 
+@[derive has_reflect]
 structure sort_data := (pure strict provable free : bool := ff)
 
 def sort_id := ℕ

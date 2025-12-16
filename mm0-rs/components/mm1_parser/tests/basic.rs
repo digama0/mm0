@@ -1,4 +1,4 @@
-use mm0_util::lined_string::LinedString;
+use mm0_util::LinedString;
 use mm1_parser::parse;
 use std::fs::read_to_string;
 use std::path::PathBuf;

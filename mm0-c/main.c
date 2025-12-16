@@ -18,6 +18,15 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Static assert: __attribute__((packed)) fail\n");
     return 999;
   }
+  if (_Alignof(store_expr) != 4) {
+    fprintf(stderr, "Static assert: __attribute__((aligned(n))) fail\n");
+    return 999;
+  }
+  u32 i = 1;
+  if (*((char *)&i) != 1) {
+    fprintf(stderr, "Static assert: not little endian\n");
+    return 999;
+  }
 
   if (argc < 2) {
     fprintf(stderr, "Incorrect args; use 'mm0-c MMB-FILE < MM0-FILE'\n");

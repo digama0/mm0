@@ -1,12 +1,12 @@
 //! MMB exporter, which produces `.mmb` binary proof files from an
-//! [`Environment`](crate::elab::Environment) object.
-use std::convert::TryInto;
+//! [`Environment`](crate::Environment) object.
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
-use zerocopy::{AsBytes, U32, U64};
+use mm0b_parser::MAX_BOUND_VARS;
+use zerocopy::{IntoBytes, LE as ZLE, U32, U64};
 use crate::{
-  Type, Expr, Proof, SortId, AtomId, AtomVec, TermKind, ThmKind,
+  Type, SortId, AtomId, AtomVec, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers,
   FrozenEnv, FileRef, LinedString, ErrorLevel};
 
@@ -56,7 +56,7 @@ pub struct Exporter<'a, W> {
   fixups: Vec<(u64, Value)>,
 }
 
-impl<'a, W: std::fmt::Debug> std::fmt::Debug for Exporter<'a, W> {
+impl<W: std::fmt::Debug> std::fmt::Debug for Exporter<'_, W> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Exporter")
       .field("file", &self.file)
@@ -74,9 +74,9 @@ impl<'a, W: std::fmt::Debug> std::fmt::Debug for Exporter<'a, W> {
 #[derive(Debug)]
 enum Value {
   /// A (little endian) 32 bit value
-  U32(U32<LE>),
+  U32(U32<ZLE>),
   /// A (little endian) 64 bit value
-  U64(U64<LE>),
+  U64(U64<ZLE>),
   /// An arbitrary length byte slice. (We could store everything like this but
   /// the `U32` and `U64` cases are common and this avoids some allocation.)
   Box(Box<[u8]>),
@@ -154,8 +154,12 @@ impl<W: Write + Seek> Write for Exporter<'_, W> {
   fn flush(&mut self) -> io::Result<()> { self.w.flush() }
 }
 
-fn write_expr_proof(w: &mut impl Write,
+#[allow(clippy::too_many_arguments)]
+fn write_expr_proof(
+  env: &FrozenEnv,
+  w: &mut impl Write,
   heap: &[ExprNode],
+  store: &[ExprNode],
   reorder: &mut Reorder,
   vars: &mut Option<&mut Vec<AtomId>>,
   node: &ExprNode,
@@ -164,7 +168,7 @@ fn write_expr_proof(w: &mut impl Write,
   Ok(match *node {
     ExprNode::Ref(i) => match reorder.map[i] {
       None => {
-        let n = write_expr_proof(w, heap, reorder, vars, &heap[i], true)?;
+        let n = write_expr_proof(env, w, heap, store, reorder, vars, &heap[i], true)?;
         reorder.map[i] = Some(n);
         n
       }
@@ -175,16 +179,18 @@ fn write_expr_proof(w: &mut impl Write,
       ProofCmd::Dummy(s).write_to(w)?;
       (reorder.idx, reorder.idx += 1).0
     }
-    ExprNode::App(tid, ref es) => {
-      for e in &**es {write_expr_proof(w, heap, reorder, vars, e, false)?;}
+    ExprNode::App(tid, p) => {
+      for e in env.term(tid).unpack_app(&store[p..]) {
+        write_expr_proof(env, w, heap, store, reorder, vars, e, false)?;
+      }
       ProofCmd::Term {tid, save}.write_to(w)?;
-      if save {(reorder.idx, reorder.idx += 1).0} else {0}
+      if save { (reorder.idx, reorder.idx += 1).0 } else { 0 }
     }
   })
 }
 
-/// A wrapper around a writer that implements [`Write`]` + `[`Seek`] by internally buffering
-/// all writes, writing to the underlying writer only once on [`Drop`].
+/// A wrapper around a writer that implements <code>[Write] + [Seek]</code>
+/// by internally buffering all writes, writing to the underlying writer only once on [`Drop`].
 #[derive(Debug)]
 pub struct BigBuffer<W: Write> {
   buffer: io::Cursor<Vec<u8>>,
@@ -228,6 +234,7 @@ struct VarData {
   vars: Vec<AtomId>,
 }
 
+#[allow(clippy::struct_field_names)]
 struct IndexTemp {
   sort_names: Vec<NameData>,
   term_names: Vec<(NameData, VarData)>,
@@ -308,7 +315,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     for (_, ty) in args {
       match *ty {
         Type::Bound(s) => {
-          if bv >= (1 << 55) {panic!("more than 55 bound variables")}
+          assert!(bv < (1 << MAX_BOUND_VARS), "more than {MAX_BOUND_VARS} bound variables");
           self.write_sort_deps(true, s, bv)?;
           bv *= 2;
         }
@@ -320,6 +327,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
 
   fn write_expr_unify(&mut self,
     heap: &[ExprNode],
+    store: &[ExprNode],
     reorder: &mut Reorder,
     node: &ExprNode,
     save: &mut Vec<usize>
@@ -331,7 +339,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       ExprNode::Ref(i) => match reorder.map[i] {
         None => {
           save.push(i);
-          self.write_expr_unify(heap, reorder, &heap[i], save)?
+          self.write_expr_unify(heap, store, reorder, &heap[i], save)?
         }
         Some(n) => {
           UnifyCmd::Ref(n).write_to(self)?;
@@ -342,64 +350,68 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         commit!(reorder.idx); reorder.idx += 1;
         UnifyCmd::Dummy(s).write_to(self)?
       }
-      ExprNode::App(tid, ref es) => {
+      ExprNode::App(tid, p) => {
         if save.is_empty() {
           UnifyCmd::Term {tid, save: false}.write_to(self)?
         } else {
           commit!(reorder.idx); reorder.idx += 1;
           UnifyCmd::Term {tid, save: true}.write_to(self)?
         }
-        for e in &**es {
-          self.write_expr_unify(heap, reorder, e, save)?
+        for e in self.env.term(tid).unpack_app(&store[p..]) {
+          self.write_expr_unify(heap, store, reorder, e, save)?
         }
       }
     }
     Ok(())
   }
 
+  #[allow(clippy::too_many_arguments)]
   fn write_proof(&self, w: &mut impl Write,
     heap: &[ProofNode],
+    store: &[ProofNode],
     reorder: &mut Reorder,
     hyps: &[u32],
     node: &ProofNode,
     save: bool
   ) -> io::Result<u32> {
-    Ok(match node {
-      &ProofNode::Ref(i) => match reorder.map[i] {
+    Ok(match *node {
+      ProofNode::Ref(i) => match reorder.map[i] {
         None => {
-          let n = self.write_proof(w, heap, reorder, hyps, &heap[i], true)?;
+          let n = self.write_proof(w, heap, store, reorder, hyps, &heap[i], true)?;
           reorder.map[i] = Some(n);
           n
         }
         Some(n) => {ProofCmd::Ref(n).write_to(w)?; n}
       }
-      &ProofNode::Dummy(_, s) => {
+      ProofNode::Dummy(_, s) => {
         ProofCmd::Dummy(s).write_to(w)?;
         (reorder.idx, reorder.idx += 1).0
       }
-      &ProofNode::Term {term, ref args} => {
-        for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
+      ProofNode::Term(term, p) => {
+        for e in self.env.term(term).unpack_term(&store[p..]) {
+          self.write_proof(w, heap, store, reorder, hyps, e, false)?;
+        }
         ProofCmd::Term {tid: term, save}.write_to(w)?;
         if save {(reorder.idx, reorder.idx += 1).0} else {0}
       }
-      &ProofNode::Hyp(n, _) => {
+      ProofNode::Hyp(n, _) => {
         ProofCmd::Ref(hyps[n]).write_to(w)?;
         hyps[n]
       }
-      &ProofNode::Thm {thm, ref args, ref res} => {
-        let (args, hs) = args.split_at(self.env.thm(thm).args.len());
-        for e in hs {self.write_proof(w, heap, reorder, hyps, e, false)?;}
-        for e in args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
-        self.write_proof(w, heap, reorder, hyps, res, false)?;
+      ProofNode::Thm(thm, p) => {
+        let (res, args, hs) = self.env.thm(thm).unpack_thm(&store[p..]);
+        for e in hs {self.write_proof(w, heap, store, reorder, hyps, e, false)?;}
+        for e in args {self.write_proof(w, heap, store, reorder, hyps, e, false)?;}
+        self.write_proof(w, heap, store, reorder, hyps, res, false)?;
         ProofCmd::Thm {tid: thm, save}.write_to(w)?;
         if save {(reorder.idx, reorder.idx += 1).0} else {0}
       }
       ProofNode::Conv(p) => {
-        let (e1, c, p) = &**p;
-        self.write_proof(w, heap, reorder, hyps, e1, false)?;
-        self.write_proof(w, heap, reorder, hyps, p, false)?;
+        let (e1, c, p) = ProofNode::unpack_conv(&store[p..]);
+        self.write_proof(w, heap, store, reorder, hyps, e1, false)?;
+        self.write_proof(w, heap, store, reorder, hyps, p, false)?;
         ProofCmd::Conv.write_to(w)?;
-        self.write_conv(w, heap, reorder, hyps, c)?;
+        self.write_conv(w, heap, store, reorder, hyps, c)?;
         if save {
           ProofCmd::Save.write_to(w)?;
           (reorder.idx, reorder.idx += 1).0
@@ -414,25 +426,26 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
 
   fn write_conv(&self, w: &mut impl Write,
     heap: &[ProofNode],
+    store: &[ProofNode],
     reorder: &mut Reorder,
     hyps: &[u32],
     node: &ProofNode,
   ) -> io::Result<()> {
-    match node {
-      &ProofNode::Ref(i) => match reorder.map[i] {
+    match *node {
+      ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let e = &heap[i];
           match e {
             ProofNode::Refl(_) | ProofNode::Ref(_) =>
-              self.write_conv(w, heap, reorder, hyps, e)?,
+              self.write_conv(w, heap, store, reorder, hyps, e)?,
             _ => {
               ProofCmd::ConvCut.write_to(w)?;
-              self.write_conv(w, heap, reorder, hyps, e)?;
+              self.write_conv(w, heap, store, reorder, hyps, e)?;
               ProofCmd::ConvSave.write_to(w)?;
               reorder.map[i] = Some(reorder.idx);
               reorder.idx += 1;
             }
-          };
+          }
         }
         Some(n) => ProofCmd::Ref(n).write_to(w)?,
       }
@@ -444,17 +457,19 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       ProofNode::Refl(_) => ProofCmd::Refl.write_to(w)?,
       ProofNode::Sym(c) => {
         ProofCmd::Sym.write_to(w)?;
-        self.write_conv(w, heap, reorder, hyps, c)?;
+        self.write_conv(w, heap, store, reorder, hyps, &store[c])?;
       }
-      ProofNode::Cong {args, ..} => {
+      ProofNode::Cong(term, p) => {
         ProofCmd::Cong.write_to(w)?;
-        for a in &**args {self.write_conv(w, heap, reorder, hyps, a)?}
+        for a in self.env.term(term).unpack_term(&store[p..]) {
+          self.write_conv(w, heap, store, reorder, hyps, a)?
+        }
       }
-      ProofNode::Unfold {res, ..} => {
-        let (sub_lhs, c) = &**res;
-        self.write_proof(w, heap, reorder, hyps, sub_lhs, false)?;
+      ProofNode::Unfold(term, p) => {
+        let (sub_lhs, c, _) = self.env.term(term).unpack_unfold(&store[p..]);
+        self.write_proof(w, heap, store, reorder, hyps, sub_lhs, false)?;
         ProofCmd::Unfold.write_to(w)?;
-        self.write_conv(w, heap, reorder, hyps, c)?;
+        self.write_conv(w, heap, store, reorder, hyps, c)?;
       }
     }
     Ok(())
@@ -485,7 +500,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.write_u32(num_thms.try_into().expect("too many thms"))?; // num_thms
     let p_terms = self.fixup32()?;
     let p_thms = self.fixup32()?;
-    let p_proof = self.fixup64()?;
+    let p_proof = self.fixup32()?;
+    self.write_u32(0)?;
     let p_index = self.fixup64()?;
 
     // sort data
@@ -502,14 +518,14 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       self.write_binders(&t.args)?;
       self.write_sort_deps(false, t.ret.0, t.ret.1)?;
       let reorder = if let TermKind::Def(val) = &t.kind {
-        let Expr {heap, head} = val.as_ref().unwrap_or_else(||
+        let expr = val.as_ref().unwrap_or_else(||
           panic!("def {} missing value", self.env.data()[t.atom].name()));
-        let mut reorder = Reorder::new(nargs.into(), heap.len(), |i| i);
-        self.write_expr_unify(heap, &mut reorder, head, &mut vec![])?;
+        let mut reorder = Reorder::new(nargs.into(), expr.heap.len(), |i| i);
+        self.write_expr_unify(&expr.heap, &expr.store, &mut reorder, expr.head(), &mut vec![])?;
         self.write_u8(0)?;
         Some(reorder)
       } else { None };
-      self.term_reord.push(reorder)
+      self.term_reord.push(reorder);
     }
     term_header.commit(self);
 
@@ -523,10 +539,10 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       self.write_binders(&t.args)?;
       let mut reorder = Reorder::new(nargs.into(), t.heap.len(), |i| i);
       let save = &mut vec![];
-      self.write_expr_unify(&t.heap, &mut reorder, &t.ret, save)?;
+      self.write_expr_unify(&t.heap, &t.store, &mut reorder, &t.ret, save)?;
       for (_, h) in t.hyps.iter().rev() {
         UnifyCmd::Hyp.write_to(self)?;
-        self.write_expr_unify(&t.heap, &mut reorder, h, save)?;
+        self.write_expr_unify(&t.heap, &t.store, &mut reorder, h, save)?;
       }
       self.write_u8(0)?;
     }
@@ -560,16 +576,18 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   NameData {name: a, p_proof: self.pos},
                   VarData {p_vars: 0, vars}
                 ));
-                &mut unwrap_unchecked!(temp.term_names.last_mut()).1.vars
+                // Safety: we just pushed to term_names
+                unsafe { &mut temp.term_names.last_mut().unwrap_unchecked().1.vars }
               });
               match &td.kind {
                 TermKind::Term => write_cmd_bytes(self, STMT_TERM, &[])?,
                 TermKind::Def(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
-                TermKind::Def(Some(Expr {heap, head})) => {
+                TermKind::Def(Some(expr)) => {
                   #[allow(clippy::cast_possible_truncation)] // no truncation
                   let nargs = td.args.len() as u32;
-                  let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
-                  write_expr_proof(vec, heap, &mut reorder, vars, head, false)?;
+                  let mut reorder = Reorder::new(nargs, expr.heap.len(), |i| i);
+                  write_expr_proof(self.env, vec, &expr.heap, &expr.store,
+                    &mut reorder, vars, expr.head(), false)?;
                   vec.write_u8(0)?;
                   let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
                   write_cmd_bytes(self, cmd, vec)?;
@@ -587,7 +605,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   VarData {p_vars: 0, vars: td.hyps.iter()
                     .map(|p| p.0.unwrap_or(AtomId::UNDER)).collect()},
                 ));
-                &mut unwrap_unchecked!(temp.thm_names.last_mut()).1.vars
+                // Safety: we just pushed to thm_names
+                unsafe { &mut temp.thm_names.last_mut().unwrap_unchecked().1.vars }
               });
               #[allow(clippy::cast_possible_truncation)] // no truncation
               let nargs = td.args.len() as u32;
@@ -595,11 +614,14 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                 ThmKind::Axiom | ThmKind::Thm(None) => {
                   let mut reorder = Reorder::new(nargs, td.heap.len(), |i| i);
                   for (_, h) in &*td.hyps {
-                    write_expr_proof(vec, &td.heap, &mut reorder, vars, h, false)?;
+                    write_expr_proof(self.env, vec, &td.heap, &td.store,
+                      &mut reorder, vars, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
+                    reorder.idx += 1;
                   }
-                  write_expr_proof(vec, &td.heap, &mut reorder, vars, &td.ret, false)?;
-                  if let ThmKind::Axiom = td.kind {
+                  write_expr_proof(self.env, vec, &td.heap, &td.store,
+                    &mut reorder, vars, &td.ret, false)?;
+                  if matches!(td.kind, ThmKind::Axiom) {
                     STMT_AXIOM
                   } else {
                     ProofCmd::Sorry.write_to(vec)?;
@@ -608,20 +630,21 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                     STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
                   }
                 }
-                ThmKind::Thm(Some(Proof {heap, hyps, head})) => {
-                  let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
-                  let mut ehyps = Vec::with_capacity(hyps.len());
-                  for h in &**hyps {
-                    let e = match h.deref(heap) {
-                      ProofNode::Hyp(_, ref e) => &**e,
+                ThmKind::Thm(Some(pf)) => {
+                  let mut reorder = Reorder::new(nargs, pf.heap.len(), |i| i);
+                  let mut ehyps = Vec::with_capacity(pf.hyps.len());
+                  for h in &*pf.hyps {
+                    let e = match *h.deref(&pf.heap) {
+                      ProofNode::Hyp(_, i) => &pf.store[i],
                       _ => unreachable!()
                     };
-                    self.write_proof(vec, heap, &mut reorder, &ehyps, e, false)?;
+                    self.write_proof(vec, &pf.heap, &pf.store, &mut reorder, &ehyps, e, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
                     ehyps.push(reorder.idx);
                     reorder.idx += 1;
                   }
-                  self.write_proof(vec, heap, &mut reorder, &ehyps, head, false)?;
+                  self.write_proof(vec, &pf.heap, &pf.store,
+                    &mut reorder, &ehyps, pf.head(), false)?;
                   STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
                 }
               };

@@ -110,6 +110,7 @@
 					"patterns": [
 						{"match": "\\$\\s*[^\\s\\$]+\\s*\\$", "name": "string.quoted.single.constant.mm0"},
 						{"include": "#number"},
+						{"match": "[lr]assoc", "name": "keyword.other.notation.mm0"},
 						{"match": "\\w+", "name": "variable.other.unknown.mm0"}
 					]
 				}

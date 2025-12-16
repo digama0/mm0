@@ -168,8 +168,8 @@ cmd_unpack_result cmd_unpack(u8* cmd) {
 // name then so is 'from'.
 bool sorts_compatible(u64 from, u64 to) {
   u64 diff = from ^ to;
-  return (diff & ~TYPE_DEPS_MASK) == 0 ||
-    ((diff & ~TYPE_BOUND_MASK & ~TYPE_DEPS_MASK) == 0 &&
+  return (diff & TYPE_UPPER_MASK) == 0 ||
+    ((diff & ~TYPE_BOUND_MASK & TYPE_UPPER_MASK) == 0 &&
     (from & TYPE_BOUND_MASK) != 0);
 }
 
@@ -220,10 +220,12 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
-    // debug_print_ustack();
-    // debug_print_uheap();
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // if (g_cmd - g_file == 0x123456) {
+    //   debug_print_ustack();
+    //   debug_print_uheap();
+    //   fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // }
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -240,7 +242,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       // the head of the unify stack.
       case CMD_UNIFY_REF: {
         ENSURE("bad ref step", data < g_uheap_size);
-        ENSURE("unify failure at ref", g_uheap[data] == pop_ustack());
+        ENSURE("unify failure at ref", get_uheap(data) == pop_ustack());
       } break;
 
       // UTerm t: S, (t e1 ... en) --> S, en, ..., e1
@@ -265,7 +267,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         }
         UPDATE_HIGHWATER(g_ustack_top, g_ustack_highwater)
         if (*cmd & 0x01) // save
-          push_uheap(p);
+          push_uheap(UHEAP_SAVED_TAG | p);
       } break;
 
       // UDummy s: H; S, x --> H, x; S   (where x:s)
@@ -279,10 +281,11 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         u64 type = e->type;
         ENSURE("unify failure at dummy", (type >> 56) == (0x80 | data));
         type &= TYPE_DEPS_MASK;
-        for (int i = 0; i < g_uheap_size; i++) {
-          ENSURE("dummy disjoint variable violation",
-            (get_expr(g_uheap[i])->type & type) == 0);
-        }
+        for (int i = 0; i < g_uheap_size; i++)
+          if ((g_uheap[i] & UHEAP_SAVED_TAG) == 0) {
+            ENSURE("dummy disjoint variable violation",
+              (get_expr(g_uheap[i])->type & type) == 0);
+          }
         push_uheap(p);
       } break;
 
@@ -349,9 +352,11 @@ u8* run_proof(proof_mode mode, u8* cmd) {
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
-    // debug_print_stack();
-    // debug_print_heap();
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // if (g_cmd - g_file >= 0x123456 - 20) {
+    //   debug_print_stack();
+    //   debug_print_heap();
+    //   fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
+    // }
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -391,8 +396,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // Allocate a new variable x of sort s, and push it to the stack and the heap.
       case CMD_PROOF_DUMMY: {
         ENSURE("bad dummy sort", data < g_num_sorts);
-        ENSURE("dummy variable in strict sort",
-          (g_sorts[data] & SORT_STRICT) == 0);
+        ENSURE("dummy variable in strict or free sort",
+          (g_sorts[data] & (SORT_STRICT | SORT_FREE)) == 0);
         ENSURE("too many bound variables, please rewrite the verifier",
           (g_next_bv >> 56) == 0);
         u64 type = TYPE_BOUND_MASK | ((u64)data << 56) | g_next_bv;
@@ -483,8 +488,10 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         for (u16 i = 0; i < t->num_args; i++) {
           u32 arg = as_type(g_stack_top[i], STACK_TYPE_EXPR);
           g_uheap[i] = arg;
+          store_expr* e = get_expr(arg);
           u64 target = targs[i];
-          u64 deps = get_expr(arg)->type & TYPE_DEPS_MASK;
+          ENSURE("type mismatch", sorts_compatible(e->type, target));
+          u64 deps = e->type & TYPE_DEPS_MASK;
           if (target & TYPE_BOUND_MASK) {
             g_deps[bound++] = deps;
             for (u16 j = 0; j < i; j++)
@@ -687,11 +694,10 @@ void verify(u8* file, u64 len) {
     u32 data = r.data;
     g_stmt = stmt;
     u8* next_stmt = stmt + data;
-    if (!(next_stmt + CMD_MAX_SIZE <= g_end)) {
-      // fprintf(stderr, "stmt: %lX, data: %X, len: %lX\n",
-      //   stmt - g_file, data, g_end - g_file);
-      ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
-    }
+    // if (!(next_stmt + CMD_MAX_SIZE <= g_end))
+    //   fprintf(stderr, "stmt: %lX, data: %X, len: %lX\n",
+    //     stmt - g_file, data, g_end - g_file);
+    ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
     u8 stmt_type = *stmt & 0x3F;
     switch (stmt_type) {
       // A sort command has no data in the proof stream. It simply bumps the

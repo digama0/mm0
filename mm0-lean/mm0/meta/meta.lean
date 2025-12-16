@@ -1,4 +1,4 @@
-import data.buffer category.basic tactic.core .basic
+import data.buffer tactic.core .basic
 
 def name.to_simple : name → string
 | (name.mk_string s _) := s
@@ -7,7 +7,7 @@ def name.to_simple : name → string
 meta def lean.parser.tk' (n : name) : lean.parser unit :=
 do x ← lean.parser.ident, tactic.trace (x, n), guard (x = n)
 
-meta def user_attribute.get_param' {α β : Type} [reflected β] (attr : user_attribute α β) (n : name) : tactic β :=
+meta def user_attribute.get_param' {α β : Type} [reflected _ β] (attr : user_attribute α β) (n : name) : tactic β :=
 attr.get_param_untyped n >>= tactic.eval_expr' β
 
 meta def declaration.value_opt : declaration → option expr
@@ -16,8 +16,9 @@ meta def declaration.value_opt : declaration → option expr
 | _                              := none
 
 namespace mm0
+namespace «meta»
 
-open tactic native
+open tactic native «meta»
 
 @[derive has_reflect]
 inductive mm0_param
@@ -64,7 +65,7 @@ meta def mm0 : user_attribute unit mm0_param :=
 { name := `mm0,
   parser := parse_mm0_param,
   after_set := some (λ n _ _, do
-    tac ← tactic.eval_expr (name → tactic unit) (expr.const `mm0.after_set []),
+    tac ← tactic.eval_expr (name → tactic unit) (expr.const `mm0.meta.after_set []),
     tac n),
   descr := "Metamath Zero declaration" }
 
@@ -245,4 +246,5 @@ meta def after_set (n : name) : tactic unit :=
 do s ← to_stmt n,
   add_decl (mk_definition (n <.> "_stmt") [] `(stmt) (reflect s))
 
+end «meta»
 end mm0

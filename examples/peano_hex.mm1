@@ -95,38 +95,83 @@ infixr scons: $':$ prec 53;
 @(add-eval 15) def d15: nat = $suc 14$; prefix d15: $15$ prec max;
 @(add-eval 16) def d16: nat = $suc 15$; prefix d16: $16$ prec max;
 
+do {
+  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
+  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
+    (if {n < 8}
+      (if {n < 4}
+        (match n [0 v0] [1 v1] [2 v2] [3 v3])
+        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
+      (if {n < 12}
+        (match n [8 v8] [9 v9] [10 va] [11 vb])
+        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
+  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
+  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
+  (def hexstring @ on-hexstrings @ fn (s) s)
+  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
+  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
+};
+
 --| `h2n a`, the coercion `hex > nat`, embeds a hex digit to a natural number.
 --| Because we cannot define functions by case distinction on `hex`, we must
 --| axiomatize the value of this coercion on each digit.
 --| This implies that all the elements of `hex` are distinct.
 @(add-eval eval)
 term h2n: hex > nat; coercion h2n: hex > nat;
--- The `eval-check` is an annotation that runs the evaluator on these expressions
--- to make sure that they come out true.
-@eval-check axiom h2n0: $ x0 = 0 $;   @eval-check axiom h2n1: $ x1 = 1 $;
-@eval-check axiom h2n2: $ x2 = 2 $;   @eval-check axiom h2n3: $ x3 = 3 $;
-@eval-check axiom h2n4: $ x4 = 4 $;   @eval-check axiom h2n5: $ x5 = 5 $;
-@eval-check axiom h2n6: $ x6 = 6 $;   @eval-check axiom h2n7: $ x7 = 7 $;
-@eval-check axiom h2n8: $ x8 = 8 $;   @eval-check axiom h2n9: $ x9 = 9 $;
-@eval-check axiom h2na: $ xa = 10 $;  @eval-check axiom h2nb: $ xb = 11 $;
-@eval-check axiom h2nc: $ xc = 12 $;  @eval-check axiom h2nd: $ xd = 13 $;
-@eval-check axiom h2ne: $ xe = 14 $;  @eval-check axiom h2nf: $ xf = 15 $;
 
 --| This allows us to prove facts about hex digits by case analysis.
 --| It is not provable from the above axioms because the fact that the "hex"
 --| sort has only the given 16 constructors is only observable from outside the theory.
--- We can't use `eval-check` here because the axiom has a free variable.
 axiom h2nlt (h: hex): $ h < 16 $;
+
+do (def (prove-lt-16 r t)
+  @ match t @ $ ,a < _ $
+  @ r t (iterate (eval a) (fn (x) '(mpbi ltsuc ,x)) 'lt01S));
+
+-- The `eval-check` is an annotation that runs the evaluator on these expressions
+-- to make sure that they come out true.
+pub theorem d0lt16: $ 0 < 16 $ = prove-lt-16;   @eval-check axiom h2n0: $ x0 = 0 $;
+pub theorem d1lt16: $ 1 < 16 $ = prove-lt-16;   @eval-check axiom h2n1: $ x1 = 1 $;
+pub theorem d2lt16: $ 2 < 16 $ = prove-lt-16;   @eval-check axiom h2n2: $ x2 = 2 $;
+pub theorem d3lt16: $ 3 < 16 $ = prove-lt-16;   @eval-check axiom h2n3: $ x3 = 3 $;
+pub theorem d4lt16: $ 4 < 16 $ = prove-lt-16;   @eval-check axiom h2n4: $ x4 = 4 $;
+pub theorem d5lt16: $ 5 < 16 $ = prove-lt-16;   @eval-check axiom h2n5: $ x5 = 5 $;
+pub theorem d6lt16: $ 6 < 16 $ = prove-lt-16;   @eval-check axiom h2n6: $ x6 = 6 $;
+pub theorem d7lt16: $ 7 < 16 $ = prove-lt-16;   @eval-check axiom h2n7: $ x7 = 7 $;
+pub theorem d8lt16: $ 8 < 16 $ = prove-lt-16;   @eval-check axiom h2n8: $ x8 = 8 $;
+pub theorem d9lt16: $ 9 < 16 $ = prove-lt-16;   @eval-check axiom h2n9: $ x9 = 9 $;
+pub theorem d10lt16: $ 10 < 16 $ = prove-lt-16; @eval-check axiom h2na: $ xa = 10 $;
+pub theorem d11lt16: $ 11 < 16 $ = prove-lt-16; @eval-check axiom h2nb: $ xb = 11 $;
+pub theorem d12lt16: $ 12 < 16 $ = prove-lt-16; @eval-check axiom h2nc: $ xc = 12 $;
+pub theorem d13lt16: $ 13 < 16 $ = prove-lt-16; @eval-check axiom h2nd: $ xd = 13 $;
+pub theorem d14lt16: $ 14 < 16 $ = prove-lt-16; @eval-check axiom h2ne: $ xe = 14 $;
+pub theorem d15lt16: $ 15 < 16 $ = prove-lt-16; @eval-check axiom h2nf: $ xf = 15 $;
+
+do {
+  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
+  (for 0 16 @ fn (i)
+    (set-doc! (h2nn i) @ string-append "Evaluation of the `h2n` function at " i ".\n"
+      "(This has to be an axiom because `h2n` is a primitive term constructor.\n"
+      "It is trivial to prove this axiom is conservative by interpreting `hex` as\n"
+      "the natural numbers less than 16.)"))
+  (def (->hex n)
+    (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
+      '(h2n @ ,(hexdigit n))))
+  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
+};
 
 --| `c2n a`, the coercion `char > nat`, embeds a character
 --| as a natural number less than 256.
 @(add-eval eval)
 term c2n: char > nat; coercion c2n: char > nat;
---| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
-axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 --| The `c2n` function is less than 256 for all elements of the type `char`.
 --| This ensures that there are no other elements in the syntactic sort `char`.
 axiom c2nlt (c: char): $ c < 16 * 16 $;
+--| Justifies the use of c2nch and c2nlt
+pub theorem chlt256 (hi lo: hex): $ hi * 16 + lo < 16 * 16 $ =
+'(mpbir (lteq2 mulS1) @ trud @ leltaddd (a1i @ lemul1a @ mpbir leltsuc h2nlt) @ a1i h2nlt);
+--| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
+axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
 
 --| `s2n s`, the coercion `string > nat`,
 --| interprets a string as a `List u8` in the obvious way:
@@ -140,17 +185,30 @@ axiom c2nlt (c: char): $ c < 16 * 16 $;
 --| theorems about.
 @(add-eval eval)
 term s2n: string > nat; coercion s2n: string > nat;
-axiom s2ns0: $ s0 = 0 $;
-axiom s2ns1 (c: char): $ s1 c = c : 0 $;
-axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+@_ def isStr (s .c: nat): wff = $ all {c | c < 16 * 16} s $;
 --| The `s2n` function returns a list all of whose elements
 --| are numbers less than 256.
-axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
+axiom s2nstr (s: string): $ isStr s $;
+pub theorem s0str: $ isStr 0 $ = (named 'all0);
+axiom s2ns0: $ s0 = 0 $;
+pub theorem s1str (c: char): $ isStr (c : 0) $ = '(mpbir all1 @ mpbir (elabe ,eqtac) c2nlt);
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+pub theorem saddstr (s t: string): $ isStr (s ++ t) $ =
+(named '(mpbir allappend @ iani s2nstr s2nstr));
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+
+do (add-axiom-set! 'axs_string "String axioms" '(
+  h2n0 h2n1 h2n2 h2n3 h2n4 h2n5 h2n6 h2n7 h2n8 h2n9 h2na h2nb h2nc h2nd h2ne h2nf
+  h2nlt c2nch c2nlt s2ns0 s2ns1 s2nsadd s2nlt));
 
 theorem s2nscons: $ c ': s = c : s $ =
 '(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
 theorem s2nscons0: $ c ': s0 = s1 c $ =
 '(eqtr s2nsadd @ eqtr (appendeq2 s2ns0) append02);
+theorem sconseq1 (c1 c2 s): $ c1 = c2 -> c1 ': s = c2 ': s $ =
+'(eqtr4g s2nscons s2nscons conseq1);
+theorem sconseq2 (c s1 s2): $ s1 = s2 -> c ': s1 = c ': s2 $ =
+'(eqtr4g s2nscons s2nscons conseq2);
 
 theorem s2n_A (h1: $ s = a $) (h2: $ t = b $): $ s '+ t = a ++ b $ =
 '(eqtr s2nsadd @ appendeq h1 h2);
@@ -160,14 +218,16 @@ theorem s2n_S (h1: $ c = a $) (h2: $ s = b $): $ c ': s = a : b $ =
 theorem s2n_SE (h: $ s = a $): $ c ': s = c : a $ = '(s2n_S eqid h);
 theorem s2n_SAE (h: $ s = a ++ b $): $ c ': s = c : a ++ b $ =
 '(eqtr4 (s2n_SE h) appendS);
+theorem s2n_SASE (h: $ s = a ++ b $): $ c ': s = (c ': a) ++ b $ =
+'(eqtr4 (s2n_SAE h) @ appendeq1 s2nscons);
 theorem append01i (h: $ a = b $): $ a = 0 ++ b $ = '(eqtr4 h append0);
 theorem s2n_R0: $ s0 = repeat a 0 $ = '(eqtr4 s2ns0 repeat0);
 theorem s2n_R1 (h: $ c = a $): $ s1 c = repeat a 1 $ =
 '(eqtr4 (s2n_1 h) repeat1);
-theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $):
-  $ s '+ t = repeat a (m + n) $ = '(eqtr4 (s2n_A h1 h2) repeatadd);
-theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $):
-  $ c ': s = repeat a (suc n) $ = '(eqtr4 (s2n_S h1 h2) repeatS);
+theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $) (h3: $ m + n = p $):
+  $ s '+ t = repeat a p $ = '(eqtr (s2n_A h1 h2) @ eqtr3 repeatadd @ repeateq2 h3);
+theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $) (h3: $ suc n = p $):
+  $ c ': s = repeat a p $ = '(eqtr (s2n_S h1 h2) @ eqtr3 repeatS @ repeateq2 h3);
 theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
 '(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
 
@@ -179,7 +239,7 @@ infixl hex: $:x$ prec 120;
   (ha: $ G -> a1 = a2 $) (hx: $ G -> x1 = x2 $): $ G -> hex a1 x1 = hex a2 x2 $ =
 '(addeqd (muleq1d ha) hx);
 theorem hexeq1: $ a1 = a2 -> hex a1 x = hex a2 x $ = '(hexeqd id eqidd);
-theorem hexeq2: $ x1 = x2 -> hex a x1 = hex a x2 $ = '(hexeqd eqidd id);
+theorem hexeq2: $ _x1 = _x2 -> hex a _x1 = hex a _x2 $ = '(hexeqd eqidd id);
 
 theorem suc_xf: $ suc xf = 16 $ = '(suceq h2nf);
 
@@ -188,7 +248,7 @@ theorem hex01: $ x0 :x a = a $ = '(eqtr (hexeq1 h2n0) hex01_);
 theorem hex02: $ n :x x0 = n * 16 $ = '(eqtr (addeq2 h2n0) add0);
 theorem hex10: $ x1 :x x0 = 16 $ = '(eqtr hex02 @ eqtr (muleq1 h2n1) mul11);
 
-theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
+theorem c2nhex: $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
 theorem c2nh2n: $ ch x0 a = h2n a $ = '(eqtr c2nhex hex01);
 
 --| `(to-u8-ch a)` returns a pair `(c p)` where `p: c2n c = a`
@@ -208,25 +268,6 @@ theorem mulx11: $ x1 * a = a $ = '(eqtr (muleq1 h2n1) mul11);
 theorem mulx12: $ a * x1 = a $ = '(eqtr (muleq2 h2n1) mul12);
 theorem h2n10: $ 16 = x1 :x x0 $ = '(eqtr2 hex02 mulx11);
 do {
-  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
-  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
-    (if {n < 8}
-      (if {n < 4}
-        (match n [0 v0] [1 v1] [2 v2] [3 v3])
-        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
-      (if {n < 12}
-        (match n [8 v8] [9 v9] [10 va] [11 vb])
-        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
-  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
-  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
-  (def hexstring @ on-hexstrings @ fn (s) s)
-  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
-  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
-  (def (->hex n)
-    (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
-      '(h2n @ ,(hexdigit n))))
-  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
-  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
   (def hex->number @ match-fn
     [('c2n e) (hex->number e)]
     [('h2n (e)) (hexdigit->number e)]
@@ -243,10 +284,10 @@ do {
   (def (string->hex s)
     (def n (string-len s))
     @ letrec (
-      [(f i) @ if {i < n}
-        '(scons ,(number->ch @ string-nth i s) ,(f {i + 1}))
-        '(s0)])
-    (f 0))
+      [(f i out) @ if {i = 0} out @ begin
+        (def j {i - 1})
+        (f j '(scons ,(number->ch @ string-nth j s) ,out))])
+    (f n '(s0)))
 };
 
 do {
@@ -443,26 +484,26 @@ do {
     [(('hex a (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (add_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
       [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (add_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
-    [(('h2n (a)) ('hex b (c))) @ match (decaddn (hexdigit->number a) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (add_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,b ,d) (add_0x0 (,a) ,b (,c) ,d (,p)))]]
-    [(('hex a (b)) ('h2n (c))) @ match (decaddn (hexdigit->number b) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (add_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,a ,d) (add_x00 ,a (,b) (,c) ,d (,p)))]]
-    [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+    [(('h2n (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc c) @ (e p1) '((hex ,e ,f) (add_0x1 (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,c ,f) (add_0x0 (,b) ,c (,d) ,f (,p2)))]]
+    [(('hex a (b)) ('h2n (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc a) @ (e p1) '((hex ,e ,f) (add_x01 ,a (,b) (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,a ,f) (add_x00 ,a (,b) (,d) ,f (,p2)))]]
+    [(('h2n (b)) ('h2n (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d)) ['(,r ,p) '(,r (,p))]])
   --| Raw carry-addition theorem generator: given `a`, `b` in normal form,
   --| returns `(c p)` where `p: suc (a + b) = c`
   (def mkadc @ match-fn*
     [(('hex a (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (adc_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
       [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (adc_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
-    [(('h2n (a)) ('hex b (c))) @ match (decadcn (hexdigit->number a) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (adc_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,b ,d) (adc_0x0 (,a) ,b (,c) ,d (,p)))]]
-    [(('hex a (b)) ('h2n (c))) @ match (decadcn (hexdigit->number b) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (adc_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,a ,d) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
-    [(('h2n (a)) ('h2n (b))) @ match (decadcn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+    [(('h2n (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc c) @ (e p1) '((hex ,e ,f) (adc_0x1 (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,c ,f) (adc_0x0 (,b) ,c (,d) ,f (,p2)))]]
+    [(('hex a (b)) ('h2n (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mksuc a) @ (e p1) '((hex ,e ,f) (adc_x01 ,a (,b) (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n f) p2) '((hex ,a ,f) (adc_x00 ,a (,b) (,d) ,f (,p2)))]]
+    [(('h2n (b)) ('h2n (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d)) ['(,r ,p) '(,r (,p))]])
 
   --| Addition tactic: usable in refine scripts when the target is `a + b = ?c` (or `suc (a + b) = ?c`),
   --| producing a proof and unifying `?c`
@@ -702,7 +743,6 @@ theorem d4lt7: $ 4 < 7 $ = norm_num;
 theorem d4lt8: $ 4 < 8 $ = norm_num;
 theorem d6lt7: $ 6 < 7 $ = norm_num;
 theorem d8ne0: $ 8 != 0 $ = norm_num;
-theorem d8lt16: $ 8 < 16 $ = norm_num;
 theorem d8add8: $ 8 + 8 = 16 $ = norm_num;
 theorem d16ne0: $ 16 != 0 $ = norm_num;
 theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;

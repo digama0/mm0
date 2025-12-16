@@ -20,25 +20,25 @@
   "homepage": "https://github.com/digama0/mm0#readme",
   "scripts": {
     "build": "rimraf dist pkg && webpack",
-    "start": "rimraf dist pkg && webpack-dev-server --open -d",
+    "start": "rimraf dist pkg && webpack serve --open",
     "test": "cargo test && wasm-pack test --headless"
   },
   "dependencies": {
-    "codemirror": "^5.58.3",
-    "monaco-editor": "^0.21.2",
-    "monaco-editor-webpack-plugin": "^2.0.0",
+    "codemirror": "^5.61.1",
+    "monaco-editor": "^0.25.2",
+    "monaco-editor-webpack-plugin": "^4.0.0",
     "monaco-themes": "^0.3.3"
   },
   "devDependencies": {
-    "@wasm-tool/wasm-pack-plugin": "^1.1.0",
-    "copy-webpack-plugin": "^5.0.3",
-    "css-loader": "^5.0.1",
+    "@wasm-tool/wasm-pack-plugin": "^1.4.0",
+    "copy-webpack-plugin": "^9.0.0",
+    "css-loader": "^5.2.6",
     "file-loader": "^6.2.0",
     "raw-loader": "^4.0.2",
-    "rimraf": "^3.0.0",
+    "rimraf": "^3.0.2",
     "style-loader": "^2.0.0",
-    "webpack": "^4.42.0",
-    "webpack-cli": "^3.3.3",
-    "webpack-dev-server": "^3.7.1"
+    "webpack": "^5.103.0",
+    "webpack-cli": "^4.9.1",
+    "webpack-dev-server": "^5.2.1"
   }
 }

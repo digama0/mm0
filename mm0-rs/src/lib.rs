@@ -22,34 +22,33 @@
   missing_copy_implementations, missing_debug_implementations, future_incompatible,
   rust_2018_idioms, trivial_numeric_casts, variant_size_differences, unreachable_pub,
   unused, missing_docs)]
+#![deny(unsafe_op_in_unsafe_fn)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
-#![warn(clippy::else_if_without_else, clippy::float_arithmetic,
+#![warn(clippy::float_arithmetic,
   clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
   clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
-  clippy::string_add, clippy::unwrap_used, clippy::wrong_pub_self_convention)]
+  clippy::string_add,
+  clippy::undocumented_unsafe_blocks,
+  clippy::unwrap_used)]
 // all the clippy lints we don't want
-#![allow(clippy::cognitive_complexity, clippy::comparison_chain,
-  clippy::default_trait_access, clippy::enum_glob_use, clippy::filter_map, clippy::inline_always,
+#![allow(
+  clippy::blocks_in_conditions,
+  clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
+  clippy::comparison_chain,
+  clippy::default_trait_access, clippy::enum_glob_use, clippy::inline_always,
   clippy::manual_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
   clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
-  clippy::multiple_crate_versions, clippy::option_if_let_else,
-  clippy::shadow_unrelated, clippy::too_many_lines, clippy::unnested_or_patterns,
+  clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::redundant_pub_crate,
+  clippy::semicolon_if_nothing_returned,
+  clippy::significant_drop_tightening, // rust-clippy#10413
+  clippy::single_match_else, clippy::shadow_unrelated,
+  clippy::too_many_lines,
+  clippy::trait_duplication_in_bounds, // rust-clippy#8757, rust-clippy#8771
+  clippy::type_repetition_in_bounds, // rust-clippy#8771
   clippy::use_self)]
-
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate futures;
-#[macro_use] extern crate debug_derive;
-#[macro_use] extern crate mm0_util;
-
-#[cfg(feature = "mmc")]
-#[macro_use] extern crate bitflags;
-#[cfg(feature = "mmc")]
-#[macro_use] extern crate if_chain;
-
-#[cfg(feature = "memory")]
-#[macro_use] extern crate mm0_deepsize;
 
 #[cfg(feature = "memory")]
 pub use mm0_deepsize::deep_size_0;
@@ -59,7 +58,7 @@ pub use mm0_deepsize::deep_size_0;
 #[macro_export] macro_rules! deep_size_0 {($($e:tt)*) => {}}
 
 #[cfg(feature = "server")]
-#[macro_use] pub mod server;
+pub mod server;
 pub mod compiler;
 pub mod joiner;
 pub mod elab;
@@ -80,20 +79,35 @@ pub mod mmu { pub mod import; pub mod export; }
 #[cfg(feature = "mmc")]
 pub mod mmc;
 
+#[cfg(test)]
+mod test;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use elab::{environment::*,
   frozen::{FrozenAtomData, FrozenEnv, FrozenLispKind, FrozenLispVal},
-  lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, Uncons},
+  lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, LispProc, Uncons},
   local_context::{try_get_span, LocalContext},
-  ElabError, Elaborator};
+  ElabError, Elaborator, ElabOptions};
 pub use mm0_util::*;
 pub use mm1_parser::{ast, DocComment, ErrorLevel};
 pub use mm0b_parser::MAX_BOUND_VARS;
 
 static CHECK_PROOFS: AtomicBool = AtomicBool::new(true);
-pub(crate) fn get_check_proofs() -> bool { CHECK_PROOFS.load(Ordering::Relaxed) }
+static CHECK_PARENS: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn get_options() -> ElabOptions {
+  ElabOptions {
+    check_proofs: CHECK_PROOFS.load(Ordering::Relaxed),
+    check_parens: CHECK_PARENS.load(Ordering::Relaxed),
+    unused_vars: true,
+  }
+}
 
 /// Set the initial proof checking behavior at the start of an MM1 file
 /// before a `(check-proofs)` command is found.
 pub fn set_check_proofs(b: bool) { CHECK_PROOFS.store(b, Ordering::Relaxed) }
+
+/// Set the initial parenthesis warn behavior at the start of an MM1 file
+/// before a `(warn-unnecessary-parens)` command is found.
+pub fn set_check_parens(b: bool) { CHECK_PARENS.store(b, Ordering::Relaxed) }

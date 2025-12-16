@@ -1,8 +1,8 @@
 [package]
 name = "mm0_util"
-version = "0.1.1"
+version = "0.1.4"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
-edition = "2018"
+edition = "2024"
 description = "MM0/MM1 language utilities"
 repository = "https://github.com/digama0/mm0"
 include = ["Cargo.toml", "src/**/*.rs", "../../README.md", "rustfmt.toml"]
@@ -15,21 +15,21 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.2"
+bitflags = "2.6"
 
 # optional dependencies
 mm0_deepsize = { version = "0.1.0", path = "../mm0_deepsize", optional = true }
-mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", default-features = false, optional = true }
-lazy_static = { version = "1.4", optional = true }
+mm0_deepsize_derive = { version = "0.1.1", path = "../mm0_deepsize_derive", optional = true }
 pathdiff = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
-lsp-types = { version = "0.89", optional = true }
+lsp-types = { version = "0.97", optional = true }
+url = { version = "2.5", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procinfo = { version = "0.4", optional = true }
+procfs = { version = "0.17", optional = true }
 
 [features]
-default = ["memory", "lined_string"]
-memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procinfo"]
-server = ["lsp-types"]
-lined_string = ["lazy_static", "pathdiff"]
+default = ["lined_string"]
+memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procfs"]
+server = ["lsp-types", "mm0_deepsize/lsp-types", "url"]
+lined_string = ["pathdiff"]

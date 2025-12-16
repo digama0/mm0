@@ -1,0 +1,38 @@
+[package]
+name = "mmcc"
+version = "0.1.0"
+authors = ["Mario Carneiro <di.gama@gmail.com>"]
+edition = "2024"
+description = "Metamath C proof producing compiler"
+repository = "https://github.com/digama0/mm0"
+readme = "README.md"
+license = "CC0-1.0"
+keywords = ["theorem", "proving", "proof", "assistant", "compiler"]
+categories = ["compilers", "mathematics"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitflags = "2.6"
+byteorder = "1.5"
+hex = "0.4"
+num = "0.4"
+itertools = "0.14"
+if_chain = "1.0"
+smallvec = { version = "1.8", features = ["union"] }
+arrayvec = "0.7"
+im = "15.1"
+bit-vec = "0.8"
+bit-set = "0.8"
+hashbrown = "0.15"
+typed-arena = "2.0"
+# simplelog = "0.12"
+bumpalo = { version = "3.10", features = ["boxed", "collections"] }
+regalloc2 = "0.12"
+mm0_util = { path = "../mm0_util", default-features = false }
+mm0_deepsize = { path = "../mm0_deepsize", optional = true, features = [
+  "num", "typed-arena", "smallvec", "bit-vec", "bit-set"] }
+mm0_deepsize_derive = { path = "../mm0_deepsize_derive", optional = true }
+
+[features]
+memory = ["mm0_util/memory", "mm0_deepsize", "mm0_deepsize_derive"]

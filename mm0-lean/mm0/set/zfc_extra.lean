@@ -1,4 +1,4 @@
-import set_theory.zfc data.quot
+import set_theory.zfc.basic data.quot
 
 namespace Set
 
@@ -8,16 +8,7 @@ noncomputable def image' (f : Set → Set) : Set → Set :=
 @[simp] theorem mem_image' {f : Set → Set} {x y : Set} :
   y ∈ image' f x ↔ ∃z ∈ x, f z = y := by apply mem_image
 
-noncomputable def range {α : Type*} (f : α → Set) : Set :=
-Set.mk $ pSet.mk _ (λ x, (f x).out)
-
-@[simp] theorem mem_range {α : Type*} {f : α → Set} {x : Set} :
-  x ∈ range f ↔ ∃ i, f i = x :=
-quotient.induction_on x $ λ x, exists_congr $ λ i,
-  show x ≈ quotient.out (f i) ↔ f i = ⟦x⟧,
-  by rw [← quotient.eq, eq_comm, quotient.out_eq]
-
-noncomputable def Union' {α : Type*} (S : α → Set) : Set := Union (range S)
+noncomputable def Union' {α : Type*} (S : α → Set) : Set := sUnion (range S)
 
 @[simp] theorem mem_Union' {α : Type*} {S : α → Set} {x : Set} :
   x ∈ Union' S ↔ ∃ i, x ∈ S i :=
@@ -27,3 +18,16 @@ by simp [Union']; exact
 end Set
 
 instance : has_ssubset Class := by dunfold Class; apply_instance
+
+namespace Class
+universe u
+
+@[simp] theorem mem_hom_left (x : Set.{u}) (A : Class.{u}) : (x : Class.{u}) ∈ A ↔ A x :=
+to_Set_of_Set _ _
+
+@[simp] theorem mem_hom_right (x y : Set.{u}) : (y : Class.{u}) x ↔ x ∈ y := iff.rfl
+
+@[simp] theorem ssubset_iff : ∀ {x y : Class.{u}}, x ⊂ y ↔ x ⊆ y ∧ x ≠ y :=
+  λ x y : set Set, show x ⊂ y ↔ x ⊆ y ∧ x ≠ y, from ssubset_iff_subset_ne
+
+end Class

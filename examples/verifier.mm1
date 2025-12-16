@@ -15,20 +15,20 @@ theorem Verifier_basicElf: $ isBasicElf Verifier $;
 --| ensuring that the final input is empty (the entire input was consumed),
 --| the output is empty (it outputs nothing), and the theorems in the
 --| mm0 file are derivable.
-theorem Verifier_terminates {input output: nat} (k mm0_file: nat):
-  $ initialConfig Verifier mm0_file k ->
-    terminates_ensuring k (S\ input, {output |
-      input = 0 /\ output = 0 /\ Valid mm0_file}) $;
+theorem Verifier_terminates {mm0_file output: nat} (k: nat):
+  $ initialConfig Verifier k ->
+    terminates_ensuring k (S\ mm0_file, {output |
+      output = 0 /\ Valid mm0_file}) $;
 
 --| Unpacking the above claim: if we set up an initial configuration
 --| such that `mm0_file` is on standard in, and it runs to completion
 --| having consumed the input and produced no output with exit code 0,
 --| then the theorems in the input are derivable.
-theorem Verifier_Valid (k mm0_file i o: nat):
-  $ initialConfig Verifier mm0_file k /\ succeeds k 0 0 ->
+theorem Verifier_Valid (k mm0_file: nat):
+  $ initialConfig Verifier k /\ succeeds k mm0_file 0 ->
     Valid mm0_file $ =
-(named '(mpd (sylan terminates_ensuring_succeeds (anwl Verifier_terminates) anr) @
-  eexsabd @ eelabd @ a1i anr));
+(named '(anrd @ sylib (elsabe @ elabed @ aneqd (eqeq1d anr) @ Valideqd anl) @
+  sylan terminates_ensuring_succeeds (anwl Verifier_terminates) anr));
 
 def Represents (env a_sorts a_terms a_thms: nat) = $ T. $;
 
@@ -40,12 +40,12 @@ do {
 
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
   (mmc-add '(
-    (struct CStr
+    (intrinsic @ struct CStr
       {(ghost len) : nat}
       {buf : (array u8 {len + 1})}
       {eq0 : (pure $ A. i (nth buf i = suc 0 <-> i = len) $)})
 
-    (struct Stat
+    (intrinsic @ struct Stat
       {st_dev : u64} {st_ino : u64} {st_nlink : u64}
       {st_mode : u32} {st_uid : u32} {st_gid : u32} {_ : i32}
       {st_rdev : u64} {st_size : i64}
@@ -55,15 +55,15 @@ do {
       {st_ctime : i64} {st_ctime_nsec : i64}
       {_ : (array i64 3)})
 
-    (intrinsic (sys_fstat {fd : u32}
-      {(ghost (mut buf)) : (? Stat)} {p : (&sn buf)} :
-      {(out buf) : Stat}
+    (intrinsic @ proc (sys_fstat {fd : u32}
+      (mut {(ghost buf) : (? Stat)}) {p : (&sn buf)} :
+      (out {buf : Stat})
       u32))
-    (intrinsic (sys_open
+    (intrinsic @ proc (sys_open
       {fname : (& CStr)}
       {flags : {(sn O_RDONLY) or (sn {O_WRONLY + O_CREAT + O_TRUNC})}} :
       u32))
-    (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
+    (intrinsic @ proc (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
       {(ghost anon) : bool}
       {flags : (sn {(if anon MAP_PRIVATE {MAP_PRIVATE + MAP_ANONYMOUS}) : u64})}
       {fd : (if anon (sn {(- 1) : i64}) i64)}
@@ -136,7 +136,8 @@ do {
         {0 => (return w 1 0)}
         {1 => (return w 2 {(index cmd 1) as u32})}
         {2 => (return w 3 {{(pun @ slice cmd 1 2) : u16} as u32})}
-        {3 => (return w 5 {(pun @ slice cmd 1 4) : u32})}))
+        {3 => (return w 5 {(pun @ slice cmd 1 4) : u32})}
+        {_ => (unreachable _)}))
 
     (proc (parse_until
       (global {C : CState})
@@ -211,7 +212,7 @@ do {
         (continue
           (variant (entail h_unpack remainder
             -- proof of
-            -- w <> sz <> data = cmd_unpack (* stmt),
+            -- w, sz, data = cmd_unpack (* stmt),
             -- remainder = old_rem - data |- remainder < old_rem
             _))))
       (assert {((M . sorts) . cur) = ((C . sorts) . max)})
@@ -228,15 +229,14 @@ do {
         (pure $ output = 0 /\ Valid input $))
       {(output2 oz) := output}
       {output <- output2}
-      (begin
-        {n := (sys_open (index args 1) O_RDONLY)}
-        (assert {0 <= {n as i64}}))
+      {fd := (sys_open (index args 1) O_RDONLY)}
+      (assert {0 <= {fd as i64}})
       {{buf : (? Stat)} := uninit}
       (begin
-        {n := (sys_fstat fd (mut buf) _)}
+        {n := (sys_fstat fd buf _)}
         (assert {0 <= {n as i64}}))
       {len := (buf . st_size)}
-      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE))}
+      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE {fd as i64} 0))}
       {{((ghost buf) file) : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of

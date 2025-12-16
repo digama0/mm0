@@ -4,6 +4,7 @@
 node_modules/
 build/
 mm0-hs/mm0-hs.cabal
+examples/*.mmb
 *~
 out.*
 *.olean

@@ -2,75 +2,73 @@ name: CI
 
 on:
   push:
-    branches: '*'
+    branches: "*"
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-
   build-mm0-rs:
     name: mm0-rs
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Cache mm0-rs
-      id: cache-mm0-rs
-      uses: actions/cache@v2
-      with:
-        path: mm0-rs/target/release/mm0-rs
-        key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
-    - name: Cache build mm0-rs
-      id: cache-build-mm0-rs
-      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          mm0-rs/target
-        key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-release-
-    - name: Build mm0-rs
-      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
-      working-directory: mm0-rs
-      run: cargo build --verbose --release
-    - name: Run tests
-      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
-      working-directory: mm0-rs
-      run: cargo test --verbose --release
-    - uses: actions/upload-artifact@v2
-      with:
-        name: mm0-rs
-        path: mm0-rs/target/release/mm0-rs
+      - uses: actions/checkout@v4
+      - name: Cache mm0-rs
+        id: cache-mm0-rs
+        uses: actions/cache@v4
+        with:
+          path: mm0-rs/target/release/mm0-rs
+          key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
+      - name: Install stable rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache build mm0-rs
+        id: cache-build-mm0-rs
+        if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mm0-rs/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+      - name: Build mm0-rs
+        if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+        working-directory: mm0-rs
+        run: cargo build --verbose --release
+      - name: Run tests
+        if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+        working-directory: mm0-rs
+        run: cargo test --verbose --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mm0-rs
+          path: mm0-rs/target/release/mm0-rs
 
   clippy-mm0-rs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Install nightly rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        profile: minimal
-        components: clippy
-        default: true
-    - name: Cache clippy
-      id: cache-nightly-mm0-rs
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          mm0-rs/target
-        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
-    - name: Clippy
-      working-directory: ./mm0-rs
-      run: cargo clippy --all-features -- -D warnings
+      - uses: actions/checkout@v4
+      - name: Install nightly rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - name: Cache clippy
+        id: cache-nightly-mm0-rs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mm0-rs/target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
+      - name: Clippy
+        working-directory: ./mm0-rs
+        run: ./clippy.sh
 
   peano:
     name: Peano MM1 files
@@ -78,54 +76,61 @@ jobs:
     needs: build-mm0-rs
     if: ${{ always() }}
     steps:
-    - uses: actions/checkout@v2
-    - run: mkdir -p "$GITHUB_WORKSPACE/bin"
-    - uses: actions/download-artifact@v2
-      with:
-        name: mm0-rs
-        path: ./bin
-    - working-directory: mm0-c
-      run: gcc main.c -O2 -Wall -o $GITHUB_WORKSPACE/bin/mm0-c
-    - working-directory: bin
-      run: |
-        chmod +x mm0-rs
-        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-    - name: peano.mm1
-      working-directory: examples
-      run: mm0-rs compile peano.mm1 peano.mmb
-    - name: peano.mmb
-      working-directory: examples
-      run: mm0-c peano.mmb < peano.mm0
-    - name: peano_hex_join.mm0
-      working-directory: examples
-      run: mm0-rs join peano_hex.mm0 | tee peano_hex_join.mm0
-    - name: peano_hex.mm1
-      working-directory: examples
-      run: mm0-rs compile peano_hex.mm1 peano_hex.mmb
-    - name: peano_hex.mmb
-      working-directory: examples
-      run: mm0-c peano_hex.mmb < peano_hex_join.mm0
-    - name: mm0_join.mm0
-      working-directory: examples
-      run: mm0-rs join mm0.mm0 | tee mm0_join.mm0
-    - name: mm0.mm1
-      working-directory: examples
-      run: mm0-rs compile mm0.mm1 mm0.mmb
-    - name: mm0.mmb
-      working-directory: examples
-      run: mm0-c mm0.mmb < mm0_join.mm0
-    - name: x86_join.mm0
-      working-directory: examples
-      run: mm0-rs join x86.mm0 | tee x86_join.mm0
-    - name: x86.mm1
-      working-directory: examples
-      run: mm0-rs compile x86.mm1 x86.mmb
-    - name: x86.mmb
-      working-directory: examples
-      run: mm0-c x86.mmb < x86_join.mm0
-    - name: compiler.mm1
-      working-directory: examples
-      run: mm0-rs compile compiler.mm1 compiler.mmb
-    - name: compiler.mmb
-      working-directory: examples
-      run: mm0-c compiler.mmb < x86_join.mm0
+      - uses: actions/checkout@v4
+      - run: mkdir -p "$GITHUB_WORKSPACE/bin"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mm0-rs
+          path: ./bin
+      - working-directory: mm0-c
+        run: gcc main.c -O2 -Wall -o $GITHUB_WORKSPACE/bin/mm0-c
+      - working-directory: bin
+        run: |
+          chmod +x mm0-rs
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: peano.mm1
+        working-directory: examples
+        run: |
+          mm0-rs compile -W peano.mm1 peano.mmb
+          mm0-c peano.mmb < peano.mm0
+      - name: peano_hex.mm1
+        working-directory: examples
+        run: |
+          mm0-rs join peano_hex.mm0 | tee peano_hex_join.mm0
+          mm0-rs compile -W peano_hex.mm1 peano_hex.mmb
+          mm0-c peano_hex.mmb < peano_hex_join.mm0
+      - name: mm0.mm1
+        working-directory: examples
+        run: |
+          mm0-rs join mm0.mm0 | tee mm0_join.mm0
+          mm0-rs compile -W mm0.mm1 mm0.mmb
+          mm0-c mm0.mmb < mm0_join.mm0
+      - name: x86.mm1
+        working-directory: examples
+        run: |
+          mm0-rs join x86.mm0 | tee x86_join.mm0
+          mm0-rs compile -W x86.mm1 x86.mmb
+          mm0-c x86.mmb < x86_join.mm0
+      - name: compiler.mm1
+        working-directory: examples
+        run: |
+          mm0-rs join compiler.mm0 | tee compiler_join.mm0
+          mm0-rs compile -W compiler.mm1 compiler.mmb
+          # run: mm0-c compiler.mmb < x86_join.mm0
+          mm0-c compiler.mmb < compiler_join.mm0
+      - name: hello_mmc.mm1
+        working-directory: examples
+        run: |
+          mm0-rs join hello_mmc.mm0 | tee hello_mmc_join.mm0
+          mm0-rs compile -W hello_mmc.mm1 hello_mmc.mmb
+          mm0-c hello_mmc.mmb < hello_mmc_join.mm0
+      - name: hol.mm1
+        working-directory: examples
+        run: |
+          mm0-rs compile -W hol.mm1 hol.mmb
+          mm0-c hol.mmb < hol.mm0
+      - name: set.mm1
+        working-directory: examples
+        run: |
+          mm0-rs compile -W set.mm1 set.mmb
+          mm0-c set.mmb < set.mm0

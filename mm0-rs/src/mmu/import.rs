@@ -25,7 +25,7 @@ fn span(source: &[u8], s: Span) -> &[u8] { &source[s.start..s.end] }
 
 impl<'a> Importer<'a> {
   fn cur(&self) -> u8 { self.source[self.idx] }
-  fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).copied() }
 
   fn span(&self, s: Span) -> &'a [u8] { span(self.source, s) }
 
@@ -149,12 +149,13 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
+  #[allow(dead_code)] fn iter(&self) -> DedupIter<'_, H> { self.into_iter() }
+
   fn add(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
-        let vec = &mut self.vec;
-        let n = vec.len();
-        vec.push((e.key().clone(), false));
+        let n = self.vec.len();
+        self.vec.push((e.key().clone(), false));
         e.insert(n);
         n
       }
@@ -194,7 +195,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   }
 }
 
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
@@ -204,7 +205,7 @@ impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
   }
 }
 
-impl<'a, H: NodeHash> ExactSizeIterator for DedupIter<'a, H> {
+impl<H: NodeHash> ExactSizeIterator for DedupIter<'_, H> {
   fn len(&self) -> usize { self.0.len() }
 }
 
@@ -220,7 +221,7 @@ impl Dedup<ExprHash> {
   }
 }
 
-impl<'a> Importer<'a> {
+impl Importer<'_> {
   fn run(&mut self) -> Result<()> {
     self.ws();
     while let Some(start) = self.open() {
@@ -229,10 +230,10 @@ impl<'a> Importer<'a> {
           let x = self.ident_err()?;
           let mut next = self.ident_str();
           let mut mods = Modifiers::empty();
-          if let Some(b"pure") = next {next = self.ident_str(); mods |= Modifiers::PURE;}
-          if let Some(b"strict") = next {next = self.ident_str(); mods |= Modifiers::STRICT;}
-          if let Some(b"provable") = next {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
-          if let Some(b"free") = next {mods |= Modifiers::FREE;}
+          if next == Some(b"pure") {next = self.ident_str(); mods |= Modifiers::PURE;}
+          if next == Some(b"strict") {next = self.ident_str(); mods |= Modifiers::STRICT;}
+          if next == Some(b"provable") {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
+          if next == Some(b"free") {mods |= Modifiers::FREE;}
           let end = self.close_err()?;
           let a = self.env.get_atom(self.span(x));
           self.env.add_sort(a, self.fspan(x), (start..end).into(), mods, None)
@@ -277,7 +278,7 @@ impl<'a> Importer<'a> {
       if self.close().is_some() {
         if next_bv >= 1 << MAX_BOUND_VARS {
           return Err(ElabError::new_e(ysp,
-            format!("too many bound variables (max {})", MAX_BOUND_VARS)))
+            format!("too many bound variables (max {MAX_BOUND_VARS})")))
         }
         if y != AtomId::UNDER {bvs.insert(y, next_bv);}
         next_bv *= 2;
@@ -296,20 +297,21 @@ impl<'a> Importer<'a> {
           .ok_or_else(|| self.err("expecting sort".into()))?;
         let deps = self.deps(&bvs)?;
         self.close_err()?;
-        let kind = if let DeclKind::Term = dk {
+        let kind = if matches!(dk, DeclKind::Term) {
           TermKind::Term
         } else {
           self.dummies(&mut vars)?;
           let mut de = Dedup::new(&args);
           let i = self.expr(&mut de, &vars)?;
-          let (mut ids, heap) = build(&de);
-          TermKind::Def(Some(Expr {heap, head: ids[i].take()}))
+          let (mut ids, heap, mut store) = build(&de);
+          store.push(ids[i].take());
+          TermKind::Def(Some(Expr {heap, store: store.into()}))
         };
         let end = self.close_err()?;
         self.env.add_term(Term {
           atom,
           span: self.fspan(span),
-          vis: if let DeclKind::LocalDef = dk {Modifiers::LOCAL} else {Modifiers::empty()},
+          vis: if matches!(dk, DeclKind::LocalDef) {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(),
@@ -322,7 +324,7 @@ impl<'a> Importer<'a> {
         self.open_err()?;
         let mut is = vec![];
         while self.close().is_none() {
-          if let DeclKind::Axiom = dk {
+          if matches!(dk, DeclKind::Axiom) {
             is.push((None, self.expr(&mut de, &vars)?))
           } else {
             self.open_err()?;
@@ -334,10 +336,10 @@ impl<'a> Importer<'a> {
           }
         }
         let ir = self.expr(&mut de, &vars)?;
-        let (mut ids, heap) = build(&de);
+        let (mut ids, heap, store) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
-        let kind = if let DeclKind::Axiom = dk {
+        let kind = if matches!(dk, DeclKind::Axiom) {
           ThmKind::Axiom
         } else {
           self.dummies(&mut vars)?;
@@ -352,18 +354,19 @@ impl<'a> Importer<'a> {
             }
           }
           let ip = self.proof(&mut de, &vars, &mut proofs, ProofKind::Proof)?;
-          let (mut ids, heap) = build(&de);
+          let (mut ids, heap, mut store) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-          ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
+          store.push(ids[ip].take());
+          ThmKind::Thm(Some(Proof {heap, hyps, store: store.into()}))
         };
         let end = self.close_err()?;
         self.env.add_thm(Thm {
           atom,
           span: self.fspan(span),
-          vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
+          vis: if matches!(dk, DeclKind::Theorem) {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
-          args: args.into(), heap, hyps, ret, kind
+          args: args.into(), heap, store: store.into(), hyps, ret, kind
         }).map_err(|e| e.into_elab_error(span))?;
       }
     }
@@ -447,7 +450,7 @@ impl<'a> Importer<'a> {
           if let Some(i) = old {proofs.insert(h, i);} else {proofs.remove(&h);}
           return Ok(p2)
         }
-        t => if let ProofKind::Proof = ty {
+        t => if ty == ProofKind::Proof {
           let t = self.env.thm(t).ok_or_else(|| self.err("expecting theorem".into()))?;
           self.open_err()?;
           let td = &self.env.thms[t];
@@ -461,7 +464,7 @@ impl<'a> Importer<'a> {
           for (i, &n) in ns.iter().enumerate() { heap[i] = Some(n) }
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ProofKind::Proof)?)}
           let td = &self.env.thms[t];
-          let rhs = ProofHash::subst(de, &td.heap, &mut heap, &td.ret);
+          let rhs = ProofHash::subst(&self.env, de, &td.heap, &mut heap, &td.store, &td.ret);
           ProofHash::Thm(t, ns.into(), rhs)
         } else {
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
@@ -477,7 +480,7 @@ impl<'a> Importer<'a> {
       }
     } else {
       let a = self.ident_atom_err()?;
-      if let ProofKind::Proof = ty {
+      if ty == ProofKind::Proof {
         return Ok(de.reuse(*proofs.get(&a).ok_or_else(|| self.err("unknown subproof".into()))?))
       }
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {

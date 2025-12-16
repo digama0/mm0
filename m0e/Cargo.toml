@@ -2,7 +2,7 @@
 name = "m0e"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "MM0/MM1 explorer"
 repository = "https://github.com/digama0/mm0"
 readme = "README.md"
@@ -17,11 +17,13 @@ crate-type = ["cdylib"]
 lto = true
 
 [dependencies]
-lsp-types = "0.85.0"
+lsp-types = "0.93"
+crossbeam-channel = "0.5"
+serde = "1.0"
 mm0-rs = { path = "../mm0-rs", default-features = false, features = ["wasm", "server"] }
-wasm-bindgen = "0.2.69"
-console_error_panic_hook = "0.1.6"
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"] }
+console_error_panic_hook = "0.1"
 
 [dependencies.web-sys]
-version = "0.3.46"
+version = "0.3"
 features = ["console"]

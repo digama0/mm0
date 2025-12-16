@@ -1,16 +1,14 @@
 //! Build documentation pages for MM1/MM0 files
 use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
 use bit_set::BitSet;
-use clap::ArgMatches;
-use lsp_types::Url;
-use pulldown_cmark::escape::WriteWrapper;
-use std::convert::{TryFrom, TryInto};
+use url::Url;
+use pulldown_cmark_escape::IoWriter;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::mem;
 use crate::{lisp::pretty::Annot, ArcString, AtomData, AtomId, DeclKey, DocComment, EnvMergeIter,
   Environment, ExprNode, FileRef, FormatEnv, LinedString, LispVal, Proof, ProofNode, SliceUninit,
-  StmtTrace, TermId, Thm, ThmId, ThmKind, Type};
+  StmtTrace, TermId, Thm, ThmId, ThmKind, Type, LispKind, Uncons};
 
 const PP_WIDTH: usize = 160;
 
@@ -19,7 +17,7 @@ struct HtmlPrinter<'a, W: Write> {
   env: &'a Environment,
   mangler: &'a mut Mangler,
   rel: &'static str,
-  w: WriteWrapper<&'a mut W>,
+  w: IoWriter<&'a mut W>,
   stack: Vec<&'static str>
 }
 
@@ -27,24 +25,24 @@ impl<'a, W: Write> HtmlPrinter<'a, W> {
   /// Make a new `HtmlPrinter` from some writer.
   fn new(env: &'a Environment,
       mangler: &'a mut Mangler, w: &'a mut W, rel: &'static str) -> Self {
-    HtmlPrinter { env, mangler, w: WriteWrapper(w), rel, stack: Vec::new() }
+    HtmlPrinter { env, mangler, w: IoWriter(w), rel, stack: Vec::new() }
   }
 }
 
-impl<'a, W: Write> pretty::Render for HtmlPrinter<'a, W> {
+impl<W: Write> pretty::Render for HtmlPrinter<'_, W> {
   type Error = std::io::Error;
 
   fn write_str(&mut self, s: &str) -> io::Result<usize> {
-    pulldown_cmark::escape::escape_html(&mut self.w, s)?;
+    pulldown_cmark_escape::escape_html(&mut self.w, s)?;
     Ok(s.len())
   }
 
   fn fail_doc(&self) -> Self::Error {
-    io::Error::new(io::ErrorKind::Other, "Document failed to render")
+    io::Error::other("Document failed to render")
   }
 }
 
-impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W> {
+impl<'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'_, W> {
   /// Push the close annotation's close tag to the stack for later
   /// and write the open tag representation to the underlying writer
   fn push_annotation(&mut self, ann: &'b Annot) -> io::Result<()> {
@@ -59,6 +57,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
       Annot::SortModifiers(_) => tag!(span "sortmod"),
       Annot::Visibility(_) => tag!(span "vis"),
       Annot::Keyword => tag!(span "kw"),
+      Annot::Prec => tag!(span "prec"),
       Annot::SortName(sid) => {
         write!(self.w.0, "<a class=\"sortname\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.sorts[sid].atom];
@@ -71,7 +70,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
           crate::elab::environment::TermKind::Term => "term",
           crate::elab::environment::TermKind::Def(_) => "def"
         };
-        write!(self.w.0, "<a class=\"{}\" href=\"{}index.html#", kind, self.rel)?;
+        write!(self.w.0, "<a class=\"{kind}\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.terms[tid].atom];
         disambiguated_anchor(&mut self.w.0, ad, false)?;
         write!(self.w.0, "\">")?;
@@ -85,7 +84,7 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
           ThmKind::Thm(_) => "thm"
         };
         self.mangler.mangle(self.env, tid, |_, mangled|
-          write!(w, r#"<a class="{}" href="{}thms/{}.html">"#, kind, rel, mangled))?;
+          write!(w, r#"<a class="{kind}" href="{rel}thms/{mangled}.html">"#))?;
         self.stack.push("a");
       }
     }
@@ -99,61 +98,90 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
   }
 }
 
-struct AxiomUse(HashMap<ThmId, BitSet>);
+struct AxiomUse {
+  axiom_use: HashMap<ThmId, BitSet>,
+  axiom_sets: Vec<(AtomId, String, BitSet)>,
+}
 
 impl AxiomUse {
   fn new(env: &Environment) -> (Vec<ThmId>, Self) {
-    let mut axuse = HashMap::new();
+    let mut axiom_use = HashMap::new();
     let mut to_tid = vec![ThmId(u32::MAX)];
     for (tid, td) in env.thms.enum_iter() {
-      if let ThmKind::Axiom = td.kind {
+      if matches!(td.kind, ThmKind::Axiom) {
         let axid = to_tid.len();
         to_tid.push(tid);
         let mut bs = BitSet::new();
         bs.insert(axid);
-        axuse.insert(tid, bs);
+        axiom_use.insert(tid, bs);
       }
     }
-    (to_tid, AxiomUse(axuse))
+    let mut axiom_sets = vec![];
+    if let Some(data) = &env.data[AtomId::AXIOM_SETS].lisp {
+      data.val.unwrapped(|e| if let LispKind::AtomMap(m) = e {
+        for (&a, u) in m {
+          let mut axiom_set = BitSet::new();
+          let mut it = Uncons::new(u.clone()).peekable();
+          let doc = it.peek().and_then(|s| s.unwrapped(|s| match s {
+            LispKind::String(s) => Some(format!("{s}")),
+            _ => None
+          }));
+          if doc.is_some() { it.next(); }
+          for e in it {
+            if let Some(a) = e.as_atom() {
+              if let Some(DeclKey::Thm(tid)) = env.data[a].decl {
+                if let Some(bs) = axiom_use.get(&tid) { axiom_set.union_with(bs) }
+              }
+            }
+          }
+          if !axiom_set.is_empty() {
+            axiom_sets.push((a, doc.unwrap_or_default(), axiom_set))
+          }
+        }
+      })
+    }
+    axiom_sets.sort_by_cached_key(|set| set.2.iter().map(|i| to_tid[i].0).max());
+    (to_tid, AxiomUse { axiom_use, axiom_sets })
   }
 
-  fn accumulate(&mut self, env: &Environment, bs: &mut BitSet, node: &ProofNode) {
+  fn accumulate(&mut self, env: &Environment, bs: &mut BitSet, store: &[ProofNode], node: &ProofNode) {
     match node {
       ProofNode::Ref(_) |
       ProofNode::Dummy(_, _) |
-      ProofNode::Term {..} |
+      ProofNode::Term(..) |
       ProofNode::Hyp(_, _) |
       ProofNode::Refl(_) |
       ProofNode::Sym(_) |
-      ProofNode::Cong {..} |
-      ProofNode::Unfold {..} => {}
-      ProofNode::Conv(p) => self.accumulate(env, bs, &p.2),
-      &ProofNode::Thm {thm: tid, ref args, ..} => {
+      ProofNode::Cong(..) |
+      ProofNode::Unfold(..) => {}
+      ProofNode::Conv(p) => self.accumulate(env, bs, store, &store[p+2]),
+      &ProofNode::Thm(tid, p) => {
+        let (_, _, pfs) = env.thms[tid].unpack_thm(&store[p..]);
         bs.union_with(self.get(env, tid));
-        for p in &**args { self.accumulate(env, bs, p) }
+        for p in pfs { self.accumulate(env, bs, store, p) }
       }
     }
   }
 
-  fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmId) -> &'a BitSet {
-    if let Some(bs) = self.0.get(&tid) {
+  fn get<'a>(&'a mut self, env: &Environment, tid: ThmId) -> &'a BitSet {
+    if let Some(bs) = self.axiom_use.get(&tid) {
+      #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
-      #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
-      return unsafe { std::mem::transmute(bs) }
+      return unsafe { std::mem::transmute::<&BitSet, &BitSet>(bs) }
     }
     let mut bs = BitSet::new();
     let td = &env.thms[tid];
     match &td.kind {
       ThmKind::Axiom => unreachable!(),
       ThmKind::Thm(None) => {bs.insert(0);}
-      ThmKind::Thm(Some(Proof {heap, head, ..})) => {
-        for p in &heap[td.args.len()..] { self.accumulate(env, &mut bs, p) }
-        self.accumulate(env, &mut bs, head)
+      ThmKind::Thm(Some(pf)) => {
+        for p in &pf.heap[td.args.len()..] { self.accumulate(env, &mut bs, &pf.store, p) }
+        self.accumulate(env, &mut bs, &pf.store, pf.head())
       }
     }
-    self.0.entry(tid).or_insert(bs)
+    self.axiom_use.entry(tid).or_insert(bs)
   }
 }
 
@@ -175,6 +203,7 @@ struct LayoutProof<'a> {
   rev: bool,
   args: &'a [(Option<AtomId>, Type)],
   heap: &'a [ProofNode],
+  store: &'a [ProofNode],
   hyps: &'a [(Option<AtomId>, ExprNode)],
   heap_lines: Box<[Option<LayoutResult>]>,
 }
@@ -201,7 +230,7 @@ impl LayoutResult {
   }
 }
 
-impl<'a> LayoutProof<'a> {
+impl LayoutProof<'_> {
   fn push_line(&mut self, hyps: Box<[u32]>, kind: LineKind, expr: LispVal) -> u32 {
     let line = self.lines.len().try_into().expect("lines are u32");
     self.lines.push(Line {hyps, kind, expr});
@@ -209,8 +238,8 @@ impl<'a> LayoutProof<'a> {
   }
 
   fn layout_conv(&mut self, defs: &mut Vec<TermId>, p: &ProofNode) {
-    match p {
-      &ProofNode::Ref(i) => {
+    match *p {
+      ProofNode::Ref(i) => {
         for &d in
           if let Some(h) = &self.heap_lines[i] {h} else {
             let h = self.layout(&self.heap[i]);
@@ -224,11 +253,12 @@ impl<'a> LayoutProof<'a> {
       ProofNode::Thm {..} |
       ProofNode::Conv(_) => unreachable!(),
       ProofNode::Refl(_) => {}
-      ProofNode::Sym(c) => self.layout_conv(defs, c),
-      ProofNode::Cong {args, ..} => for c in &**args { self.layout_conv(defs, c) },
-      &ProofNode::Unfold {term, ref res, ..} => {
+      ProofNode::Sym(p) => self.layout_conv(defs, &self.store[p]),
+      ProofNode::Cong(term, p) =>
+        for c in self.env.terms[term].unpack_term(&self.store[p..]) { self.layout_conv(defs, c) }
+      ProofNode::Unfold(term, p) => {
         if !defs.contains(&term) {defs.push(term)}
-        self.layout_conv(defs, &res.1)
+        self.layout_conv(defs, &self.store[p+1])
       }
     }
   }
@@ -246,37 +276,41 @@ impl<'a> LayoutProof<'a> {
           res
         },
       ProofNode::Dummy(a, _) => LayoutResult::Expr(LispVal::atom(a)),
-      ProofNode::Term {term, ref args} => {
-        let mut out = Vec::with_capacity(args.len()+1);
-        out.push(LispVal::atom(self.env.terms[term].atom));
-        for e in &**args {
+      ProofNode::Term(term, p) => {
+        let td = &self.env.terms[term];
+        let mut out = Vec::with_capacity(td.args.len()+1);
+        out.push(LispVal::atom(td.atom));
+        for e in td.unpack_term(&self.store[p..]) {
           out.push(self.layout(e).into_expr());
         }
         LayoutResult::Expr(LispVal::list(out))
       }
-      ProofNode::Hyp(i, ref e) => {
-        let e = self.layout(e).into_expr();
+      ProofNode::Hyp(i, p) => {
+        let e = self.layout(&self.store[p]).into_expr();
         LayoutResult::Proof(self.push_line(Box::new([]), LineKind::Hyp(self.hyps[i].0), e))
       }
-      ProofNode::Thm {thm, ref args, ref res} => {
+      ProofNode::Thm(thm, p) => {
         let td = &self.env.thms[thm];
+        let (res, _, subproofs) = td.unpack_thm(&self.store[p..]);
         let mut hyps = SliceUninit::new(td.hyps.len());
         if self.rev {
-          for (i, e) in args[td.args.len()..].iter().enumerate().rev() {
+          for (i, e) in subproofs.iter().enumerate().rev() {
             hyps.set(i, self.layout(e).into_proof())
           }
         } else {
-          for (i, e) in args[td.args.len()..].iter().enumerate() {
+          for (i, e) in subproofs.iter().enumerate() {
             hyps.set(i, self.layout(e).into_proof())
           }
         }
         let res = self.layout(res).into_expr();
-        LayoutResult::Proof(self.push_line(unsafe {hyps.assume_init()}, LineKind::Thm(thm), res))
+        // Safety: We initialize every element exactly once in forward or reverse order.
+        LayoutResult::Proof(self.push_line(unsafe { hyps.assume_init() }, LineKind::Thm(thm), res))
       }
-      ProofNode::Conv(ref p) => {
-        let n = self.layout(&p.2).into_proof();
-        let mut defs = self.layout(&p.1).into_conv();
-        let tgt = self.layout(&p.0).into_expr();
+      ProofNode::Conv(p) => {
+        let (tgt, conv, proof) = ProofNode::unpack_conv(&self.store[p..]);
+        let n = self.layout(proof).into_proof();
+        let mut defs = self.layout(conv).into_conv();
+        let tgt = self.layout(tgt).into_expr();
         defs.sort_by_key(|&t| self.env.data[self.env.terms[t].atom].name.as_str());
         LayoutResult::Proof(self.push_line(Box::new([n]), LineKind::Conv(defs), tgt))
       }
@@ -292,7 +326,7 @@ impl<'a> LayoutProof<'a> {
   }
 }
 
-fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Write,
+fn render_line(fe: FormatEnv<'_>, mangler: &mut Mangler, w: &mut impl Write,
   line: u32, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<()> {
   let kind_class = match kind {
     LineKind::Hyp(_) => "step-hyp",
@@ -300,14 +334,13 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Conv(_) => "step-conv"
   };
   write!(w, "        \
-              <tr id=\"{line}\" class=\"{kind}\">\
+              <tr id=\"{line}\" class=\"{kind_class}\">\
     \n          <td>{line}</td>\
-    \n          <td>",
-    kind = kind_class, line = line)?;
+    \n          <td>")?;
   let mut first = true;
   for hyp in hyps {
     if !mem::take(&mut first) { write!(w, ", ")? }
-    write!(w, r##"<a href="#{id}">{id}</a>"##, id = hyp)?
+    write!(w, r##"<a href="#{hyp}">{hyp}</a>"##)?
   }
   write!(w, "</td>\n          <td>")?;
   match kind {
@@ -316,7 +349,7 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Thm(tid) =>
       mangler.mangle(fe.env, tid, |thm, mangled|
         write!(w, r#"<a class="{}" href="{}.html">{}</a>"#,
-          if let ThmKind::Axiom = fe.env.thms[tid].kind {"ax"} else {"thm"},
+          if matches!(fe.env.thms[tid].kind, ThmKind::Axiom) {"ax"} else {"thm"},
           mangled, thm))?,
     LineKind::Conv(defs) => {
       write!(w, "<i>conv</i>")?;
@@ -348,11 +381,11 @@ fn render_proof<'a>(
   pf: &'a Proof,
 ) -> io::Result<()> {
   let mut layout = LayoutProof {
-    env, args, heap: &pf.heap, hyps,
+    env, args, heap: &pf.heap, hyps, store: &pf.store,
     rev: matches!(order, ProofOrder::Pre), lines: vec![],
     heap_lines: vec![None; pf.heap.len()].into_boxed_slice()
   };
-  layout.layout(&pf.head).into_proof();
+  layout.layout(pf.head()).into_proof();
   let lines = layout.lines;
   let fe = FormatEnv {source, env};
   match order {
@@ -377,7 +410,10 @@ struct CaseInsensitiveName(ArcString);
 
 impl<'a> From<&'a ArcString> for &'a CaseInsensitiveName {
   #[allow(clippy::transmute_ptr_to_ptr)]
-  fn from(s: &'a ArcString) -> Self { unsafe { mem::transmute(s) } }
+  fn from(s: &'a ArcString) -> Self {
+    // Safety: CaseInsensitiveName is repr(transparent)
+    unsafe { mem::transmute(s) }
+  }
 }
 impl Hash for CaseInsensitiveName {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -390,14 +426,23 @@ impl Hash for CaseInsensitiveName {
 impl PartialEq for CaseInsensitiveName {
   fn eq(&self, other: &Self) -> bool {
     self.0.len() == other.0.len() &&
-    self.0.iter().zip(other.0.iter()).all(|(&x, &y)|
-      x.to_ascii_lowercase() == y.to_ascii_lowercase())
+    self.0.iter().zip(other.0.iter()).all(|(&x, &y)| x.eq_ignore_ascii_case(&y))
   }
 }
 impl Eq for CaseInsensitiveName {}
 
-#[derive(Clone, Copy)]
-enum ProofOrder { Pre, Post }
+/// Sets the order of steps in a proof.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum ProofOrder {
+  /// Preorder traversal. This means that each step precedes its subproofs,
+  /// which makes it easier to read proofs top-down but may be confusing
+  /// since this does not match logical order.
+  Pre,
+  /// Postorder traversal. Each step comes after all its subproofs.
+  /// This is the standard ordering of proofs, but can make the beginning
+  /// of the proof consist of unmotivated steps.
+  Post
+}
 
 struct BuildDoc<'a, W> {
   thm_folder: PathBuf,
@@ -439,7 +484,7 @@ impl Mangler {
     let s = env.data[env.thms[tid].atom].name.as_str();
     match self.get(env, tid) {
       0 => f(s, s),
-      n => f(s, &format!("{}.{}", s, n))
+      n => f(s, &format!("{s}.{n}"))
     }
   }
 }
@@ -460,10 +505,9 @@ fn header(w: &mut impl Write,
     \n  <title>{title} - Metamath Zero</title>\
     \n  <link rel=\"stylesheet\" type=\"text/css\" href=\"{rel}stylesheet.css\" />\
     \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin\" type=\"text/css\" media=\"screen\">\
-    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">",
-    rel = rel, desc = desc, title = title)?;
+    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">")?;
   for s in script {
-    writeln!(w, r#"  <script src="{}"></script>"#, s)?
+    writeln!(w, r#"  <script src="{s}"></script>"#)?
   }
   writeln!(w, "  \
         <!-- <link rel=\"shortcut icon\" href=\"{rel}favicon.ico\"> -->\
@@ -473,16 +517,15 @@ fn header(w: &mut impl Write,
     \n    <h1 class=\"title\">\
     \n      {h1}\
     \n      <span class=\"nav\">{nav}</span>\
-    \n    </h1>",
-    rel = rel, h1 = h1, nav = nav)
+    \n    </h1>")
 }
 const FOOTER: &str = "  </div>\n</body>\n</html>";
 
-fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
+fn render_doc(w: &mut impl Write, doc: Option<&DocComment>) -> io::Result<()> {
   if let Some(doc) = doc {
     use pulldown_cmark::{Parser, html};
     write!(w, r#"      <div class="doc">"#)?;
-    html::write_html(&mut *w, Parser::new(doc))?;
+    html::write_html_io(&mut *w, Parser::new(doc))?;
     writeln!(w, "</div>")?;
   }
   Ok(())
@@ -497,13 +540,18 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
   }
 }
 
-impl<'a, W: Write> BuildDoc<'a, W> {
-  fn thm_doc(&mut self, prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>) -> io::Result<()> {
-    let mut file = self.thm_folder.clone();
+impl<W: Write> BuildDoc<'_, W> {
+  fn thm_doc(&mut self,
+    prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>
+  ) -> io::Result<std::path::PathBuf> {
+    let mut path = self.thm_folder.clone();
     #[allow(clippy::useless_transmute)]
+    // Safety: This is a lifetime hack. We need to pass a mutable Environment to render_proof
+    // because LayoutProof::layout calls Environment::get_atom which mutates the env.data field.
+    // This is disjoint from the reference to env.thms that we retain here, so it's okay.
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
-    self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
-    let mut file = BufWriter::new(File::create(file)?);
+    self.mangler.mangle(&self.env, tid, |_, s| path.push(format!("{s}.html")));
+    let mut file = BufWriter::new(File::create(&path)?);
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
     let filename = td.span.file.rel();
@@ -511,36 +559,38 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     if let Some(prev) = prev {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, prev, |thm, mangled|
-        write!(&mut nav, r#"<a href="{}.html" title="{}">&#8810;</a> | "#, mangled, thm)
+        write!(nav, r#"<a href="{mangled}.html" title="{thm}">&#8810;</a> | "#)
           .expect("writing to a string"));
     }
     nav.push_str("<a href=\"../index.html#");
-    disambiguated_anchor(unsafe {nav.as_mut_vec()}, ad, true)?;
+    // Safety: disambiguated_anchor writes a theorem name,
+    // which is ASCII and so can safely be written to a String.
+    disambiguated_anchor(unsafe { nav.as_mut_vec() }, ad, true)?;
     nav.push_str("\">index</a>");
     if let Some(base) = &self.base_url {
       use std::fmt::Write;
       let url = base.join(filename).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-      write!(&mut nav, " | <a href=\"{}", url).expect("writing to a string");
+      write!(nav, " | <a href=\"{url}").expect("writing to a string");
       let range = self.source.to_range(td.full);
       if range.start.line == range.end.line {
-        write!(&mut nav, "#L{}\">src</a>", range.start.line + 1)
+        write!(nav, "#L{}\">src</a>", range.start.line + 1)
       } else {
-        write!(&mut nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
+        write!(nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
       }.expect("writing to a string");
     }
     if let Some(next) = next {
       use std::fmt::Write;
       self.mangler.mangle(&self.env, next, |thm, mangled|
-        write!(&mut nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
+        write!(nav, r#" | <a href="{mangled}.html" title="{thm}">&#8811;</a>"#)
           .expect("writing to a string"));
     }
-    let (kind, kindclass) = if let ThmKind::Axiom = td.kind {("Axiom", "ax")} else {("Theorem", "thm")};
+    let (kind, kindclass) = if matches!(td.kind, ThmKind::Axiom) {("Axiom", "ax")} else {("Theorem", "thm")};
     header(&mut file, "../",
-      &format!("Documentation for theorem `{}` in `{}`.", thmname, filename),
-      &format!("{} - {}", thmname, filename),
-      &format!(r#"{} <a class="{}" href="">{}</a>"#, kind, kindclass, thmname),
+      &format!("Documentation for theorem `{thmname}` in `{filename}`."),
+      &format!("{thmname} - {filename}"),
+      &format!(r#"{kind} <a class="{kindclass}" href="">{thmname}</a>"#),
       &nav, &["../proof.js"])?;
-    render_doc(&mut file, &td.doc)?;
+    render_doc(&mut file, td.doc.as_ref())?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
       writeln!(file, "    \
@@ -549,33 +599,60 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         \n        <tr class=\"proof-head\">\
                     <th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th>\
                   </tr>")?;
+      // double borrow here, see safety comment
       render_proof(self.source, &mut self.env, &mut self.mangler,
         &mut file, self.order, &td.args, &td.hyps, pf)?;
       writeln!(file, "      </tbody>\n    </table>")?;
     }
     if let ThmKind::Thm(_) = td.kind {
       writeln!(file, "    <h2 class=\"axioms\">Axiom use</h2>")?;
+      let mut axioms = self.axuse.1.get(&self.env, tid).clone();
       let mut first = true;
-      for i in self.axuse.1.get(&self.env, tid) {
+      if axioms.remove(0) {
         if !mem::take(&mut first) { writeln!(file, ",")? }
-        if i == 0 {
-          write!(file, "<i>sorry</i>")?
-        } else {
-          self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-            write!(file, r#"    <a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
+        write!(file, "<i>sorry</i>")?
+      }
+      for &(name, ref doc, ref set) in &self.axuse.1.axiom_sets {
+        if !axioms.is_disjoint(set) {
+          if !mem::take(&mut first) { writeln!(file, ",")? }
+          first = true;
+          write!(file, "    <span class=\"axs\"")?;
+          if !doc.is_empty() {
+            write!(file, " title=\"")?;
+            pulldown_cmark_escape::escape_html(IoWriter(&mut file), doc)?;
+            write!(file, "\"")?;
+          }
+          write!(file, ">{}</span><span class=\"axm\">\n     (",
+            self.env.data[name].name.as_str())?;
+          for i in set {
+            if axioms.remove(i) {
+              if !mem::take(&mut first) { write!(file, ",\n      ")? }
+              self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
+                write!(file, r#"<a class="ax" href="{mangled}.html">{thm}</a>"#))?
+            }
+          }
+          write!(file, ")</span>")?;
         }
+      }
+      for i in &axioms {
+        if !mem::take(&mut first) { writeln!(file, ",")? }
+        self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
+          write!(file, r#"    <a class="ax" href="{mangled}.html">{thm}</a>"#))?
       }
       writeln!(file)?
     }
-    writeln!(file, "{}", FOOTER)
+    writeln!(file, "{FOOTER}")?;
+    Ok(path)
   }
 
-  fn write_all(&mut self, path: &FileRef, stmts: &[StmtTrace]) -> io::Result<()> {
+  fn write_all(&mut self,
+    path: &FileRef, to_open: Option<ThmId>, stmts: &[StmtTrace]
+  ) -> io::Result<Option<std::path::PathBuf>> {
     let file = self.index.as_mut().expect("index file missing");
     let nav: String;
     let nav = if let Some(base) = &self.base_url {
       let url = base.join(path.rel()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-      nav = format!("<a href=\"{}\">src</a>", url);
+      nav = format!("<a href=\"{url}\">src</a>");
       &nav
     } else {""};
     header(file, "",
@@ -583,6 +660,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       &format!("{} - Index", path.rel()),
       "Index", nav, &[])?;
     let mut prev = None;
+    let mut open_path = None;
     for s in stmts {
       let mut file = self.index.as_mut().expect("index file missing");
       let fe = FormatEnv {source: self.source, env: &self.env};
@@ -596,7 +674,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           writeln!(file, "\">")?;
           let sid = ad.sort.expect("wf env");
           let sd = &self.env.sorts[sid];
-          render_doc(&mut file, &sd.doc)?;
+          render_doc(&mut file, sd.doc.as_ref())?;
           writeln!(file, "      <pre>")?;
           let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
           fe.pretty(|pr| pr.sort(sid).render_raw(PP_WIDTH, w))?;
@@ -610,22 +688,23 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           match ad.decl.expect("wf env") {
             DeclKey::Term(tid) => {
               let td = &self.env.terms[tid];
-              render_doc(&mut file, &td.doc)?;
+              render_doc(&mut file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
-              fe.pretty(|pr| pr.term(tid, true).render_raw(PP_WIDTH, w))?;
+              fe.pretty(|pr| pr.term_and_notations(tid, true).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
-              render_doc(&mut file, &td.doc)?;
+              render_doc(&mut file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.thm(tid).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?;
               let next = tid.0.checked_add(1).map(ThmId)
                 .filter(|&tid| self.env.thms.get(tid).is_some());
-              self.thm_doc(prev, tid, next)?;
+              let path = self.thm_doc(prev, tid, next)?;
+              if to_open == Some(tid) { open_path = Some(path) }
               prev = Some(tid);
             }
           }
@@ -633,77 +712,114 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       }
     }
     let file = self.index.as_mut().expect("index file missing");
-    writeln!(file, "{}", FOOTER)
+    writeln!(file, "{FOOTER}")?;
+    Ok(open_path)
   }
 }
-/// Main entry point for `mm0-rs doc` subcommand.
-///
-/// # Arguments
-///
-/// `mm0-rs doc <in.mm1> [doc]`, where:
-///
-/// - `in.mm1` is the initial file to elaborate.
-/// - `doc` is the output folder, which will be created if not present.
-pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
-  let path = args.value_of("INPUT").expect("required arg");
-  let path: FileRef = fs::canonicalize(path)?.into();
-  let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
-  let old = old.unwrap_or_else(|| std::process::exit(1));
-  println!("writing docs");
-  let mut env = Environment::new();
-  assert!(matches!(
-    EnvMergeIter::new(&mut env, &old, (0..0).into()).next(&mut env, &mut vec![]), Ok(None)));
-  let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
-  fs::create_dir_all(&dir)?;
-  macro_rules! import {($($str:expr),*) => {$({
-    let mut file = dir.to_owned();
-    file.push($str);
-    if !file.exists() {
-      File::create(file)?.write_all(include_bytes!($str))?;
-    }
-  })*}}
-  import!("stylesheet.css", "proof.js");
-  let order = match args.value_of("order") {
-    Some("pre") => ProofOrder::Pre,
-    Some("post") => ProofOrder::Post,
-    _ => unreachable!(),
-  };
-  let only = args.value_of("only");
-  let index = if only.is_some() {None} else {
-    let mut file = dir.clone();
-    file.push("index.html");
-    Some(BufWriter::new(File::create(file)?))
-  };
-  dir.push("thms");
-  fs::create_dir_all(&dir)?;
-  let base_url = match args.value_of("src") {
-    Some("-") => None,
-    src => Some(Url::parse(src.unwrap_or("https://github.com/digama0/mm0/blob/master/examples/"))
-      .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?),
-  };
-  let mut bd = BuildDoc {
-    source: fc.ascii(),
-    base_url, order,
-    axuse: AxiomUse::new(&env),
-    thm_folder: dir, env, index,
-    mangler: Mangler::default(),
-  };
-  if let Some(only) = only {
-    let thms = only.split(',')
-      .filter_map(|thm| {
-        let a = bd.env.get_atom(thm.as_bytes());
-        match bd.env.data[a].decl {
-          None => eprintln!("warning: unknown theorem '{}'", thm),
-          Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
-          Some(DeclKey::Thm(tid)) => return Some(tid),
+
+/// Build documentation pages
+#[derive(clap::Args, Debug)]
+pub struct Args {
+  /// Show only declarations THMS (a comma separated list)
+  #[clap(long, value_name = "THMS", use_value_delimiter = true)]
+  pub only: Vec<String>,
+  /// Open the generated documentation in a browser
+  #[clap(long)]
+  pub open: bool,
+  /// Open a particular generated page (implies --open)
+  #[clap(long, value_name = "THM")]
+  pub open_to: Option<String>,
+  /// Proof tree traversal order
+  #[clap(long, value_enum, default_value_t = ProofOrder::Post)]
+  pub order: ProofOrder,
+  /// Use URL as the base for source doc links (use - to disable)
+  #[clap(long, value_name = "URL")]
+  pub src: Option<String>,
+  /// Sets the input file (.mm1 or .mm0)
+  pub input: String,
+  /// Sets the output folder, or 'doc' if omitted
+  pub output: Option<String>,
+}
+
+impl Args {
+  /// Main entry point for `mm0-rs doc` subcommand.
+  ///
+  /// # Arguments
+  ///
+  /// `mm0-rs doc <in.mm1> [doc]`, where:
+  ///
+  /// - `in.mm1` is the initial file to elaborate.
+  /// - `doc` is the output folder, which will be created if not present.
+  pub fn main(self) -> io::Result<()> {
+    let path: FileRef = fs::canonicalize(self.input)?.into();
+    let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
+    let old = old.unwrap_or_else(|| std::process::exit(1));
+    println!("writing docs");
+    let mut env = Environment::new();
+    assert!(matches!(
+      EnvMergeIter::new(&mut env, &old, (0..0).into()).next(&mut env, &mut vec![]), Ok(None)));
+    let mut dir = PathBuf::from(self.output.as_deref().unwrap_or("doc"));
+    fs::create_dir_all(&dir)?;
+    macro_rules! import {($($str:expr),*) => {$({
+      let mut file = dir.to_owned();
+      file.push($str);
+      if !file.exists() {
+        File::create(file)?.write_all(include_bytes!($str))?;
+      }
+    })*}}
+    import!("stylesheet.css", "proof.js");
+    let mut to_open = None;
+    let index = if self.only.is_empty() {
+      let mut path = dir.clone();
+      path.push("index.html");
+      let file = File::create(&path)?;
+      to_open = Some(path);
+      Some(BufWriter::new(file))
+    } else { None };
+    dir.push("thms");
+    fs::create_dir_all(&dir)?;
+    let base_url = match self.src.as_deref() {
+      Some("-") => None,
+      src => Some(Url::parse(src.unwrap_or("https://github.com/digama0/mm0/blob/master/examples/"))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?),
+    };
+    let mut bd = BuildDoc {
+      source: fc.ascii(),
+      base_url, order: self.order,
+      axuse: AxiomUse::new(&env),
+      thm_folder: dir, env, index,
+      mangler: Mangler::default(),
+    };
+    let mut get_thm = |thm: &str| {
+      let a = bd.env.get_atom(thm.as_bytes());
+      match bd.env.data[a].decl {
+        None => eprintln!("warning: unknown theorem '{thm}'"),
+        Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{thm}'"),
+        Some(DeclKey::Thm(tid)) => return Some(tid),
+      }
+      None
+    };
+    let target = self.open_to.as_deref().and_then(&mut get_thm);
+    if !self.only.is_empty() {
+      let thms = self.only.iter().filter_map(|s| get_thm(s)).collect::<Vec<_>>();
+      for (i, &tid) in thms.iter().enumerate() {
+        let path = bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
+        if to_open.is_none() || target == Some(tid) {
+          to_open = Some(path)
         }
-        None
-      }).collect::<Vec<_>>();
-    for (i, &tid) in thms.iter().enumerate() {
-      bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
+      }
+    } else if let Some(path) = bd.write_all(&path, target, old.stmts())? {
+      to_open = Some(path)
     }
-  } else {
-    bd.write_all(&path, old.stmts())?;
+    if self.open || self.open_to.is_some() {
+      if let Some(path) = to_open {
+        let path = std::fs::canonicalize(path).expect("bad path");
+        let path = Url::from_file_path(path).expect("bad path");
+        drop(webbrowser::open(path.as_str()))
+      } else {
+        eprintln!("warning: --open specified but no pages generated")
+      }
+    }
+    Ok(())
   }
-  Ok(())
 }

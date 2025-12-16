@@ -8,7 +8,7 @@ import MM0.Kernel.Environment (SortData(..), DepType(..))
 type Offset = Int
 data AtPos a = AtPos Offset a
 type Range = (Offset, Offset)
-data Span a = Span Range a
+data Span a = Span Range a deriving Eq
 
 instance Functor AtPos where
   fmap f (AtPos o a) = AtPos o (f a)
@@ -87,7 +87,7 @@ data AtDepType = AtDepType (Span T.Text) [Span T.Text] deriving (Show)
 unDepType :: AtDepType -> DepType
 unDepType (AtDepType t ts) = DepType (unSpan t) (unSpan <$> ts)
 
-data Formula = Formula Offset T.Text deriving (Show)
+data Formula = Formula Offset T.Text deriving (Show, Eq)
 
 data Type = TType AtDepType | TFormula Formula deriving (Show)
 
@@ -121,6 +121,7 @@ data LispAST =
   | AString T.Text
   | ABool Bool
   | AFormula Formula
+  deriving Eq
 
 instance Show LispAST where
   showsPrec _ (AAtom _ e) = (T.unpack e ++)

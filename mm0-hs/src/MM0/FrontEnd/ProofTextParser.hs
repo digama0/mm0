@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 -- | A simple plain text parser for the proof format.
 -- Intended mainly for debugging.
 module MM0.FrontEnd.ProofTextParser (parseProof, parseProofOrDie) where
@@ -7,7 +6,6 @@ import Control.Applicative hiding (many, (<|>))
 import Control.Monad.Trans.Class
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.List
 import Data.Word8
 import Data.Void
 import Text.Megaparsec

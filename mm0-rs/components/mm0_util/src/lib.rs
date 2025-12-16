@@ -17,6 +17,7 @@
   unused,
   missing_docs
 )]
+#![deny(unsafe_op_in_unsafe_fn)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
@@ -29,16 +30,17 @@
   clippy::rc_buffer,
   clippy::rest_pat_in_fully_bound_structs,
   clippy::string_add,
-  clippy::unwrap_used,
-  clippy::wrong_pub_self_convention
+  clippy::undocumented_unsafe_blocks,
+  clippy::unwrap_used
 )]
 // all the clippy lints we don't want
 #![allow(
   clippy::cognitive_complexity,
+  clippy::collapsible_if, // rust-clippy#14825
   clippy::comparison_chain,
   clippy::default_trait_access,
-  clippy::filter_map,
   clippy::inline_always,
+  clippy::manual_filter_map,
   clippy::map_err_ignore,
   clippy::missing_const_for_fn,
   clippy::missing_errors_doc,
@@ -46,22 +48,19 @@
   clippy::module_name_repetitions,
   clippy::multiple_crate_versions,
   clippy::option_if_let_else,
+  clippy::redundant_pub_crate,
+  clippy::semicolon_if_nothing_returned,
   clippy::shadow_unrelated,
   clippy::too_many_lines,
   clippy::use_self
 )]
 
-#[cfg(feature = "lazy_static")]
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate bitflags;
-
 #[cfg(feature = "memory")]
 use mm0_deepsize_derive::DeepSizeOf;
+use std::borrow::Borrow;
 use std::collections::{
-  hash_map::{Entry, OccupiedEntry},
   HashMap,
+  hash_map::{Entry, OccupiedEntry},
 };
 use std::error::Error;
 use std::fmt;
@@ -69,8 +68,8 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::{borrow::Borrow, convert::TryInto};
 
 mod atoms;
 mod ids;
@@ -91,11 +90,11 @@ pub trait SliceExt<T> {
 impl<T> SliceExt<T> for [T] {
   fn cloned_box(&self) -> Box<[T]>
   where T: Clone {
-    self.to_vec().into()
+    self.into()
   }
 }
 
-/// Extension trait for [`HashMap`]`<K, V>`.
+/// Extension trait for <code>[HashMap]&lt;K, V&gt;</code>.
 pub trait HashMapExt<K, V> {
   /// Like `insert`, but if the insertion fails then it returns the value
   /// that it attempted to insert, as well as an [`OccupiedEntry`] containing
@@ -116,61 +115,54 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
-/// * `let_unchecked!(x as p = e)` is the same as
-///   ```ignore
-///   let x = if let p = e {x} else {unreachable_unchecked()};
-///   ```
-///   where `p` is a pattern containing the variable(s) `x` (which may be a tuple)
-/// * `let_unchecked!(p = e, { block })` is the same as
-///   ```ignore
-///   if let p = e { block } else {unreachable_unchecked()}
-///   ```
-///   so the variables `x` don't have to be declared but the variables in `p` are
-///   scoped to the `block`.
-///
-/// # Safety
-/// This invokes undefined behavior when the pattern does not match.
-#[macro_export]
-macro_rules! let_unchecked {
-  ($q:ident as $p:pat = $e:expr) => {
-    let $q = let_unchecked!($p = $e, $q);
-  };
-  (($($q:tt),*) as $p:pat = $e:expr) => {
-    let ($($q),*) = let_unchecked!($p = $e, ($($q),*));
-  };
-  ($p:pat = $e:expr, $bl:expr) => {
-    if let $p = $e { $bl } else { unsafe { std::hint::unreachable_unchecked() } }
-  };
+/// Extension trait for <code>[HashMap]&lt;K, V&gt;</code>.
+pub trait RcExt<T> {
+  /// Extract `T` from `Rc<T>` by cloning the inner data unless it is unshared.
+  fn unwrap(this: Self) -> T
+  where T: Clone;
 }
 
-/// Like `unwrap`, but invokes undefined behavior instead of panicking.
-///
-/// # Safety
-/// This function must not be called on a [`None`] value.
-#[macro_export]
-macro_rules! unwrap_unchecked {
-  ($e:expr) => {
-    let_unchecked!(Some(x) = $e, x)
-  };
-}
-
-/// Does the same as `panic!` but works in a `const fn`.
-#[macro_export]
-macro_rules! const_panic {
-  () => {{
-    #[allow(unconditional_panic)]
-    [][0]
-  }};
+impl<T> RcExt<T> for Rc<T> {
+  #[inline]
+  fn unwrap(this: Self) -> T
+  where T: Clone {
+    Rc::try_unwrap(this).unwrap_or_else(|r| (*r).clone())
+  }
 }
 
 /// Converts `n` from `u32` to `usize` or panics (which should not happen since we don't support
 /// 16 bit systems).
 #[inline]
+#[must_use]
 pub fn u32_as_usize(n: u32) -> usize {
   n.try_into().expect("here's a nickel, get a better computer")
 }
 
-/// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
+/// Translate a number into an alphabetic numbering system, indexing into the following infinite
+/// sequence:
+/// ```ignore
+/// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
+/// ```
+#[must_use]
+pub fn alphanumber(n: usize) -> String {
+  let mut out = Vec::with_capacity(2);
+  let mut n = n + 1;
+  while n != 0 {
+    #[allow(clippy::cast_possible_truncation)]
+    {
+      out.push(b'a' + ((n - 1) % 26) as u8);
+    }
+    #[allow(clippy::integer_division)]
+    {
+      n = (n - 1) / 26;
+    }
+  }
+  out.reverse();
+  // Safety: the string consists of ASCII letters
+  unsafe { String::from_utf8_unchecked(out) }
+}
+
+/// Extension trait for <code>[Mutex](std::sync::Mutex)&lt;T&gt;</code>.
 pub trait MutexExt<T> {
   /// Like `lock`, but propagates instead of catches panics.
   fn ulock(&self) -> std::sync::MutexGuard<'_, T>;
@@ -184,10 +176,12 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
 /// Extension trait for [`Condvar`](std::sync::Condvar).
 pub trait CondvarExt {
   /// Like `wait`, but propagates instead of catches panics.
+  #[cfg(not(target_arch = "wasm32"))]
   fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T>;
 }
 
 impl CondvarExt for std::sync::Condvar {
+  #[cfg(not(target_arch = "wasm32"))]
   fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T> {
     self.wait(g).expect("propagating poisoned mutex")
   }
@@ -199,11 +193,11 @@ impl CondvarExt for std::sync::Condvar {
 pub struct ArcString(pub Arc<[u8]>);
 
 impl Borrow<[u8]> for ArcString {
-  fn borrow(&self) -> &[u8] { &*self.0 }
+  fn borrow(&self) -> &[u8] { &self.0 }
 }
 impl Deref for ArcString {
   type Target = [u8];
-  fn deref(&self) -> &[u8] { &*self.0 }
+  fn deref(&self) -> &[u8] { &self.0 }
 }
 impl ArcString {
   /// Constructs a new [`ArcString`].
@@ -238,7 +232,11 @@ impl ArcString {
   ///
   /// # Safety
   /// This is potentially unsafe because `ArcString` do not have to be valid unicode.
-  pub fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
+  #[must_use]
+  pub fn as_str(&self) -> &str {
+    // Safety: ensured by caller
+    unsafe { std::str::from_utf8_unchecked(self) }
+  }
 }
 
 /// A structure that allows constructing linked lists on the call stack.
@@ -305,16 +303,20 @@ impl<T> ArcList<T> {
     }
     l.join(t, tail).push(t2.clone())
   }
+
+  /// Returns a new iterator over the contents of the [`ArcList`].
+  pub fn iter(&self) -> ArcListIter<'_, T> { ArcListIter(self) }
 }
 
 /// An iterator over an [`ArcList`].
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 
 impl<'a, T> Iterator for ArcListIter<'a, T> {
   type Item = &'a T;
   fn next(&mut self) -> Option<&'a T> {
-    let (l, t) = &**self.0 .0.as_ref()?;
+    let (l, t) = &**self.0.0.as_ref()?;
     self.0 = l;
     Some(t)
   }
@@ -326,6 +328,8 @@ impl<'a, T> IntoIterator for &'a ArcList<T> {
   fn into_iter(self) -> ArcListIter<'a, T> { ArcListIter(self) }
 }
 
+/// A partially initialized `Box<[T]>`.
+///
 /// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),
 /// initializing the elements in some order, and then using the unsafe function
 /// [`assume_init`] to assert that every element of the array has been initialized and
@@ -337,18 +341,21 @@ pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
 impl<T> SliceUninit<T> {
   /// Create a new uninitialized slice of length `size`.
+  #[inline]
   #[must_use]
   pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
-    // safety: the newly constructed elements have type MaybeUninit<T>
+    #[allow(clippy::uninit_vec)] // rust-clippy#10565
+    // Safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
-    unsafe { res.set_len(size) };
+    (unsafe { res.set_len(size) });
     Self(res.into_boxed_slice())
   }
 
   /// Assign the value `val` to location `i` of the slice. Warning: this does not
   /// call the destructor for `T` on the previous value, so this should be used only
   /// once per location unless `T` has no `Drop` impl.
+  #[inline]
   pub fn set(&mut self, i: usize, val: T) { self.0[i] = MaybeUninit::new(val) }
 
   /// Finalizes the construction, returning an initialized `Box<[T]>`.
@@ -356,12 +363,16 @@ impl<T> SliceUninit<T> {
   /// # Safety
   ///
   /// This causes undefined behavior if the content is not fully initialized.
+  #[inline]
   #[must_use]
-  pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
+  pub unsafe fn assume_init(self) -> Box<[T]> {
+    // Safety: ensured by caller
+    unsafe { mem::transmute(self.0) }
+  }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Span {
   /// The byte index of the beginning of the span (inclusive).
   pub start: usize,
@@ -396,11 +407,17 @@ impl From<Span> for std::ops::Range<usize> {
 
 impl Deref for Span {
   type Target = std::ops::Range<usize>;
-  fn deref(&self) -> &std::ops::Range<usize> { unsafe { &*<*const _>::cast(self) } }
+  fn deref(&self) -> &std::ops::Range<usize> {
+    // Safety: Range<usize> and Span are layout compatible
+    unsafe { &*<*const _>::cast(self) }
+  }
 }
 
 impl DerefMut for Span {
-  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> { unsafe { &mut *<*mut _>::cast(self) } }
+  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> {
+    // Safety: Range<usize> and Span are layout compatible
+    unsafe { &mut *<*mut _>::cast(self) }
+  }
 }
 
 impl IntoIterator for Span {
@@ -441,11 +458,14 @@ pub struct Range {
 }
 
 #[cfg(feature = "lined_string")]
-lazy_static! {
-  /// A [`PathBuf`] created by `lazy_static!` pointing to a canonicalized "."
-  pub static ref CURRENT_DIR: PathBuf =
-    std::fs::canonicalize(".").expect("failed to find current directory");
-}
+/// A [`PathBuf`] lazily initialized to a canonicalized "."
+static CURRENT_DIR: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
+  #[cfg(target_arch = "wasm32")]
+  let buf = PathBuf::from(".");
+  #[cfg(not(target_arch = "wasm32"))]
+  let buf = std::fs::canonicalize(".").expect("failed to find current directory");
+  buf
+});
 
 /// Given a [`PathBuf`] 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.
@@ -454,7 +474,7 @@ lazy_static! {
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
-#[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
+#[cfg(feature = "lined_string")]
 fn make_relative(buf: &std::path::Path) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR)
     .as_deref()
@@ -465,49 +485,57 @@ fn make_relative(buf: &std::path::Path) -> String {
 }
 
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+#[derive(Default)]
 struct FileRefInner {
   path: PathBuf,
   rel: String,
   #[cfg(feature = "server")]
-  url: lsp_types::Url,
+  uri: Option<lsp_types::Uri>,
 }
 
-/// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
+/// A reference to a file.
+///
+/// It wraps an [`Arc`] so it can be cloned thread-safely.
 /// A [`FileRef`] can be constructed either from a [`PathBuf`] or a
-/// (`file://`) [`Url`](lsp_types::Url),
+/// (`file://`) [`Uri`](lsp_types::Uri),
 /// and provides (precomputed) access to these views using
-/// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
+/// [`path()`](FileRef::path) and [`uri()`](FileRef::uri), as well as
 /// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FileRef(Arc<FileRefInner>);
 
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
-  #[cfg(target_arch = "wasm32")]
-  fn from(_: PathBuf) -> FileRef { todo!() }
-
-  #[cfg(all(not(target_arch = "wasm32"), feature = "lined_string"))]
   fn from(path: PathBuf) -> FileRef {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
+    fn from_file_path(path: &std::path::Path) -> Option<lsp_types::Uri> {
+      std::str::FromStr::from_str(url::Url::from_file_path(path).ok()?.as_str()).ok()
+    }
+    let rel = make_relative(&path);
     FileRef(Arc::new(FileRefInner {
-      rel: make_relative(&path),
-      #[cfg(feature = "server")]
-      url: lsp_types::Url::from_file_path(&path).expect("bad file path"),
+      #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
+      uri: from_file_path(&path),
+      #[cfg(all(target_arch = "wasm32", feature = "server"))]
+      uri: lsp_types::Uri::from_str(&format!("wasm:/{rel}")).ok(),
       path,
+      rel,
     }))
   }
 }
 
 #[cfg(feature = "server")]
-impl From<lsp_types::Url> for FileRef {
-  #[cfg(target_arch = "wasm32")]
-  fn from(_: lsp_types::Url) -> FileRef { todo!() }
-
-  #[cfg(not(target_arch = "wasm32"))]
-  fn from(url: lsp_types::Url) -> FileRef {
-    let path = url.to_file_path().expect("bad URL");
+impl From<lsp_types::Uri> for FileRef {
+  fn from(uri: lsp_types::Uri) -> FileRef {
+    fn to_file_path(uri: &lsp_types::Uri) -> Option<PathBuf> {
+      url::Url::parse(uri.as_str()).ok()?.to_file_path().ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let path = to_file_path(&uri).expect("bad URI");
+    #[cfg(target_arch = "wasm32")]
+    let path = PathBuf::from(uri.path().as_str());
     let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner { path, rel, url }))
+    FileRef(Arc::new(FileRefInner { path, rel, uri: Some(uri) }))
   }
 }
 
@@ -520,10 +548,10 @@ impl FileRef {
   #[must_use]
   pub fn rel(&self) -> &str { &self.0.rel }
 
-  /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
+  /// Convert this [`FileRef`] to a `file://` URI, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use]
-  pub fn url(&self) -> &lsp_types::Url { &self.0.url }
+  pub fn url(&self) -> &lsp_types::Uri { self.0.uri.as_ref().expect("bad file location") }
 
   /// Get a pointer to this allocation, for use in hashing.
   #[must_use]
@@ -536,7 +564,7 @@ impl FileRef {
   /// Returns true if this file has the provided extension.
   #[must_use]
   pub fn has_extension(&self, ext: &str) -> bool {
-    self.path().extension().map_or(false, |s| s == ext)
+    self.path().extension().is_some_and(|s| s == ext)
   }
 }
 impl PartialEq for FileRef {
@@ -550,7 +578,7 @@ impl Hash for FileRef {
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let s = self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str());
+    let s = self.0.path.file_name().unwrap_or(self.0.path.as_os_str());
     s.to_str().expect("bad unicode in path").fmt(f)
   }
 }
@@ -561,7 +589,7 @@ impl fmt::Debug for FileRef {
 
 /// A span paired with a [`FileRef`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct FileSpan {
   /// The file in which this span occured.
   pub file: FileRef,
@@ -581,9 +609,9 @@ impl<'a> From<&'a FileSpan> for Span {
 /// Try to get memory usage (resident set size) in bytes using the
 /// [`getrusage()`](libc::getrusage) function from libc.
 #[allow(unused)]
-#[cfg(feature = "memory")]
+#[cfg(all(feature = "memory", unix))]
 fn get_memory_rusage() -> usize {
-  use std::convert::TryInto;
+  // Safety: getrusage() initializes the passed-in buffer
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);
@@ -593,12 +621,21 @@ fn get_memory_rusage() -> usize {
   x * 1024
 }
 
+/// Try to get memory usage (resident set size) in bytes using the
+/// [`getrusage()`](libc::getrusage) function from libc.
+#[allow(unused)]
+#[cfg(all(feature = "memory", not(unix)))]
+fn get_memory_rusage() -> usize { 0 }
+
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", target_os = "linux"))]
 #[must_use]
 pub fn get_memory_usage() -> usize {
-  procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
+  procfs::process::Process::myself().and_then(|me| me.statm()).map_or_else(
+    |_| get_memory_rusage(),
+    |stat| usize::try_from(stat.data).expect("overflow") * 4096,
+  )
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.

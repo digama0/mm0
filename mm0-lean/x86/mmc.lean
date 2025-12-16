@@ -1,4 +1,4 @@
-import algebra.group_power data.list.alist
+import algebra.group_power.lemmas data.list.alist
 
 namespace alist
 

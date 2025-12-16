@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 
 import Control.Monad
@@ -77,7 +76,7 @@ tkSatisfy p = try $ do
   return at
 
 tk :: T.Text -> MathParser ()
-tk t = label (T.unpack t) $ () <$ tkSatisfy (== t)
+tk t = label (T.unpack t) $ void $ tkSatisfy (== t)
 
 checkPrec :: Prec -> Bool -> T.Text -> MathParser Prec
 checkPrec p r v = do
@@ -96,7 +95,7 @@ parseLiterals = go I.empty where
 
 parseLiterals' :: Int -> QExpr -> [PLiteral] ->
   MathParser (I.IntMap QExpr, Int, QExpr)
-parseLiterals' n1 lhs ll = go (I.singleton n1 lhs) ll where
+parseLiterals' n1 = go . I.singleton n1 where
   go :: I.IntMap QExpr -> [PLiteral] -> MathParser (I.IntMap QExpr, Int, QExpr)
   go _ [] = error "bad literals"
   go m [PVar n p] = (m,n,) <$> parsePrefix p

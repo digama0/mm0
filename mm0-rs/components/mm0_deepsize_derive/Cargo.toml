@@ -11,9 +11,9 @@
 # will likely look very different (and much more reasonable)
 
 [package]
-edition = "2018"
+edition = "2024"
 name = "mm0_deepsize_derive"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Aeledfyr <aeledfyr@gmail.com>", "Mario Carneiro <di.gama@gmail.com>"]
 include = ["Cargo.toml", "src/**/*.rs", "../mm0_deepsize/LICENSE", "../mm0_deepsize/README.md"]
 description = "A crate for measuring the total size of object on the stack and heap"
@@ -23,17 +23,13 @@ categories = ["development-tools::profiling", "memory-management"]
 license = "MIT"
 repository = "https://github.com/digama0/mm0/"
 
-[features]
-default = ["nodummy"]
-nodummy = []
-
 [lib]
 proc-macro = true
 [dependencies.proc-macro2]
-version = "^0.4"
+version = "^1.0"
 
 [dependencies.quote]
-version = "^0.6"
+version = "^1.0"
 
 [dependencies.syn]
-version = "^0.15"
+version = "^2.0"

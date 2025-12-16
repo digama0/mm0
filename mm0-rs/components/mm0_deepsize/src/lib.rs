@@ -10,7 +10,8 @@ use std::mem::{size_of, size_of_val};
 use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::HashSet;
-use mm0_deepsize_derive::DeepSizeOf;
+
+#[allow(unused_imports)] use mm0_deepsize_derive::DeepSizeOf;
 
 
 /// A trait for measuring the size of an object and its children
@@ -50,8 +51,7 @@ pub trait DeepSizeOf {
     ///
     /// If a struct and all of its children do not allocate or have references,
     /// this method should return `0`, as it cannot have any heap allocated
-    /// children.  There is a shortcut macro for this implementation, [`known_size_of`](known_size_of),
-    /// used like `known_deep_size!(0, (), u32, u64);` which generates the impls.
+    /// children.
     ///
     /// The most common way to use this method, and how the derive works,
     /// is to call this method on each of the structs members and sum the
@@ -87,8 +87,6 @@ pub trait DeepSizeOf {
 /// recursing, so that references are not double-counted.
 #[derive(Debug, Default)]
 pub struct Context {
-    /// A set of all `Arcs` that have already been counted
-    arcs: HashSet<usize>,
     /// A set of all `Rcs` that have already been counted
     rcs: HashSet<usize>,
 }
@@ -99,12 +97,12 @@ impl Context {
         // Somewhat unsafe way of getting a pointer to the inner `ArcInner`
         // object without changing the count
         let pointer: usize = unsafe { *<*const _>::cast(arc) };
-        self.arcs.insert(pointer);
+        self.rcs.insert(pointer);
     }
     /// Checks if an `Arc` is in the list visited `Arc`s
     fn contains_arc<T: ?Sized>(&self, arc: &Arc<T>) -> bool {
         let pointer: usize = unsafe { *<*const _>::cast(arc) };
-        self.arcs.contains(&pointer)
+        self.rcs.contains(&pointer)
     }
 
     /// Adds an `Rc` to the list of visited `Rc`s
@@ -120,12 +118,42 @@ impl Context {
         self.rcs.contains(&pointer)
     }
 
+    #[cfg(feature = "hybrid-rc")]
+    /// Adds an `Arc` to the list of visited `Arc`s
+    fn add_hybrid_arc<T: ?Sized>(&mut self, arc: &hybrid_rc::Arc<T>) {
+        // Somewhat unsafe way of getting a pointer to the inner `RcBox`
+        // object without changing the count
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
+        self.rcs.insert(pointer);
+    }
+    #[cfg(feature = "hybrid-rc")]
+    /// Checks if an `Arc` is in the list visited `Arc`s
+    fn contains_hybrid_arc<T: ?Sized>(&self, arc: &hybrid_rc::Arc<T>) -> bool {
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
+        self.rcs.contains(&pointer)
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    /// Adds an `Rc` to the list of visited `Rc`s
+    fn add_hybrid_rc<T: ?Sized>(&mut self, rc: &hybrid_rc::Rc<T>) {
+        // Somewhat unsafe way of getting a pointer to the inner `RcBox`
+        // object without changing the count
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
+        self.rcs.insert(pointer);
+    }
+    #[cfg(feature = "hybrid-rc")]
+    /// Checks if an `Rc` is in the list visited `Rc`s
+    fn contains_hybrid_rc<T: ?Sized>(&self, rc: &hybrid_rc::Rc<T>) -> bool {
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
+        self.rcs.contains(&pointer)
+    }
+
     fn deep_size_of_arc<T: ?Sized>(&mut self, arc: &Arc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
         if self.contains_arc(arc) {
             0
         } else {
             self.add_arc(arc);
-            f(&*arc, self)
+            f(arc, self)
         }
     }
 
@@ -134,7 +162,27 @@ impl Context {
             0
         } else {
             self.add_rc(rc);
-            f(&*rc, self)
+            f(rc, self)
+        }
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    fn deep_size_of_hybrid_arc<T: ?Sized>(&mut self, arc: &hybrid_rc::Arc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+        if self.contains_hybrid_arc(arc) {
+            0
+        } else {
+            self.add_hybrid_arc(arc);
+            f(arc, self)
+        }
+    }
+
+    #[cfg(feature = "hybrid-rc")]
+    fn deep_size_of_hybrid_rc<T: ?Sized>(&mut self, rc: &hybrid_rc::Rc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+        if self.contains_hybrid_rc(rc) {
+            0
+        } else {
+            self.add_hybrid_rc(rc);
+            f(rc, self)
         }
     }
 }
@@ -202,7 +250,7 @@ impl<K: Ord + DeepSizeOf, V: DeepSizeOf> DeepSizeOf for std::collections::BTreeM
 impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Box<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         // May cause inacuracies, measures size of the value, but not the allocation size
-        let val: &T = &*self;
+        let val: &T = self;
         size_of_val(val) + val.deep_size_of_children(context)
     }
 }
@@ -220,14 +268,23 @@ impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Rc<T> {
     }
 }
 
+#[cfg(feature = "hybrid-rc")]
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for hybrid_rc::Arc<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        context.deep_size_of_hybrid_arc(self, |val, context| val.deep_size_of_with(context))
+    }
+}
+
+#[cfg(feature = "hybrid-rc")]
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for hybrid_rc::Rc<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        context.deep_size_of_hybrid_rc(self, |val, context| val.deep_size_of_with(context))
+    }
+}
+
 impl<T: DeepSizeOf> DeepSizeOf for [T] {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.iter().map(|child| child.deep_size_of_children(context)).sum()
-    }
-}
-impl<O: DeepSizeOf, T: ?Sized> DeepSizeOf for owning_ref::OwningRef<O, T> {
-    fn deep_size_of_children(&self, context: &mut Context) -> usize {
-        self.as_owner().deep_size_of_children(context)
     }
 }
 
@@ -251,8 +308,11 @@ macro_rules! deep_size_0 {
         }
     };
     (@GO {$($($gen:tt)+)?} $type:ty) => {
+        #[allow(unused)]
         const _: fn() = || {
+            #[allow(dead_code)]
             fn assert_copy<T: ?Sized + Copy>() {}
+            #[allow(dead_code)]
             fn go$(<$($gen)+>)?() {assert_copy::<$type>()}
         };
         $crate::deep_size_0!(@GO {!Copy $($($gen)+)?} $type);
@@ -267,11 +327,17 @@ deep_size_0!(
     {T: ?Sized} &T,
     {!Copy T} std::cell::Cell<T>,
     {!Copy T} std::rc::Weak<T>,
+    {!Copy T} std::sync::Weak<T>,
     {!Copy T} std::mem::MaybeUninit<T>,
     {T: ?Sized} core::marker::PhantomData<T>,
-    {!Copy} dyn std::error::Error + Send + Sync,
-    {!Copy T} futures::channel::oneshot::Sender<T>
+    {!Copy} dyn std::error::Error + Send + Sync
 );
+
+#[cfg(feature = "futures")]
+deep_size_0!({!Copy T} futures::channel::oneshot::Sender<T>);
+
+#[cfg(feature = "hybrid-rc")]
+deep_size_0!({!Copy T} hybrid_rc::Weak<T>);
 
 impl DeepSizeOf for String {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { self.capacity() }
@@ -330,21 +396,24 @@ impl DeepSizeOf for std::path::PathBuf {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { self.capacity() }
 }
 
+#[cfg(feature = "num")]
 impl DeepSizeOf for num::BigUint {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
-        unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity()
+        unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity() * size_of::<u32>()
     }
 }
 
+#[cfg(feature = "num")]
 impl DeepSizeOf for num::BigInt {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.magnitude().deep_size_of_children(context)
     }
 }
 
-impl DeepSizeOf for lsp_types::Url {
+#[cfg(feature = "lsp-types")]
+impl DeepSizeOf for lsp_types::Uri {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
-        // this is an underestimate, but Url doesn't expose its capacity
+        // this is an underestimate, but Uri doesn't expose its capacity
         self.as_str().len()
     }
 }
@@ -365,6 +434,7 @@ impl<T: DeepSizeOf> DeepSizeOf for std::sync::Mutex<T> {
     }
 }
 
+#[cfg(feature = "futures")]
 impl<T: DeepSizeOf> DeepSizeOf for futures::lock::Mutex<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         if let Some(g) = self.try_lock() {
@@ -373,6 +443,7 @@ impl<T: DeepSizeOf> DeepSizeOf for futures::lock::Mutex<T> {
     }
 }
 
+#[cfg(feature = "typed-arena")]
 impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         #[derive(DeepSizeOf)]
@@ -390,6 +461,32 @@ impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     }
 }
 
+#[cfg(all(feature = "memmap", not(target_arch = "wasm32")))]
 impl DeepSizeOf for memmap::Mmap {
     fn deep_size_of_children(&self, _: &mut Context) -> usize { size_of_val(&**self) }
+}
+
+#[cfg(feature = "smallvec")]
+impl<T: smallvec::Array + DeepSizeOf> DeepSizeOf for smallvec::SmallVec<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        let mut n = self.iter().map(|child| child.deep_size_of_children(context)).sum::<usize>();
+        if self.spilled() {
+            n += self.capacity() * size_of::<T>()
+        }
+        n
+    }
+}
+
+#[cfg(feature = "bit-vec")]
+impl<B: bit_vec::BitBlock> DeepSizeOf for bit_vec::BitVec<B> {
+    fn deep_size_of_children(&self, _: &mut Context) -> usize {
+        std::mem::size_of_val(self.storage())
+    }
+}
+
+#[cfg(feature = "bit-set")]
+impl DeepSizeOf for bit_set::BitSet {
+    fn deep_size_of_children(&self, _: &mut Context) -> usize {
+        self.capacity() / 8
+    }
 }

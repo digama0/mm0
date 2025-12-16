@@ -1,6 +1,6 @@
 //! Importer for MMB files into the [`Environment`].
+#![allow(clippy::or_fun_call)] // false positive: clippy#9608
 
-use std::convert::{TryFrom, TryInto};
 use std::rc::Rc;
 use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
@@ -16,7 +16,7 @@ fn parse_unify(
   file: &BasicMmbFile<'_>, nargs: usize, it: UnifyIter<'_>,
   hyps: Option<&mut Vec<(Option<AtomId>, ExprNode)>>,
   dummy: impl FnMut() -> AtomId,
-) -> Result<(Box<[ExprNode]>, ExprNode)> {
+) -> Result<(Box<[ExprNode]>, Vec<ExprNode>, ExprNode)> {
   use ParseError::StrError;
   struct State<'a, F> {
     dummy: F,
@@ -24,6 +24,7 @@ fn parse_unify(
     pos: usize,
     it: UnifyIter<'a>,
     heap: Vec<ExprNode>,
+    store: Vec<ExprNode>,
     fwd: Vec<Option<usize>>,
   }
   impl<F: FnMut() -> AtomId> State<'_, F> {
@@ -32,10 +33,10 @@ fn parse_unify(
         UnifyCmd::Term {tid, save} => {
           let n = self.fwd.len();
           if save {self.fwd.push(None)}
-          let r = ExprNode::App(tid,
-            self.file.term(tid).ok_or(StrError("unknown term", self.pos))?
-              .args().iter().map(|_| self.go()).collect::<Result<Vec<_>>>()?
-              .into_boxed_slice());
+          let args = self.file.term(tid).ok_or(StrError("unknown term", self.pos))?
+            .args().iter().map(|_| self.go()).collect::<Result<Vec<_>>>()?;
+          let r = ExprNode::App(tid, self.store.len());
+          self.store.extend(args);
           if save {
             let h = self.heap.len();
             self.fwd[n] = Some(h);
@@ -64,6 +65,7 @@ fn parse_unify(
   let mut st = State {
     dummy, file, pos: it.pos, it,
     heap: (0..nargs).map(ExprNode::Ref).collect::<Vec<_>>(),
+    store: vec![],
     fwd: (0..nargs).map(Some).collect::<Vec<_>>()
   };
   let ret = st.go()?;
@@ -79,7 +81,7 @@ fn parse_unify(
   if st.it.next().is_some() {
     return Err(StrError("unify stack underflow", st.pos))
   }
-  Ok((st.heap.into_boxed_slice(), ret))
+  Ok((st.heap.into_boxed_slice(), st.store, ret))
 }
 
 #[derive(Debug)]
@@ -89,6 +91,8 @@ impl Dedup {
   fn new(nargs: usize) -> Dedup {
     Self((0..nargs).map(|i| (ProofHash::Ref(ProofKind::Expr, i), true)).collect())
   }
+
+  #[allow(dead_code)] fn iter(&self) -> DedupIter<'_> { self.into_iter() }
 
   fn push(&mut self, v: ProofHash) -> usize {
     (self.0.len(), self.0.push((v, false))).0
@@ -109,7 +113,7 @@ impl IDedup<ProofHash> for Dedup {
   }
 }
 
-#[derive(Debug)]
+#[must_use] #[derive(Debug)]
 struct DedupIter<'a>(std::slice::Iter<'a, (ProofHash, bool)>);
 
 impl<'a> Iterator for DedupIter<'a> {
@@ -119,7 +123,7 @@ impl<'a> Iterator for DedupIter<'a> {
   }
 }
 
-impl<'a> ExactSizeIterator for DedupIter<'a> {
+impl ExactSizeIterator for DedupIter<'_> {
   fn len(&self) -> usize { self.0.len() }
 }
 
@@ -243,7 +247,7 @@ fn parse_proof(
     fn pop(&mut self, pos: usize) -> Result<Stack> {
       self.stack.pop().ok_or(StrError("stack underflow", pos))
     }
-    fn popn_mid(&mut self, n: usize, pos: usize) -> Result<usize> {
+    fn popn_mid(&self, n: usize, pos: usize) -> Result<usize> {
       self.stack.len().checked_sub(n).ok_or(StrError("stack underflow", pos))
     }
     fn popn<T>(&mut self, n: usize, pos: usize,
@@ -361,9 +365,10 @@ fn parse_proof(
   let ret = if let [e] = &*st.stack {e.clone()} else {
     return Err(StrError("stack should have one element", pos))
   }.as_proof(pos)?.0;
-  let (mut ids, heap) = build(&st.de);
+  let (mut ids, heap, mut store) = build(&st.de);
   let hyps = st.hyps.into_iter().map(|i| ids[i].take()).collect();
-  Ok(Proof {heap, hyps, head: ids[ret].take()})
+  store.push(ids[ret].take());
+  Ok(Proof {heap, hyps, store: store.into()})
 }
 
 fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
@@ -379,9 +384,9 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
     let get_var = $get_var;
     let mut $var = 0;
     macro_rules! $next_var {() => {{
-      let var = $var;
+      let var2 = $var;
       $var += 1;
-      get_var(env, var)
+      get_var(env, var2)
     }}}
   }}
   while let Some(e) = it.next() {
@@ -410,8 +415,10 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let ret = td.ret();
         if ret.bound() { return Err(StrError("bad return type", start)) }
         let kind = if td.def() {
-          let (heap, e) = parse_unify(&file, args.len(), td.unify(), None, || next_var!())?;
-          TermKind::Def(Some(Expr {head: e, heap}))
+          let (heap, mut store, ret) =
+            parse_unify(&file, args.len(), td.unify(), None, || next_var!())?;
+          store.push(ret);
+          TermKind::Def(Some(Expr {heap, store: store.into()}))
         } else {
           if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
           TermKind::Term
@@ -434,7 +441,8 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
           else { Type::Reg(a.sort(), a.deps_unchecked()) }
         )).collect::<Box<[_]>>();
         let mut hyps = vec![];
-        let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!())?;
+        let (heap, store, ret) =
+          parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!())?;
         let get_hyp = get_get_var!(file.thm_hyps(thm_id));
         hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
         let kind = if matches!(stmt, NumdStmtCmd::Axiom {..}) {
@@ -452,7 +460,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
           else {Modifiers::empty()};
         env.add_thm(Thm {
           atom, span: fsp, full, doc: None, args, kind,
-          vis, heap, hyps: hyps.into_boxed_slice(), ret,
+          vis, heap, store: store.into(), hyps: hyps.into(), ret,
         }).map_err(|_| StrError("double add term", start))?;
       }
     }

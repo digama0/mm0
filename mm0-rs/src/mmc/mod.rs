@@ -7,53 +7,123 @@
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 
-pub mod types;
-pub mod parser;
-pub mod predef;
-pub mod build_ast;
-pub mod union_find;
-pub mod infer;
-pub mod nameck;
-// pub mod typeck;
-pub mod build_mir;
+mod parser;
+mod proof;
 
-use std::collections::HashMap;
-use bumpalo::Bump;
-use parser::ItemIter;
-
+use std::{collections::HashMap, rc::Rc};
+#[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+use mmcc::{infer::TypeError, types::{hir, ty::CtxPrint, IdxVec, LambdaId}, LinkedCode, LinkerErr, TermId, ThmId};
+use parser::{ItemIter, Parser, Keyword};
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
-  elab::Result, LispVal, EnvDebug, FormatEnv};
-use {types::{Keyword, entity::Entity, mir}, parser::Parser,
-  build_ast::BuildAst, predef::PredefMap};
+  elab::Result, LispVal, EnvDebug, FormatEnv, lisp::ProcSpec, LispProc, EnvDisplay};
 
-impl Remap for Keyword {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { *self }
+use self::parser::Mm0ExprNode;
+
+struct PrintLambda<'a> {
+  fe: FormatEnv<'a>,
+  lambdas: &'a IdxVec<LambdaId, Mm0ExprNode>
 }
 
-impl<A: Remap> Remap for PredefMap<A> {
-  type Target = PredefMap<A::Target>;
-  fn remap(&self, r: &mut Remapper) -> Self::Target { self.map(|x| x.remap(r)) }
+impl PrintLambda<'_> {
+  fn fmt_node<'a>(&self,
+    node: &Mm0ExprNode,
+    ctx: &impl mmcc::DisplayCtx<'a>,
+    subst: &[mmcc::types::ty::Expr<'a>],
+    f: &mut std::fmt::Formatter<'_>
+  ) -> std::fmt::Result {
+    use mmcc::CtxDisplay;
+    match node {
+      Mm0ExprNode::Const(e) => e.fmt(self.fe, f),
+      &Mm0ExprNode::Var(i) => subst[i as usize].fmt(ctx, f),
+      Mm0ExprNode::Expr(t, es) => {
+        write!(f, "({}", self.fe.to(t))?;
+        for expr in es { write!(f, " ")?; self.fmt_node(expr, ctx, subst, f)? }
+        write!(f, ")")
+      }
+    }
+  }
+}
+
+impl mmcc::PrintLambda for PrintLambda<'_> {
+  fn fmt<'a, P: mmcc::DisplayCtx<'a>>(&self,
+    ctx: &P, v: LambdaId, subst: &[mmcc::types::ty::Expr<'a>], f: &mut std::fmt::Formatter<'_>
+  ) -> std::fmt::Result {
+    self.fmt_node(&self.lambdas[v], ctx, subst, f)
+  }
+}
+
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+struct Config;
+struct ItemContext<'a> {
+  elab: &'a Elaborator,
+  lambdas: &'a IdxVec<LambdaId, Mm0ExprNode>,
+  errors: &'a mut Vec<ElabError>,
+}
+
+impl mmcc::Config for Config {
+  type Error = ElabError;
+}
+
+impl<'a> mmcc::ItemContext<Config> for ItemContext<'a> {
+  type Printer = PrintLambda<'a>;
+  fn print(&mut self) -> Self::Printer {
+    PrintLambda { fe: self.elab.format_env(), lambdas: self.lambdas }
+  }
+
+  fn emit_type_errors<'b>(&mut self, _: &mut Config,
+    errs: Vec<hir::Spanned<'b, TypeError<'b>>>,
+    pr: &impl mmcc::DisplayCtx<'b>,
+  ) -> Result<()> {
+    self.errors.extend(errs.into_iter().map(|err| match err.k {
+      TypeError::ExpectedPure(sp) =>
+        ElabError::with_info(err.span, format!("{}", CtxPrint(pr, &err.k)).into(),
+          vec![(sp.clone(), "Needed for this operation".into())]),
+      _ => ElabError::new_e(err.span, format!("{}", CtxPrint(pr, &err.k))),
+    }));
+    Ok(())
+  }
+}
+
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
+struct CompilerInner {
+  inner: mmcc::Compiler<Config>,
+  code: Option<Box<mmcc::LinkedCode>>,
+}
+
+impl CompilerInner {
+  /// Get the linked code, calling `finish` on the compiler if necessary.
+  fn linked_code(&mut self, sp: Span) -> Result<&LinkedCode, ElabError> {
+    if let Some(code) = &self.code {
+      #[allow(clippy::useless_transmute)]
+      // Safety: NLL case 3 (polonius validates this borrow pattern)
+      unsafe { return Ok(std::mem::transmute::<&LinkedCode, &LinkedCode>(code)) }
+    }
+    if self.inner.has_type_errors() {
+      return Err(ElabError::new_e(sp, "Compilation failed due to previous errors"))
+    }
+    let code = self.inner.finish().map_err(|err| match err {
+      LinkerErr::LowerErr(mmcc::LowerErr::GhostVarUsed(v)) =>
+        ElabError::new_e(&v.span, "Ghost variable used in computationally relevant position"),
+      LinkerErr::LowerErr(mmcc::LowerErr::EntryUnreachable(sp)) =>
+        ElabError::new_e(&sp, "Function has an unconditional infinite loop"),
+      LinkerErr::LowerErr(mmcc::LowerErr::InfiniteOp(sp)) =>
+        ElabError::new_e(&sp, "Function has a computationally relevant infinite size operation"),
+    })?;
+    Ok(self.code.get_or_insert(code))
+  }
 }
 
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
-#[derive(DeepSizeOf)]
+#[derive(Clone)]
+#[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Compiler {
-  /// The map of atoms for MMC keywords. (This depends on the environment because
-  /// it gets remapped per file.)
-  keywords: HashMap<AtomId, Keyword>,
-  /// The map of atoms for defined entities (operations and types).
-  names: HashMap<AtomId, Entity>,
-  /// The compiled MIR representation of pre-monomorphization functions.
-  mir: HashMap<AtomId, mir::Cfg>,
-  /// The accumulated global initializers, to be placed in the start routine.
-  init: (mir::Cfg, mir::BlockId),
+  inner: Rc<CompilerInner>,
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.
-  predef: PredefMap<AtomId>,
-  /// A prefix to place on autogenerated names.
-  prefix: Vec<u8>,
+  predef: proof::Predefs,
 }
 
 impl std::fmt::Debug for Compiler {
@@ -62,37 +132,32 @@ impl std::fmt::Debug for Compiler {
   }
 }
 impl EnvDebug for Compiler {
-  fn env_dbg<'a>(&self, _: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  fn env_dbg(&self, _: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     std::fmt::Debug::fmt(self, f)
   }
 }
-
+impl EnvDisplay for Compiler {
+  fn fmt(&self, _: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    std::fmt::Debug::fmt(self, f)
+  }
+}
 
 impl Remap for Compiler {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Compiler {
-      keywords: self.keywords.remap(r),
-      names: self.names.remap(r),
-      mir: self.mir.remap(r),
-      init: self.init.remap(r),
+      inner: self.inner.clone(),
       predef: self.predef.remap(r),
-      prefix: self.prefix.clone(),
     }
   }
 }
 
 impl Compiler {
-  /// Create a new [`Compiler`] object. This mutates the elaborator because
-  /// it needs to allocate atoms for MMC keywords.
-  pub fn new(e: &mut Elaborator) -> Compiler {
-    Compiler {
-      keywords: e.env.make_keywords(),
-      names: Compiler::make_names(&mut e.env),
-      mir: Default::default(),
-      init: Default::default(),
-      predef: PredefMap::new(|_, s| e.env.get_atom(s.as_bytes())),
-      prefix: "_mmc_".into(),
+  /// Construct a new compiler object.
+  pub fn new(elab: &mut Elaborator) -> Self {
+    Self {
+      inner: Default::default(),
+      predef: proof::Predefs::new(elab)
     }
   }
 
@@ -100,64 +165,83 @@ impl Compiler {
   /// performing typehecking but not code generation. This can be called multiple
   /// times to add multiple functions, but each lisp literal is already a list of
   /// top level items that are typechecked as a unit.
-  pub fn add(&mut self, elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>) -> Result<()> {
+  pub fn add(&mut self,
+    elab: &mut Elaborator, sp: Span, it: impl ExactSizeIterator<Item=LispVal>
+  ) -> Result<()> {
+    if it.len() == 0 { return Ok(()) }
+    let compiler = Rc::make_mut(&mut self.inner);
+    compiler.code = None;
     let fsp = FileSpan {file: elab.path.clone(), span: sp};
-    let p = Parser {fe: elab.format_env(), kw: &self.keywords};
-    let mut errors = vec![];
+    let mut cache = HashMap::default();
     for e in it {
       let mut it = ItemIter::new(e);
-      while let Some(item) = p.parse_next_item(&fsp, &mut it)? {
-        macro_rules! try1 {($e:expr) => {
-          match $e { Ok(r) => r, Err(e) => {errors.push(e); continue}}
-        }}
-        try1!(Self::reserve_names(&mut self.names, &item));
-        let mut ba = BuildAst::new(&self.names, p);
-        let item = try1!(ba.build_item(item));
-        let BuildAst {var_names, ..} = ba;
-        let hir_alloc = Bump::new();
-        let mm0_alloc = Default::default();
-        let mut ctx = infer::InferCtx::new(&hir_alloc, &mm0_alloc,
-          &mut self.names, p.fe, var_names);
-        let _item = ctx.lower_item(&item);
-        let errs = std::mem::take(&mut ctx.errors);
-        let pr = ctx.print();
-        errors.extend(errs.into_iter().map(|e| e.into_elab_error(&pr)));
+      loop {
+        let mut p = Parser::new(elab, &mut cache, &mut compiler.inner);
+        let item = match p.parse_next_item(&fsp, &mut it) {
+          Err(e) => { elab.report(e); continue }
+          Ok(Some(item)) => item,
+          Ok(None) => break,
+        };
+        let (var_names, lambdas) = p.finish();
+        let mut errors = vec![];
+        compiler.inner.add(&item, var_names, ItemContext {
+          elab,
+          lambdas: &lambdas,
+          errors: &mut errors
+        })?;
+        for e in errors { elab.report(e) }
       }
     }
-    for e in errors { elab.report(e) }
-    // for a in &ast { self.nameck(&fsp, a)? }
-    // let mut tc = TypeChecker::new(self, elab, fsp);
-    // for item in ast { tc.typeck(&item)? }
     Ok(())
+  }
+
+  /// Get the compiled ELF file as a byte string.
+  pub fn to_str(&mut self, sp: Span) -> Result<Vec<u8>> {
+    let compiler = Rc::make_mut(&mut self.inner);
+    let code = compiler.linked_code(sp)?;
+    let mut out = Vec::new();
+    code.write_elf(&mut out).expect("IO error in string write");
+    Ok(out)
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
-  #[allow(clippy::unused_self)]
-  pub fn finish(&mut self, _elab: &mut Elaborator, _sp: Span, _a1: AtomId, _a2: AtomId) -> Result<()> {
-    Ok(())
+  pub fn finish(&mut self,
+    elab: &mut Elaborator, sp: Span, name: AtomId
+  ) -> Result<(TermId, ThmId)> {
+    let compiler = Rc::make_mut(&mut self.inner);
+    let code = compiler.linked_code(sp)?;
+    proof::render_proof(&self.predef, elab, sp, name, &code.proof())
   }
+}
+
+impl LispProc for Compiler {
+  fn spec(&self) -> ProcSpec { ProcSpec::AtLeast(1) }
 
   /// Main entry point to the compiler. Does basic parsing and forwards to
   /// [`add`](Self::add) and [`finish`](Self::finish).
-  pub fn call(&mut self, elab: &mut Elaborator, sp: Span, args: Vec<LispVal>) -> Result<LispVal> {
+  fn call(&mut self, elab: &mut Elaborator, sp: Span, args: Vec<LispVal>) -> Result<LispVal> {
     let mut it = args.into_iter();
     let e = it.next().expect("expected 1 argument");
-    match e.as_atom().and_then(|a| self.keywords.get(&a)) {
+    match e.as_atom().and_then(|a| Keyword::from_str(elab.data[a].name.as_str())) {
       Some(Keyword::Add) => {
         self.add(elab, sp, it)?;
         Ok(LispVal::undef())
       }
+      Some(Keyword::ToString) => {
+        self.add(elab, sp, it)?;
+        Ok(LispVal::string(self.to_str(sp)?.into()))
+      }
       Some(Keyword::Finish) => {
-        let a1 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(sp, "mmc-finish: syntax error"))?;
-        let a2 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
+        let name = it.next().and_then(|e| e.as_atom()).ok_or_else(||
           ElabError::new_e(sp, "mmc-finish: syntax error"))?;
         self.add(elab, sp, it)?;
-        self.finish(elab, sp, a1, a2)?;
+        self.finish(elab, sp, name)?;
         Ok(LispVal::undef())
       }
       _ => Err(ElabError::new_e(sp,
         format!("mmc-compiler: unknown subcommand '{}'", elab.print(&e))))
     }
   }
+
+  fn box_remap(&self, r: &mut Remapper) -> Box<dyn LispProc> { Box::new(self.remap(r)) }
 }
