@@ -1,9 +1,9 @@
-use std::io;
+use std::path::Path;
 use crate::compiler;
+use test_each_file::test_each_path;
 
-fn compile_mm1(file: &str) -> io::Result<()> {
-  compiler::Args { input: format!("../tests/mm1/{file}.mm1"), ..<_>::default() }.main()
+fn compile_mm1([input]: [&Path; 1]) {
+  compiler::Args { input: input.to_owned(), ..<_>::default() }.main().expect("IO failure")
 }
 
-#[test] fn issue171() -> io::Result<()> { compile_mm1("issue171") }
-#[test] fn issue172() -> io::Result<()> { compile_mm1("issue172") }
+test_each_path! { for ["mm1"] in "../tests/mm1" => compile_mm1 }

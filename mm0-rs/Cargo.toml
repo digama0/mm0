@@ -51,6 +51,7 @@ zerocopy = "0.8"
 memchr = "2.7"
 bit-set = "0.8"
 typed-arena = "2.0"
+test_each_file = "0.3"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", optional = true }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [

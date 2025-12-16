@@ -10,7 +10,7 @@
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
 use std::sync::{atomic::{AtomicBool, AtomicU8, Ordering}, Arc, LazyLock, Mutex};
 use std::collections::{HashMap, hash_map::Entry};
-use std::{io, fs};
+use std::{io, fs, path::PathBuf};
 use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::{ThreadPool, block_on};
@@ -462,9 +462,9 @@ pub struct Args {
   #[clap(short, long = "output", value_name = "FILE")]
   pub output_str: Option<std::ffi::OsString>,
   /// Sets the input file (.mm1 or .mm0)
-  pub input: String,
+  pub input: PathBuf,
   /// Sets the output file (.mmb or .mmu)
-  pub output: Option<String>,
+  pub output: Option<PathBuf>,
 }
 
 impl Args {
@@ -502,7 +502,9 @@ impl Args {
     if let Some(out) = self.output {
       use {fs::File, io::BufWriter};
       let w = BufWriter::new(File::create(&out)?);
-      if out.rsplit('.').next().is_some_and(|ext| ext.eq_ignore_ascii_case("mmu")) {
+      if out.extension().and_then(|s| s.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mmu"))
+      {
         env.export_mmu(w)?;
       } else {
         let mut report = |lvl: ErrorLevel, err: &str| {

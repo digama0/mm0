@@ -909,6 +909,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "simplelog",
+ "test_each_file",
  "typed-arena",
  "url",
  "wasm-bindgen",
@@ -1546,6 +1547,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test_each_file"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2de773517ee4367314c7918f6c9ef69c201ba72bfdbffb00234c22c50a153b73"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+ "unicode-ident",
 ]
 
 [[package]]
