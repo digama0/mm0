@@ -1,4 +1,7 @@
 #!/bin/sh
+# Runs all tests. Run this from the tests/ directory;
+# you need mm0-rs and mm0-c to be on your path.
+
 escape=$(printf '\033')
 red="$escape[0;31m"
 green="$escape[0;32m"
@@ -53,3 +56,5 @@ for test in run/*.mmb; do
   run_test ./run.sh mmb/ ${test%.*} mmb "0 1 2 3 4 255"
 done; echo
 cd ..
+
+exit $exit_code
