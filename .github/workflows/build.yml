@@ -149,5 +149,11 @@ jobs:
           path: ./bin
       - working-directory: mm0-c
         run: gcc main.c -O2 -Wall -o $GITHUB_WORKSPACE/bin/mm0-c
+      - working-directory: bin
+        run: |
+          chmod +x mm0-rs
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - working-directory: tests
-        run: ./run-tests.sh
+        run: |
+          chmod +x run-tests.sh
+          ./run-tests.sh
