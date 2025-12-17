@@ -45,7 +45,6 @@ jobs:
         working-directory: mm0-rs
         run: cargo test --verbose --release
       - uses: actions/upload-artifact@v4
-        if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
         with:
           name: mm0-rs
           path: mm0-rs/target/release/mm0-rs
