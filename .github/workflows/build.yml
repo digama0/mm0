@@ -154,6 +154,4 @@ jobs:
           chmod +x mm0-rs
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - working-directory: tests
-        run: |
-          chmod +x run-tests.sh
-          ./run-tests.sh
+        run: ./run-tests.sh
