@@ -70,8 +70,8 @@ jobs:
         working-directory: ./mm0-rs
         run: ./clippy.sh
 
-  peano:
-    name: Peano MM1 files
+  examples:
+    name: Examples
     runs-on: ubuntu-latest
     needs: build-mm0-rs
     if: ${{ always() }}
@@ -134,3 +134,24 @@ jobs:
         run: |
           mm0-rs compile -W set.mm1 set.mmb
           mm0-c set.mmb < set.mm0
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: build-mm0-rs
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p "$GITHUB_WORKSPACE/bin"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mm0-rs
+          path: ./bin
+      - working-directory: mm0-c
+        run: gcc main.c -O2 -Wall -o $GITHUB_WORKSPACE/bin/mm0-c
+      - working-directory: bin
+        run: |
+          chmod +x mm0-rs
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - working-directory: tests
+        run: ./run-tests.sh

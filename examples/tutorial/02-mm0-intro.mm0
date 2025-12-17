@@ -1,4 +1,4 @@
--- This is the MM0 file corresponding to the MM1 file `03-mm1-intro-mm1.mm1`.
+-- This is the MM0 file corresponding to the MM1 file `03-mm1-intro.mm1`.
 -- It contains only declarations, and no proofs.
 
 -- Declare delimiters that don't require whitespace

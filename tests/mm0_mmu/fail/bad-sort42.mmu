@@ -1,0 +1,2 @@
+-- free should be after strict
+(sort s42 free strict)

@@ -6,4 +6,4 @@ fn compile_mm1([input]: [&Path; 1]) {
   compiler::Args { input: input.to_owned(), ..<_>::default() }.main().expect("IO failure")
 }
 
-test_each_path! { for ["mm1"] in "../tests/mm1" => compile_mm1 }
+test_each_path! { for ["mm1"] in "../tests/mm1/pass" => compile_mm1 }

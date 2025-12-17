@@ -81,8 +81,17 @@ impl<'a> Importer<'a> {
   }
 
   fn chr_err(&mut self, c: u8) -> Result<usize> {
-    self.chr(c).ok_or_else(|| ElabError::new_e(self.idx..=self.idx,
-      format!("expecting '{}'", c as char)))
+    self.chr(c).ok_or_else(|| {
+      let sz = match self.cur_opt() {
+        None => 0,
+        // UTF8 char size to avoid bad slicing into a str
+        Some(0xC0..=0xDF) => 2,
+        Some(0xE0..=0xEF) => 3,
+        Some(0xF0..=0xF7) => 4,
+        Some(_) => 1,
+      };
+      ElabError::new_e(self.idx..self.idx + sz, format!("expecting '{}'", c as char))
+    })
   }
 
   fn open(&mut self) -> Option<usize> { self.chr(b'(') }

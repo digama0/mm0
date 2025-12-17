@@ -1,0 +1,2 @@
+--                      V--  overflowing hazard
+prefix p : $+$ prec 4294967296;
