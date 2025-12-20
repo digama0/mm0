@@ -39,7 +39,7 @@ do {
     '(decsucx decsucxf decltx1 decltx2
       add_xx0 add_xx1 add_0x0 add_0x1 add_x00 add_x01
       adc_xx0 adc_xx1 adc_0x0 adc_0x1 adc_x00 adc_x01
-      sub64 bit wSz8 wSz32 wSz64
+      sub64 bit wSz8 wSz32 wSz64 wsizeBytes
       opSize opSize_8 opSize_32 opSize_64
       opSizeW opSizeW_0 opSizeW_S
       REX_W REX_R REX_X REX_B
@@ -47,6 +47,10 @@ do {
       unopInc unopDec unopNot unopNeg
       isBasicElf ELF_lit))
 };
+
+@mmc-th theorem wSz8Bytesx: $ wsizeBytes (wSz8 r) = x1 $ = '(eqtr wSz8Bytes dec1);
+@mmc-th theorem wSz32Bytesx: $ wsizeBytes wSz32 = x4 $ = '(eqtr wSz32Bytes dec4);
+@mmc-th theorem wSz64Bytesx: $ wsizeBytes wSz64 = x8 $ = '(eqtr wSz64Bytes dec8);
 
 @mmc-th local def strlen (s: string) (n: nat): wff = $ len s = n $;
 @mmc-th theorem strlen0: $ strlen s0 x0 $ = '(eqtr (leneq s2ns0) @ eqtr4 len0 h2n0);
@@ -249,8 +253,8 @@ $ n e. Bits (8 * k + 7) /\ s = toIBytes (suc k) (b1 n) $;
   $ parseIBytesNeg 0 (h2n a0) (s1 (ch xf c0)) $ =
 '(iani xelBits71 @ eqtr3 s2nscons0 @ xtoIBytesSb11 h0 xtoIBytes0);
 
-@mmc-th local def posZ (n: nat): nat = $ b0 n $;
-@mmc-th local def negZ (n: nat): nat = $ b1 n $;
+@_ @mmc-th local def posZ (n: nat): nat = $ b0 n $;
+@_ @mmc-th local def negZ (n: nat): nat = $ b1 n $;
 
 @mmc-th theorem znsub_posZ (h: $ b + c = a $): $ a -ZN b = posZ c $ =
 '(eqtr3 (znsubeq1 h) @ eqtr (znsubpos leaddid1) @ b0eq pncan2);
@@ -380,7 +384,7 @@ do (for 0 8 @ fn (n) @ if (not {{n == 4} or {n == 5}}) @ begin
   (mmc-th name));
 
 @mmc-th local def parseModRM2 (rex rmi rm2 mod: nat) (l l2: string): wff =
-$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM2 rex rm rm2 mod l)) $;
+$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM2 rex rm rm2 mod l1)) $;
 
 @mmc-th theorem parseModRM2_reg (h1: $ REX_B rex = b $) (h2: $ splitBits31 rm2 b r $):
   $ parseModRM2 rex (IRM_reg r) rm2 3 s s $ = 'sorry;
@@ -416,7 +420,7 @@ $ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM2 rex rm rm2
   $ parseModRM2 rex (IRM_mem 0 (base_reg r) disp) rm2 md l l2 $ = 'sorry;
 
 @_ local def parseModRM_N (rex rn rmi l l2: nat): wff =
-$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM rex rn rm l)) $;
+$ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM rex rn rm l1)) $;
 
 @mmc-th local def parseModRM (rex: nat) (rn: hex) (rm: nat) (l l2: string): wff =
 $ parseModRM_N rex rn rm l l2 $;
@@ -436,12 +440,10 @@ $ ds e. DestSrc /\ destRM ds = IRM_reg_N dst /\ src = suc (srcIRM ds) $;
 local def mkRegRMI (dst src ds): wff = $ mkRegRMI_N dst src ds $;
 
 @_ local def instBinopN (opc sz dst src: nat): set =
-$ S\ p, S\ s, {x | E. ds (mkRegRMI_N dst src ds /\
-  opc < x8 -> decode (xastBinop opc sz ds) s)} $;
+$ S\ p, S\ s, {x | E. ds (mkRegRMI_N dst src ds /\ opc < 8 -> decode (xastBinop opc sz ds) s)} $;
 
 @mmc-th local def instBinop (opc: hex) (sz: nat) (dst: hex) (src: nat): set =
-$ S\ p, S\ s, {x | E. ds (mkRegRMI dst src ds /\
-  opc < x8 -> decode (xastBinop opc sz ds) s)} $;
+$ S\ p, S\ s, {x | E. ds (mkRegRMI dst src ds /\ opc < 8 -> decode (xastBinop opc sz ds) s)} $;
 
 @_ local def instAddN (sz dst src: nat): set = $ instBinopN x0 sz dst src $;
 @_ local def instSubN (sz dst src: nat): set = $ instBinopN x5 sz dst src $;
@@ -495,7 +497,7 @@ $ src != 0 -> instBinop op sz dst src C_ I $;
   $ parseOpc p ip l rex (ch x y) I $ = 'sorry;
 
 @mmc-th local def instShift (opc: hex) (sz: nat) (dst: hex) (src: nat): set =
-$ S\ p, S\ s, {x | opc < x8 /\ opc != 6 -> E. ds (mkRegRMI dst src ds /\
+$ S\ p, S\ s, {x | opc < 8 /\ opc != 6 -> E. ds (mkRegRMI dst src ds /\
   (src = IRM_reg x1 \/ E. i (i < wsizeBits sz /\ src = IRM_imm32 (posZ i))) /\
   decode (xastBinop (rex_reg 1 opc) sz ds) s)} $;
 
@@ -526,7 +528,7 @@ $ S\ p, S\ s, {x | sz e. wSz32 ; sn wSz64 /\ src e. Bits (wsizeBits sz) /\ (
   decode (xastMov sz (Rm_i (RM_reg dst) (chopZ 64 src))) s)} $;
 
 theorem parseBinopClear (h: $ sz e. wSz32 ; sn wSz64 $):
-  $ parseBinop x6 wSz32 dst (IRM_reg dst) (instImm sz dst x0) $ = 'sorry;
+  $ parseBinop x6 wSz32 dst (IRM_reg dst) (instImm sz dst (posZ x0)) $ = 'sorry;
 @mmc-th theorem parseBinopClear32:
   $ parseBinop x6 wSz32 dst (IRM_reg dst) (instImm wSz32 dst (posZ x0)) $ = 'sorry;
 @mmc-th theorem parseBinopClear64:

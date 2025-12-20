@@ -491,12 +491,20 @@ impl<Reg: IsReg> Default for AMode<Reg> {
 
 impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "[{:?}", self.off)?;
-    if self.base.is_valid() {
-      write!(f, " + {:?}", self.base)?
-    }
+    write!(f, "[")?;
+    let mut first = !self.base.is_valid();
+    if !first { write!(f, "{:?}", self.base)? }
     if let Some(si) = &self.si {
-      write!(f, " + {}*{:?}", 1 << si.shift, si.index)?
+      if !std::mem::take(&mut first) { write!(f, " + ")? }
+      if si.shift == 0 {
+        write!(f, "{:?}", si.index)?
+      } else {
+        write!(f, "{}*{:?}", 1 << si.shift, si.index)?
+      }
+    }
+    if !matches!(self.off, Offset::Real(0)) || first {
+      if !first { write!(f, " + ")? }
+      write!(f, "{:?}", self.off)?
     }
     write!(f, "]")
   }
@@ -504,12 +512,20 @@ impl<Reg: IsReg + Debug> Debug for AMode<Reg> {
 
 impl<Reg: IsReg + Display> Display for AMode<Reg> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "[{:?}", self.off)?;
-    if self.base.is_valid() {
-      write!(f, " + {}", self.base)?
-    }
+    write!(f, "[")?;
+    let mut first = !self.base.is_valid();
+    if !first { write!(f, "{}", self.base)? }
     if let Some(si) = &self.si {
-      write!(f, " + {}*{}", 1 << si.shift, si.index)?
+      if !std::mem::take(&mut first) { write!(f, " + ")? }
+      if si.shift == 0 {
+        write!(f, "{}", si.index)?
+      } else {
+        write!(f, "{}*{}", 1 << si.shift, si.index)?
+      }
+    }
+    if !matches!(self.off, Offset::Real(0)) || first {
+      if !first { write!(f, " + ")? }
+      write!(f, "{:?}", self.off)?
     }
     write!(f, "]")
   }
@@ -1248,6 +1264,7 @@ impl VCode<Inst> {
   }
 
   pub(crate) fn emit_imm(&mut self, sz: Size, src: impl Into<u64>) -> VReg {
+    assert_ne!(sz, Size::Inf);
     let dst = self.fresh_vreg();
     self.emit(Inst::Imm { sz, dst, src: src.into() });
     dst

@@ -777,6 +777,10 @@ theorem shrhex4: $ shr (a :x b) 4 = a $ =
 
 theorem x16powS (h: $ 16 ^ k = a $): $ 16 ^ suc k = a :x x0 $ =
 '(eqtr powS2 @ eqtr4 (muleq1 h) hex02);
+theorem x2pow0: $ x1 = 2 ^ 0 $ = '(eqtr2 pow0 dec1);
+theorem x2pow1: $ x2 = 2 ^ 1 $ = '(eqtr2 pow12 dec2);
+theorem x2pow2: $ x4 = 2 ^ 2 $ = '(eqtr2 d2pow2 dec4);
+theorem x2pow3: $ x8 = 2 ^ 3 $ = '(eqtr2 d2pow3 dec8);
 theorem x2powS (h: $ a = 2 ^ k $): $ a :x x0 = 2 ^ (k + 4) $ =
 '(eqtr hex02 @ eqtr4 (muleq1 h) @ eqtr powadd (muleq2 d2pow4));
 

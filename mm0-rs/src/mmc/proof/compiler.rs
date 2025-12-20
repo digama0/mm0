@@ -173,6 +173,14 @@ impl VCtx {
     Ok(())
   }
 
+  fn to_string(&self,
+    thm: &ProofDedup<'_>, elab: &mut Elaborator, vctxs: &IdxVec<VCtxId, VCtx>
+  ) -> String {
+    let mut s = String::new();
+    self.pp(thm, elab, vctxs, &mut s).expect("format string");
+    s
+  }
+
   /// Build the root context. Note that variables can be added to the root context with `add`
   fn root(de: &mut ProofDedup<'_>, hex: &HexCache) -> impl Fn() -> Self + Copy + use<> {
     let e = app!(de, (vctx0));
@@ -580,11 +588,11 @@ trait NodeInsert<N: NodeKind> {
 struct PushMCtx;
 impl<N: NodeKind> NodeInsert<N> for PushMCtx {
   fn zero(de: &mut ProofDedup<'_>, t: ProofId) -> ProofId {
-    thm!(de, pushMCtx0(t): (pushMCtx (mctx0) t t))
+    thm!(de, pushMCtx_0(t): (pushMCtx (mctx0) t t))
   }
 
   fn one_lt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId {
-    thm!(de, pushMCtx1L(a, t): (pushMCtx a t (mctxA t a)))
+    thm!(de, pushMCtx_1L(a, t): (pushMCtx a t (mctxA t a)))
   }
 
   fn one_eq(_: &mut ProofDedup<'_>, _: ProofId, _: ProofId) -> ProofId {
@@ -592,23 +600,23 @@ impl<N: NodeKind> NodeInsert<N> for PushMCtx {
   }
 
   fn one_gt(de: &mut ProofDedup<'_>, a: ProofId, t: ProofId) -> ProofId {
-    thm!(de, pushMCtx1R(a, t): (pushMCtx a t (mctxA a t)))
+    thm!(de, pushMCtx_1R(a, t): (pushMCtx a t (mctxA a t)))
   }
 
   fn node_lt(de: &mut ProofDedup<'_>, [a, b, t, a2, th]: [ProofId; 5]) -> ProofId {
-    thm!(de, pushMCtxL(a, a2, b, t, th): (pushMCtx (mctxA a b) t (mctxA a2 b)))
+    thm!(de, pushMCtx_L(a, a2, b, t, th): (pushMCtx (mctxA a b) t (mctxA a2 b)))
   }
 
   fn node_gt(de: &mut ProofDedup<'_>, [a, b, t, b2, th]: [ProofId; 5]) -> ProofId {
-    thm!(de, pushMCtxR(a, b, b2, t, th): (pushMCtx (mctxA a b) t (mctxA a b2)))
+    thm!(de, pushMCtx_R(a, b, b2, t, th): (pushMCtx (mctxA a b) t (mctxA a b2)))
   }
 
   fn rotate_left(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
-    thm!(de, pushMCtxRotL(a, b, c, x, t, th): (pushMCtx x t (mctxA (mctxA a b) c)))
+    thm!(de, pushMCtx_rotL(a, b, c, x, t, th): (pushMCtx x t (mctxA (mctxA a b) c)))
   }
 
   fn rotate_right(de: &mut ProofDedup<'_>, [x, t, a, b, c, th]: [ProofId; 6]) -> ProofId {
-    thm!(de, pushMCtxRotR(a, b, c, x, t, th): (pushMCtx x t (mctxA a (mctxA b c))))
+    thm!(de, pushMCtx_rotR(a, b, c, x, t, th): (pushMCtx x t (mctxA a (mctxA b c))))
   }
 }
 
@@ -677,10 +685,10 @@ impl MCtxNode<MCtxRegKind> {
   /// Returns `|- okMCtx mctx`
   fn ok(this: &P<Self>, de: &mut ProofDedup<'_>) -> ProofId {
     if let MCtxNode::Zero = this.0 {
-      thm!(de, okMCtx0(): (okMCtx (mctx0)))
+      thm!(de, okMCtx_0(): (okMCtx (mctx0)))
     } else {
       let (a, b, th) = Self::bdd(this, de);
-      thm!(de, okMCtxS(a.1, b.1, this.1, th): okMCtx[this.1])
+      thm!(de, okMCtx_S(a.1, b.1, this.1, th): okMCtx[this.1])
     }
   }
 }
@@ -746,8 +754,10 @@ impl TCtx {
     let (n2, h2) = hex.suc(de, n);
     self.vctx.nvars = n2;
     let tctx2 = self.mk(de);
-    (n, (tctx2, thm!(de, ((okPushVar tctx {*n2} tctx2)) =>
-      okPushVarI(self.mctx.1, self.mctx.1, *n, *n2, ty, old, self.vctx.e, h1, h2))))
+    // let th = thm!(de, ((okPushVar tctx {*n2} tctx2)) =>
+    //   okPushVarI(self.mctx.1, self.mctx.1, *n, *n2, ty, old, self.vctx.e, h1, h2));
+    let th = ProofId::INVALID;
+    (n, (tctx2, th))
   }
 
   /// Given `ty`, returns `(tctx2, |- okPushVar tctx ty tctx2)`,
@@ -760,8 +770,10 @@ impl TCtx {
     let old = self.vctx.e;
     let h1 = self.vctx.push(de, var, kind, e);
     let tctx2 = self.mk(de);
-    (tctx2, thm!(de, ((okPushVar tctx {*self.vctx.nvars} tctx2)) =>
-      okPushHypI(self.mctx.1, *self.vctx.nvars, ty, old, self.vctx.e, h1)))
+    // let th = thm!(de, ((okPushVar tctx {*self.vctx.nvars} tctx2)) =>
+    //   okPushHypI(self.mctx.1, *self.vctx.nvars, ty, old, self.vctx.e, h1));
+    let th = ProofId::INVALID;
+    (tctx2, th)
   }
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
@@ -793,19 +805,25 @@ enum Loc {
 }
 
 impl Loc {
-  fn as_expr(self, thm: &mut ProofDedup<'_>) -> P<Self> {
-    let e = match self {
-      Loc::Reg(n) => app!(thm, Loc_reg[n.1]),
-      Loc::Local(n) => app!(thm, Loc_local[n]),
-    };
-    (self, e)
-  }
+  // fn as_expr(self, thm: &mut ProofDedup<'_>) -> P<Self> {
+  //   let e = match self {
+  //     Loc::Reg(n) => app!(thm, Loc_reg[n.1]),
+  //     Loc::Local(n) => app!(thm, Loc_local[n]),
+  //   };
+  //   (self, e)
+  // }
 }
 
 #[derive(Clone, Copy)]
 enum Value {
   Reg,
   SpillSlot(ProofId),
+}
+
+enum ConstantVal {
+  Zst,
+  // (e, |- HasType e ty)
+  Value(ProofId, ProofId),
 }
 
 impl std::ops::Deref for ProcProver<'_> {
@@ -934,9 +952,15 @@ impl ProcProver<'_> {
     let (_, val, h1) = tctx.vctx.get(&mut self.thm, &self.vctxs, v);
     app_match!(self.thm, let (mkTCtx vctx n mctx) = l1);
     app_match!(self.thm, val => {
-      (vHyp ty) => (ty, thm!(self.thm, okReadHypHyp(mctx, n, ty, vctx, h1): okReadHyp[l1, ty])),
+      (vHyp ty) => (ty,
+          // thm!(self.thm, okReadHypHyp(mctx, n, ty, vctx, h1): okReadHyp[l1, ty])
+          ProofId::INVALID
+        ),
       (vVar v ty) =>
-        (ty, thm!(self.thm, okReadHypVar(mctx, n, ty, v, vctx, h1): okReadHyp[l1, ty])),
+        (ty,
+          // thm!(self.thm, okReadHypVar(mctx, n, ty, v, vctx, h1): okReadHyp[l1, ty])
+          ProofId::INVALID
+        ),
     })
   }
 
@@ -946,6 +970,61 @@ impl ProcProver<'_> {
     self.read_hyp_tctx_var(tctx, p.local)
   }
 
+  fn mk_type(&mut self, ty: &Ty) -> ProofId {
+    match &**ty {
+      TyKind::Unit => app!(self.thm, (tyUnit)),
+      TyKind::True => todo!(),
+      TyKind::False => todo!(),
+      TyKind::Bool => todo!(),
+      TyKind::Var(_) => todo!(),
+      TyKind::Int(ity) => todo!(),
+      TyKind::Array(ty_kind, expr_kind) => todo!(),
+      TyKind::Own(ty_kind) => todo!(),
+      TyKind::Shr(lifetime, ty_kind) => todo!(),
+      TyKind::Ref(lifetime, ty_kind) => todo!(),
+      TyKind::RefSn(eplace_kind) => todo!(),
+      TyKind::Sn(expr_kind, ty_kind) => todo!(),
+      TyKind::Struct(args) => todo!(),
+      TyKind::All(var_id, ty_kind, ty_kind1) => todo!(),
+      TyKind::Imp(ty_kind, ty_kind1) => todo!(),
+      TyKind::Wand(ty_kind, ty_kind1) => todo!(),
+      TyKind::Not(ty_kind) => todo!(),
+      TyKind::And(ty_kinds) => todo!(),
+      TyKind::Or(ty_kinds) => todo!(),
+      TyKind::If(expr_kind, ty_kind, ty_kind1) => todo!(),
+      TyKind::Ghost(ty_kind) => todo!(),
+      TyKind::Uninit(ty_kind) => todo!(),
+      TyKind::Pure(expr_kind) => todo!(),
+      TyKind::User(symbol, ty_kinds, expr_kinds) => todo!(),
+      TyKind::Heap(expr_kind, expr_kind1, ty_kind) => todo!(),
+      TyKind::HasTy(expr_kind, ty_kind) => todo!(),
+      TyKind::Input => todo!(),
+      TyKind::Output => todo!(),
+      TyKind::Moved(ty_kind) => todo!(),
+    }
+  }
+
+  fn constant(&self, c: &Constant) -> ConstantVal {
+    match c.k {
+      ConstKind::Unit |
+      ConstKind::ITrue => ConstantVal::Zst,
+      ConstKind::Bool => todo!(),
+      ConstKind::Int => {
+        let Some(e) = &c.ety.0 else { unreachable!() };
+        let ExprKind::Int(n) = &**e else { unreachable!() };
+        let TyKind::Int(ity) = *c.ety.1 else { unreachable!() };
+        let n = ity.zero_extend_as_u64(n).expect("impossible");
+        todo!("int constant")
+      }
+      ConstKind::Uninit => todo!(),
+      ConstKind::Const(symbol) => todo!(),
+      ConstKind::Sizeof => todo!(),
+      ConstKind::Mm0Proof(proof_id) => todo!(),
+      ConstKind::Contra(block_id, var_id) => todo!(),
+      ConstKind::As(_) => todo!(),
+    }
+  }
+
   /// Returns `(ty, |- okReadHyp tctx ty)`
   fn read_hyp_operand(&mut self, (tctx, l1): P<&TCtx>, op: &Operand) -> (ProofId, ProofId) {
     match op.place() {
@@ -953,7 +1032,10 @@ impl ProcProver<'_> {
       Err(c) => match c.k {
         ConstKind::Unit => {
           let ty = app!(self.thm, (tyUnit));
-          (ty, thm!(self.thm, okReadHyp_unit(l1): okReadHyp[l1, ty]))
+          (ty,
+            // thm!(self.thm, okReadHyp_unit(l1): okReadHyp[l1, ty])
+            ProofId::INVALID
+          )
         }
         ConstKind::ITrue => todo!(),
         ConstKind::Bool => todo!(),
@@ -1104,23 +1186,23 @@ impl ProcProver<'_> {
     ((tctx, l1), thm!(self.thm, buildStartI(self.gctx): buildStart[self.gctx, self.pctx, l1]))
   }
 
-  /// Returns `(v, |- okRead tctx loc v)`
-  fn read(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>) -> (P<Value>, ProofId) {
-    let v = app!(self.thm, (d0)); // TODO
-    let ret = app!(self.thm, okRead[tctx.1, loc.1, v]);
-    ((Value::Reg, v), thm!(self.thm, sorry(ret): ret)) // TODO
-  }
+  // /// Returns `(v, |- okRead tctx loc v)`
+  // fn read(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>) -> (P<Value>, ProofId) {
+  //   let v = app!(self.thm, (d0)); // TODO
+  //   let ret = app!(self.thm, okRead[tctx.1, loc.1, v]);
+  //   ((Value::Reg, v), thm!(self.thm, sorry(ret): ret)) // TODO
+  // }
 
-  /// Returns `(tctx', |- okWrite tctx loc v tctx')`
-  fn write(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
-    let l1 = tctx.1;
-    // tctx.1 = l1;
-    let ret = app!(self.thm, okWrite[l1, loc.1, v.1, tctx.1]);
-    thm!(self.thm, sorry(ret): ret) // TODO
-  }
+  // /// Returns `(tctx', |- okWrite tctx loc v tctx')`
+  // fn write(&mut self, tctx: &P<&mut TCtx>, loc: &P<Loc>, v: &P<Value>) -> ProofId {
+  //   let l1 = tctx.1;
+  //   // tctx.1 = l1;
+  //   let ret = app!(self.thm, okWrite[l1, loc.1, v.1, tctx.1]);
+  //   thm!(self.thm, sorry(ret): ret) // TODO
+  // }
 
   /// Returns `|- okCode bctx tctx code tctx'` for a regalloc operation.
-  fn ok_spill_op(&mut self, tctx: &P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
+  fn ok_spill_op(&self, tctx: &P<&mut TCtx>, inst: &PInst, code: ProofId) -> ProofId {
     let l1 = tctx.1;
     app_match!(self.thm, let (instMov _ dst src) = code);
     let reg_or_mem = |arg| app_match!(self.thm, arg => {
@@ -1129,29 +1211,32 @@ impl ProcProver<'_> {
     });
     match (reg_or_mem(dst), reg_or_mem(src), inst) {
       (Ok(edst), Ok(esrc), &PInst::MovRR { dst, src, .. }) => {
-        let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
-        let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
-        let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
-        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
-          ok_movRR(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        // let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
+        // let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
+        // let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
+        // let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
+        // thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+        //   ok_movRR(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        todo!("movRR")
       }
       (Ok(edst), Err(esrc), &PInst::Load64 { dst, .. }) => {
-        let lsrc = Loc::Local(esrc).as_expr(&mut self.thm);
-        let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
-        let ((Value::SpillSlot(v), _), h1) = self.read(tctx, &lsrc) else { unreachable!() };
-        let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
-        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
-          ok_unspill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        // let lsrc = Loc::Local(esrc).as_expr(&mut self.thm);
+        // let ldst = Loc::Reg((dst.index(), edst)).as_expr(&mut self.thm);
+        // let ((Value::SpillSlot(v), _), h1) = self.read(tctx, &lsrc) else { unreachable!() };
+        // let h2 = self.write(tctx, &ldst, &(Value::Reg, v));
+        // thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+        //   ok_unspill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        todo!("unspill")
       }
       (Err(edst), Ok(esrc), &PInst::Store { src, .. }) => {
-        let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
-        let ldst = Loc::Local(edst).as_expr(&mut self.thm);
-        let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
-        let ss = app!(self.thm, (spillslot v));
-        let h2 = self.write(tctx, &ldst, &(Value::SpillSlot(v), ss));
-        thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
-          ok_spill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        // let lsrc = Loc::Reg((src.index(), esrc)).as_expr(&mut self.thm);
+        // let ldst = Loc::Local(edst).as_expr(&mut self.thm);
+        // let ((Value::Reg, v), h1) = self.read(tctx, &lsrc) else { unreachable!() };
+        // let ss = app!(self.thm, (spillslot v));
+        // let h2 = self.write(tctx, &ldst, &(Value::SpillSlot(v), ss));
+        // thm!(self.thm, (okCode[self.bctx, l1, code, tctx.1]) =>
+        //   ok_spill(self.bctx, edst, esrc, l1, tctx.1, v, h1, h2))
+        todo!("spill")
       }
       _ => unreachable!()
     }
@@ -1254,6 +1339,7 @@ enum InstState {
   StartSkip,
   Skip,
   Call,
+  Load(ConstantVal),
   Move,
   Fallthrough(BlockId),
 }
@@ -1262,7 +1348,7 @@ enum InstState {
 enum Parent {
   /// `code1 +asm code2, code2`
   Left(ProofId, ProofId),
-  /// `code, l1, |- okCode bctx l1 code1 l2`
+  /// `code1 +asm code2, l1, |- okCode bctx l1 code1 l2`
   Right(ProofId, ProofId, ProofId),
 }
 
@@ -1273,9 +1359,9 @@ struct BlockProofVisitor<'a, 'b> {
   /// The id of the current physical block
   vblock_id: Option<VBlockId>,
   tctx: P<&'b mut TCtx>,
-  /// Stack of `n` corresponding to binary subtrees of `code`
-  /// that have not been broken down and consumed yet.
-  stmts_in: Vec<usize>,
+  // /// Stack of `n` corresponding to binary subtrees of `code`
+  // /// that have not been broken down and consumed yet.
+  // binary: Vec<usize>,
   /// The data for the current statement
   stmt_state: StmtState<'a>,
   /// The path to the current position in the tree
@@ -1306,22 +1392,23 @@ impl<'a> ProcProver<'a> {
   fn ok_stmts(&mut self, bl: BlockProof<'a>, code: ProofId, tctx: P<&mut TCtx>) -> ProofId {
     // eprintln!("\n{:?}: {:?}", bl.id, bl.vblock().map(|bl| bl.insts));
     if BLOCK_PROOFS {
-      let n = bl.block().stmts.len();
+      // let n = bl.block().stmts.len();
       let mut visitor = BlockProofVisitor {
         proc: self,
         block_id: bl.id,
         vblock_id: bl.vblock_id(),
         lhs_tctx: tctx.1,
         tctx,
-        stmts_in: if n == 0 { vec![] } else { vec![n] },
+        // binary: if n == 0 { vec![] } else { vec![n] },
         stmt_state: StmtState::None,
         stack: vec![],
-        code,
+        code: ProofId::INVALID,
         inst_state: InstState::None,
         arg_count: 0,
         out: ProofId::INVALID,
       };
-      if n != 0 { visitor.split() }
+      visitor.set_code(code);
+      // if n != 0 { visitor.split() }
       bl.visit(&mut visitor);
       assert!(visitor.out != ProofId::INVALID, "{:?}", visitor.stack);
       visitor.out
@@ -1333,13 +1420,45 @@ impl<'a> ProcProver<'a> {
 }
 
 impl<'a> BlockProofVisitor<'a, '_> {
-  /// Assuming a `|- code1 +asm code2` proof obligation, pops this and
-  /// adds two `|- code1`, `|- code2` proof obligations. (See `finish`)
-  fn split(&mut self) {
-    let (code1, code2) = self.proc.split_asm(self.code);
-    // eprintln!("split {}, {}", self.pp(code1), self.pp(code2));
-    self.stack.push(Parent::Left(self.code, code2));
-    self.code = code1;
+  fn pp(&mut self) {
+    eprintln!("BlockProofVisitor {{");
+    eprintln!("  block: {:?}", self.proc.proc.block(self.block_id).block());
+    if let Some(id) = self.vblock_id {
+      eprintln!("  vblock:");
+      for i in self.proc.proc.vblock(id).insts {
+        eprintln!("    {i:?}");
+      }
+    } else {
+      eprintln!("  vblock: None");
+    }
+    eprintln!("  lhs_tctx: {}", self.proc.pp(self.lhs_tctx));
+    eprintln!("  code: {}", self.proc.pp(self.code));
+    // eprintln!("  stack:");
+    // for p in self.stack.iter().rev() {
+    //   match *p {
+    //     Parent::Left(code, ..) => eprintln!("    L {}", self.proc.pp(code)),
+    //     Parent::Right(code, ..) => eprintln!("    R {}", self.proc.pp(code)),
+    //   }
+    // }
+    eprintln!("}}");
+  }
+  // /// Assuming a `|- code1 +asm code2` proof obligation, pops this and
+  // /// adds two `|- code1`, `|- code2` proof obligations. (See `finish`)
+  // fn split(&mut self) {
+  //   let (code1, code2) = self.proc.split_asm(self.code);
+  //   // eprintln!("split {}, {}", self.pp(code1), self.pp(code2));
+  //   self.stack.push(Parent::Left(self.code, code2));
+  //   self.code = code1;
+  // }
+
+  fn set_code(&mut self, mut code: ProofId) {
+    loop {
+      app_match!(self.thm, code => {
+        (ASM_A a b) => { self.stack.push(Parent::Left(code, b)); code = a },
+        (ASM0) => { self.finish_id(); return },
+        _ => { self.code = code; return }
+      })
+    }
   }
 
   /// Closes a `|- okCode bctx lhs_tctx code tctx` proof obligation.
@@ -1352,13 +1471,12 @@ impl<'a> BlockProofVisitor<'a, '_> {
         Parent::Left(code, code2) => {
           self.stack.push(Parent::Right(code, self.lhs_tctx, th));
           self.lhs_tctx = self.tctx.1;
-          self.code = code2;
+          self.set_code(code2);
           return
         }
         Parent::Right(code, l1, h1) => {
           th = self.proc.ok_code_join([l1, self.lhs_tctx, self.tctx.1, code, h1, th]);
           self.lhs_tctx = l1;
-          self.code = code;
         }
       }
     }
@@ -1371,6 +1489,16 @@ impl<'a> BlockProofVisitor<'a, '_> {
     let th = thm!(self.thm, okCode_id(self.bctx, l): okCode[self.bctx, l, self.asm0, l]);
     self.finish(th)
   }
+
+  // fn start_binary(&mut self) {
+  //   let mut n = self.binary.pop().expect("underflow");
+  //   while n > 1 {
+  //     let m = n >> 1;
+  //     self.binary.push(n - m);
+  //     self.split();
+  //     n = m;
+  //   }
+  // }
 
   #[allow(clippy::too_many_arguments)]
   fn call(&mut self,
@@ -1424,7 +1552,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
         InstState::Skip => panic!("unexpected spill instruction"),
         _ => {}
       }
-      self.split();
+      // self.split();
       let th = self.proc.ok_spill_op(&self.tctx, inst.inst, self.code);
       self.finish(th);
     } else {
@@ -1432,12 +1560,15 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
         InstState::None => panic!("unexpected instruction: {:?}", inst.inst),
         InstState::StartSkip => self.inst_state = InstState::Skip,
         InstState::Skip => {}
-        InstState::Call =>
-          if let StmtState::Call { f, abi, args, reach, rets, se } = self.stmt_state {
-            self.call(f, abi, args, reach, rets, se, Some(inst));
-            self.inst_state = InstState::None
-          } else { unreachable!() },
-        InstState::Move => todo!(),
+        InstState::Call => {
+          let StmtState::Call { f, abi, args, reach, rets, se } = self.stmt_state else {
+            unreachable!()
+          };
+          self.call(f, abi, args, reach, rets, se, Some(inst));
+          self.inst_state = InstState::None
+        }
+        InstState::Load(_) => todo!("{:?}", inst.inst),
+        InstState::Move => todo!("{:?}", inst.inst),
         InstState::Fallthrough(tgt) => {
           self.fallthrough(tgt);
           self.inst_state = InstState::None
@@ -1446,9 +1577,16 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     }
   }
 
+  fn before_operand(&mut self, _: &TraceIter<'_>, o: &Operand, cl: cl::Operand) {
+    let InstState::None = self.inst_state else { unreachable!() };
+    self.inst_state = InstState::Load(match o {
+        Operand::Const(constant) => self.constant(constant),
+        _ => todo!(),
+    })
+  }
+
   fn before_copy(&mut self, _: &TraceIter<'a>, cl: cl::Copy) {
-    if matches!(cl, cl::Copy::Two) { self.split() }
-    self.inst_state = InstState::Move
+    // if matches!(cl, cl::Copy::Two) { self.split() }
   }
   fn after_copy(&mut self, _: &TraceIter<'a>, _: cl::Copy) {
     self.inst_state = InstState::None
@@ -1464,16 +1602,17 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
 
   fn before_epilogue(&mut self, _: &cl::TraceIter<'_>) { self.inst_state = InstState::StartSkip }
 
-  fn before_stmt(&mut self, _: &TraceIter<'a>, stmt: &Statement, _: &cl::Statement) {
-    let mut n = self.stmts_in.pop().expect("underflow");
-    while n > 1 {
-      let m = n >> 1;
-      self.stmts_in.push(n - m);
-      self.split();
-      n = m;
-    }
+  fn before_stmt(&mut self, _: &TraceIter<'_>, stmt: &Statement, cl: &cl::Statement) {
+    // let mut n = self.binary.pop().expect("underflow");
+    // while n > 1 {
+    //   let m = n >> 1;
+    //   self.binary.push(n - m);
+    //   self.split();
+    //   n = m;
+    // }
+    self.pp();
     self.stmt_state = match stmt {
-      Statement::Let(_, _, _, _) => todo!(),
+      Statement::Let(..) => StmtState::None,
       Statement::Assign(_, _, _, _) => todo!(),
       Statement::LabelGroup(_, _) => todo!(),
       Statement::PopLabelGroup => todo!(),
@@ -1481,7 +1620,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     }
   }
 
-  fn after_stmt(&mut self, _: &TraceIter<'a>, stmt: &Statement, _: &cl::Statement) {
+  fn after_stmt(&mut self, _: &TraceIter<'_>, stmt: &Statement, _: &cl::Statement) {
     let th = match stmt {
       Statement::Let(_, _, _, _) => todo!(),
       Statement::Assign(_, _, _, _) => todo!(),
@@ -1490,6 +1629,27 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
       Statement::DominatedBlock(_, _) => todo!(),
     };
     self.finish(th)
+  }
+
+  fn before_rvalue(&mut self, _: &TraceIter<'_>, ty: &Ty, rv: &RValue, _: &cl::RValue) {
+    // let th = match rv {
+    //   RValue::Use(operand) => todo!(),
+    //   RValue::Unop(unop, operand) => todo!(),
+    //   RValue::Binop(binop, operand, operand1) => todo!(),
+    //   RValue::Eq(ty_kind, _, operand, operand1) => todo!(),
+    //   RValue::Pun(pun_kind, place) => todo!(),
+    //   RValue::Cast(cast_kind, operand, ty_kind) => todo!(),
+    //   RValue::List(os) => todo!(),
+    //   RValue::Array(os) => todo!(),
+    //   RValue::Ghost(operand) => todo!(),
+    //   RValue::Borrow(place) => todo!(),
+    //   RValue::Mm0(lambda_id, operands) => todo!(),
+    //   RValue::Typeof(operand) => todo!(),
+    // };
+  }
+
+  fn after_rvalue(&mut self, _: &TraceIter<'_>, ty: &Ty, rv: &RValue, _: &cl::RValue) {
+
   }
 
   fn before_call_args(&mut self, _: &TraceIter<'a>,
@@ -1503,7 +1663,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     _: bool, _: &'a Operand, _: &'a ArgAbi, _: &'a cl::Elem
   ) {
     self.arg_count -= 1;
-    if self.arg_count != 0 { self.split() }
+    // if self.arg_count != 0 { self.split() }
   }
 
   fn after_call_arg(&mut self, _: &TraceIter<'a>,
@@ -1520,13 +1680,13 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     _: ProcId, _: &'a ProcAbi, rets: &'a [(bool, VarId)],
   ) {
     self.arg_count = rets.len();
-    self.split();
+    // self.split();
     if self.arg_count == 0 { self.finish_id() }
   }
 
   fn before_call_retarg(&mut self, _: &TraceIter<'a>, _: cl::IntoMem, _: &'a ArgAbi) {
     self.arg_count -= 1;
-    if self.arg_count != 0 { self.split() }
+    // if self.arg_count != 0 { self.split() }
   }
 
   fn after_call_retarg(&mut self, _: &TraceIter<'a>, _: cl::IntoMem, _: &'a ArgAbi) {
@@ -1535,10 +1695,12 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
 
   fn after_call_retargs(&mut self, _: &TraceIter<'a>,
     _: ProcId, _: &'a ProcAbi, _: &'a [(bool, VarId)],
-  ) { self.split() }
+  ) {
+    // self.split()
+  }
 
   fn before_call_ret(&mut self, _: &TraceIter<'a>, _: &'a ArgAbi, _: &'a cl::Elem) {
-    self.split()
+    // self.split()
   }
 
   fn after_call_ret(&mut self, _: &TraceIter<'a>, _: &'a ArgAbi, _: &'a cl::Elem) {
@@ -1566,7 +1728,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     reach: bool, rets: &'a [(bool, VarId)], se: bool, _: BlockId,
   ) {
     self.stmt_state = StmtState::Call { f, abi, args, reach, rets, se };
-    self.split();
+    // self.split();
   }
 
   fn after_call(&mut self, _: &TraceIter<'a>,
@@ -1627,8 +1789,9 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
         let l1 = self.tctx.1;
         let (ty2, h2) = proc.read_hyp_operand((self.tctx.0, l1), op);
         let h2 = proc.read_hyp_coerce(ty2, h2, ty);
-        let th = thm!(proc.thm, (okCode[proc.bctx, l1, self.code, proc.ok0]) =>
-          ok_exit(ty, proc.gctx, proc.labs, proc.pctx1, l1, h1, h2));
+        // let th = thm!(proc.thm, (okCode[proc.bctx, l1, self.code, proc.ok0]) =>
+        //   ok_exit(ty, proc.gctx, proc.labs, proc.pctx1, l1, h1, h2));
+        let th = todo!("exit");
         self.finish(th)
       }
       Terminator::Dead => unreachable!(),

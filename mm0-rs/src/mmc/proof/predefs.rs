@@ -556,31 +556,31 @@ make_predefs! {
   bddMCtx_A: ThmId => "bddMCtx_A";
 
   okMCtx: TermId => "okMCtx";
-  okMCtx0: ThmId => "okMCtx0";
-  okMCtxS: ThmId => "okMCtxS";
+  okMCtx_0: ThmId => "okMCtx_0";
+  okMCtx_S: ThmId => "okMCtx_S";
 
   pushMCtx: TermId => "pushMCtx";
-  pushMCtx0: ThmId => "pushMCtx0";
-  pushMCtx1L: ThmId => "pushMCtx1L";
-  pushMCtx1R: ThmId => "pushMCtx1R";
-  pushMCtxL: ThmId => "pushMCtxL";
-  pushMCtxR: ThmId => "pushMCtxR";
-  pushMCtxRotL: ThmId => "pushMCtxRotL";
-  pushMCtxRotR: ThmId => "pushMCtxRotR";
+  pushMCtx_0: ThmId => "pushMCtx_0";
+  pushMCtx_1L: ThmId => "pushMCtx_1L";
+  pushMCtx_1R: ThmId => "pushMCtx_1R";
+  pushMCtx_L: ThmId => "pushMCtx_L";
+  pushMCtx_R: ThmId => "pushMCtx_R";
+  pushMCtx_rotL: ThmId => "pushMCtx_rotL";
+  pushMCtx_rotR: ThmId => "pushMCtx_rotR";
 
   vVar: TermId => "vVar";
   vHyp: TermId => "vHyp";
 
-  okPushVar: TermId => "okPushVar";
-  okPushVarI: ThmId => "okPushVarI";
+  // okPushVar: TermId => "okPushVar";
+  // okPushVarI: ThmId => "okPushVarI";
 
-  okPushHyp: TermId => "okPushHyp";
-  okPushHypI: ThmId => "okPushHypI";
+  // okPushHyp: TermId => "okPushHyp";
+  // okPushHypI: ThmId => "okPushHypI";
 
-  okReadHyp: TermId => "okReadHyp";
-  okReadHypHyp: ThmId => "okReadHypHyp";
-  okReadHypVar: ThmId => "okReadHypVar";
-  okReadHyp_unit: ThmId => "okReadHyp_unit";
+  // okReadHyp: TermId => "okReadHyp";
+  // okReadHypHyp: ThmId => "okReadHypHyp";
+  // okReadHypVar: ThmId => "okReadHypVar";
+  // okReadHyp_unit: ThmId => "okReadHyp_unit";
 
   okAssembled: TermId => "okAssembled";
   okAssembledI: ThmId => "okAssembledI";
@@ -643,21 +643,21 @@ make_predefs! {
   okEpilogue_pop: ThmId => "okEpilogue_pop";
   okEpilogue_ret: ThmId => "okEpilogue_ret";
 
-  Loc_reg: TermId => "Loc_reg";
-  Loc_local: TermId => "Loc_local";
+  // Loc_reg: TermId => "Loc_reg";
+  // Loc_local: TermId => "Loc_local";
 
-  okRead: TermId => "okRead";
+  // okRead: TermId => "okRead";
 
-  okWrite: TermId => "okWrite";
+  // okWrite: TermId => "okWrite";
 
-  spillslot: TermId => "spillslot";
+  // spillslot: TermId => "spillslot";
 
   // okDefer: TermId => "okDefer";
   // okDeferI: ThmId => "okDeferI";
 
   ok_movRR: ThmId => "ok_movRR";
-  ok_spill: ThmId => "ok_spill";
-  ok_unspill: ThmId => "ok_unspill";
+  // ok_spill: ThmId => "ok_spill";
+  // ok_unspill: ThmId => "ok_unspill";
   ok_jump: ThmId => "ok_jump";
 
   applyCall: TermId => "applyCall";
@@ -666,7 +666,7 @@ make_predefs! {
   ok_call_func_0: ThmId => "ok_call_func_0";
   ok_call_proc: ThmId => "ok_call_proc";
   ok_fail: ThmId => "ok_fail";
-  ok_exit: ThmId => "ok_exit";
+  // ok_exit: ThmId => "ok_exit";
 
   // basicElf_ok: ThmId => "basicElf_ok";
   ELF_lit: TermId => "ELF_lit";

@@ -1001,6 +1001,8 @@ theorem i8Bytes_val (n: nat): $ i8Bytes n = chopZ 8 n : 0 $ =
 '(eqtr i8Bytes_val2 @ eqtr toBytes1 @ conseq1 @ Bits_chop chopZT);
 
 theorem toIBytesT: $ toIBytes k n e. Array u8 k $ = 'toBytesT;
+theorem toIBytesT2: $ toIBytes k n e. List u8 $ = 'toBytesT2;
+theorem toIBytes_len: $ len (toIBytes k n) = k $ = 'toBytes_len;
 theorem i8BytesT: $ i8Bytes n e. Array u8 1 $ = 'toIBytesT;
 theorem i16BytesT: $ i16Bytes n e. Array u8 2 $ = 'toIBytesT;
 theorem i32BytesT: $ i32Bytes n e. Array u8 4 $ = 'toIBytesT;

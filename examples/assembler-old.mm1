@@ -76,7 +76,7 @@ local def text_start: nat = $ load_start x7 x8 $;
 theorem load_start_eq2: $ load_start x0 x0 + x :x y = load_start x y $ =
 '(add_xx0 (add_x00 addx01) addx01);
 theorem load_start_pow2: $ load_start x0 x0 = 2 ^ ,22 $ =
-'(eqtr (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 d2pow2 dec4) @
+'(eqtr (x2powS @ x2powS @ x2powS @ x2powS @ x2powS x2pow2) @
   poweq2 ,norm_num);
 
 theorem load_start_T: $ load_start x y e. u64 $ =
@@ -112,7 +112,7 @@ theorem ELF_header_ok: $ elfHeader ELF_header_s text_start 64 0 1 0 $ =
 local def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00x5 $;
 local def PAGE_SIZE: nat = $ 2 ^ ,21 $;
 theorem PAGE_SIZE_val: $ PAGE_SIZE = ,0x200000 $ =
-'(eqtr2 (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 pow12 dec2) @
+'(eqtr2 (x2powS @ x2powS @ x2powS @ x2powS @ x2powS x2pow1) @
   poweq2 ,norm_num);
 theorem PAGE_SIZE_eq: $ PAGE_SIZE_s = u64Bytes PAGE_SIZE $ =
 (focus
