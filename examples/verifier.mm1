@@ -36,7 +36,7 @@ do {
   -- Import some constants from MM1
   (mmc-add @ map (fn (x) '(const {{,x : u64} := (pure ,x)}))
     '(O_RDONLY O_WRONLY O_CREAT O_TRUNC
-      MAP_FAILED MAP_PRIVATE MAP_ANONYMOUS))
+      MAP_FAILED MAP_PRIVATE MAP_ANONYMOUS PROT_READ))
 
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
   (mmc-add '(
@@ -56,7 +56,7 @@ do {
       {_ : (array i64 3)})
 
     (intrinsic @ proc (sys_fstat {fd : u32}
-      (mut {(ghost buf) : (? Stat)}) {p : (&sn buf)} :
+      (mut {(ghost buf) : (ref Stat)}) {p : (&sn buf)} :
       (out {buf : Stat})
       u32))
     (intrinsic @ proc (sys_open
@@ -65,7 +65,7 @@ do {
       u32))
     (intrinsic @ proc (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
       {(ghost anon) : bool}
-      {flags : (sn {(if anon MAP_PRIVATE {MAP_PRIVATE + MAP_ANONYMOUS}) : u64})}
+      {flags : (sn {(if anon MAP_PRIVATE {MAP_PRIVATE + MAP_ANONYMOUS}) : nat})}
       {fd : (if anon (sn {(- 1) : i64}) i64)}
       {off : (sn {0 : u64})} :
       {ret : (or
