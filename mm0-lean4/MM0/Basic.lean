@@ -90,14 +90,17 @@ def Size.bytes : Size → Nat
   | .sz8 => 1
   | .sz64 => 8
 
-axiom Inst : Type
-axiom Inst.push : IRM → Inst
-axiom Inst.pop : RegNum → Inst
-axiom Inst.ret : Inst
-axiom Inst.sub : Size → RegNum → IRM → Inst
-axiom Inst.add : Size → RegNum → IRM → Inst
-axiom Inst.jump : Nat → Inst
-axiom Inst.mov : Size → IRM → IRM → Inst
+axiom CondCode : Type
+
+inductive Inst : Type where
+ | push : IRM → Inst
+ | pop : RegNum → Inst
+ | ret : Inst
+ | sub : Size → RegNum → IRM → Inst
+ | add : Size → RegNum → IRM → Inst
+ | jump : Nat → Inst
+ | mov : Size → IRM → IRM → Inst
+ | jcc : CondCode → Nat → Inst
 
 axiom Inst.eval : Inst → Nat → List u8 → Nat → Prop
 

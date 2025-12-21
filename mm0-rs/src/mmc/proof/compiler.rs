@@ -11,7 +11,7 @@ use mmcc::types::classify::TraceIter;
 use mmcc::types::mir::{Cfg, Contexts, CtxBufId, CtxId, ExprKind, Statement, Terminator, VarId,
   LetKind, Ty, TyKind, RValue, Operand, Place, ConstKind, Constant};
 use mmcc::types::vcode::{ProcAbi, ArgAbi};
-use mmcc::{Symbol, TEXT_START, types::{Size, IdxVec, classify as cl}};
+use mmcc::{Symbol, TEXT_START, types::{Size, IdxVec, IntTy, classify as cl}};
 use mmcc::arch::{ExtMode, OpcodeLayout, PInst, PRegMemImm, Unop, RegMem};
 use mmcc::proof::{AssemblyBlocks, AssemblyItem, AssemblyItemIter, BlockId, BlockProof,
   BlockProofTree, BlockTreeIter, ElfProof, Inst, InstIter, PReg, Proc, VBlockId, ProcId};
@@ -22,10 +22,10 @@ use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
-const BLOCK_PROOFS: bool = false; // TODO
+const BLOCK_PROOFS: bool = true; // TODO
 
 pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D::Id {
-  app!(de, (tyUnit)) // TODO
+  app!(de, (resultUnit)) // TODO
 }
 
 fn format_to_string(f: impl FnOnce(&mut String) -> std::fmt::Result) -> String {
@@ -777,7 +777,7 @@ impl TCtx {
   }
 
   fn mk(&self, de: &mut ProofDedup<'_>) -> ProofId {
-    app!(de, mkTCtx[self.vctx.e, *self.vctx.nvars, self.mctx.1])
+    app!(de, mkTCtx[self.vctx.e, self.mctx.1])
   }
 }
 
@@ -820,9 +820,11 @@ enum Value {
   SpillSlot(ProofId),
 }
 
+#[allow(variant_size_differences)]
 enum ConstantVal {
   Zst,
-  // (e, |- HasType e ty)
+  Int(IntTy),
+  /// `(e, |- HasType e ty)`
   Value(ProofId, ProofId),
 }
 
@@ -950,7 +952,7 @@ impl ProcProver<'_> {
     // eprintln!("get {:?} in\n{}", v,
     //   format_to_string(|s| vctx.pp(&self.thm, self.elab, &self.vctxs, s)));
     let (_, val, h1) = tctx.vctx.get(&mut self.thm, &self.vctxs, v);
-    app_match!(self.thm, let (mkTCtx vctx n mctx) = l1);
+    app_match!(self.thm, let (mkTCtx vctx mctx) = l1);
     app_match!(self.thm, val => {
       (vHyp ty) => (ty,
           // thm!(self.thm, okReadHypHyp(mctx, n, ty, vctx, h1): okReadHyp[l1, ty])
@@ -1013,8 +1015,7 @@ impl ProcProver<'_> {
         let Some(e) = &c.ety.0 else { unreachable!() };
         let ExprKind::Int(n) = &**e else { unreachable!() };
         let TyKind::Int(ity) = *c.ety.1 else { unreachable!() };
-        let n = ity.zero_extend_as_u64(n).expect("impossible");
-        todo!("int constant")
+        ConstantVal::Int(ity)
       }
       ConstKind::Uninit => todo!(),
       ConstKind::Const(symbol) => todo!(),
@@ -1422,7 +1423,7 @@ impl<'a> ProcProver<'a> {
 impl<'a> BlockProofVisitor<'a, '_> {
   fn pp(&mut self) {
     eprintln!("BlockProofVisitor {{");
-    eprintln!("  block: {:?}", self.proc.proc.block(self.block_id).block());
+    eprint!("  block: {:?}", self.proc.proc.block(self.block_id).block());
     if let Some(id) = self.vblock_id {
       eprintln!("  vblock:");
       for i in self.proc.proc.vblock(id).insts {
@@ -1567,6 +1568,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
           self.call(f, abi, args, reach, rets, se, Some(inst));
           self.inst_state = InstState::None
         }
+        InstState::Load(ConstantVal::Int(ity)) => todo!("{:?}", inst.inst),
         InstState::Load(_) => todo!("{:?}", inst.inst),
         InstState::Move => todo!("{:?}", inst.inst),
         InstState::Fallthrough(tgt) => {
@@ -1577,7 +1579,7 @@ impl<'a> cl::Visitor<'a> for BlockProofVisitor<'a, '_> {
     }
   }
 
-  fn before_operand(&mut self, _: &TraceIter<'_>, o: &Operand, cl: cl::Operand) {
+  fn before_operand(&mut self, _: &TraceIter<'_>, o: &'a Operand, cl: cl::Operand) {
     let InstState::None = self.inst_state else { unreachable!() };
     self.inst_state = InstState::Load(match o {
         Operand::Const(constant) => self.constant(constant),

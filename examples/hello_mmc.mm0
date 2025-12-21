@@ -3,5 +3,5 @@ import "compiler.mm0";
 def test: string;
 
 theorem test_isBasicElf: $ isBasicElf test $;
-theorem test_ok {k vs x: nat}:
-  $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, Sum (sn 0) 0)) $;
+theorem test_ok {k: nat}:
+  $ A. k (initialConfig test k -> terminates_ensuring k (sn 0)) $;

@@ -965,10 +965,9 @@ $ replaceMCtx mctx1 (b1 off) val mctx2 $;
 --| Type context, or type state.
 --| The first part is the logical context, where variables and their types are stored,
 --| and the second part is the machine context where variables are assigned to memory locations.
-@mmc-th local def mkTCtx (vctx: set) (vctx_sz: nat) (mctx: set): set =
-$ Sum vctx_sz (S\ vs, Sum (vctx @' vs *s Fst (mctx @' vs)) (Snd (mctx @' vs))) $;
+@mmc-th local def mkTCtx (vctx: set) (mctx: set): set =
+$ S\ vs, Sum (Snd (vctx @' vs) *s Fst (mctx @' vs)) (Snd (mctx @' vs)) $;
 
-@_ local def tctx_sz (tctx: set): nat = $ lower (Fst tctx) $;
 @_ local def tctx_type (tctx: set) (vs: nat): set = $ Fst (Snd tctx @' vs) $;
 @_ local def tctx_layout (tctx: set) (vs: nat): set = $ Snd (Snd tctx @' vs) $;
 
@@ -1214,16 +1213,16 @@ $ mctx2 == (mctx1 +M S\ vs, Sum (s_clob clob) L_emp) $;
   (h3: $ accumClob clob mctx1 mctx2 $)
   (h4: $ okPrologue epiRet mctx2 prol epi mctx3 $)
   (h5: $ okCode (mkBCtx (mkPCtx gctx (mkPCtx1 ret epi se)) LG0)
-    (mkTCtx vctx1 sz1 mctx3) code ok0 $):
+    (mkTCtx vctx1 mctx3) code ok0 $):
   $ okProc gctx start (mkArgs args mctx1) ret clob se $ = 'sorry;
 
 --| `buildStart (gctx: GCtx) => (pctx: PCtx) (tctx: TCtx)`
 @mmc-th local def buildStart (gctx pctx: set) (tctx: set): wff =
 $ pctx == mkPCtx gctx (mkPCtx1 noRet epiRet T.) /\
-  tctx == mkTCtx vctx0 x0 mctx0 $; -- TODO: global variables
+  tctx == mkTCtx vctx0 mctx0 $; -- TODO: global variables
 
 @mmc-th theorem buildStartI:
-  $ buildStart gctx (mkPCtx gctx (mkPCtx1 noRet epiRet T.)) (mkTCtx vctx0 x0 mctx0) $ =
+  $ buildStart gctx (mkPCtx gctx (mkPCtx1 noRet epiRet T.)) (mkTCtx vctx0 mctx0) $ =
 '(iani eqsid eqsid);
 
 --| `okStart (gctx: GCtx): Bool`
@@ -1363,38 +1362,38 @@ $ pctx_ret bctx == ret /\ okEpilogue (pctx_epi bctx) code $;
 @mmc-th theorem ok_movRR
   (h1: $ getMCtxR mctx1 src v $)
   (h2: $ replaceMCtxR mctx1 dst v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1)
-    (instMov wSz64 (IRM_reg dst) (IRM_reg src)) (mkTCtx vctx sz mctx2) $ = 'sorry;
+  $ okCode bctx (mkTCtx vctx mctx1)
+    (instMov wSz64 (IRM_reg dst) (IRM_reg src)) (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th theorem ok_load
   (h1: $ getMCtxS mctx1 off v $)
   (h2: $ me_ty_sizeof v n $) (h3: $ wsizeBytes wsz = nsz $) (h4: $ n <= nsz $)
   (h5: $ replaceMCtxR mctx1 dst v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1)
+  $ okCode bctx (mkTCtx vctx mctx1)
     (instMov wsz (IRM_reg dst) (IRM_mem 0 (base_reg ,RSP) (posZ off)))
-    (mkTCtx vctx sz mctx2) $ = 'sorry;
+    (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th theorem ok_load64
   (h1: $ getMCtxS mctx1 off v $)
   (h2: $ replaceMCtxR mctx1 dst v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1)
+  $ okCode bctx (mkTCtx vctx mctx1)
     (instMov wSz64 (IRM_reg dst) (IRM_mem 0 (base_reg ,RSP) (posZ off)))
-    (mkTCtx vctx sz mctx2) $ = 'sorry;
+    (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th theorem ok_store
   (h1: $ getMCtxR mctx1 src v $)
   (h2: $ me_ty_sizeof v n $) (h3: $ wsizeBytes wsz = nsz $) (h4: $ n <= nsz $)
   (h5: $ replaceMCtxS mctx1 off v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1)
+  $ okCode bctx (mkTCtx vctx mctx1)
     (instMov wsz (IRM_mem 0 (base_reg ,RSP) (posZ off)) (IRM_reg src))
-    (mkTCtx vctx sz mctx2) $ = 'sorry;
+    (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th theorem ok_store64
   (h1: $ getMCtxR mctx1 src v $)
   (h2: $ replaceMCtxS mctx1 off v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1)
+  $ okCode bctx (mkTCtx vctx mctx1)
     (instMov wSz64 (IRM_mem 0 (base_reg ,RSP) (posZ off)) (IRM_reg src))
-    (mkTCtx vctx sz mctx2) $ = 'sorry;
+    (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th theorem ok_jump
   (h: $ okBlock bctx (suc tgt) tctx $):
@@ -1458,7 +1457,7 @@ theorem okConst_u8N_neg
 @mmc-th theorem ok_loadImm
   (h1: $ okConst wsz n v $)
   (h2: $ replaceMCtxR mctx1 dst v mctx2 $):
-  $ okCode bctx (mkTCtx vctx sz mctx1) (instImm wsz dst n) (mkTCtx vctx sz mctx2) $ = 'sorry;
+  $ okCode bctx (mkTCtx vctx mctx1) (instImm wsz dst n) (mkTCtx vctx mctx2) $ = 'sorry;
 
 @mmc-th local def withFlags (f tctx: set): set = $ sorry_set $; -- TODO
 @mmc-th local def invertCond (c d: hex): wff = $ sorry_wff $; -- TODO
@@ -1524,7 +1523,7 @@ infixl substS: $|>S$ prec 90;
   (h1: $ okProc gctx tgt args ret clob F. $)
   (h2: $ buildSubst vctx1 subst0 args vctx2 subst $)
   -- TODO
-  : $ applyCall (mkTCtx vctx1 sz1 mctx1)
+  : $ applyCall (mkTCtx vctx1 mctx1)
       (mkArgs args mctx_a) (mkArgs ret mctx_r) clob tctx2 $ = 'sorry;
 
 @mmc-th local def applyCallG (tctx1 args ret: set) (tctx2: set): wff = $ sorry_wff $; -- TODO
@@ -1533,7 +1532,7 @@ infixl substS: $|>S$ prec 90;
   (h1: $ okProc gctx tgt args ret clob F. $)
   (h2: $ buildSubst vctx1 subst0 args vctx2 subst $)
   -- TODO
-  : $ applyCallG (mkTCtx vctx1 sz1 mctx1)
+  : $ applyCallG (mkTCtx vctx1 mctx1)
       (mkArgs args mctx_a) (mkArgs ret mctx_r) tctx2 $ = 'sorry;
 
 @mmc-th theorem ok_call_func
@@ -1554,12 +1553,22 @@ infixl substS: $|>S$ prec 90;
 
 @mmc-th theorem ok_fail: $ okCode bctx tctx instUD2 ok0 $ = 'sorry;
 
--- @mmc-th theorem ok_exit
---   (h1: $ getResult gctx T $)
---   (h2: $ okReadHyp tctx T $):
---   $ okCode (mkBCtx (mkPCtx gctx pctx1) labs) tctx
---       (instImm wSz32 x0 (posZ ,0x3c) +asm instImm wSz64 x7 (posZ x0) +asm instSysCall) ok0 $ =
--- 'sorry;
+@mmc-th local def tyResult (ty T: set): wff = $ sorry_wff $;
+
+@mmc-th local def resultUnit: set = $ sn 0 $;
+
+@mmc-th theorem tyResult_unit: $ tyResult tyUnit resultUnit $ = 'sorry;
+
+@mmc-th theorem ok_exit
+  (h1: $ getResult gctx T $)
+  (h2: $ okVCtxTake vctx (isHyp ty) vctx2 $)
+  (h3: $ tyResult ty T $):
+  $ okCode (mkBCtx (mkPCtx gctx pctx1) labs) (mkTCtx vctx mctx) (
+      instImm wSz32 x0 (posZ ,0x3c) +asm
+      instImm wSz64 x7 (posZ x0) +asm
+      instSysCall
+    ) ok0 $ =
+'sorry;
 
 local def okProgN (elf: nat) (T: set): wff =
 $ isBasicElfN elf /\ A. k (initialConfigN elf k -> terminates_ensuring k T) $;

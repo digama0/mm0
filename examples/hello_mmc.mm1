@@ -34,7 +34,7 @@ abstract def test: string = $ test_inner $;
 
 pub theorem test_isBasicElf: $ isBasicElf test $ = (named '(anl test_inner_ok));
 pub theorem test_ok:
-  $ A. k (initialConfig test k -> terminates_ensuring k (S\ vs, S\ x, Sum (sn 0) 0)) $ =
+  $ A. k (initialConfig test k -> terminates_ensuring k (sn 0)) $ =
 (named '(anr test_inner_ok));
 
 output string: $ test $;
