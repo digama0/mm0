@@ -2,8 +2,10 @@
 -- Intended mainly for debugging.
 module MM0.FrontEnd.ProofTextParser (parseProof, parseProofOrDie) where
 
+import Data.Semigroup (Endo(..))
 import Control.Applicative hiding (many, (<|>))
 import Control.Monad.Trans.Class
+import Control.Monad (liftM4, guard)
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Word8

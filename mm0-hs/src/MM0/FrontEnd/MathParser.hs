@@ -2,6 +2,7 @@
 {-# HLINT ignore "Eta reduce" #-}
 module MM0.FrontEnd.MathParser (parseFormula, parseFormulaProv, appPrec) where
 
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Except
 import Control.Monad.Trans.State
 import Control.Monad.Reader.Class

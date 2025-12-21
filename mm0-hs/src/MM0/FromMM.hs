@@ -5,6 +5,7 @@ import System.Exit
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.RWS.Strict
+import Data.Semigroup (Endo(..))
 import Data.Foldable
 import Data.Maybe
 import Data.Either
@@ -25,7 +26,7 @@ import MM0.FromMM.Emancipate
 import MM0.FromMM.Closure
 import MM0.FromMM.FindBundled
 import MM0.Kernel.Environment (Ident, DepType(..), SExpr(..), PBinder(..),
-  VarName, TermName, ThmName, Comment, WithComment(..))
+  VarName, TermName, ThmName, Comment)
 import MM0.Kernel.Types as K
 import MM0.Compiler.Export (exportKP)
 import qualified MM0.FrontEnd.AST as A

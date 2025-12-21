@@ -5,6 +5,8 @@ module MM0.Compiler.Elaborator (elaborate, elabLoad,
   ErrorLevel(..), ElabError(..), ElabConfig(..), toElabError) where
 
 import Control.Applicative ((<|>))
+import Data.Semigroup (Endo(..))
+import Control.Monad (forM, when, liftM2, liftM3, unless, mzero, (>=>), guard, zipWithM)
 import Control.Monad.State
 import Control.Monad.RWS.Strict
 import Control.Monad.Trans.Maybe

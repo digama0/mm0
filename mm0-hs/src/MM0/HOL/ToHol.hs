@@ -1,9 +1,9 @@
 module MM0.HOL.ToHol where
 
+import Data.Semigroup (Endo(..))
 import Control.Monad.RWS.Strict hiding (local, asks)
 import Control.Monad.Trans.Reader
 import Data.Maybe
-import Data.Foldable
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import MM0.HOL.Types

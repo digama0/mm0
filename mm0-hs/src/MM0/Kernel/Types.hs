@@ -4,8 +4,8 @@ module MM0.Kernel.Types (
 import qualified Data.Text as T
 import Data.Maybe
 import Data.Void
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.String
+import Prettyprinter
+import Prettyprinter.Render.String
 import MM0.Kernel.Environment
 
 newtype VInoutKind = VIKString Bool -- ^ False for input, True for output

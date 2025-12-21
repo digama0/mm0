@@ -1,6 +1,7 @@
 module MM0.FromMM.Closure (closure) where
 
 import Control.Monad.State
+import Control.Monad (when)
 import Data.Bifunctor
 import qualified Data.Set as S
 import qualified Data.Text as T
