@@ -693,20 +693,13 @@ impl BuildAssemblyProc<'_> {
           let [src, l2, h4] = this.parse_imm(p, sz);
           (l2, (src, h4))
         });
-        if matches!(pinst, PInst::Imm {..}) {
-          app_match!(self, let (IRM_reg dst) = dst);
-          let inst = app!(self, (instImm sz dst src));
-          let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
-            parseMovImmI(dst, *ip, l1, l2, *self.start,
-              rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
-          [l1, opch, inst, th]
-        } else {
-          let inst = app!(self, (instMov sz dst (IRM_imm32 src)));
-          let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
-            parseMovImmM(dst, *ip, l1, l2, *self.start,
-              rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
-          [l1, opch, inst, th]
-        }
+        assert!(matches!(pinst, PInst::Imm {..}));
+        app_match!(self, let (IRM_reg dst) = dst);
+        let inst = app!(self, (instImm sz dst src));
+        let th = thm!(self, (parseOpc[*self.start, *ip, l1, rex.1, opch, inst]) =>
+          parseMovImm(dst, *ip, l1, l2, *self.start,
+            rex.1, src, sz, v.1, self.hex[y], h1, h2, h3, h4));
+        [l1, opch, inst, th]
       }
       OpcodeLayout::PushImm(sz32) => {
         let [src, l, h1] = if sz32 { self.parse_imm_32(p) } else { self.parse_imm_8(p) };

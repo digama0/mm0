@@ -161,6 +161,11 @@ impl Compiler {
     }
   }
 
+  /// Call the function `f` on every [`AtomId`] in the [`proof::Predefs`].
+  pub fn collect_predefs(&self, env: &crate::Environment, f: impl FnMut(AtomId)) {
+    self.predef.collect(env, f)
+  }
+
   /// Add the given MMC text (as a list of lisp literals) to the compiler state,
   /// performing typehecking but not code generation. This can be called multiple
   /// times to add multiple functions, but each lisp literal is already a list of

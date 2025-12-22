@@ -220,6 +220,7 @@ pub const TEXT_START: u32 = 0x40_0078;
 #[derive(Clone, Debug)]
 pub struct LinkedCode {
   pub(crate) mir: HashMap<Symbol, Proc>,
+  pub(crate) names: HashMap<Symbol, Entity>,
   pub(crate) consts: ConstData,
   pub(crate) globals: IdxVec<GlobalId, (Symbol, u32, u32)>,
   pub(crate) global_size: u32,
@@ -246,13 +247,13 @@ impl From<LowerErr> for LinkerErr {
 
 impl LinkedCode {
   pub(crate) fn link(
-    names: &HashMap<Symbol, Entity>,
+    names: HashMap<Symbol, Entity>,
     mir: HashMap<Symbol, Proc>,
     init: Cfg,
     allocs: &Allocations,
     globals: &[(Symbol, bool, VarId, Ty)]
   ) -> Result<Box<Self>, LinkerErr> {
-    let mut coll = Collector::new(names, &mir);
+    let mut coll = Collector::new(&names, &mir);
     coll.collect_cfg(&init, &[]);
     let mut func_abi = IdxVec::from_default(coll.funcs.1.len());
     let mut func_code = IdxVec::from_default(coll.funcs.1.len());
@@ -260,7 +261,7 @@ impl LinkedCode {
       let sym = coll.funcs.1[f];
       if let Some(proc) = mir.get(&sym) {
         let (abi, code) = build_vcode(
-          names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
+          &names, &coll.funcs.0, &func_abi, &coll.consts, &proc.body,
           proc.allocs.as_deref().expect("optimized already"),
           VCodeCtx::Proc(&proc.rets)
         )?.regalloc();
@@ -283,7 +284,7 @@ impl LinkedCode {
       Some((g, off, size))
     }).collect();
     let init_code = build_vcode(
-      names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)
+      &names, &coll.funcs.0, &func_abi, &coll.consts, &init, allocs, VCodeCtx::Start(globals)
     )?.regalloc().1;
 
     let mut pos = (TEXT_START + init_code.len + FUNCTION_ALIGN - 1) & !(FUNCTION_ALIGN - 1);
@@ -304,6 +305,7 @@ impl LinkedCode {
       funcs,
       postorder: coll.postorder,
       text_size: pos - TEXT_START,
+      names,
       mir,
     }))
   }

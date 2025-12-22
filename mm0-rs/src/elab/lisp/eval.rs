@@ -1402,9 +1402,22 @@ make_builtins! { self, tail, sp1, sp2, args,
     LispVal::string(bytes.into()).into()
   },
   #[cfg(feature = "mmc")]
-  MmcInit: Exact(0) => LispVal::proc(Proc::Dyn(
-    RefCell::new(Box::new(crate::mmc::Compiler::new(self)))
-  )).into(),
+  MmcInit: AtLeast(0) => {
+    if args.len() > 1 {try1!(Err("too many arguments"))}
+    let compiler = Box::new(crate::mmc::Compiler::new(self));
+    if let Some(arg) = args.first() {
+      let mut set: std::collections::HashSet<AtomId> =
+        try1!(self.as_map(arg, |m| Ok(m.keys().copied().collect())));
+      compiler.collect_predefs(self, |a| { set.remove(&a); });
+      if !set.is_empty() {
+        use itertools::Itertools;
+        let s = format!("undeclared predefs: {}",
+          set.iter().sorted().map(|&a| &self.env.data[a].name).format(", "));
+        try1!(Err(s))
+      }
+    }
+    LispVal::proc(Proc::Dyn(RefCell::new(compiler))).into()
+  },
 }
 
 impl<'a> Evaluator<'a> {

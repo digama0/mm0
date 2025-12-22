@@ -7,7 +7,7 @@ use crate::types::classify;
 use crate::types::vcode::ProcAbi;
 use crate::{Idx, IdxVec, LinkedCode, Symbol, TEXT_START};
 use crate::codegen::FUNCTION_ALIGN;
-use crate::types::{mir::{self, Cfg, BlockTree}, vcode::ConstRef};
+use crate::types::{mir::{self, Cfg, BlockTree}, vcode::ConstRef, entity::Entity};
 
 pub use mir::BlockId;
 pub use crate::types::vcode::{ProcId, BlockId as VBlockId};
@@ -66,6 +66,9 @@ impl<'a> ElfProof<'a> {
   #[must_use] pub fn p_memsz(&self) -> u64 {
     u64::from_le_bytes(self[0x68..0x70].try_into().expect("impossible"))
   }
+
+  /// The symbol table.
+  #[must_use] pub fn names(&self) -> &HashMap<Symbol, Entity> { &self.code.names }
 
   /// The size of the BSS section (zeroed data following the read-only section).
   #[must_use] pub fn bss(&self) -> u64 { self.p_memsz() - self.p_filesz() }

@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{Symbol, mir_opt::storage::Allocations, u32_as_usize};
 use super::{IntTy, Size, ProofId, LambdaId, IdxVec, Spanned, ast::ProcKind, ast, global, hir,
   super::mir_opt::DominatorTree};
-pub use {ast::TyVarId, hir::{Unop, Binop}};
+pub use {ast::TyVarId, hir::{Unop, Binop}, crate::mir_opt::storage::Meta};
 
 /// The alpha conversion struct is a mapping from variables to variables.
 #[derive(Debug, Default)]

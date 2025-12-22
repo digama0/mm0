@@ -7,21 +7,22 @@ term sorry_wff: wff;
 do (warn-unused-vars #f);
 
 do {
+  (def mmc-th-map (atom-map!))
   --| A dummy annotation to indicate that the term/theorem is referenced in
   --| `mm0-rs/src/proof/predefs.rs`, and any changes here have to be reflected
   --| in uses in the compiler.
   (def mmc-th
-    (def map (atom-map!))
     @ fn (name)
     @ letrec ([check @ match-fn
       [(tm . rest)
-        (if (not (def? @ lookup map tm))
+        (if (not (def? @ lookup mmc-th-map tm))
           (error @ string-append "theorem " name " references unannotated constant " tm))
         (scan rest check)]
       [(? atom?)]])
+    (insert mmc-th-map name #t)
     @ match (get-decl name)
-    [('term _ _ _) (insert map name #t)]
-    [('def _ _ _ _ _ _) (insert map name #t)]
+    [('term _ _ _)]
+    [('def _ _ _ _ _ _)]
     [('axiom _ _ hyps ret)
       (scan hyps @ match-fn [(_ hyp) (check hyp)])
       (check ret)]
@@ -32,20 +33,20 @@ do {
 
   ((fn xs @ scan xs @ fn (x) @ scan x mmc-th)
     '(fal tru eq ne d0 suc add mul le lt ltlei ltnei ltneri leid pr
-      znsub cons len sadd scons s0 s1 ch c2n h2n hex s2n)
+      znsub cons sadd scons s0 s1 ch c2n h2n hex s2n)
     (map dn (range 0 17))
     (join @ map (fn (x) (map (fn (i) (atom-app x i)) hexstrings))
       '(x h2n _x00x decsuc))
     '(decsucx decsucxf decltx1 decltx2
       add_xx0 add_xx1 add_0x0 add_0x1 add_x00 add_x01
       adc_xx0 adc_xx1 adc_0x0 adc_0x1 adc_x00 adc_x01
-      sub64 bit wSz8 wSz32 wSz64 wsizeBytes
+      bit wSz8 wSz32 wSz64 wsizeBytes
       opSize opSize_8 opSize_32 opSize_64
       opSizeW opSizeW_0 opSizeW_S
       REX_W REX_R REX_X REX_B
       base_RIP base_reg
       unopInc unopDec unopNot unopNeg
-      isBasicElf ELF_lit))
+      ELF_lit))
 };
 
 @mmc-th theorem wSz8Bytesx: $ wsizeBytes (wSz8 r) = x1 $ = '(eqtr wSz8Bytes dec1);
@@ -70,6 +71,7 @@ do {
     (mmc-th name))
   (ignore @ on-hexstrings @ fn (n)
     @ let ([xn (atom-app 'x n)] [i (hex->number xn)] [t '(,(_x00xn i))])
+    @ if (not {i = 0}) @ begin
     (def name (atom-app "strlen_x00x" n))
     (add-tac-thm! name () () $ strlen ,t ,'(,xn) $ () @ fn () '(strlen_repeat ,(_x00xn_eq i)))
     (mmc-th name))
@@ -606,14 +608,7 @@ $ S\ p, S\ s, {x | E. ds (mkRMI2 dst src ds /\ decode (xastMov sz ds) s)} $;
   (h5: $ parseImm64 src l $):
   $ parseOpc p ip l rex (ch xb y) (instImm wSz64 dst src) $ = 'sorry;
 
-@mmc-th theorem parseMovImmM
-  (h1: $ splitBits13 v 3 y $)
-  (h2: $ opSizeW rex v = sz $)
-  (h3: $ parseModRM rex x0 dst l1 l2 $)
-  (h4: $ parseImm sz src l2 $):
-  $ parseOpc p ip l1 rex (ch xc y) (instMov sz dst (IRM_imm32 src)) $ = 'sorry;
-
-@mmc-th theorem parseMovImmI
+@mmc-th theorem parseMovImm
   (h1: $ splitBits13 v 3 y $)
   (h2: $ opSizeW rex v = sz $)
   (h3: $ parseModRM rex x0 (IRM_reg dst) l1 l2 $)

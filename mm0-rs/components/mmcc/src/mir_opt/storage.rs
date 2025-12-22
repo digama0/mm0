@@ -46,15 +46,19 @@ impl AllocId {
   pub const ZERO: Self = Self(0);
 }
 
+/// Metadata regarding a type's layout constraints.
 #[derive(Copy, Clone, Default, Debug)]
-pub(crate) struct Meta {
-  pub(crate) size: u64,
-  pub(crate) on_stack: bool,
+pub struct Meta {
+  /// The size of the type in bytes.
+  pub size: u64,
+  /// If true, then the type cannot be stored in a register.
+  pub on_stack: bool,
 }
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Meta);
 
 impl Meta {
-  const GHOST: Self = Self { size: 0, on_stack: false };
+  /// The metadata for a ghost value.
+  pub const GHOST: Self = Self { size: 0, on_stack: false };
   fn from_size(size: u64) -> Self {
     Self { size, on_stack: false }
   }
@@ -156,7 +160,7 @@ impl TyKind {
   }
 
   /// Gets the ABI information of this type, if it is a compile-time constant.
-  #[must_use] pub(crate) fn meta(&self, ns: &HashMap<Symbol, Entity>) -> Option<Meta> {
+  #[must_use] pub fn meta(&self, ns: &HashMap<Symbol, Entity>) -> Option<Meta> {
     match self {
       TyKind::Unit |
       TyKind::True |

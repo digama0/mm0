@@ -52,10 +52,10 @@ theorem eVar_app: $ eVar v @ vs = vs @ v $ = '(applame ,eqtac);
 theorem eInt_app: $ eInt n @ vs = n $ = '(applame ,eqtac);
 @mmc-th theorem eInt_const: $ e_const (eInt n) n $ = (named '(ax_gen eInt_app));
 
---| `eNil: Expr`: the empty list `[]`
-@_ @mmc-th local def eNil: set = $ eInt 0 $;
-theorem eNil_app: $ eNil @ vs = 0 $ = 'eInt_app;
-theorem eNil_len: $ e_len eNil 0 $ = (named '(ax_gen @ eqtr (leneq eNil_app) len0));
+--| `E0: Expr`: the empty list `[]`, and the unit value `()`
+@_ @mmc-th local def E0: set = $ eInt 0 $;
+theorem E0_app: $ E0 @ vs = 0 $ = 'eInt_app;
+theorem E0_len: $ e_len E0 0 $ = (named '(ax_gen @ eqtr (leneq E0_app) len0));
 
 --| `eSn: Expr -> Expr`: singleton, `[e]`
 @_ @mmc-th local def eSn (e: set): set = $ \ vs, e @ vs : 0 $;
@@ -198,6 +198,19 @@ theorem ZSet_sn: $ ZSet (sn i) == sn (b0 i) $ =
 (named '(eqstr3 (Sumeq (eqri @ bitr elFst @ bitr elsn @ bitr4 b0can elsn) @
   mpbir eq0al @ ax_gen @ mtbir elSnd @ mtbir elsn b1neb0) FstSnd));
 
+--| `tyNat: Ty`: The type of nonnegative integers.
+@_ local def tyNat: set = $ S\ vs, S\ x, Sum (^s (x e. ZSet _V)) 0 $;
+
+theorem tyNat_mem: $ ty_mem tyNat vs x == ^s (x e. ZSet _V) $ =
+(focus
+  '(eqstr (s_aneq1 @ eqstr (Fsteq @ trud _ @ ! eqsid $ tyNat $) FstSum) s_lift_antop)
+  '(rappsabed1 @ rappsabed2 ,eqtac));
+theorem tyNat_valid: $ vs, x e. ty_valid tyNat <-> x e. ZSet _V $ = '(el_ty_valid_lift tyNat_mem);
+theorem tyNat_layoutR: $ ty_layoutR tyNat vs x = 0 $ = (named 'ty_layoutR_ghost);
+theorem tyNat_layout: $ ty_layout tyNat vs x == 0 $ = (named 'ty_layout_ghost);
+theorem tyNat_sizeof: $ ty_sizeof tyNat n $ = (named '(ty_sizeof_eqv tyNat_layout));
+theorem tyNat_layoutP: $ ty_layoutP tyNat vs (suc p) == 0 $ = (named 'ty_layoutP_ghost);
+
 --| `tyU8N: Nat -> Ty`: The type `u(8*N)` of unsigned 8N-bit integers.
 @_ local def tyU8N (n: nat): set =
 $ S\ vs, S\ x, Sum
@@ -252,6 +265,19 @@ theorem tyU8N_layoutP: $ ty_layoutP (tyU8N n) vs (suc p) == 0 $ =
 
 --| `tyU64: Ty`: The type `u64` of unsigned 64-bit integers.
 @_ @mmc-th local def tyU64: set = $ tyU8N 8 $;
+
+--| `tyInt: Ty`: The type of nonnegative integers.
+@_ local def tyInt: set = $ S\ vs, S\ x, Sum T.s 0 $;
+
+theorem tyInt_mem: $ ty_mem tyInt vs x == T.s $ =
+(focus
+  '(eqstr (s_aneq1 @ eqstr (Fsteq @ trud _ @ ! eqsid $ tyInt $) FstSum) s_lift_antop)
+  '(rappsabed1 @ rappsabed2 ,eqtac));
+theorem tyInt_valid: $ vs, x e. ty_valid tyInt $ = '(mpbir (el_ty_valid_lift tyInt_mem) itru);
+theorem tyInt_layoutR: $ ty_layoutR tyInt vs x = 0 $ = (named 'ty_layoutR_ghost);
+theorem tyInt_layout: $ ty_layout tyInt vs x == 0 $ = (named 'ty_layout_ghost);
+theorem tyInt_sizeof: $ ty_sizeof tyInt n $ = (named '(ty_sizeof_eqv tyInt_layout));
+theorem tyInt_layoutP: $ ty_layoutP tyInt vs (suc p) == 0 $ = (named 'ty_layoutP_ghost);
 
 --| `tyI8N: Nat -> Ty`: The type `i(8*N)` of signed 8N-bit integers.
 @_ local def tyI8N (n: nat): set =
@@ -309,15 +335,15 @@ theorem tyI8N_layoutP: $ ty_layoutP (tyI8N n) vs (suc p) == 0 $ =
 
 --| `isTyped (e: Expr) (ty: Ty): VProp`:
 --| The assertion `[e: ty]`, which asserts that expression `e` has type `ty`.
-@_ @mmc-th local def isTyped (e ty: set): set = $ S\ vs, ty_mem ty vs (e @ vs) $;
+@_ local def isTyped (e ty: set): set = $ S\ vs, ty_mem ty vs (e @ vs) $;
 
 theorem isTyped_mem: $ isTyped e ty @' vs == ty_mem ty vs (e @ vs) $ = '(rappsabe ,eqtac);
 
 --| `isHyp (ty: Ty): VProp`:
 --| The assertion `[(): ty]`, which asserts that type `ty` is inhabited.
-@_ @mmc-th local def isHyp (ty: set): set = $ S\ vs, ty_mem ty vs 0 $;
+@_ local def isHyp (ty: set): set = $ isTyped E0 ty $;
 
-theorem isHyp_mem: $ isHyp ty @' vs == ty_mem ty vs 0 $ = '(rappsabe ,eqtac);
+theorem isHyp_mem: $ isHyp ty @' vs == ty_mem ty vs 0 $ = '(eqstr isTyped_mem @ ty_memeq3 E0_app);
 
 --| `asTy (P: VProp): Ty`: Convert a VProp to a Ty by ignoring the value argument.
 @_ local def asTy (P: set): set = $ S\ vs, S\ x, Sum (P @' vs) 0 $;
@@ -503,6 +529,12 @@ theorem tyMoved_asTy: $ vpropMoved P Q -> tyMoved (asTy P) (asTy Q) $ =
 @mmc-th theorem tyMoved_array (h: $ tyMoved ty moved $):
   $ tyMoved (tyArray ty N) (tyArray moved N) $ = 'sorry;
 
+@mmc-th local def tyResult (ty T: set): wff = $ sorry_wff $;
+
+@mmc-th local def resultUnit: set = $ sn 0 $;
+
+@mmc-th theorem tyResult_unit: $ tyResult tyUnit resultUnit $ = 'sorry;
+
 --| A return ABI saying you can't return
 @_ @mmc-th local def noRet: set = $ sorry_set $; -- TODO
 
@@ -646,9 +678,9 @@ $ A. vs vctx @' vs =>*s A @' vs *s vctx2 @' vs $;
   $ okVCtxTake (vVar n ty) (vVar n ty) (vVar n moved) $ = 'sorry;
 @mmc-th theorem okVCtxTake_ref_var (h: $ tyMoved ty moved $):
   $ okVCtxTake (vVar n ty) (vVar n moved) (vVar n ty) $ = 'sorry;
-@mmc-th theorem okVCtxTake_move_Hyp (h: $ tyMoved ty moved $):
+@mmc-th theorem okVCtxTake_move_hyp (h: $ tyMoved ty moved $):
   $ okVCtxTake (vHyp ty) (vHyp ty) (vHyp moved) $ = 'sorry;
-@mmc-th theorem okVCtxTake_ref_Hyp (h: $ tyMoved ty moved $):
+@mmc-th theorem okVCtxTake_ref_hyp (h: $ tyMoved ty moved $):
   $ okVCtxTake (vHyp ty) (vHyp moved) (vHyp ty) $ = 'sorry;
 
 @mmc-th theorem okVCtxTake_l (h: $ okVCtxTake A ty A2 $):
@@ -715,7 +747,7 @@ theorem mePart_sizeof_0: $ me_sizeof (mePart 0 ty) i <-> i = 0 $ =
 @mmc-th theorem e_reassoc_assoc (h: $ e_reassoc (eAppend a (eAppend b c)) e $):
      $ e_reassoc (eAppend (eAppend a b) c) e $ = 'sorry;
 
-@mmc-th theorem e_const_reassoc
+@mmc-th theorem e_len_reassoc
     (h1: $ e_reassoc (eAppend l1 (eSn e)) l2 $) (h2: $ e_len l1 n $)
     (h3: $ suc n = n2 $): $ e_len e2 n2 $ = 'sorry;
 
@@ -727,22 +759,22 @@ $ me_ty m1 == me_ty m2 /\ A. vs (me_layout m1 vs == me_layout m2 vs) $;
   (h1: $ incMExpr m1 m2 $) (h2: $ incMExpr m2 m3 $): $ incMExpr m1 m3 $ =
 (named '(iani (eqstr (anli h1) (anli h2)) @ al2imi eqstr (anri h1) (anri h2)));
 theorem _:
-  $ incMExpr (mePart pe0 (tyArray ty N)) (mePart (peList eNil) (tyArray ty N)) $ =
+  $ incMExpr (mePart pe0 (tyArray ty N)) (mePart (peList E0) (tyArray ty N)) $ =
 (named '(iani (eqstr4 mePart_ty mePart_ty) @ ax_gen @
   eqstr4 mePart_layout @ eqstr4 mePart_layout @
   eqstr (ty_layoutPeq3 app01) @ eqstr4 ty_layoutP_0 @
-  eqstr4 (ty_layoutPeq3 @ eqtr peList_app @ suceq @ pebListPeq1 eNil_app) @
+  eqstr4 (ty_layoutPeq3 @ eqtr peList_app @ suceq @ pebListPeq1 E0_app) @
   ax_gen @ bitr4 elsn @ bitr tyArray_layoutP_listP @
   bitr (exeqi @ bian1exi @ bian11i @ aneq1i all201) @
   bitr (exeqe ,eqtac) @
   bitr (exeqi @ aneq1i @ bitr (eleq2 ty_layoutP_0) elsn) @
   bitr (exeqe ,eqtac) @ eqeq2 @ eqtr (appendeq1 ljoin0) append02));
 @mmc-th theorem incMExpr_nil:
-  $ incMExpr (mePart pe0 (tyArray ty N)) (mePart (peList eNil) (tyArray ty N)) $ =
+  $ incMExpr (mePart pe0 (tyArray ty N)) (mePart (peList E0) (tyArray ty N)) $ =
 (named '(iani (eqstr4 mePart_ty mePart_ty) @ ax_gen @
   eqstr4 mePart_layout @ eqstr4 mePart_layout @
   eqstr (ty_layoutPeq3 app01) @ eqstr4 ty_layoutP_0 @
-  eqstr4 (ty_layoutPeq3 @ eqtr peList_app @ suceq @ pebListPeq1 eNil_app) @
+  eqstr4 (ty_layoutPeq3 @ eqtr peList_app @ suceq @ pebListPeq1 E0_app) @
   ax_gen @ bitr4 elsn @ bitr tyArray_layoutP_list @
   bitr (exeqi @ aneq1i all201) @ bitr (exeqe ,eqtac) @ eqeq2 ljoin0));
 @mmc-th theorem incMExpr_list
@@ -905,10 +937,8 @@ theorem getMCtx_L (h: $ getMCtx A r v $): $ getMCtx (A +M B) r v $ = 'sorry;
 
 @_ local def replaceMCtx (mctx1: set) (pos: nat) (val mctx2: set): wff = $ sorry_wff $;
 
-theorem replaceMCtx_free (h: $ replaceMCtx A1 p v A2 $):
-  $ replaceMCtx (FREE r) (b0 r) e (r[r]: e) $ = 'sorry;
-theorem replaceMCtx_reg (h: $ replaceMCtx A1 p v A2 $):
-  $ replaceMCtx (r[r]: v1) (b0 r) v (r[r]: v) $ = 'sorry;
+theorem replaceMCtx_free: $ replaceMCtx (FREE r) (b0 r) v (r[r]: v) $ = 'sorry;
+theorem replaceMCtx_reg: $ replaceMCtx (r[r]: v1) (b0 r) v (r[r]: v) $ = 'sorry;
 theorem replaceMCtx_split (h1: $ n1 + n2 = n $) (h2: $ off + n1 = off2 $)
   (h3: $ replaceMCtx (stkFREE off n1 +M stkFREE off2 n2) p v mctx $):
   $ replaceMCtx (stkFREE off n) p v mctx $ = 'sorry;
@@ -926,19 +956,25 @@ theorem replaceMCtx_L (h: $ replaceMCtx A1 p v A2 $):
   $ replaceMCtx (A1 +M B) p v (A2 +M B) $ = 'sorry;
 theorem replaceMCtx_R (h: $ replaceMCtx B1 p v B2 $):
   $ replaceMCtx (A +M B1) p v (A +M B2) $ = 'sorry;
+theorem replaceMCtx_rotL (h: $ replaceMCtx mctx p v (A +M (B +M C)) $):
+  $ replaceMCtx mctx p v ((A +M B) +M C) $ = '(mpbir (replaceMCtxeq4 mctxA_ass) h);
+theorem replaceMCtx_rotR (h: $ replaceMCtx mctx p v ((A +M B) +M C) $):
+  $ replaceMCtx mctx p v (A +M (B +M C)) $ = '(mpbi (replaceMCtxeq4 mctxA_ass) h);
 
 --| `replaceMCtxR (mctx1: MCtx) (r: RegNum) (v: MExpr) => (mctx2: MCtx)`
 @mmc-th local def replaceMCtxR (mctx1: set) (r: hex) (val mctx2: set): wff =
 $ replaceMCtx mctx1 (b0 r) val mctx2 $;
 
-theorem replaceMCtxR_free (h: $ replaceMCtxR A1 p v A2 $):
-  $ replaceMCtxR (FREE r) r e (r[r]: e) $ = '(replaceMCtx_free h);
-theorem replaceMCtxR_reg (h: $ replaceMCtxR A1 p v A2 $):
-  $ replaceMCtxR (r[r]: v1) r v (r[r]: v) $ = '(replaceMCtx_reg h);
-theorem replaceMCtxR_L (h: $ replaceMCtxR A1 r v A2 $):
+@mmc-th theorem replaceMCtxR_free: $ replaceMCtxR (FREE r) r v (r[r]: v) $ = 'replaceMCtx_free;
+@mmc-th theorem replaceMCtxR_reg: $ replaceMCtxR (r[r]: v1) r v (r[r]: v) $ = 'replaceMCtx_reg;
+@mmc-th theorem replaceMCtxR_L (h: $ replaceMCtxR A1 r v A2 $):
   $ replaceMCtxR (A1 +M B) r v (A2 +M B) $ = '(replaceMCtx_L h);
-theorem replaceMCtxR_R (h: $ replaceMCtxR B1 r v B2 $):
+@mmc-th theorem replaceMCtxR_R (h: $ replaceMCtxR B1 r v B2 $):
   $ replaceMCtxR (A +M B1) r v (A +M B2) $ = '(replaceMCtx_R h);
+@mmc-th theorem replaceMCtxR_rotL (h: $ replaceMCtxR mctx r v (A +M (B +M C)) $):
+  $ replaceMCtxR mctx r v ((A +M B) +M C) $ = '(mpbir (replaceMCtxeq4 mctxA_ass) h);
+@mmc-th theorem replaceMCtxR_rotR (h: $ replaceMCtxR mctx r v ((A +M B) +M C) $):
+  $ replaceMCtxR mctx r v (A +M (B +M C)) $ = '(mpbi (replaceMCtxeq4 mctxA_ass) h);
 
 --| `replaceMCtxS (mctx1: MCtx) (off: Nat) (v: MExpr) => (mctx2: MCtx)`
 @mmc-th local def replaceMCtxS (mctx1: set) (off: nat) (val mctx2: set): wff =
@@ -961,6 +997,10 @@ $ replaceMCtx mctx1 (b1 off) val mctx2 $;
   $ replaceMCtxS (A1 +M B) off v (A2 +M B) $ = '(replaceMCtx_L h);
 @mmc-th theorem replaceMCtxS_R (h: $ replaceMCtxS B1 off v B2 $):
   $ replaceMCtxS (A +M B1) off v (A +M B2) $ = '(replaceMCtx_R h);
+@mmc-th theorem replaceMCtxS_rotL (h: $ replaceMCtxS mctx off v (A +M (B +M C)) $):
+  $ replaceMCtxS mctx off v ((A +M B) +M C) $ = '(mpbir (replaceMCtxeq4 mctxA_ass) h);
+@mmc-th theorem replaceMCtxS_rotR (h: $ replaceMCtxS mctx off v ((A +M B) +M C) $):
+  $ replaceMCtxS mctx off v (A +M (B +M C)) $ = '(mpbi (replaceMCtxeq4 mctxA_ass) h);
 
 --| Type context, or type state.
 --| The first part is the logical context, where variables and their types are stored,
@@ -1003,7 +1043,7 @@ $ S\ vs, S\ v, S\ c, S\ epi, S\ fr, S\ p, (^s (vs, v e. var) *s okCodeP c epi tc
   $ findLabel (A +L B) ip var P $ = '(sstr h s_orl);
 @mmc-th theorem findLabel_r (h: $ findLabel B ip var P $):
   $ findLabel (A +L B) ip var P $ = '(sstr h s_orr);
-@mmc-th theorem findLabel1: $ findLabel (label1 ip var P) ip var P $ = 'ssid;
+@mmc-th theorem findLabel_1: $ findLabel (label1 ip var P) ip var P $ = 'ssid;
 
 -- `LabelGroups := List u8 -> Epilogue -> Frame -> Nat -> SProp`
 
@@ -1020,8 +1060,8 @@ notation labelGroup (val ls labs: set): set = ($LG($:85) val ($,$:55) ls ($);$:0
 
 --| `findLabels (labs: LabelGroups) => (val: Expr) (ls: LabelGroup)`
 @mmc-th local def findLabels (labs: set) (val ls: set): wff = $ labelGroup1 val ls C_ labs $;
-@mmc-th theorem findLabels1: $ findLabels (LG(val, ls); labs) val ls $ = 'sorry;
-@mmc-th theorem findLabelsS (h: $ findLabels labs val ls $):
+@mmc-th theorem findLabels_1: $ findLabels (LG(val, ls); labs) val ls $ = 'sorry;
+@mmc-th theorem findLabels_S (h: $ findLabels labs val ls $):
   $ findLabels (LG(val1, ls1); labs) val ls $ = 'sorry;
 
 --| Block-local context. In lean:
@@ -1115,10 +1155,19 @@ theorem okCode_rev:
   (h2: $ okCode bctx tctx2 code2 tctx3 $):
   $ okCode bctx tctx1 (code1 +asm code2) tctx3 $ = 'sorry;
 
+@mmc-th theorem okCode_0A
+  (h: $ okCode bctx tctx code1 ok0 $):
+  $ okCode bctx tctx (code1 +asm code2) ok0 $ = '(okCode_A h okCode_0);
+
 @mmc-th theorem okCode_tr
   (h1: $ okCode bctx tctx1 ASM0 tctx2 $)
   (h2: $ okCode bctx tctx2 ASM0 tctx3 $):
   $ okCode bctx tctx1 ASM0 tctx3 $ = 'sorry;
+
+@mmc-th theorem okCode_trL
+  (h1: $ okCode bctx tctx1 ASM0 tctx2 $)
+  (h2: $ okCode bctx tctx2 code tctx3 $):
+  $ okCode bctx tctx1 code tctx3 $ = 'sorry;
 
 --| `okPrologue (epi1: Epilogue) (mctx: MCtx) => (code: LAsm) (epi2: Epilogue) (mctx2: MCtx)`
 @mmc-th local def okPrologue
@@ -1196,8 +1245,8 @@ $ |*|s i e. upto (len rs), (E.s v e. u64, (nth rs i - 1) >->r v) $;
 @mmc-th local def accumClob (clob: nat) (mctx1 mctx2: set): wff =
 $ mctx2 == (mctx1 +M S\ vs, Sum (s_clob clob) L_emp) $;
 
-@mmc-th theorem accumClob0: $ accumClob clob0 mctx mctx $ = 'sorry;
-@mmc-th theorem accumClobS
+@mmc-th theorem accumClob_0: $ accumClob clob0 mctx mctx $ = 'sorry;
+@mmc-th theorem accumClob_S
   (h1: $ pushMCtx mctx1 (FREE r) mctx2 $)
   (h2: $ accumClob clob mctx2 mctx3 $):
   $ accumClob (r :C clob) mctx1 mctx3 $ = 'sorry;
@@ -1281,12 +1330,12 @@ theorem okBlock_rev: $ (okBCtx bctx -> okBlock bctx ip tctx) -> okBlock bctx ip 
   (h2: $ okBlock bctx ip tctx2 $):
   $ okBlock bctx ip tctx1 $ = 'sorry;
 
-@mmc-th theorem okBlockI
+@mmc-th theorem okBlock_I
   (h1: $ okAssembled pctx (asmAt ip code) $)
   (h2: $ okCode (mkBCtx pctx L) tctx code ok0 $):
   $ okBlock (mkBCtx pctx L) (suc ip) tctx $ = 'sorry;
 
-@mmc-th theorem okBlock0
+@mmc-th theorem okBlock_0
   (h: $ okCode bctx tctx ASM0 ok0 $):
   $ okBlock bctx 0 tctx $ = 'sorry;
 
@@ -1462,12 +1511,12 @@ theorem okConst_u8N_neg
 @mmc-th local def withFlags (f tctx: set): set = $ sorry_set $; -- TODO
 @mmc-th local def invertCond (c d: hex): wff = $ sorry_wff $; -- TODO
 @mmc-th local def flagCond (f: set) (c: hex) (ty: set): wff = $ sorry_wff $; -- TODO
-@mmc-th local def ty_not (ty: set): set = $ sorry_set $; -- TODO
+@mmc-th local def tyNot (ty: set): set = $ sorry_set $; -- TODO
 
 -- @mmc-th theorem ok_jcc
 --   (h1: $ flagCond f c ty $)
 --   (h2: $ okPushHyp tctx ty tctx1 $)
---   (h3: $ okPushHyp tctx (ty_not ty) tctx2 $)
+--   (h3: $ okPushHyp tctx (tyNot ty) tctx2 $)
 --   (h4: $ okBlock bctx tgt tctx1 $):
 --   $ okCode bctx (withFlags f tctx) (instJCC c tgt) tctx2 $ = 'sorry;
 
@@ -1475,7 +1524,7 @@ theorem okConst_u8N_neg
 --   (h0: $ invertCond notc c $)
 --   (h1: $ flagCond f c ty $)
 --   (h2: $ okPushHyp tctx ty tctx1 $)
---   (h3: $ okPushHyp tctx (ty_not ty) tctx2 $)
+--   (h3: $ okPushHyp tctx (tyNot ty) tctx2 $)
 --   (h4: $ okBlock bctx tgt tctx2 $):
 --   $ okCode bctx (withFlags f tctx) (instJCC notc tgt) tctx1 $ = 'sorry;
 
@@ -1507,13 +1556,13 @@ infixl substS: $|>S$ prec 90;
 @mmc-th theorem buildSubst_var
   (h1: $ buildSubst vctx1 subst1 args vctx2 subst2 $)
   (h2: $ substTy subst2 ty ty2 $)
-  (h3: $ okVCtxTake vctx2 (isTyped e ty2) vctx3 $):
+  (h3: $ okVCtxTake vctx2 (meTyped e ty2) vctx3 $):
   $ buildSubst vctx1 subst1 (args |>A aVar ty) vctx3 (subst2 |>S e) $ = 'sorry;
 
 @mmc-th theorem buildSubst_hyp
   (h1: $ buildSubst vctx1 subst1 args vctx2 subst2 $)
   (h2: $ substTy subst2 ty ty2 $)
-  (h3: $ okVCtxTake vctx2 (isHyp ty2) vctx3 $):
+  (h3: $ okVCtxTake vctx2 (meTyped E0 ty2) vctx3 $):
   $ buildSubst vctx1 subst1 (args |>A aHyp ty) vctx3 subst2 $ = 'sorry;
 
 @mmc-th local def applyCall (tctx1 args ret: set) (clob: nat) (tctx2: set): wff =
@@ -1553,15 +1602,9 @@ infixl substS: $|>S$ prec 90;
 
 @mmc-th theorem ok_fail: $ okCode bctx tctx instUD2 ok0 $ = 'sorry;
 
-@mmc-th local def tyResult (ty T: set): wff = $ sorry_wff $;
-
-@mmc-th local def resultUnit: set = $ sn 0 $;
-
-@mmc-th theorem tyResult_unit: $ tyResult tyUnit resultUnit $ = 'sorry;
-
 @mmc-th theorem ok_exit
   (h1: $ getResult gctx T $)
-  (h2: $ okVCtxTake vctx (isHyp ty) vctx2 $)
+  (h2: $ okVCtxTake vctx (meTyped E0 ty) vctx2 $)
   (h3: $ tyResult ty T $):
   $ okCode (mkBCtx (mkPCtx gctx pctx1) labs) (mkTCtx vctx mctx) (
       instImm wSz32 x0 (posZ ,0x3c) +asm

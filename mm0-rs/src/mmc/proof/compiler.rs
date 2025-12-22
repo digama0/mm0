@@ -22,7 +22,7 @@ use crate::{Elaborator, FileSpan, Modifiers, Span, TermId, ThmId, elab::Result, 
 use super::{Dedup, ExprDedup, Mangler, Predefs, ProofDedup, ProofId,
   norm_num::{HexCache, Num}, predefs::Rex};
 
-const BLOCK_PROOFS: bool = true; // TODO
+const BLOCK_PROOFS: bool = false; // TODO
 
 pub(super) fn mk_result<'a, D: Dedup<'a>>(de: &mut D, proof: &ElfProof<'_>) -> D::Id {
   app!(de, (resultUnit)) // TODO
@@ -922,7 +922,7 @@ impl ProcProver<'_> {
       app_match!(self.thm, let (asmAt ip code) = a);
       let h2 = self.ok_stmts(self.proc.block(tgt), code, (tctx, l1));
       (ip, thm!(self.thm, ((okBlock {self.bctx} (suc ip) l1)) =>
-        okBlockI(self.labs, code, ip, self.pctx, l1, h1, h2)))
+        okBlock_I(self.labs, code, ip, self.pctx, l1, h1, h2)))
     } else {
       (ProofId::INVALID, self.ok_stmts(self.proc.block(tgt), self.asm0, (tctx, l1)))
     }
@@ -934,7 +934,7 @@ impl ProcProver<'_> {
     let (ip, th) = self.ok_block_opt((tctx, l1), tgt);
     if ip == ProofId::INVALID {
       let ip = app!(self.thm, (d0));
-      (ip, thm!(self.thm, okBlock0(self.bctx, l1, th): okBlock[self.bctx, ip, l1]))
+      (ip, thm!(self.thm, okBlock_0(self.bctx, l1, th): okBlock[self.bctx, ip, l1]))
     } else {
       (app!(self.thm, (suc ip)), th)
     }
@@ -1116,10 +1116,10 @@ impl ProcProver<'_> {
       let (clob, h2) = self.accum_clob(mctx, iter);
       let clob2 = app!(self.thm, (clobS er clob));
       (clob2, thm!(self.thm, (accumClob[clob2, mctx1, mctx.1]) =>
-        accumClobS(clob, mctx1, mctx2, mctx.1, er, h1, h2)))
+        accumClob_S(clob, mctx1, mctx2, mctx.1, er, h1, h2)))
     } else {
       let clob = app!(self.thm, (clob0));
-      (clob, thm!(self.thm, accumClob0(mctx.1): accumClob[clob, mctx.1, mctx.1]))
+      (clob, thm!(self.thm, accumClob_0(mctx.1): accumClob[clob, mctx.1, mctx.1]))
     }
   }
 

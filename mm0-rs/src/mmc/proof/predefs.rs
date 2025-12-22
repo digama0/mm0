@@ -1,5 +1,6 @@
+use std::collections::HashSet;
 use if_chain::if_chain;
-use mm0_util::{SortId, TermId, ThmId};
+use mm0_util::{AtomId, SortId, TermId, ThmId};
 use debug_derive::EnvDebug;
 
 use crate::{DeclKey, Environment};
@@ -42,6 +43,26 @@ fn get_thm(env: &Environment, s: &[u8]) -> ThmId {
   }
 }
 
+trait PredefId<R>: Copy {
+  fn premap(self, r: &mut R) -> Self { self }
+}
+impl PredefId<crate::Remapper> for AtomId {
+  fn premap(self, r: &mut crate::Remapper) -> Self { use crate::Remap; self.remap(r) }
+}
+impl PredefId<crate::Remapper> for SortId {
+  fn premap(self, r: &mut crate::Remapper) -> Self { use crate::Remap; self.remap(r) }
+}
+impl PredefId<crate::Remapper> for TermId {
+  fn premap(self, r: &mut crate::Remapper) -> Self { use crate::Remap; self.remap(r) }
+}
+impl PredefId<crate::Remapper> for ThmId {
+  fn premap(self, r: &mut crate::Remapper) -> Self { use crate::Remap; self.remap(r) }
+}
+impl crate::Remap for Predefs {
+  type Target = Self;
+  fn remap(&self, r: &mut crate::Remapper) -> Self { self.premap(r) }
+}
+
 macro_rules! make_predefs {
   (@ty $ty:tt $n:expr, $($ns:expr,)*) => {[make_predefs!(@ty $ty $($ns,)*); $n]};
   (@ty $ty:ident) => {$ty};
@@ -64,7 +85,7 @@ macro_rules! make_predefs {
   (@remap $ty:ident $self:expr, $r:expr, () ($cond:expr)) => {
     if $cond { make_predefs!(@remap $ty $self, $r, () ()) } else { $ty::INVALID }
   };
-  (@remap $ty:ident $self:expr, $r:expr, () ()) => {$self.remap($r)};
+  (@remap $ty:ident $self:expr, $r:expr, () ()) => {$self.premap($r)};
   {$($(#[$attr:meta])* $x:ident $([$i:ident: $n:expr])*:
       $ty:tt $(if $cond:expr)? $(=> $e:expr)?;)*} => {
     /// A predef is a name of an external constant, defined in `compiler.mm1` and required
@@ -78,9 +99,13 @@ macro_rules! make_predefs {
     }
     #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(Predefs);
 
-    impl crate::Remap for Predefs {
-      type Target = Self;
-      fn remap(&self, r: &mut crate::Remapper) -> Self {
+    impl Predefs {
+      fn premap<R>(&self, r: &mut R) -> Self where
+        AtomId: PredefId<R>,
+        SortId: PredefId<R>,
+        TermId: PredefId<R>,
+        ThmId: PredefId<R>,
+      {
         #[allow(unused)]
         Self { $($x: make_predefs!(@remap $ty &self.$x, r, ($($i,)*) ($($cond)?))),* }
       }
@@ -203,6 +228,11 @@ make_predefs! {
   /// `wSz64: nat`
   wSz64: TermId;
 
+  wsizeBytes: TermId;
+  wSz8Bytesx: ThmId;
+  wSz32Bytesx: ThmId;
+  wSz64Bytesx: ThmId;
+
   opSize: TermId;
   opSize_64: ThmId;
   opSize_32: ThmId;
@@ -225,6 +255,11 @@ make_predefs! {
   unopNeg: TermId;
 
   padn[i: 16]: TermId => format!("_x00x{i:x}");
+
+  /// `strlen (s: string) (n: nat): wff`
+  strlen: TermId;
+  strlenn[i: 16]: ThmId => format!("strlen{i:x}");
+  strlen_padn[i: 16]: ThmId if i != 0 => format!("strlen_x00x{i:x}");
 
   /// `assemble (s: string) (x y: nat) (P: set): wff`
   assemble: TermId;
@@ -268,14 +303,6 @@ make_predefs! {
   assembledI: ThmId;
   assembled_l: ThmId;
   assembled_r: ThmId;
-
-  getResult: TermId;
-  getResultGI: ThmId;
-
-  /// `strlen (s: string) (n: nat): wff`
-  strlen: TermId;
-  strlenn[i: 16]: ThmId => format!("strlen{i:x}");
-  strlen_padn[i: 16]: ThmId if i != 0 => format!("strlen_x00x{i:x}");
 
   /// `parseInst (p ip: nat) (s: string) (I: set): wff`
   parseInst: TermId;
@@ -480,8 +507,7 @@ make_predefs! {
   parseMovZLQ: ThmId;
   parseMov32: ThmId;
   parseMov64: ThmId;
-  parseMovImmM: ThmId;
-  parseMovImmI: ThmId;
+  parseMovImm: ThmId;
   parsePushImm8: ThmId;
   parsePushImm32: ThmId;
   parsePushReg: ThmId;
@@ -512,47 +538,138 @@ make_predefs! {
   parseUD2: ThmId;
   parseAssert: ThmId;
 
+  mkGCtx: TermId;
+
+  getContent: TermId;
+  getContentGI: ThmId;
+
   resultUnit: TermId;
 
-  tyUnit: TermId;
+  getResult: TermId;
+  getResultGI: ThmId;
 
   eVar: TermId;
+  eInt: TermId;
+  E0: TermId;
+  eSn: TermId;
+  eAppend: TermId;
+
+  e_const: TermId;
+  eInt_const: ThmId;
+
+  e_len: TermId;
+  e_len_reassoc: ThmId;
+
+  pe0: TermId;
+  peListP: TermId;
+  peList: TermId;
+
+  pe_layout: TermId;
+
+  tyUnit: TermId;
+  tyFalse: TermId;
+  tyU8: TermId;
+  tyU16: TermId;
+  tyU32: TermId;
+  tyU64: TermId;
+  tyNat: TermId;
+  tyI8: TermId;
+  tyI16: TermId;
+  tyI32: TermId;
+  tyI64: TermId;
+  tyInt: TermId;
+  tyTyped: TermId;
+  tyArray: TermId;
+  tyNot: TermId;
+
+  ty_sizeof: TermId;
+
+  tyMoved: TermId;
+  tyMoved_emp: ThmId;
+  tyMoved_false: ThmId;
+  tyMoved_u8: ThmId;
+  tyMoved_u16: ThmId;
+  tyMoved_u32: ThmId;
+  tyMoved_u64: ThmId;
+  tyMoved_i8: ThmId;
+  tyMoved_i16: ThmId;
+  tyMoved_i32: ThmId;
+  tyMoved_i64: ThmId;
+  tyMoved_typed: ThmId;
+  tyMoved_array: ThmId;
+
+  tyResult: TermId;
+  tyResult_unit: ThmId;
+
+  noRet: TermId;
 
   epiRet: TermId;
   epiFree: TermId;
   epiPop: TermId;
 
-  mkGCtx: TermId;
   mkPCtx1: TermId;
   mkPCtx: TermId;
   mkBCtx: TermId;
   mkTCtx: TermId;
 
-  ok0: TermId;
-
-  noRet: TermId;
-
-  labelGroup0: TermId;
-  labelGroup: TermId;
-
   vctx0: TermId;
   vctxA: TermId;
+  vVar: TermId;
+  vHyp: TermId;
 
   okVCtxPush: TermId;
   okVCtxPush_1: ThmId;
   okVCtxPush_S: ThmId;
   okVCtxPush_R: ThmId;
+  okVCtxPush_get: ThmId;
 
   okVCtxGet: TermId;
-  okVCtxPush_get: ThmId;
   okVCtxGet_R: ThmId;
   okVCtxGet_l: ThmId;
   okVCtxGet_r: ThmId;
+
+  okVCtxTake: TermId;
+  okVCtxTake_move_var: ThmId;
+  okVCtxTake_ref_var: ThmId;
+  okVCtxTake_move_hyp: ThmId;
+  okVCtxTake_ref_hyp: ThmId;
+  okVCtxTake_l: ThmId;
+  okVCtxTake_r: ThmId;
+
+  meTyped: TermId;
+  mePart: TermId;
+
+  me_sizeof: TermId;
+
+  me_ty_sizeof: TermId;
+  meTyped_ty_sizeof: ThmId;
+  mePart_ty_sizeof: ThmId;
+
+  e_reassoc: TermId;
+  e_reassoc_id: ThmId;
+  e_reassoc_assoc: ThmId;
+
+  incMExpr: TermId;
+  incMExpr_id: ThmId;
+  incMExpr_tr: ThmId;
+  incMExpr_nil: ThmId;
+  incMExpr_list: ThmId;
+  incMExpr_listS: ThmId;
+  incMExpr_listC: ThmId;
+
+  pushMExpr: TermId;
+  pushMExpr_full: ThmId;
+  pushMExpr_trL: ThmId;
+  pushMExpr_trR: ThmId;
+  pushMExpr_list: ThmId;
+  pushMExpr_listS: ThmId;
 
   mctx0: TermId;
   FREE: TermId;
   stkFREE: TermId;
   REG: TermId;
+  mVal: TermId;
+  mSpill: TermId;
   mctxA: TermId;
 
   bddMCtx: TermId;
@@ -573,8 +690,55 @@ make_predefs! {
   pushMCtx_rotL: ThmId;
   pushMCtx_rotR: ThmId;
 
-  vVar: TermId;
-  vHyp: TermId;
+  getMCtxR: TermId;
+  getMCtxR_reg: ThmId;
+  getMCtxR_L: ThmId;
+  getMCtxR_R: ThmId;
+
+  getMCtxS: TermId;
+  getMCtxS_val: ThmId;
+  getMCtxS_spill: ThmId;
+  getMCtxS_L: ThmId;
+  getMCtxS_R: ThmId;
+
+  replaceMCtxR: TermId;
+  replaceMCtxR_free: ThmId;
+  replaceMCtxR_reg: ThmId;
+  replaceMCtxR_L: ThmId;
+  replaceMCtxR_R: ThmId;
+  replaceMCtxR_rotL: ThmId;
+  replaceMCtxR_rotR: ThmId;
+
+  replaceMCtxS: TermId;
+  replaceMCtxS_split: ThmId;
+  replaceMCtxS_startP: ThmId;
+  replaceMCtxS_push: ThmId;
+  replaceMCtxS_spill: ThmId;
+  replaceMCtxS_respill: ThmId;
+  replaceMCtxS_L: ThmId;
+  replaceMCtxS_R: ThmId;
+  replaceMCtxS_rotL: ThmId;
+  replaceMCtxS_rotR: ThmId;
+
+  ok0: TermId;
+
+  labelA: TermId;
+  label1: TermId;
+
+  findLabel: TermId;
+  findLabel_l: ThmId;
+  findLabel_r: ThmId;
+  findLabel_1: ThmId;
+
+  labelGroup0: TermId;
+  labelGroup: TermId;
+
+  findLabels: TermId;
+  findLabels_1: ThmId;
+  findLabels_S: ThmId;
+
+  okLabelGroups: TermId;
+  okLabelGroupsI: ThmId;
 
   // okPushVar: TermId;
   // okPushVarI: ThmId;
@@ -587,21 +751,28 @@ make_predefs! {
   // okReadHypVar: ThmId;
   // okReadHyp_unit: ThmId;
 
+  okCode: TermId;
+  okCode_0: ThmId;
+  okCode_id: ThmId;
+  okCode_A: ThmId;
+  okCode_0A: ThmId;
+  okCode_tr: ThmId;
+  okCode_trL: ThmId;
+
+  okPrologue: TermId;
+  okPrologue_push: ThmId;
+  okPrologue_alloc0: ThmId;
+  okPrologue_alloc: ThmId;
+
   okAssembled: TermId;
   okAssembledI: ThmId;
   okAssembled_l: ThmId;
   okAssembled_r: ThmId;
 
-  okCode: TermId;
-  okCode_0: ThmId;
-  okCode_id: ThmId;
-  okCode_A: ThmId;
-  okCode_tr: ThmId;
-
-  arg0: TermId;
-  argS: TermId;
   aVar: TermId;
   aHyp: TermId;
+  arg0: TermId;
+  argS: TermId;
 
   accumArgs: TermId;
   accumArgs0: ThmId;
@@ -614,8 +785,8 @@ make_predefs! {
   clobS: TermId;
 
   accumClob: TermId;
-  accumClob0: ThmId;
-  accumClobS: ThmId;
+  accumClob_0: ThmId;
+  accumClob_S: ThmId;
 
   okProc: TermId;
   okProcI: ThmId;
@@ -626,52 +797,100 @@ make_predefs! {
   okStart: TermId;
   okStartI: ThmId;
 
+  okPushVariant: TermId;
+
+  variantValue: TermId;
+
+  addLabels: TermId;
+  addLabels_A: ThmId;
+  addLabels_1: ThmId;
+  addLabels_0: ThmId;
+
+  okLabels: TermId;
+  okLabels_l: ThmId;
+  okLabels_r: ThmId;
+  okLabels_I: ThmId;
+  okLabels_1: ThmId;
+
   okBlock: TermId;
   okBlock_weak: ThmId;
-  okBlockI: ThmId;
-  okBlock0: ThmId;
-
-  okPrologue: TermId;
-  okPrologue_push: ThmId;
-  okPrologue_alloc: ThmId;
-  okPrologue_alloc0: ThmId;
-
-  getEpi: TermId;
-  getEpiI: ThmId;
+  okBlock_I: ThmId;
+  okBlock_0: ThmId;
+  okBlock_label: ThmId;
 
   checkRet: TermId;
   checkRetI: ThmId;
 
   okEpilogue: TermId;
-  okEpilogue_E: ThmId;
-  okEpilogue_free: ThmId;
-  okEpilogue_pop: ThmId;
   okEpilogue_ret: ThmId;
+  okEpilogue_pop: ThmId;
+  okEpilogue_free: ThmId;
+  okEpilogue_E: ThmId;
+
+  getEpi: TermId;
+  getEpiI: ThmId;
 
   // Loc_reg: TermId;
   // Loc_local: TermId;
+
+  // spillslot: TermId;
 
   // okRead: TermId;
 
   // okWrite: TermId;
 
-  // spillslot: TermId;
+  okConst: TermId;
+  okConst_i8_pos: ThmId;
+  okConst_i8_neg: ThmId;
+  okConst_i32: ThmId;
+  okConst_i64_32: ThmId;
+  okConst_i64: ThmId;
+  okConst_u8: ThmId;
+  okConst_u32_pos: ThmId;
+  okConst_u64_32_pos: ThmId;
+  okConst_u64_pos: ThmId;
+  okConst_u32_neg: ThmId;
+  okConst_u64_neg: ThmId;
+
+  withFlags: TermId;
+  invertCond: TermId;
+  flagCond: TermId;
 
   // okDefer: TermId;
   // okDeferI: ThmId;
 
-  ok_movRR: ThmId;
-  // ok_spill: ThmId;
-  // ok_unspill: ThmId;
-  ok_jump: ThmId;
+  subst0: TermId;
+  substS: TermId;
+
+  substTy: TermId;
+
+  buildSubst: TermId;
+  buildSubst_0: ThmId;
+  buildSubst_var: ThmId;
+  buildSubst_hyp: ThmId;
 
   applyCall: TermId;
+  applyCall_I: ThmId;
+
   applyCallG: TermId;
+  applyCallG_I: ThmId;
+
+  ok_movRR: ThmId;
+  ok_load: ThmId;
+  ok_load64: ThmId;
+  ok_store: ThmId;
+  ok_store64: ThmId;
+  ok_jump: ThmId;
+  ok_loadImm: ThmId;
+  // ok_jcc: ThmId;
+  // ok_jcc_invert: ThmId;
+  ok_ud2: ThmId;
+  // ok_assert: ThmId;
   ok_call_func: ThmId;
   ok_call_func_0: ThmId;
   ok_call_proc: ThmId;
   ok_fail: ThmId;
-  // ok_exit: ThmId;
+  ok_exit: ThmId;
 
   // basicElf_ok: ThmId;
   ELF_lit: TermId;
@@ -679,6 +898,28 @@ make_predefs! {
   okProgI: ThmId;
 
   sorry: ThmId; // delete me
+}
+
+impl Predefs {
+  pub(crate) fn collect(&self, env: &crate::Environment, f: impl FnMut(AtomId)) {
+    struct Collect<'a, F> {
+      env: &'a crate::Environment,
+      f: F,
+    }
+    impl<F: FnMut(AtomId)> PredefId<Collect<'_, F>> for AtomId {
+      fn premap(self, r: &mut Collect<'_, F>) -> Self { (r.f)(self); self }
+    }
+    impl<F: FnMut(AtomId)> PredefId<Collect<'_, F>> for SortId {
+      fn premap(self, r: &mut Collect<'_, F>) -> Self { (r.f)(r.env.sorts[self].atom); self }
+    }
+    impl<F: FnMut(AtomId)> PredefId<Collect<'_, F>> for TermId {
+      fn premap(self, r: &mut Collect<'_, F>) -> Self { (r.f)(r.env.terms[self].atom); self }
+    }
+    impl<F: FnMut(AtomId)> PredefId<Collect<'_, F>> for ThmId {
+      fn premap(self, r: &mut Collect<'_, F>) -> Self { (r.f)(r.env.thms[self].atom); self }
+    }
+    self.premap(&mut Collect { env, f });
+  }
 }
 
 pub(crate) enum Rex {

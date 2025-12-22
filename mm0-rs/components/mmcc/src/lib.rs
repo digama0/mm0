@@ -287,7 +287,7 @@ impl<C: Config> Compiler<C> {
     let (mut init, globals) = std::mem::take(&mut self.init).finish(&mir, self.main.take());
     init.optimize(&[]);
     let allocs = init.storage(&names);
-    LinkedCode::link(&names, mir, init, &allocs, &globals)
+    LinkedCode::link(names, mir, init, &allocs, &globals)
   }
 }
 

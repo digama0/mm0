@@ -1,7 +1,7 @@
 import "compiler-new.mm1";
 
 do {
-  (def mmc-compiler (ref! (mmc-init)))
+  (def mmc-compiler (ref! (mmc-init mmc-th-map)))
   --| Reset the MMC compiler state (the program to be compiled).
   (def mmc-reset
     (def c mmc-compiler)
