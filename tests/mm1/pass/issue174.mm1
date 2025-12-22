@@ -1,0 +1,15 @@
+provable sort wff;
+term im (p q: wff): wff; infixr im: $->$ prec 25;
+do {
+  (def assert @ match-fn [#t] [_ (error "assert failed")])
+  (match $ ph -> ps $
+    [$ ,a -> ,a $ (error "fail")]
+    [$ ,a -> ,b $ (assert {a == 'ph}) (assert {b == 'ps})])
+  (match $ ph -> ps -> ch -> th $
+    [$ ,a -> ,a $ (error "fail")]
+    [_])
+  (match $ ph -> ps -> ph $
+    [$ ,x -> ,y -> ,y $ (refine goal 'idd) (error "fail")]
+    [$ ,x -> ,y -> ,x $ (assert {x == 'ph}) (assert {y == 'ps})]
+    [_ (error "fail")])
+};

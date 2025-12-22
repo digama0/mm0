@@ -1718,6 +1718,7 @@ impl<'a> Evaluator<'a> {
         Ir::Dup => { self.stack.push(e.clone().into()); self.stack.push(e.into()); true }
         Ir::PatternResult(b) => b,
         Ir::PatternAtom(i) => { vars[i] = e; true },
+        Ir::PatternEqAtom(i) => vars[i] == e,
         Ir::PatternQuoteAtom(a) => e.unwrapped(|e|
           if let LispKind::Atom(a2) = *e {a == a2} else {false}),
         Ir::PatternString(ref s) => e.unwrapped(|e|
@@ -2107,7 +2108,8 @@ impl<'a> Evaluator<'a> {
           Ir::OnDecls => self.on_decls_resume()?,
 
           // Listing the instructions explicitly so that we get missing match arm errors
-          Ir::PatternResult(_) | Ir::PatternAtom(_) | Ir::PatternQuoteAtom(_) |
+          Ir::PatternResult(_) |
+          Ir::PatternAtom(_) | Ir::PatternEqAtom(_) | Ir::PatternQuoteAtom(_) |
           Ir::PatternString(_) | Ir::PatternBool(_) | Ir::PatternUndef |
           Ir::PatternNumber(_) | Ir::PatternMVar(_) | Ir::PatternGoal |
           Ir::PatternDottedList(_) | Ir::PatternList(_, _) | Ir::PatternTry(_, _) |

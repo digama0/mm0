@@ -157,6 +157,9 @@ pub enum Ir {
   /// The number here is the index of the variable that will be bound.
   /// * `[e] -> []` and store `x_i := e` to the pattern context
   PatternAtom(usize),
+  /// The `x` pattern, when `x` is already bound. Binds nothing.
+  /// * `[e] -> []` if `x_i = e`, or throw.
+  PatternEqAtom(usize),
   /// The `'foo` pattern. Matches the literal atom `foo`, binds nothing.
   /// * `[e] -> []` and throw unless `e = 'foo`
   PatternQuoteAtom(AtomId),
@@ -280,6 +283,7 @@ impl Ir {
       Ir::PatternResult(false) => write!(f, "> fail"),
       Ir::PatternResult(true) => write!(f, "> skip"),
       Ir::PatternAtom(n) => write!(f, "> var {n}"),
+      Ir::PatternEqAtom(n) => write!(f, "> eq-var {n}"),
       Ir::PatternQuoteAtom(a) => write!(f, "> '{}", fe.to(&a)),
       Ir::PatternString(ref s) => write!(f, "> \"{s}\""),
       Ir::PatternBool(b) => write!(f, "> #{b}"),
@@ -368,10 +372,6 @@ impl LocalCtx {
     for &x in xs { self.push(x); }
     old
   }
-  fn get_or_push(&mut self, x: AtomId) -> usize {
-    self.get(x).unwrap_or_else(|| self.push(x))
-  }
-
   fn pop(&mut self) {
     let x = self.ctx.pop().expect("context underflow");
     if x != AtomId::UNDER {self.names.get_mut(&x).expect("missing name").pop();}
@@ -976,7 +976,10 @@ impl LispParser<'_> {
           self.code.push(Ir::PatternResult(true))
         } else {
           self.spans.insert(e.span, ObjectKind::LispVar(true, false, x));
-          self.code.push(Ir::PatternAtom(ctx.get_or_push(x)))
+          match ctx.get(x) {
+            Some(n) => self.code.push(Ir::PatternEqAtom(n)),
+            None => self.code.push(Ir::PatternAtom(ctx.push(x))),
+          }
         }
       }
       SExprKind::DottedList(es, e) => {
