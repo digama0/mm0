@@ -1,7 +1,6 @@
 module MM0.HOL.ToLisp where
 
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, WithComment(..))
 import MM0.HOL.Types
 
 class ToLisp a where

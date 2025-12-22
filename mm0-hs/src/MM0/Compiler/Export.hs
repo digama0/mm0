@@ -1,14 +1,16 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE DeriveGeneric, DeriveTraversable, TypeFamilies #-}
+{-# LANGUAGE DeriveGeneric, DeriveTraversable, TypeFamilies, TypeOperators #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant <$>" #-}
 module MM0.Compiler.Export (export, exportK, exportKP) where
 
 import GHC.Generics (Generic)
 import Control.Applicative
+import Control.Monad (unless, forM, zipWithM, liftM2, liftM3)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.RWS.Strict
+import Data.Semigroup (Endo(..))
 import Data.Bits
 import Data.Default
 import Data.Foldable
@@ -77,7 +79,7 @@ data ProofF a =
   | PLetF VarName a a
 
   | ProofF [(Maybe VarName, a)] Bool [(VarName, Sort)] a
-  deriving (Generic, Functor, Foldable, Traversable, Show)
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq)
 instance Hashable a => Hashable (ProofF a) where
 
 instance MuRef SExpr where
