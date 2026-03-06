@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "^1.4.0",
-    "copy-webpack-plugin": "^9.0.0",
+    "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^5.2.6",
     "file-loader": "^6.2.0",
     "raw-loader": "^4.0.2",
