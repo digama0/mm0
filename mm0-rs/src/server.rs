@@ -1827,8 +1827,8 @@ impl Server {
           Ok(Message::Response(resp)) => {
             if resp.id == get_config_id {
               if let Some(val) = resp.result {
-                let [config]: [ServerOptions; 1] = from_value(val)?;
-                *self.options.ulock() = config;
+                let [config]: [Option<ServerOptions>; 1] = from_value(val)?;
+                *self.options.ulock() = config.unwrap_or_default();
               }
             } else {
               let mut caps = caps.ulock();
