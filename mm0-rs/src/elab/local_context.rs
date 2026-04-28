@@ -551,12 +551,14 @@ impl BuildArgs {
               }
             }
           }
+          let bound_mask = argbv.iter().fold(0, |a, &b| a | b);
           let deps = tdef.ret.1;
           let mut i = 1;
           for arg in argbv {
             if deps & i != 0 { out |= arg }
             i *= 2;
           }
+          out &= !bound_mask;
           out
         } else {unreachable!()},
       _ => unreachable!()
