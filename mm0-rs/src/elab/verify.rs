@@ -425,6 +425,8 @@ impl Environment {
             if td.ret.1 & (1 << i) != 0 { accum |= dep }
           }
         }
+        let bound_mask = deps.iter().fold(0, |a, &b| a | b);
+        accum &= !bound_mask;
         (td.ret.0, false, accum)
       }
     })
