@@ -492,7 +492,8 @@ impl Vfs {
     let mut g = self.0.ulock();
     if let Entry::Occupied(e) = g.entry(path.clone()) {
       if e.get().downstream.ulock().is_empty() {
-        send_diagnostics(path.url().clone(), None, vec![])?;
+        // Diagnostics should be persistent even when the file is closed.
+        // send_diagnostics(path.url().clone(), None, vec![])?;
         e.remove();
       } else if e.get().text.ulock().0.take().is_some() {
         let file = e.get().clone();
