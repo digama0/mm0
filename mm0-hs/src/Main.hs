@@ -6,7 +6,7 @@ import MM0.Kernel.Driver
 import MM0.FromMM
 import MM0.HOL.ToHolIO
 import MM0.Compiler
-import MM0.Server
+-- import MM0.Server
 
 main :: IO ()
 main = getArgs >>= \case
@@ -18,7 +18,7 @@ main = getArgs >>= \case
   "to-lisp" : rest -> toLispIO rest
   "to-othy" : rest -> toOpenTheory rest
   "to-lean" : rest -> toLean rest
-  "server" : rest -> server rest
+  -- "server" : rest -> server rest
   "compile" : rest -> compile rest
   _ -> die $ "incorrect args; use\n" ++
     "  mm0-hs verify MM0-FILE MMU-FILE\n" ++

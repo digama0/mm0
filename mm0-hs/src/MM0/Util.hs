@@ -1,6 +1,6 @@
 module MM0.Util (module MM0.Util, module Debug.Trace, module GHC.Stack, (<&>)) where
 
-import Control.Applicative
+import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Word (Word8)

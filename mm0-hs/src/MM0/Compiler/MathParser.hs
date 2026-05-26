@@ -1,5 +1,6 @@
 module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 
+import Control.Monad.Trans.Class
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
@@ -7,7 +8,7 @@ import Data.Maybe
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
-import Text.Megaparsec hiding (runParser, unPos)
+import Text.Megaparsec hiding (runParser, unPos, setErrorOffset)
 import Text.Megaparsec.Internal (ParsecT(..))
 import MM0.Compiler.AST
 import MM0.Compiler.Env hiding (try)
@@ -38,25 +39,25 @@ unquote = do
   lift $ QUnquote <$> lispVal
 
 token1 :: MathParser (Span T.Text)
-token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
+token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst errs) cok _ _ eerr ->
   let
-    unspace t' o' = State t2 (o'+T.length t1) where
+    unspace t' o' = State t2 (o'+T.length t1) pst errs where
       (t1, t2) = T.span isSpace t'
     go t' i = case T.uncons t' of
       Nothing | i == 0 ->
                 eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
               | otherwise ->
-                cok (Span (o, o+i) (T.take i t)) (State t' (o+i) pst) mempty
+                cok (Span (o, o+i) (T.take i t)) (State t' (o+i) pst errs) mempty
       Just (c, t2) -> case delimVal (pDelims pe) c of
         0 -> go t2 (i+1)
         4 | i == 0 ->
             eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
           | otherwise ->
-            cok (Span (o, o+i) (T.take i t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t2 (o+i+1)) mempty
         d | isRightDelim d && i /= 0 ->
-            cok (Span (o, o+i) (T.take i t)) (unspace t' (o+i) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t' (o+i)) mempty
           | isLeftDelim d ->
-            cok (Span (o, o+i+1) (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i+1) (T.take (i+1) t)) (unspace t2 (o+i+1)) mempty
           | otherwise -> go t2 (i+1)
   in go t 0
 

@@ -1,5 +1,7 @@
 {
 module MM0.FrontEnd.Parser (ParseError(..), parse) where
+
+import Control.Monad
 import MM0.FrontEnd.AST
 import MM0.FrontEnd.Lexer
 import Control.Monad.Except

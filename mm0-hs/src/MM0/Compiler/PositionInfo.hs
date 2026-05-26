@@ -18,7 +18,6 @@ import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import MM0.Compiler.AST
 import MM0.Compiler.Env
-import MM0.Kernel.Environment (VarName)
 
 type Lines = V.Vector Offset
 

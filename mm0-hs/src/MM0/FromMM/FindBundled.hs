@@ -1,5 +1,6 @@
 module MM0.FromMM.FindBundled (findBundled, bundle, reportBundled, Bundles) where
 
+import Control.Monad
 import Control.Monad.RWS.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap as I

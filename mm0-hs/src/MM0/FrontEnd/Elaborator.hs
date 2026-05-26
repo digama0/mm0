@@ -1,5 +1,6 @@
 module MM0.FrontEnd.Elaborator (elabAST) where
 
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State
 import Control.Monad.Except
 import Data.Maybe

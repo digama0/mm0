@@ -1,6 +1,7 @@
 module MM0.HOL.ToLean (writeLean, Axioms(..)) where
 
 import Data.Foldable
+import Control.Monad
 import Data.Maybe
 import System.FilePath
 import System.IO
@@ -10,7 +11,7 @@ import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, Comment)
+import MM0.Kernel.Environment (Comment)
 import MM0.HOL.Types
 import MM0.Util
 

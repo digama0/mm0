@@ -4,7 +4,6 @@ module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, render',
   renderNoBreak, ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc,
   ppStmt, ppBinder, ppPBinder, ppGroupedBinders, ppDecl, ppDeclType) where
 
-import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.State
 import Data.Void
@@ -12,8 +11,8 @@ import Data.List (elemIndex)
 import Data.Maybe
 import Data.Functor
 import Data.Foldable
-import Data.Text.Prettyprint.Doc hiding (lparen, rparen)
-import Data.Text.Prettyprint.Doc.Render.Text
+import Prettyprinter hiding (lparen, rparen)
+import Prettyprinter.Render.Text
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable.Dynamic as VD

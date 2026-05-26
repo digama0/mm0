@@ -59,7 +59,14 @@ dependencies:
 - time
 - transformers
 - unordered-containers
-- haskell-lsp
+- lsp
+- text-rope
+
+ghc-options:
+- -Wall
+# - -Wextra
+# Uncomment the line below to treat all warnings as errors
+# - -Werror
 
 default-extensions:
 - FlexibleContexts

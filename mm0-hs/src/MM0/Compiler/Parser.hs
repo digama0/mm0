@@ -7,7 +7,7 @@ module MM0.Compiler.Parser (parseAST, runParser, PosState(..),
 
 import Prelude hiding (span)
 import Control.Applicative hiding (many, some, (<|>), Const)
-import Control.Monad
+import Control.Monad (liftM3, liftM4, void)
 import Control.Monad.State.Class
 import qualified Control.Monad.Trans.State as ST
 import Data.Void
@@ -20,7 +20,7 @@ import Text.Megaparsec.Char
 import qualified Data.Set as S
 import qualified Data.Vector as V
 import qualified Data.Text as T
-import qualified Text.Builder as TB
+import qualified TextBuilder as TB
 import qualified Text.Megaparsec.Char.Lexer as L
 import MM0.Compiler.AST
 import MM0.Util
@@ -329,7 +329,7 @@ importStmt :: Parser (Maybe (Span Stmt))
 importStmt = mSpan (kw "import" >> commit (Import <$> lexeme (span strLit)))
 
 strLit :: Parser T.Text
-strLit = single '"' *> (TB.run <$> p) where
+strLit = single '"' *> (TB.toText <$> p) where
   p = do
     toks <- TB.text <$>
       takeWhileP (Just "end of string") (\c -> c /= '\\' && c /= '"')

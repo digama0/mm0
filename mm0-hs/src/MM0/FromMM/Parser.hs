@@ -1,6 +1,7 @@
 module MM0.FromMM.Parser (parseMM) where
 
-import Data.List
+import Control.Monad
+import Control.Monad.Trans.Class
 import Data.Char
 import Data.Maybe
 import Data.Default

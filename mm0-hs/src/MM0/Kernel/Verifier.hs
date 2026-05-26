@@ -1,10 +1,10 @@
 module MM0.Kernel.Verifier (verify) where
 import Control.Monad
 
+import Data.Semigroup (Endo(..))
 import Control.Monad.Except
 import Control.Monad.RWS.Strict
 import Data.Word
-import Data.List
 import Data.Bits
 import Data.Char
 import Data.Default
