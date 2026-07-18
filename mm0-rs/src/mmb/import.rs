@@ -6,7 +6,8 @@ use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
 use crate::elab::proof::{IDedup, ProofKind, ProofHash, build};
 use crate::{FileRef, FileSpan, SliceExt};
-use mm0b_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile,
+use crate::{ArcString, Literal, NotaInfo};
+use mm0b_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile, NotaLit,
   ParseError, UnifyIter, ProofIter, exhausted};
 
 
@@ -465,6 +466,57 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       }
     }
     start = it.pos;
+  }
+
+  // Rebuild the dynamic parser, so a dependent can parse math strings using these
+  // notations, then load the global lisp environment from the `Lisp` index table. Paths
+  // in the file are relative to the file's own directory.
+  if let Some(d) = file.delimiters() { env.pe.add_delimiters(d.left(), d.right()) }
+  if let Some(mut notas) = file.notations() {
+    loop {
+      let start = notas.pos(&file);
+      let Some(nota) = notas.next() else { break };
+      let fsp = || FileSpan { file: fref.clone(), span: (start..notas.pos(&file)).into() };
+      let Some(term) = env.terms.get(nota.term) else { continue };
+      let (nargs, ret) = (term.args.len(), term.ret.0);
+      if nota.is_coercion() {
+        // A coercion `c: s1 -> s2` is recoverable from the term: its argument's sort and
+        // its return sort.
+        if let Some(s1) = term.args.first().map(|a| a.1.sort()) {
+          drop(env.add_coe(s1, ret, fsp(), nota.term));
+        }
+        continue
+      }
+      let all: Vec<_> = nota.lits().collect();
+      // `prefixes` are the notations starting with a constant, `infixes` those starting
+      // with a variable; an infix's own token is the constant right after that variable,
+      // and (unlike a prefix's leading token) stays in the literal list.
+      let (tk, lits, prefix) = match *all.first().expect("non-coercion has literals") {
+        NotaLit::Const(tk) => (tk, &all[1..], true),
+        NotaLit::Var { .. } => match all.get(1) {
+          Some(&NotaLit::Const(tk)) => (tk, &all[..], false),
+          _ => continue, // malformed: an infix with no token
+        },
+      };
+      // The associativity is not stored — the literals already say it. The associative
+      // side of an infix carries the notation's own precedence and the other side carries
+      // `prec + 1`, so the trailing variable's precedence decides. A notation ending in a
+      // constant needs none, except that an infix is recorded left-associative.
+      let rassoc = match *all.last().expect("non-coercion has literals") {
+        NotaLit::Var { prec, .. } => Some(prec == nota.prec),
+        NotaLit::Const(_) if !prefix => Some(false),
+        // A nullary prefix has no variable to read it off, and is right-associative.
+        NotaLit::Const(_) => all.iter().all(|l| matches!(l, NotaLit::Const(_))).then_some(true),
+      };
+      let tk: ArcString = tk.as_bytes().into();
+      let lits = lits.iter().map(|lit| match *lit {
+        NotaLit::Const(s) => Literal::Const(s.as_bytes().into()),
+        NotaLit::Var { idx, prec } => Literal::Var(idx.into(), prec),
+      }).collect();
+      let info = NotaInfo { span: fsp(), term: nota.term, nargs, rassoc, lits };
+      drop(env.pe.add_const(tk.clone(), info.span.clone(), nota.prec));
+      drop(if prefix { env.pe.add_prefix(tk, info) } else { env.pe.add_infix(tk, info) });
+    }
   }
   Ok(())
 }

@@ -399,6 +399,13 @@ pub struct NotaIter<'a> {
   overflow: &'a [u8],
 }
 
+impl<'a> NotaIter<'a> {
+  /// Get the current position in the file buffer.
+  pub fn pos<X>(&self, f: &MmbFile<'a, X>) -> usize {
+    self.notas.as_ptr().addr() - f.buf.as_ptr().addr()
+  }
+}
+
 impl<'a> Iterator for NotaIter<'a> {
   type Item = NotaRef<'a>;
   fn next(&mut self) -> Option<NotaRef<'a>> {
