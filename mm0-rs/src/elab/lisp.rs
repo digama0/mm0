@@ -1482,6 +1482,22 @@ macro_rules! def_lisp_proc {
       /// so we have to provide the remap function via an indirection here.
       /// The implementation should just be `Box::new(self.remap(r))`.
       fn box_remap(&self, r: &mut Remapper) -> Box<dyn LispProc>;
+
+      /// The four magic bytes identifying this object's encoding, written ahead of its
+      /// blob in the `Lisp` mmb index table's `Dyn` procedure (see `mm0-rs/mmb-lisp.md`).
+      ///
+      /// All `Dyn`s share one `CustomProc` kind, so this magic is what the reader
+      /// dispatches on to pick the constructor that rebuilds the object. It cannot be a
+      /// an associated const, because it would cause the trait not to be `dyn`-safe.
+      fn mmb_kind(&self) -> [u8; 4];
+
+      /// Encode this object's state, as the blob following its
+      /// [`mmb_kind`](Self::mmb_kind). `base` is the output file's directory, which any
+      /// paths inside are written relative to, so that a built tree stays movable.
+      ///
+      /// Every implementor must be able to write itself: the table has no way to skip a
+      /// global holding one that cannot.
+      fn mmb_serialize(&self, base: &std::path::Path) -> Vec<u8>;
     }
   }
 }

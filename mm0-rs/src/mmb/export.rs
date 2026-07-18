@@ -826,12 +826,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       // The `Lisp` table: the serialized global lisp environment (see
       // `mm0-rs/mmb-lisp.md`), a self-contained, unaligned value stream.
       let p_lisp = self.pos;
-      // Informational, not a warning: an unserializable global is a gap in the exporter
-      // (a `Dyn` procedure, see `serialize`), not a defect in the source, and there is
-      // nothing the author can do about it — so it must not fail a `-W` build, which
-      // every file reaching the MMC compiler object otherwise would.
-      let lisp = crate::mmb::lisp::export::serialize(self.env, &base,
-        |msg| (*self.report)(ErrorLevel::Info, msg));
+      let lisp = crate::mmb::lisp::export::serialize(self.env, &base);
       self.write_all(&lisp)?;
 
       // The `Deps` table (only under `--cache`): a `u64` count then that many

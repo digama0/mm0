@@ -161,6 +161,17 @@ impl Compiler {
     }
   }
 
+  /// Rebuild a compiler from the blob [`mmb_serialize`](LispProc::mmb_serialize) wrote,
+  /// or `None` if it is not one. `base` is the `.mmb`'s directory, which the spans inside
+  /// are relative to.
+  pub fn from_mmb(
+    env: &mut crate::Environment, buf: &[u8], base: &std::path::Path
+  ) -> Option<Self> {
+    let inner = mmcc::Compiler::decode_state(Config, buf, base).ok()?;
+    let inner = Rc::new(CompilerInner { inner, code: None });
+    Some(Self { inner, predef: proof::Predefs::new(env) })
+  }
+
   /// Call the function `f` on every [`AtomId`] in the [`proof::Predefs`].
   pub fn collect_predefs(&self, env: &crate::Environment, f: impl FnMut(AtomId)) {
     self.predef.collect(env, f)
@@ -249,4 +260,10 @@ impl LispProc for Compiler {
   }
 
   fn box_remap(&self, r: &mut Remapper) -> Box<dyn LispProc> { Box::new(self.remap(r)) }
+
+  fn mmb_kind(&self) -> [u8; 4] { mmcc::encode::MAGIC }
+
+  fn mmb_serialize(&self, base: &std::path::Path) -> Vec<u8> {
+    self.inner.inner.encode_state(base)
+  }
 }

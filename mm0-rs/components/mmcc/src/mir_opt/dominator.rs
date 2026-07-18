@@ -4,7 +4,7 @@
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
 
 /// The computed dominator tree information.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct DominatorTree {
   idom: BlockVec<OptBlockId>,

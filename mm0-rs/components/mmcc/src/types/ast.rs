@@ -817,7 +817,7 @@ pub struct Field {
 }
 
 /// A procedure kind, which defines the different kinds of function-like declarations.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum ProcKind {
   /// A (pure) function, which generates a logic level function as well as code. (Body required.)
   Func,

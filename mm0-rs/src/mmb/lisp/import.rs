@@ -9,7 +9,7 @@
 //! so on) is read in that one loop. Values and code therefore nest to any depth on the
 //! heap-allocated stack, and no input, however deep, can overflow the machine stack.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -20,7 +20,7 @@ use num::{BigInt, FromPrimitive};
 use crate::elab::environment::{DeclKey, Environment, LispData, StmtTrace};
 use crate::elab::lisp::parser::{Ir, MVarPattern};
 use crate::elab::lisp::{
-  BuiltinProc, InferTarget, LispKind, LispVal, Proc, ProcPos, ProcSpec, Syntax};
+  BuiltinProc, InferTarget, LispKind, LispProc, LispVal, Proc, ProcPos, ProcSpec, Syntax};
 use crate::DocComment;
 use mm0_util::{ArcString, AtomId, FileRef, FileSpan, Modifiers, Span};
 use mm0b_parser::{parse_cmd, BasicMmbFile, ParseError};
@@ -361,6 +361,7 @@ impl<'a> Reader<'a> {
         custom::REFINE_CALLBACK => RVal::Val(LispVal::proc(Proc::RefineCallback)),
         custom::MERGE_MAP => { frames.push(Frame::MergeMapProc); return Ok(None) }
         custom::PROOF_THUNK => { frames.push(Frame::ProofThunkProc); return Ok(None) }
+        custom::DYN => RVal::Val(LispVal::proc(Proc::Dyn(RefCell::new(self.read_dyn()?)))),
         _ => return Err(self.err("bad CustomProc kind")),
       }
       op::CODE => {
@@ -635,6 +636,32 @@ impl<'a> Reader<'a> {
   /// Narrow a `uleb` jump target to a `usize` index.
   fn jump(&self, x: u64) -> Result<usize, ParseError> {
     usize::try_from(x).map_err(|_| self.err("jump target overflow"))
+  }
+
+  /// Read a `Dyn` procedure: four magic bytes, then a length-prefixed blob, handed to the
+  /// constructor the magic names.
+  ///
+  /// This is the counterpart of [`LispProc::mmb_serialize`], and the reason the magic is
+  /// dispatched on here rather than by a trait method: `Decode` is not object-safe, and
+  /// there is no `Self` yet to call a method on — only a named constructor can turn bytes
+  /// into the right object. Each implementor's magic gets an arm below.
+  ///
+  /// [`LispProc::mmb_serialize`]: crate::elab::lisp::LispProc::mmb_serialize
+  fn read_dyn(&mut self) -> Result<Box<dyn LispProc>, ParseError> {
+    let kind = *<&[u8; 4]>::try_from(self.bytes(4)?).expect("impossible");
+    let len = self.uleb()?;
+    let len = usize::try_from(len).map_err(|_| self.err("blob longer than the stream"))?;
+    // Read regardless: the blob's length is part of the stream whether or not any
+    // implementor is compiled in — but with none, nothing below uses it.
+    #[allow(unused_variables)]
+    let blob = self.bytes(len)?;
+    match kind {
+      #[cfg(feature = "mmc")]
+      mmcc::encode::MAGIC => crate::mmc::Compiler::from_mmb(self.env, blob, self.base)
+        .map(|c| Box::new(c) as Box<dyn LispProc>)
+        .ok_or_else(|| self.err("malformed MMC compiler state")),
+      _ => Err(self.err("bad CustomProc kind")),
+    }
   }
 
   /// Read a `builtin` byte into a [`BuiltinProc`].
@@ -935,8 +962,7 @@ mod test {
     put(&mut env, b"dead", LispVal::weak_ref(&gone));
     drop(gone);
 
-    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""),
-      |m| panic!("unexpected: {m}"));
+    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""));
     let mut env = Environment::new();
     deserialize_stream(&mut env, &bytes, std::path::Path::new("")).expect("read");
 
@@ -979,7 +1005,7 @@ mod test {
       LispVal::number(big.clone()), LispVal::number(bigneg.clone())];
     put(&mut env, b"gn", LispVal::list(bignums()));
 
-    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""), |m| panic!("unexpected: {m}"));
+    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""));
 
     let mut env = Environment::new();
     deserialize_stream(&mut env, &bytes, std::path::Path::new("")).expect("read");
@@ -1043,7 +1069,7 @@ mod test {
     put(&mut env, b"f", named.clone());
     put(&mut env, b"g", LispVal::list(vec![named, unnamed]));
 
-    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""), |m| panic!("unexpected: {m}"));
+    let bytes = serialize(&FrozenEnv::new(env), std::path::Path::new(""));
 
     let mut env = Environment::new();
     deserialize_stream(&mut env, &bytes, std::path::Path::new("")).expect("read");
@@ -1059,7 +1085,7 @@ mod test {
     assert_eq!(code.len(), 11);
 
     // A full structural check: re-export must reproduce the original bytes.
-    let bytes2 = serialize(&FrozenEnv::new(env), std::path::Path::new(""), |m| panic!("unexpected: {m}"));
+    let bytes2 = serialize(&FrozenEnv::new(env), std::path::Path::new(""));
     assert_eq!(bytes, bytes2);
   }
 

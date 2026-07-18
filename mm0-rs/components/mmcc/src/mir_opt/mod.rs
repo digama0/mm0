@@ -15,7 +15,7 @@ pub(crate) mod legalize;
 pub(crate) mod storage;
 
 /// A space-optimized `Option<BlockId>`.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub struct OptBlockId(BlockId);
 #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!(OptBlockId);
 

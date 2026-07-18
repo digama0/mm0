@@ -506,8 +506,31 @@ struct FileRefInner {
 /// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
 /// [`rel()`](FileRef::rel) to get the relative path from [`static@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FileRef(Arc<FileRefInner>);
+
+/// One [`FileRef`] per distinct file, for the life of the process, keyed by the relative
+/// path that [`PartialEq`] compares.
+///
+/// Interning is what lets [`ptr_eq`](FileRef::ptr_eq) stand in for `==`: every
+/// constructor goes through it, so two references to one file are one allocation and
+/// pointer identity *is* file identity. It also does the per-file work once — a
+/// `FileRef` precomputes a relative path and, under `server`, a URL.
+///
+/// Entries are never removed. A session touches a bounded set of files, and reclaiming
+/// one would let the next reference to that file allocate a second `FileRef`, quietly
+/// costing the guarantee the table exists to provide.
+static FILES: std::sync::LazyLock<std::sync::Mutex<HashMap<String, FileRef>>> =
+  std::sync::LazyLock::new(Default::default);
+
+/// The placeholder [`FileRef`], for spans with no real source location. Interned like
+/// any other, so every placeholder is the same one.
+static NO_FILE: std::sync::LazyLock<FileRef> =
+  std::sync::LazyLock::new(|| FileRef::intern(String::new(), |_| FileRefInner::default()));
+
+impl Default for FileRef {
+  fn default() -> Self { NO_FILE.clone() }
+}
 
 #[cfg(any(target_arch = "wasm32", feature = "lined_string"))]
 impl From<PathBuf> for FileRef {
@@ -516,15 +539,14 @@ impl From<PathBuf> for FileRef {
     fn from_file_path(path: &std::path::Path) -> Option<lsp_types::Uri> {
       std::str::FromStr::from_str(url::Url::from_file_path(path).ok()?.as_str()).ok()
     }
-    let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner {
+    FileRef::intern(make_relative(&path), move |rel| FileRefInner {
       #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
       uri: from_file_path(&path),
       #[cfg(all(target_arch = "wasm32", feature = "server"))]
       uri: std::str::FromStr::from_str(&format!("wasm:/{rel}")).ok(),
       path,
       rel,
-    }))
+    })
   }
 }
 
@@ -539,12 +561,26 @@ impl From<lsp_types::Uri> for FileRef {
     let path = to_file_path(&uri).expect("bad URI");
     #[cfg(target_arch = "wasm32")]
     let path = PathBuf::from(uri.path().as_str());
-    let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner { path, rel, uri: Some(uri) }))
+    // If the file already has a `FileRef`, that one's URL is kept rather than this
+    // client-supplied one: they name the same file, and identity is what matters here.
+    FileRef::intern(make_relative(&path), move |rel| FileRefInner { path, rel, uri: Some(uri) })
   }
 }
 
 impl FileRef {
+  /// The interned `FileRef` for the file whose relative path is `rel`, building it with
+  /// `mk` if this is the first reference to that file. Every constructor goes through
+  /// here; see [`static@FILES`].
+  fn intern(rel: String, mk: impl FnOnce(String) -> FileRefInner) -> FileRef {
+    let mut files = FILES.lock().expect("file table poisoned");
+    if let Some(file) = files.get(&rel) { return file.clone() }
+    // `mk` runs under the lock, which is what keeps one file from being built twice.
+    // It only assembles the record — nothing it does reaches back into this table.
+    let file = FileRef(Arc::new(mk(rel.clone())));
+    files.insert(rel, file.clone());
+    file
+  }
+
   /// Convert this [`FileRef`] to a [`PathBuf`], for use with OS file actions.
   #[must_use]
   pub fn path(&self) -> &PathBuf { &self.0.path }
@@ -654,3 +690,25 @@ pub fn get_memory_usage() -> usize { get_memory_rusage() }
 #[cfg(not(feature = "memory"))]
 #[must_use]
 pub fn get_memory_usage() -> usize { 0 }
+
+#[cfg(all(test, feature = "lined_string"))]
+mod test {
+  use super::FileRef;
+  use std::path::PathBuf;
+
+  /// Two references to one file are one allocation, so pointer identity is file
+  /// identity. Readers rely on this: the mmb `Lisp` table checks that a declaration's
+  /// two spans name the same file with [`FileRef::ptr_eq`], which without interning
+  /// would be false for every pair it is ever handed.
+  #[test]
+  fn filerefs_are_interned() {
+    let a = FileRef::from(PathBuf::from("/tmp/mm0-interning/a.mm1"));
+    let b = FileRef::from(PathBuf::from("/tmp/mm0-interning/a.mm1"));
+    assert!(a.ptr_eq(&b), "the same file gave two allocations");
+    assert!(FileRef::default().ptr_eq(&FileRef::default()), "the placeholder is not shared");
+
+    let c = FileRef::from(PathBuf::from("/tmp/mm0-interning/b.mm1"));
+    assert!(!a.ptr_eq(&c), "distinct files must stay distinct");
+    assert!(a != c && a == b, "`==` and `ptr_eq` must agree");
+  }
+}

@@ -399,7 +399,7 @@ impl PlaceKind<'_> {
 }
 
 /// (Elaborated) unary operations.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Unop {
   /// Computes `-e as iN` from `e as iN`, or `-e` from `e` for `int`.
   Neg(IntTy),
@@ -425,7 +425,7 @@ impl std::fmt::Debug for Unop {
 }
 
 /// (Elaborated) binary operations.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Binop {
   /// Integer addition
   Add(IntTy),

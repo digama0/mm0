@@ -47,7 +47,7 @@ impl AllocId {
 }
 
 /// Metadata regarding a type's layout constraints.
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub struct Meta {
   /// The size of the type in bytes.
   pub size: u64,
@@ -73,7 +73,7 @@ impl Meta {
   }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct Allocation {
   pub(crate) m: Meta,
@@ -88,7 +88,7 @@ impl Allocation {
 }
 
 /// The result of storage analysis.
-#[derive(Debug)]
+#[derive(Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct Allocations {
   allocs: IdxVec<AllocId, Allocation>,

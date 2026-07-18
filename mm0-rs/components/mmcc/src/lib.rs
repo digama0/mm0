@@ -65,6 +65,9 @@
   clippy::use_self
 )]
 
+// So the paths `mmcc_derive` emits resolve inside this crate too.
+extern crate self as mmcc;
+
 /// Construct an identifier type wrapping a `u32`.
 #[macro_export] macro_rules! mk_id {
   (@ImplDebug $id:ident) => {
@@ -105,6 +108,7 @@
 }
 
 pub mod types;
+pub mod encode;
 pub mod build_ast;
 mod union_find;
 pub mod infer;
@@ -209,6 +213,24 @@ pub struct Compiler<C> {
   main: Option<Symbol>,
   /// If true, some items have not been generated correctly, so compilation cannot proceed.
   has_type_errors: bool,
+}
+
+impl<C> Compiler<C> {
+  /// Encode everything the compiler has accumulated, for the `Dyn` procedure blob.
+  ///
+  /// `config` is not written: it is the embedder's side of the boundary — for `mm0-rs`,
+  /// handles into the elaborator — and is supplied again by whoever decodes. Nor is the
+  /// linked code, which is a cache `finish` rebuilds.
+  #[must_use] pub fn encode_state(&self, base: &std::path::Path) -> Vec<u8> {
+    let Self { config: _, names, mir, init, main, has_type_errors } = self;
+    encode::to_bytes(&(names, mir, init, main, has_type_errors), base)
+  }
+
+  /// Rebuild a compiler from [`encode_state`](Self::encode_state) and a fresh `config`.
+  pub fn decode_state(config: C, buf: &[u8], base: &std::path::Path) -> encode::Result<Self> {
+    let (names, mir, init, main, has_type_errors) = encode::from_bytes(buf, base)?;
+    Ok(Self { config, names, mir, init, main, has_type_errors })
+  }
 }
 
 impl<C: Default> Default for Compiler<C> {
@@ -324,6 +346,26 @@ mod test {
         To bless new test:\n\n    \
         assert_eq_hex(\"{test_name}\", &out, \"{msg}\");\n\n");
     }
+  }
+
+  /// Link `compiler` twice: once as it stands, and once after a round trip through
+  /// [`encode_state`](Compiler::encode_state). Both must produce the same executable.
+  ///
+  /// This is the real test of the encoding. A round-trip test can only check what it
+  /// thinks to compare, but the linker reads everything the compiler accumulated, so if
+  /// any of it were lost or garbled the code would come out different.
+  fn finish_elf(compiler: &mut Compiler<()>) -> Vec<u8> {
+    let base = std::path::PathBuf::from("/build");
+    let bytes = compiler.encode_state(&base);
+    let mut back = Compiler::decode_state((), &bytes, &base).expect("the state did not decode");
+
+    let mut direct = Vec::new();
+    compiler.finish().unwrap().write_elf(&mut direct).unwrap();
+    let mut round = Vec::new();
+    back.finish().unwrap().write_elf(&mut round).unwrap();
+    assert_eq!(hex::encode(&direct), hex::encode(&round),
+      "the compiler state did not survive the encoding");
+    direct
   }
 
   #[test] fn trivial_ir() {
@@ -447,11 +489,7 @@ mod test {
       },
     });
     compiler.add(&main, Default::default(), ()).unwrap();
-    let code = compiler.finish().unwrap();
-    // println!("code = {:#?}", code);
-    // code.write_elf(&mut File::create("two_plus_two").unwrap());
-    let mut out = Vec::new();
-    code.write_elf(&mut out).unwrap();
+    let out = finish_elf(&mut compiler);
     assert_eq_hex("two_plus_two", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\
@@ -571,11 +609,7 @@ mod test {
         },
       }),
       Default::default(), ()).unwrap();
-    let code = compiler.finish().unwrap();
-    // println!("code = {:#?}", code);
-    // code.write_elf(&mut File::create("hello_world").unwrap());
-    let mut out = Vec::new();
-    code.write_elf(&mut out).unwrap();
+    let out = finish_elf(&mut compiler);
     assert_eq_hex("hello_world", &out, "\
       7f45 4c46 0201 0100 0000 0000 0000 0000\
       0200 3e00 0100 0000 7800 4000 0000 0000\

@@ -111,7 +111,7 @@ impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
 pub type TuplePattern = Rc<TuplePatternS>;
 
 /// A strongly typed tuple pattern.
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct TuplePatternS {
   /// A variable referring to the tuple.
@@ -123,7 +123,7 @@ pub struct TuplePatternS {
 }
 
 /// A strongly typed tuple pattern.
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TuplePatternKind {
   /// A variable binding.
@@ -158,7 +158,7 @@ pub type Arg = Rc<ArgS>;
 pub type ArgS = (ArgAttr, ArgKind);
 
 /// An argument declaration for a function.
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ArgKind {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
@@ -187,7 +187,7 @@ impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Mm0Expr<T=Expr> {
   /// The mapping from indexes in the `expr` to internal names.
@@ -227,7 +227,7 @@ impl<'a> ToGlobal<'a> for Lifetime {
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
@@ -367,7 +367,7 @@ impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
 }
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
@@ -393,7 +393,7 @@ impl<'a> ToGlobal<'a> for hir::VariantType<'a> {
 
 /// A variant is a pure expression, together with a
 /// well founded order that decreases on all calls.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Variant(pub Expr, pub VariantType);
 
@@ -409,7 +409,7 @@ impl<'a> ToGlobal<'a> for hir::Variant<'a> {
 pub type Place = Rc<PlaceKind>;
 
 /// A pure expression.
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum PlaceKind {
   /// A variable reference.
@@ -446,7 +446,7 @@ impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression.
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ExprKind {
   /// A `()` literal.

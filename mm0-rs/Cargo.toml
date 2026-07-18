@@ -21,6 +21,7 @@ members = [
   "components/mm0b_parser",
   "components/mm1_parser",
   "components/mmcc",
+  "components/mmcc_derive",
 ]
 
 [features]

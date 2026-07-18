@@ -429,6 +429,42 @@ abstract def d2: wff = $ t -> t $;
     let _ = fs::remove_dir_all(&dir);
   }
 
+  /// The MMC compiler object — a `Dyn` procedure, whose state only `mmcc` can write —
+  /// survives the `.mmb`. `t.mm1` loads the MMC prelude and adds a procedure but never
+  /// links; `u.mm1` imports the `.mmb` and asks the *reconstructed* compiler for the
+  /// executable, comparing it against one built from the same source in this process.
+  /// Byte equality is the check: the linker reads everything the compiler accumulated, so
+  /// anything lost in the encoding would come out as different code.
+  #[cfg(feature = "mmc")]
+  #[test]
+  fn mmc_compiler_through_mmb() {
+    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/compiler.mm1");
+    let examples = examples.to_str().expect("path is not UTF-8");
+    let dir = tmp("mmc-mmb");
+    let (t, t_mmb, u) = (dir.join("t.mm1"), dir.join("t.mmb"), dir.join("u.mm1"));
+    fs::write(&t, format!("\
+import \"{examples}\";
+do {{ (mmc-add '((proc (main)))) }};
+")).expect("write t.mm1");
+    // `->string` links, which consumes the compiler's state, so each side needs its own:
+    // the imported one first, then a fresh one built here from the same source.
+    fs::write(&u, "\
+import \"t.mmb\";
+do {
+  (def s1 (mmc->string))
+  (mmc-reset)
+  (mmc-add '((proc (main))))
+  (if {s1 == (mmc->string)} #undef
+    (error \"the MMC compiler object did not survive the .mmb\"))
+};
+").expect("write u.mm1");
+
+    Args { input: t, quiet: true, output: Some(t_mmb), ..<_>::default() }
+      .main().expect("compile t.mm1");
+    Args { input: u, quiet: true, ..<_>::default() }.main().expect("compile u.mm1");
+    let _ = fs::remove_dir_all(&dir);
+  }
+
   /// `read_deps` seeks through a file it did not write, sizing an allocation from a count
   /// stored in it, so every malformed shape must decline rather than panic or allocate
   /// wildly. A `None` here is the safe answer: the caller treats it as "not a cache".

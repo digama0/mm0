@@ -13,7 +13,7 @@ macro_rules! make_prims {
   })* } => {
     $(
       $(#[$attr0])*
-      #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+      #[derive(Debug, PartialEq, Eq, Copy, Clone, mmcc_derive::Encode, mmcc_derive::Decode)]
       pub enum $name { $($(#[$attr])* $x),* }
       #[cfg(feature = "memory")] mm0_deepsize::deep_size_0!($name);
 
@@ -347,7 +347,7 @@ make_prims! {
 }
 
 /// The typechecking status of a typedef.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum TypeTc {
   /// We have determined that this is a type but we have not yet examined the body.
@@ -367,7 +367,7 @@ impl TypeTc {
 }
 
 /// An entity representing a type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub struct TypeTy {
@@ -384,7 +384,7 @@ pub struct TypeTy {
 }
 
 /// The typechecking status of a procedure.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ProcTc {
   /// We have determined that this is a procedure but we have not yet examined the body.
@@ -404,7 +404,7 @@ impl ProcTc {
 }
 
 /// The type of a procedure.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct ProcTy {
   /// The kind of the procedure (`func`, `proc`, `main`)
@@ -428,7 +428,7 @@ pub struct ProcTy {
 }
 
 /// The typechecking status of a global variable.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum GlobalTc {
   /// We know this is a global but have not typechecked the body.
@@ -438,7 +438,7 @@ pub enum GlobalTc {
 }
 
 /// The typechecking status of a constant.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub enum ConstTc {
   /// We know this is a const but have not typechecked the body.
@@ -456,7 +456,7 @@ pub enum ConstTc {
 }
 
 /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub struct Prim {
   /// The primitive type record, if applicable.
   pub ty: Option<PrimType>,
@@ -467,7 +467,7 @@ pub struct Prim {
 
 /// An operator, function, or type. These all live in one namespace so user types and
 // functions cannot name-overlap.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[allow(variant_size_differences)]
 pub enum Entity {

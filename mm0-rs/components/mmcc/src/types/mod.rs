@@ -150,7 +150,7 @@ impl std::fmt::Display for VarId {
 }
 
 /// A spanned expression.
-#[derive(Clone)]
+#[derive(Clone, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Spanned<T> {
   /// The span of the expression
@@ -177,7 +177,8 @@ impl<T> Spanned<T> {
 }
 
 /// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash,
+  mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Size {
   /// 8 bits, or 1 byte. Used for `u8` and `i8`.
   S8,
@@ -239,7 +240,7 @@ impl Size {
 /// These include `N_s` and `Z_s`, representing the signed and unsigned integers
 /// of various bit widths, plus the computationally unrepresentable types of
 /// unbounded natural numbers and unbounded integers.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum IntTy {
   /// The type of signed integers of given bit width, or all integers.
   Int(Size),
@@ -347,7 +348,7 @@ impl PartialOrd for IntTy {
 }
 
 /// (Elaborated) unary operations.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Unop {
   /// Integer negation
   Neg,
@@ -463,7 +464,7 @@ impl BinopType {
 }
 
 /// (Elaborated) binary operations.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Binop {
   /// Integer addition
   Add,

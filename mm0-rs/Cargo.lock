@@ -992,10 +992,21 @@ dependencies = [
  "mm0_deepsize",
  "mm0_deepsize_derive",
  "mm0_util",
+ "mmcc_derive",
  "num",
+ "pathdiff",
  "regalloc2",
  "smallvec",
  "typed-arena",
+]
+
+[[package]]
+name = "mmcc_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
 ]
 
 [[package]]

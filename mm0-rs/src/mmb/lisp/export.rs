@@ -14,7 +14,7 @@
 //! nest arbitrarily deep (a million-element list is a million-deep cons chain), so
 //! recursion would overflow the machine stack.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -435,7 +435,7 @@ impl<'a> Dedup<'a> {
                   let n = self.add(Node::MergeMap(s));
                   self.prev.insert(ptr, n);
                 }
-                Proc::MatchCont(_) | Proc::RefineCallback => {
+                Proc::MatchCont(_) | Proc::RefineCallback | Proc::Dyn(_) => {
                   let n = self.add_direct(Node::Opaque(ptr));
                   self.prev.insert(ptr, n);
                 }
@@ -454,7 +454,6 @@ impl<'a> Dedup<'a> {
                     self.dedup_code(code, *spec, file);
                   }
                 }
-                Proc::Dyn(_) => unreachable!("filtered by `supported`"),
               }
             }
           }
@@ -926,7 +925,7 @@ impl<'a> Emitter<'a> {
       }
       &Node::MergeMap(sub) => {
         if shared { self.cmd(op::SAVE, 0) }
-        self.cmd(op::CUSTOM_PROC, u32::from(custom::MERGE_MAP));
+        self.cmd(op::CUSTOM_PROC, custom::MERGE_MAP.into());
         if shared { stack.push(Emit::Save(i)) }
         stack.push(Emit::Node(sub));
       }
@@ -980,10 +979,10 @@ impl<'a> Emitter<'a> {
           }
           // Safety: `thaw` gives a read-only view.
           match unsafe { f.thaw() } {
-            Proc::MatchCont(_) => self.cmd(op::CUSTOM_PROC, u32::from(custom::MATCH_CONT)),
-            Proc::RefineCallback => self.cmd(op::CUSTOM_PROC, u32::from(custom::REFINE_CALLBACK)),
+            Proc::MatchCont(_) => self.cmd(op::CUSTOM_PROC, custom::MATCH_CONT.into()),
+            Proc::RefineCallback => self.cmd(op::CUSTOM_PROC, custom::REFINE_CALLBACK.into()),
             Proc::ProofThunk(x, _) => {
-              self.cmd(op::CUSTOM_PROC, u32::from(custom::PROOF_THUNK));
+              self.cmd(op::CUSTOM_PROC, custom::PROOF_THUNK.into());
               stack.push(Emit::Node(self.de.atoms[x]));
             }
             Proc::Lambda { pos, env, spec, code } => {
@@ -1008,8 +1007,16 @@ impl<'a> Emitter<'a> {
               }
               self.emit_code(file, *spec, code);
             }
+            Proc::Dyn(c) => {
+              self.cmd(op::CUSTOM_PROC, custom::DYN.into());
+              let proc = c.borrow();
+              self.out.extend_from_slice(&proc.mmb_kind());
+              let blob = proc.mmb_serialize(self.base);
+              self.uleb(blob.len() as u64);
+              self.out.extend_from_slice(&blob);
+            }
             // `MergeMap` is a `Node::MergeMap`, `Builtin` a `Node::Builtin`.
-            Proc::MergeMap(_) | Proc::Builtin(_) | Proc::Dyn(_) =>
+            Proc::MergeMap(_) | Proc::Builtin(_) =>
               unreachable!("not an opaque procedure"),
           }
         }
@@ -1034,28 +1041,11 @@ impl<'a> Emitter<'a> {
   }
 }
 
-/// The name of the first global the exporter cannot encode, if any.
-///
-/// [`serialize`] omits such globals with a warning, which is fine for a debugging index
-/// but not for a build cache: a dependent loading the file would silently be missing
-/// definitions. `--cache` checks this first and declines to build the file at all.
-#[must_use]
-pub fn first_unsupported(env: &FrozenEnv) -> Option<ArcString> {
-  for (_, adata) in env.data().enum_iter() {
-    if let Some(data) = adata.lisp() {
-      if !supported(data) { return Some(adata.name().clone()) }
-    }
-  }
-  None
-}
-
 /// Serialize an environment's global lisp definitions to a value stream.
 ///
-/// Span file paths are written relative to `base`, the output file's directory. Globals
-/// whose value the exporter cannot yet encode (containing a `Dyn` procedure) are skipped
-/// and reported via `report` — see [`first_unsupported`].
+/// Span file paths are written relative to `base`, the output file's directory.
 #[must_use]
-pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> Vec<u8> {
+pub fn serialize(env: &FrozenEnv, base: &Path) -> Vec<u8> {
   let mut de = Dedup::new(env);
   let mut entries = Vec::new();
 
@@ -1081,10 +1071,6 @@ pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> 
       StmtTrace::Global(a) => {
         let adata = &env.data()[a];
         let Some(data) = adata.lisp() else { continue };
-        if !supported(data) {
-          report(&format!("global '{}' cannot yet be serialized and was omitted", adata.name()));
-          continue
-        }
         let name = de.dedup_atom(a);
         let value = de.dedup_value(data);
         #[allow(clippy::cast_possible_truncation)]
@@ -1168,66 +1154,4 @@ pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> 
   }
   em.cmd(op::END, 0);
   em.out
-}
-
-/// A work item for [`supported`]: a value to check, or a lambda body to scan for
-/// embedded values.
-enum Chk<'a> {
-  Val(&'a FrozenLispKind),
-  Code(&'a Arc<[Ir]>),
-}
-
-/// Whether the exporter can currently encode `root` (and everything it reaches).
-/// Only `Dyn` procedures are unsupported. Iterative, so a deep value cannot
-/// overflow the stack.
-fn supported(root: &FrozenLispKind) -> bool {
-  let mut stack = vec![Chk::Val(root)];
-  // Values (and lambda bodies) form cycles through `ref!` cells and captured
-  // environments, so memoize by pointer or this traversal would not terminate.
-  let mut seen_val: HashSet<*const FrozenLispKind> = HashSet::new();
-  let mut seen_code: HashSet<*const [Ir]> = HashSet::new();
-  while let Some(item) = stack.pop() {
-    match item {
-      Chk::Val(k) if !seen_val.insert(std::ptr::from_ref(k)) => {}
-      Chk::Code(code) if !seen_code.insert(Arc::as_ptr(code)) => {}
-      Chk::Val(k) => match k {
-        FrozenLispKind::Undef
-        | FrozenLispKind::Bool(_)
-        | FrozenLispKind::Number(_)
-        | FrozenLispKind::String(_)
-        | FrozenLispKind::Atom(_)
-        | FrozenLispKind::Syntax(_)
-        | FrozenLispKind::MVar(..) => {}
-        FrozenLispKind::List(es) => stack.extend(es.iter().map(|e| Chk::Val(e))),
-        FrozenLispKind::DottedList(es, r) => {
-          stack.extend(es.iter().map(|e| Chk::Val(e)));
-          stack.push(Chk::Val(r));
-        }
-        FrozenLispKind::AtomMap(m) => stack.extend(m.values().map(|v| Chk::Val(v))),
-        FrozenLispKind::Annot(_, v) | FrozenLispKind::Goal(v) => stack.push(Chk::Val(v)),
-        FrozenLispKind::Ref(m) => if let Some(t) = m.get() { stack.push(Chk::Val(t)) },
-        // Safety: `thaw` gives a read-only view; `freeze` is a read-only cast.
-        FrozenLispKind::Proc(f) => match unsafe { f.thaw() } {
-          Proc::Dyn(_) => return false,
-          Proc::Lambda { env, code, .. } => {
-            for v in &**env {
-              // Safety: `freeze` is a read-only cast.
-              stack.push(Chk::Val(unsafe { v.freeze() }));
-            }
-            stack.push(Chk::Code(code));
-          }
-          _ => {}
-        },
-      },
-      Chk::Code(code) => for i in code.iter() {
-        match i {
-          // Safety: `freeze` is a read-only cast.
-          Ir::Const(v) => stack.push(Chk::Val(unsafe { v.freeze() })),
-          Ir::Lambda(_, b) => stack.push(Chk::Code(&b.2)),
-          _ => {}
-        }
-      }
-    }
-  }
-  true
 }

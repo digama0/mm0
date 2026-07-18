@@ -473,7 +473,7 @@ impl BlockTreeBuilder {
 }
 
 /// The global initializer, which contains let bindings for every global variable.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct Initializer {
   cfg: Cfg,
@@ -522,7 +522,7 @@ pub(crate) struct BuildMir<'a, 'n> {
 }
 
 /// Indicates that construction diverged. See [`Block`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, mmcc_derive::Encode, mmcc_derive::Decode)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub(crate) struct Diverged;
 

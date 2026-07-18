@@ -467,9 +467,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>, cache: bool)
       let decline = |why: String| {
         if !QUIET.load(Ordering::Relaxed) { log_msg(format!("not caching {path}: {why}")) }
       };
-      if let Some(name) = crate::mmb::lisp::export::first_unsupported(&env) {
-        decline(format!("global '{name}' cannot be serialized"));
-      } else if let Some(deps) = dep_closure(&path, &ast.imports) {
+      if let Some(deps) = dep_closure(&path, &ast.imports) {
         // Every direct dependency's `.mmb` already exists here — the elaboration awaited
         // each one, and each wrote its cache first.
         if let Err(e) = write_cache(&path, file.text.try_ascii().map(|fc| &**fc), &env, deps) {

@@ -173,7 +173,7 @@ mk_id! {
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
 /// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
 /// There is a special lifetime `extern` that represents inputs to the current function.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum Lifetime {
   /// The `extern` lifetime is the inferred lifetime for function arguments such as
   /// `fn f(x: &T)`.
@@ -292,7 +292,7 @@ impl std::fmt::Debug for TuplePatternKind<'_> {
 ///
 /// The [`Ty`] part defines this uniquely, but there is some weak head normalization
 /// required to determine this, so it is easier to have an enum to quickly match against.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, mmcc_derive::Encode, mmcc_derive::Decode)]
 pub enum TupleMatchKind {
   /// A unit pattern match just returns `()`.
   Unit,

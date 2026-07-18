@@ -105,6 +105,7 @@ mod custom {
   pub(super) const REFINE_CALLBACK: u8 = 1;
   pub(super) const MERGE_MAP: u8 = 2;
   pub(super) const PROOF_THUNK: u8 = 3;
+  pub(super) const DYN: u8 = 4;
 }
 
 /// [`infer_target`](crate::elab::lisp::InferTarget) tags: the `u8` after an `MVar`.
