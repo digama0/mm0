@@ -510,7 +510,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     // term header
     self.align_to(8)?; p_terms.commit(self);
     let mut term_header = self.fixup_large(num_terms * 8)?;
-    for (head, t) in term_header.chunks_exact_mut(8).zip(&self.env.terms().0) {
+    for (head, t) in term_header.as_chunks_mut::<8>().0.iter_mut().zip(&self.env.terms().0) {
       let nargs: u16 = t.args.len().try_into().expect("term has more than 65536 args");
       Self::write_term_header(head, nargs, t.ret.0,
         matches!(t.kind, TermKind::Def(_)),
@@ -532,7 +532,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     // theorem header
     self.align_to(8)?; p_thms.commit(self);
     let mut thm_header = self.fixup_large(num_thms * 8)?;
-    for (head, t) in thm_header.chunks_exact_mut(8).zip(&self.env.thms().0) {
+    for (head, t) in thm_header.as_chunks_mut::<8>().0.iter_mut().zip(&self.env.thms().0) {
       let nargs = t.args.len().try_into().expect("theorem has more than 65536 args");
       Self::write_thm_header(head, nargs,
         self.align_to(8)?.try_into().expect("address too large"));

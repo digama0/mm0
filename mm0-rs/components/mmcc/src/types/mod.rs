@@ -341,7 +341,7 @@ impl PartialOrd for IntTy {
       (false, false) => None,
     }
   }
-  fn lt(&self, other: &Self) -> bool { self <= other && self != other }
+  fn lt(&self, other: &Self) -> bool { self < other }
   fn gt(&self, other: &Self) -> bool { other < self }
   fn ge(&self, other: &Self) -> bool { other <= self }
 }

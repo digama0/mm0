@@ -378,7 +378,7 @@ mk_fold! { <'a>
   }
 
   fn before_place, after_place, do_place(self, it, p: &'a mir::Place, cl: Place) {
-    assert!(usize::from(cl.projs) == p.proj.len());
+    assert_eq!(usize::from(cl.projs), p.proj.len());
     for (ty, proj) in &p.proj {
       self.do_proj(ty, proj, it.next_proj_elem(), it);
     }

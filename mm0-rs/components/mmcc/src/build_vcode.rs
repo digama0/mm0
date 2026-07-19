@@ -468,23 +468,17 @@ impl<'a> LowerCtx<'a> {
   fn build_memcpy(&mut self,
     _tysize: u64, sz: Size, dst: RegMem, src: AMode
   ) -> (cl::Copy, Option<VRegRename>) {
-    if sz == Size::Inf {
-      unimplemented!("large copy");
-    } else {
-      self.code.emit_copy(sz, dst, src)
-    }
+    if sz == Size::Inf { unimplemented!("large copy") }
+    self.code.emit_copy(sz, dst, src)
   }
 
   fn build_move(&mut self,
     _tysize: u64, sz: Size, dst: RegMem, o: &Operand
   ) -> Result<(cl::Move, Option<VRegRename>), GhostErr> {
-    if sz == Size::Inf {
-      unimplemented!("large copy");
-    } else {
-      let (src, cl1) = self.get_operand(o)?;
-      let (cl2, r) = self.code.emit_copy(sz, dst, src);
-      Ok((cl::Move::Small(cl1, cl2), r))
-    }
+    if sz == Size::Inf { unimplemented!("large copy") }
+    let (src, cl1) = self.get_operand(o)?;
+    let (cl2, r) = self.code.emit_copy(sz, dst, src);
+    Ok((cl::Move::Small(cl1, cl2), r))
   }
 
   fn build_rvalue(&mut self,
@@ -577,11 +571,8 @@ impl<'a> LowerCtx<'a> {
       &RValue::Eq(ref ty, invert, ref o1, ref o2) => {
         let meta = ty.meta(self.names).expect("size of type not a compile time constant");
         let sz = Size::from_u64(meta.size);
-        if meta.on_stack {
-          unimplemented!("memcmp")
-        } else {
-          self.build_cmp(sz, dst, if invert { CC::NZ } else { CC::Z }, o1, o2)?
-        }
+        if meta.on_stack { unimplemented!("memcmp") }
+        self.build_cmp(sz, dst, if invert { CC::NZ } else { CC::Z }, o1, o2)?
       }
       RValue::Pun(..) => unreachable!("handled in build()"),
       RValue::Cast(_, o, tyin) =>
@@ -739,7 +730,7 @@ impl<'a> LowerCtx<'a> {
     rets: &[(bool, VarId)],
   ) -> Result<cl::Terminator, GhostErr> {
     let fabi = &self.funcs[f];
-    assert!(fabi.args.len() == args.len());
+    assert_eq!(fabi.args.len(), args.len());
     let outgoing = AMode::spill(SpillId::OUTGOING);
     let mut operands = vec![];
     for (arg, &(r, ref o)) in fabi.args.iter().zip(args) {
@@ -784,7 +775,7 @@ impl<'a> LowerCtx<'a> {
       self.code.trace.lists.push(cl)
     }
     if reach {
-      assert!(fabi.rets.len() == rets.len());
+      assert_eq!(fabi.rets.len(), rets.len());
       let mut boxes = vec![];
       let mut ret_regs = vec![];
       for (arg, &(vr, v)) in fabi.rets.iter().zip(rets) {

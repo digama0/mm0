@@ -33,7 +33,7 @@ macro_rules! mk_from_int {($($num:ident, $f:ident: $ty:ty,)*) => {
     /// Returns the number of `hex` nodes in a representation of the given integer.
     /// `0, 1, ..., 0xf -> 0`, `0x10, ..., 0xff -> 1`, `0x100, ..., 0xfff -> 2`, etc.
     #[inline] pub(super) fn $num(n: $ty) -> u32 {
-      (<$ty>::BITS - n.leading_zeros()).saturating_sub(1) >> 2
+      n.bit_width().saturating_sub(1) >> 2
     }
   )*
   #[allow(clippy::wrong_self_convention, clippy::cast_possible_truncation)]
@@ -322,7 +322,7 @@ impl ProofDedup<'_> {
       return [ek, s, thm!(self, parseUBytes_x00xn[k](): (parseUBytes ek n s))]
     }
     if k <= 1 {
-      debug_assert!(k == 1);
+      debug_assert_eq!(k, 1);
       let ek = app!(self, (dn[0u8]));
       app_match!(self, n => {
         (h2n a0) => {

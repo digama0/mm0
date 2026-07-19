@@ -67,10 +67,10 @@ impl FrozenEnv {
       match ty {
         Type::Bound(s) => {
           bvars.push(a);
-          write!(w, "{})", &self.sort(s).name)
+          write!(w, "{})", self.sort(s).name)
         }
         Type::Reg(s, vs) => {
-          write!(w, "{} ", &self.sort(s).name)?;
+          write!(w, "{} ", self.sort(s).name)?;
           self.write_deps(w, &bvars, vs)?;
           write!(w, ")")
         }
@@ -264,7 +264,7 @@ impl FrozenEnv {
                 if td.vis == Modifiers::LOCAL {"local "} else {""},
                 if matches!(td.kind, TermKind::Term) {"term"} else {"def"}, ad.name())?;
               let bvs = self.write_binders(w, &td.args)?;
-              write!(w, " ({} ", &self.sort(td.ret.0).name)?;
+              write!(w, " ({} ", self.sort(td.ret.0).name)?;
               self.write_deps(w, &bvs, td.ret.1)?;
               write!(w, ")")?;
               if let TermKind::Def(Some(expr)) = &td.kind {

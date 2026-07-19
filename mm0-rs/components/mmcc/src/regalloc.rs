@@ -357,7 +357,7 @@ impl VCode {
       code.apply_edits(&mut edits, &ar, ProgPoint::before(i));
       match *inst {
         Inst::Fallthrough { dst } => {
-          assert!(self.blocks[dst].1 == i.next());
+          assert_eq!(self.blocks[dst].1, i.next());
           code.push(PInst::Fallthrough { dst });
         }
         // Inst::LetStart { size } =>
@@ -453,7 +453,7 @@ impl VCode {
             code.push(PInst::JmpKnown { dst: not_taken, short: false });
           },
         Inst::Assert { cc, dst } => {
-          assert!(self.blocks[dst].1 == i.next());
+          assert_eq!(self.blocks[dst].1, i.next());
           code.push(PInst::Assert { cc, dst });
         }
         Inst::Ud2 => { code.push(PInst::Ud2); }

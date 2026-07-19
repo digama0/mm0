@@ -402,7 +402,7 @@ impl BuildAssemblyProc<'_> {
       // Parse the scale/index bits
       let (osi, h5) = if index.0 == 4 {
         // no index. We assume the compiler also generates no scale in this case
-        assert!(sc.0 == 0);
+        assert_eq!(sc.0, 0);
         let osi = app!(self.thm, (d0));
         (osi, thm!(self.thm, parseSI_n[index.0](): (parseSI {sc.1} {index.1} osi)))
       } else {
@@ -1055,7 +1055,7 @@ impl Stack {
       (Stack::Empty(pos), s) => s,
       (s, Stack::Empty(pos)) => s,
       (Stack::Asm(s, x, y, a, th1), Stack::Asm(t, y2, z, b, th2)) => {
-        assert!(*y == *y2);
+        assert_eq!(*y, *y2);
         let ab = app!(de, (ASM_A a b));
         let st = app!(de, (sadd s t));
         let th = thm!(de, localAssembleA_I(a, b, *de.start, s, t, *x, *y, *z, th1, th2):
@@ -1063,21 +1063,21 @@ impl Stack {
         Stack::Asm(st, x, z, ab, th)
       }
       (Stack::Asm(s, x, z1, a, th1), Stack::Asm0(z, b, th2)) => {
-        assert!(*z1 == *z);
+        assert_eq!(*z1, *z);
         let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_r(a, b, *de.start, s, *x, *z, th1, th2):
           localAssemble[*de.start, s, *x, *z, ab]);
         Stack::Asm(s, x, z, ab, th)
       }
       (Stack::Asm0(x, a, th1), Stack::Asm(s, x2, z, b, th2)) => {
-        assert!(*x == *x2);
+        assert_eq!(*x, *x2);
         let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_l(a, b, *de.start, s, *x, *z, th1, th2):
           localAssemble[*de.start, s, *x, *z, ab]);
         Stack::Asm(s, x, z, ab, th)
       }
       (Stack::Asm0(z1, a, th1), Stack::Asm0(z, b, th2)) => {
-        assert!(*z1 == *z);
+        assert_eq!(*z1, *z);
         let ab = app!(de, (ASM_A a b));
         let th = thm!(de, localAssemble0_A(a, b, *de.start, *z, th1, th2):
           localAssemble0[*de.start, *z, ab]);

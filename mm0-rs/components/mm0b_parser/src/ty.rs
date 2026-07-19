@@ -99,9 +99,8 @@ impl Type {
         }
       }
       unreachable!("Something's wrong with `is_bound`")
-    } else {
-      None
     }
+    None
   }
 
   /// Does this `Type` have dependencies?

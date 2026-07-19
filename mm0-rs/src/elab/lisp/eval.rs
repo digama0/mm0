@@ -1702,7 +1702,7 @@ impl<'a> Evaluator<'a> {
           if ok {
             self.ctx.extend(vars.into_vec());
             if let Some(n) = cont {
-              assert!(self.ctx.len() == n);
+              assert_eq!(self.ctx.len(), n);
               let valid = Rc::new(Cell::new(true));
               self.ctx.push(LispVal::proc(Proc::MatchCont(valid.clone())));
               self.stack.push(Stack::MatchCont(n, tgt, e, valid));
@@ -2025,7 +2025,7 @@ impl<'a> Evaluator<'a> {
           }
           Ir::Undef => self.stack.push(Stack::Undef),
           Ir::Dup => self.stack.push(self.stack.last().expect("underflow").dup()),
-          Ir::AssertScope(n) => assert!(self.ctx.len() == n),
+          Ir::AssertScope(n) => assert_eq!(self.ctx.len(), n),
           Ir::EndScope(n) => self.ctx.truncate(n),
           Ir::Local(i) => self.stack.push(self.ctx[i].clone().into()),
           Ir::Global(sp, a) => self.global_var(sp, a)?,
@@ -2071,7 +2071,7 @@ impl<'a> Evaluator<'a> {
               self.print(&a)))
           }
           Ir::LocalDef(n) => {
-            assert!(self.ctx.len() == n);
+            assert_eq!(self.ctx.len(), n);
             let ret = self.pop_lisp();
             self.ctx.push(ret);
           }

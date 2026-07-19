@@ -517,12 +517,10 @@ impl Args {
       }
     }
     let max_error = if self.warn_as_error { ErrorLevel::Warning } else { ErrorLevel::Error };
+    #[allow(clippy::manual_assert)]
     if max_error as u8 <= MAX_EMITTED_ERROR.load(Ordering::Relaxed) {
-      if cfg!(test) {
-        panic!("errors emitted")
-      } else {
-        std::process::exit(1)
-      }
+      #[cfg(test)] panic!("errors emitted");
+      #[cfg(not(test))] std::process::exit(1);
     }
     Ok(())
   }

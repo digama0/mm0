@@ -2048,7 +2048,7 @@ impl PInst {
 
     fn write_disp(disp: DispLayout, buf: &mut InstSink<'_>, n: u32) {
       match disp {
-        DispLayout::S0 => assert!(n == 0),
+        DispLayout::S0 => assert_eq!(n, 0),
         DispLayout::S8 => buf.push_u8(n as u8),
         DispLayout::S32 => buf.push_u32(n),
       }
@@ -2127,7 +2127,7 @@ impl PInst {
         } else { unreachable!() },
       (OpcodeLayout::BinopImm8(modrm), _) =>
         if let (sz, dst, PRegMemImm::Imm(src), op) = get_binop(self) {
-          assert!(op_size_w(&mut rex, sz) == 1);
+          assert_eq!(op_size_w(&mut rex, sz), 1);
           buf.push_u8(0x83);
           write_opc_modrm(modrm, &mut rex, buf, op, PRegMem::Reg(dst));
           buf.push_u8(src as u8);
@@ -2190,7 +2190,7 @@ impl PInst {
         buf.push_u8(0x58 + encode_reg(dst, &mut rex, REX_B)),
       (OpcodeLayout::Jump(b), &PInst::JmpKnown { short, dst }) => {
         let dst = buf.rip_relative_block(dst);
-        assert!(short != b);
+        assert_ne!(short, b);
         buf.push_u8(0xe9 + (u8::from(short) << 1));
         push_u8_u32(b, buf, dst as u32);
       }
@@ -2206,7 +2206,7 @@ impl PInst {
       }
       (OpcodeLayout::Ret, PInst::Ret) => buf.push_u8(0xc3),
       (OpcodeLayout::Lea(modrm), &PInst::Lea { sz, dst, addr }) => {
-        assert!(op_size_w(&mut rex, sz) == 1);
+        assert_eq!(op_size_w(&mut rex, sz), 1);
         buf.push_u8(0x8d);
         write_modrm(modrm, &mut rex, buf, dst, RegMem::Mem(addr));
       }
@@ -2247,7 +2247,7 @@ impl PInst {
         write_opc_modrm(modrm, &mut rex, buf, 0, dst.into());
       }
       (OpcodeLayout::CMov(modrm), &PInst::CMov { sz, cc, dst, src }) => {
-        assert!(op_size_w(&mut rex, sz.max(Size::S32)) == 1);
+        assert_eq!(op_size_w(&mut rex, sz.max(Size::S32)), 1);
         buf.push_u8(0x0f);
         buf.push_u8(0x40 + cc as u8);
         write_modrm(modrm, &mut rex, buf, dst, src);
@@ -2258,7 +2258,7 @@ impl PInst {
           PInst::MovsxRmR { ext_mode, dst, src } => (0xbe, ext_mode, dst, src),
           _ => unreachable!()
         };
-        assert!(op_size_w(&mut rex, ext_mode.dst()) == 1);
+        assert_eq!(op_size_w(&mut rex, ext_mode.dst()), 1);
         buf.push_u8(0x0f);
         buf.push_u8(opc + u8::from(ext_mode.src() == Size::S16));
         write_modrm(modrm, &mut rex, buf, dst, src);
@@ -2278,11 +2278,11 @@ impl PInst {
       _ => unreachable!(),
     }
 
-    debug_assert!(usize::from(layout.len()) == buf.len());
+    debug_assert_eq!(usize::from(layout.len()), buf.len());
     if layout.rex {
       buf.set_rex(0x40 + rex);
     } else {
-      assert!(rex == 0);
+      assert_eq!(rex, 0);
     }
   }
 }

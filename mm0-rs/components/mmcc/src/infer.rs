@@ -196,10 +196,9 @@ impl<'a> Context<'a> {
   /// containing that variable's data.
   #[must_use] fn find(mut self, v: VarId) -> Option<&'a ContextNext<'a>> {
     loop {
-      if let Some(c) = self.0 {
-        if c.var == v { return self.0 }
-        self = c.parent
-      } else { return None }
+      let c = self.0?;
+      if c.var == v { return self.0 }
+      self = c.parent
     }
   }
 }
@@ -1930,7 +1929,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
             assert_eq!(tys.len(), u32_as_usize(tyargs));
             let mut gctx = FromGlobalCtx::new(self, tys);
             let args = args.from_global(&mut gctx);
-            debug_assert!(es.len() ==
+            debug_assert_eq!(es.len(),
               args.iter().filter(|&a| matches!(a.k.1, ArgKind::Lam(_))).count());
             let val = val.from_global(&mut gctx);
             let mut subst = Subst::default();
@@ -4093,8 +4092,7 @@ impl<'a, 'n> InferCtx<'a, 'n> {
     sp: &'a FileSpan, es: &'a [ast::Expr], tgt: &'b [A],
     f: impl Fn(&'b A) -> ArgS<'a>
   ) -> (Vec<hir::Expr<'a>>, Vec<Result<Expr<'a>, &'a FileSpan>>, Subst<'a>) {
-    debug_assert!(es.len() ==
-      tgt.iter().filter(|&a| matches!(f(a).1, ArgKind::Lam(_))).count());
+    debug_assert_eq!(es.len(), tgt.iter().filter(|&a| matches!(f(a).1, ArgKind::Lam(_))).count());
     let mut es_out = Vec::with_capacity(es.len());
     let mut pes = vec![];
     let mut es_it = es.iter();

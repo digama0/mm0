@@ -163,6 +163,7 @@ impl<T> Spans<T> {
   /// (This is not as precise a lookup as we would like, but the indexing doesn't
   /// support getting all spans that overlap the target range,
   /// so we work around this in the caller instead.)
+  #[allow(clippy::needless_for_each)]
   pub fn on_range(spans: &[Self], range: Option<Range<usize>>, mut f: impl FnMut(&Self, &(Span, T))) {
     if let Some(range) = range {
       let i = spans.binary_search_by_key(&range.start, |s| s.stmt().start)

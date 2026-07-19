@@ -694,7 +694,7 @@ impl ElfProof<'_> {
   pub fn validate(&self) {
     // basicElf_ok
     assert!(self.p_filesz() <= self.p_memsz());
-    assert!(self.p_filesz() == u64::try_from(self.content().len()).unwrap());
+    assert_eq!(self.p_filesz(), u64::try_from(self.content().len()).unwrap());
     assert!(!self.content().is_empty());
 
     // assemble
@@ -709,7 +709,7 @@ impl ElfProof<'_> {
         AssemblyItem::Proc(code) => {
           match code.id {
             None => { assert!(init.is_none()); init = Some(code) }
-            Some(p) => assert!(procs.push(code) == p),
+            Some(p) => assert_eq!(procs.push(code), p),
           }
           assert!(!code.trailing_padding().len() < 16)
         }
@@ -717,7 +717,7 @@ impl ElfProof<'_> {
           assert!(consts.insert(data.start, data.content).is_none()),
       }
     }
-    assert!(u64::from(pos) == self.p_filesz());
+    assert_eq!(u64::from(pos), self.p_filesz());
     let _init = init.unwrap();
 
     for item in self.proc_proofs() {
@@ -767,7 +767,7 @@ impl BlockProof<'_> {
   fn validate(&self, ctx: &im::HashMap<BlockId, bool>) {
     loop {
       match *self.ctx.cfg[self.id].terminator() {
-        mir::Terminator::Jump(bl, _, ref var) => assert!(ctx[&bl] == var.is_some()),
+        mir::Terminator::Jump(bl, _, ref var) => assert_eq!(ctx[&bl], var.is_some()),
         mir::Terminator::Return(..) |
         mir::Terminator::Unreachable(_) |
         mir::Terminator::Exit(_) |

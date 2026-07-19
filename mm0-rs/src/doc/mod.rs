@@ -61,7 +61,7 @@ impl<'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'_, W> {
       Annot::SortName(sid) => {
         write!(self.w.0, "<a class=\"sortname\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.sorts[sid].atom];
-        disambiguated_anchor(&mut self.w.0, ad, false)?;
+        disambiguated_anchor(self.w.0, ad, false)?;
         write!(self.w.0, "\">")?;
         self.stack.push("a");
       }
@@ -72,7 +72,7 @@ impl<'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'_, W> {
         };
         write!(self.w.0, "<a class=\"{kind}\" href=\"{}index.html#", self.rel)?;
         let ad = &self.env.data[self.env.terms[tid].atom];
-        disambiguated_anchor(&mut self.w.0, ad, false)?;
+        disambiguated_anchor(self.w.0, ad, false)?;
         write!(self.w.0, "\">")?;
         self.stack.push("a");
       }
@@ -662,7 +662,7 @@ impl<W: Write> BuildDoc<'_, W> {
     let mut prev = None;
     let mut open_path = None;
     for s in stmts {
-      let mut file = self.index.as_mut().expect("index file missing");
+      let file = self.index.as_mut().expect("index file missing");
       let fe = FormatEnv {source: self.source, env: &self.env};
       match *s {
         StmtTrace::Global(_) |
@@ -670,11 +670,11 @@ impl<W: Write> BuildDoc<'_, W> {
         StmtTrace::Sort(a) => {
           let ad = &self.env.data[a];
           write!(file, "    <div id=\"")?;
-          disambiguated_anchor(&mut file, ad, true)?;
+          disambiguated_anchor(file, ad, true)?;
           writeln!(file, "\">")?;
           let sid = ad.sort.expect("wf env");
           let sd = &self.env.sorts[sid];
-          render_doc(&mut file, sd.doc.as_ref())?;
+          render_doc(file, sd.doc.as_ref())?;
           writeln!(file, "      <pre>")?;
           let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
           fe.pretty(|pr| pr.sort(sid).render_raw(PP_WIDTH, w))?;
@@ -683,12 +683,12 @@ impl<W: Write> BuildDoc<'_, W> {
         StmtTrace::Decl(a) => {
           let ad = &self.env.data[a];
           write!(file, "    <div id=\"")?;
-          disambiguated_anchor(&mut file, ad, false)?;
+          disambiguated_anchor(file, ad, false)?;
           writeln!(file, "\">")?;
           match ad.decl.expect("wf env") {
             DeclKey::Term(tid) => {
               let td = &self.env.terms[tid];
-              render_doc(&mut file, td.doc.as_ref())?;
+              render_doc(file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.term_and_notations(tid, true).render_raw(PP_WIDTH, w))?;
@@ -696,7 +696,7 @@ impl<W: Write> BuildDoc<'_, W> {
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
-              render_doc(&mut file, td.doc.as_ref())?;
+              render_doc(file, td.doc.as_ref())?;
               write!(file, "      <pre>")?;
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.thm(tid).render_raw(PP_WIDTH, w))?;
