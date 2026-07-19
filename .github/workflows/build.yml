@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: "*"
+    branches: "**"
   pull_request:
     branches: [master]
 
@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache mm0-rs
+      - name: Restore mm0-rs cache
         id: cache-mm0-rs
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: mm0-rs/target/release/mm0-rs
-          key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
+          key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**', 'tests/mm1/**') }}
       - name: Install stable rust
         if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
         uses: dtolnay/rust-toolchain@stable
@@ -39,15 +39,63 @@ jobs:
       - name: Build mm0-rs
         if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
         working-directory: mm0-rs
-        run: cargo build --verbose --release
+        run: cargo build --verbose --release --locked
       - name: Run tests
         if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
         working-directory: mm0-rs
-        run: cargo test --verbose --release
+        run: cargo test --verbose --release --locked --workspace
+      - name: Save mm0-rs cache
+        if: ${{ success() && !steps.cache-mm0-rs.outputs.cache-hit }}
+        uses: actions/cache/save@v4
+        with:
+          path: mm0-rs/target/release/mm0-rs
+          key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**', 'tests/mm1/**') }}
       - uses: actions/upload-artifact@v4
         with:
           name: mm0-rs
           path: mm0-rs/target/release/mm0-rs
+
+  check-mm0-rs:
+    name: Check ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: no default features
+            args: --workspace --no-default-features
+          - name: doc only
+            args: --workspace --no-default-features --features doc
+          - name: server only
+            args: --workspace --no-default-features --features server
+          - name: mmc + memory
+            args: --workspace --no-default-features --features mmc,memory
+          - name: all features
+            args: --workspace --all-features
+          # The configuration m0e builds against
+          - name: wasm32
+            args: --no-default-features --features wasm,server
+            target: wasm32-unknown-unknown
+            rustflags: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Cache check
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mm0-rs/target
+          key: ${{ runner.os }}-cargo-check-${{ matrix.name }}-${{ hashFiles('mm0-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-check-${{ matrix.name }}-
+      - working-directory: mm0-rs
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: cargo check --locked ${{ matrix.args }}
+          ${{ matrix.target && format('--target {0}', matrix.target) }}
 
   clippy-mm0-rs:
     name: Clippy mm0-rs
@@ -75,7 +123,6 @@ jobs:
     name: Examples
     runs-on: ubuntu-latest
     needs: build-mm0-rs
-    if: ${{ always() }}
     steps:
       - uses: actions/checkout@v4
       - run: mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -140,7 +187,6 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     needs: build-mm0-rs
-    if: ${{ always() }}
     steps:
       - uses: actions/checkout@v4
       - run: mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -156,3 +202,24 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - working-directory: tests
         run: ./run-tests.sh
+
+  build-mm0-hs:
+    name: mm0-hs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          enable-stack: true
+          stack-no-global: true
+      - name: Cache stack
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.stack
+            mm0-hs/.stack-work
+          key: ${{ runner.os }}-stack-${{ hashFiles('mm0-hs/stack.yaml.lock', 'mm0-hs/package.yaml') }}
+          restore-keys: ${{ runner.os }}-stack-
+      - name: Build and test mm0-hs
+        working-directory: mm0-hs
+        run: stack test --install-ghc

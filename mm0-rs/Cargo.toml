@@ -12,6 +12,17 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [
+  "components/debug_derive",
+  "components/mm0_deepsize",
+  "components/mm0_deepsize_derive",
+  "components/mm0_util",
+  "components/mm0b_parser",
+  "components/mm1_parser",
+  "components/mmcc",
+]
+
 [features]
 default = ["server", "doc", "mmc"]
 server = [
@@ -77,7 +88,7 @@ webbrowser = { version = "1.0", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
   "console", "Window", "Document", "HtmlElement"] }
-instant = { version = "0.1", features = ["stdweb", "wasm-bindgen"] }
+instant = { version = "0.1", features = ["wasm-bindgen"] }
 
 # For "mmc" feature
 mmcc = { path = "components/mmcc", optional = true }

@@ -517,7 +517,7 @@ impl From<PathBuf> for FileRef {
       #[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
       uri: from_file_path(&path),
       #[cfg(all(target_arch = "wasm32", feature = "server"))]
-      uri: lsp_types::Uri::from_str(&format!("wasm:/{rel}")).ok(),
+      uri: std::str::FromStr::from_str(&format!("wasm:/{rel}")).ok(),
       path,
       rel,
     }))
@@ -527,6 +527,7 @@ impl From<PathBuf> for FileRef {
 #[cfg(feature = "server")]
 impl From<lsp_types::Uri> for FileRef {
   fn from(uri: lsp_types::Uri) -> FileRef {
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_file_path(uri: &lsp_types::Uri) -> Option<PathBuf> {
       url::Url::parse(uri.as_str()).ok()?.to_file_path().ok()
     }

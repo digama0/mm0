@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::PathBuf;
 
-#[repr(align(1))]
+#[repr(align(8))]
 struct AlignFile<T>(T);
 
 #[test]

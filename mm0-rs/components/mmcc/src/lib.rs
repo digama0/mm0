@@ -317,7 +317,7 @@ mod test {
         if i % 2 == 0 { msg += " " }
         write!(msg, "{c:02x}").unwrap();
       }
-      if data.len() % 16 == 0 { msg += "\\\n    " }
+      if data.len().is_multiple_of(16) { msg += "\\\n    " }
       panic!("Binary comparison failed.\n\
         Outputs produced at {test_name}.expected and {test_name}.produced\n\
         To bless new test:\n\n    \
@@ -336,7 +336,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, Default::default(), cfg, &allocs, &[]).unwrap();
+    let code = LinkedCode::link(names, Default::default(), cfg, &allocs, &[]).unwrap();
     println!("code = {code:#?}");
     // code.write_elf(&mut std::fs::File::create("trivial").unwrap());
     let mut out = Vec::new();
@@ -399,7 +399,7 @@ mod test {
     // println!("after opt:\n{:#?}", cfg);
     let allocs = cfg.storage(&names);
     // println!("allocs = {:#?}", allocs);
-    let code = LinkedCode::link(&names, mir, cfg, &allocs, &[]).unwrap();
+    let code = LinkedCode::link(names, mir, cfg, &allocs, &[]).unwrap();
     // println!("code = {:#?}", code);
     // code.write_elf(&mut File::create("two_plus_two_ir").unwrap());
     let mut out = Vec::new();
@@ -412,9 +412,9 @@ mod test {
       0100 0000 0700 0000 7800 0000 0000 0000\
       7800 4000 0000 0000 0000 0000 0000 0000\
       2800 0000 0000 0000 2800 0000 0000 0000\
-      0000 2000 0000 0000 ba02 0000 00b9 0200\
-      0000 02d1 80fa 0441 0f94 c041 80f8 0075\
-      020f 0bb8 3c00 0000 33ff 0f05 0000 0000\
+      0000 2000 0000 0000 be02 0000 00ba 0200\
+      0000 4002 f240 80fe 0441 0f94 c341 80fb\
+      0075 020f 0bb8 3c00 0000 33ff 0f05 0000\
     ");
   }
 
@@ -458,11 +458,10 @@ mod test {
       0000 0000 4000 3800 0100 4000 0000 0000\
       0100 0000 0700 0000 7800 0000 0000 0000\
       7800 4000 0000 0000 0000 0000 0000 0000\
-      3800 0000 0000 0000 3800 0000 0000 0000\
+      2800 0000 0000 0000 2800 0000 0000 0000\
       0000 2000 0000 0000 e813 0000 00b8 3c00\
       0000 33ff 0f05 0000 0000 0000 0000 0000\
-      ba02 0000 00b9 0200 0000 02d1 b904 0000\
-      003a d10f 94c0 3c00 7502 0f0b c300 0000\
+      c300 0000 0000 0000 0000 0000 0000 0000\
     ");
   }
 
@@ -588,14 +587,14 @@ mod test {
       0000 33ff 0f05 0000 0000 0000 0000 0000\
       4883 ec0b b868 0000 0040 8804 24ba 6500\
       0000 4088 5424 0141 b96c 0000 0044 884c\
-      2402 bf6c 0000 0040 887c 2403 b96f 0000\
-      0040 884c 2404 41ba 2000 0000 4488 5424\
-      05be 7700 0000 4088 7424 0641 b86f 0000\
-      0044 8844 2407 b872 0000 0040 8844 2408\
-      ba6c 0000 0040 8854 2409 41b9 6400 0000\
-      4488 4c24 0a48 8d34 24b8 0100 0000 48c7\
-      c701 0000 0048 c7c2 0b00 0000 0f05 4883\
-      c40b c300 0000 0000 0000 0000 0000 0000\
+      2402 b86c 0000 0040 8844 2403 ba6f 0000\
+      0040 8854 2404 41b9 2000 0000 4488 4c24\
+      05b8 7700 0000 4088 4424 06ba 6f00 0000\
+      4088 5424 0741 b972 0000 0044 884c 2408\
+      b86c 0000 0040 8844 2409 ba64 0000 0040\
+      8854 240a 488d 3424 b801 0000 0048 c7c7\
+      0100 0000 48c7 c20b 0000 000f 0548 83c4\
+      0bc3 0000 0000 0000 0000 0000 0000 0000\
     ");
   }
 }

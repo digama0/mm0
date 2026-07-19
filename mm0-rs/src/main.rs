@@ -8,8 +8,9 @@ use clap::Parser;
 enum Cli {
   Compile(mm0_rs::compiler::Args),
   Join(mm0_rs::joiner::Args),
+  #[cfg(feature = "doc")]
   Doc(mm0_rs::doc::Args),
-  #[cfg(feature = "server")]
+  #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
   Server(mm0_rs::server::Args),
 }
 
@@ -21,8 +22,9 @@ fn main() -> std::io::Result<()> {
       args.main()
     }
     Cli::Join(args) => args.main(),
+    #[cfg(feature = "doc")]
     Cli::Doc(args) => args.main(),
-    #[cfg(feature = "server")]
+    #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
     Cli::Server(args) => {
       if args.no_proofs { mm0_rs::set_check_proofs(false) }
       if args.check_parens { mm0_rs::set_check_parens(true) }

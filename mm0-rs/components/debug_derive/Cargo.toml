@@ -3,6 +3,12 @@ name = "debug_derive"
 version = "0.1.0"
 authors = ["ammkrn <ammkrn@tuta.io>"]
 edition = "2024"
+description = "derive macro for compact Debug impls in the MM0 toolchain"
+repository = "https://github.com/digama0/mm0"
+readme = "../../README.md"
+license = "CC0-1.0"
+keywords = ["theorem", "proving", "proof", "assistant"]
+categories = ["command-line-utilities", "development-tools", "mathematics"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

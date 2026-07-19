@@ -16,11 +16,12 @@ use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
-use crossbeam::channel::{SendError, RecvError};
+use crossbeam::channel::SendError;
 #[cfg(feature = "memory")] use mm0_deepsize_derive::DeepSizeOf;
+#[cfg(not(target_arch = "wasm32"))] use crossbeam::channel::RecvError;
 use mm1_parser::{Ast, parse};
-use crate::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
-  MutexExt, CondvarExt};
+use crate::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span, MutexExt};
+#[cfg(not(target_arch = "wasm32"))] use crate::CondvarExt;
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
@@ -66,6 +67,7 @@ impl From<String> for ServerError {
   fn from(e: String) -> Self { ServerError(e.into()) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn nos_id(nos: NumberOrString) -> RequestId {
   match nos {
     NumberOrString::Number(n) => n.into(),
@@ -114,10 +116,11 @@ pub(crate) fn log(s: String) {
   LOGGER.1.notify_one();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct Logger(std::thread::JoinHandle<()>, Arc<AtomicBool>);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Logger {
-  #[cfg(not(target_arch = "wasm32"))]
   fn start() -> Self {
     let cancel: Arc<AtomicBool> = Arc::default();
     let cancel2 = cancel.clone();
@@ -623,6 +626,7 @@ fn show_message(typ: MessageType, message: String) -> Result<()> {
   })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn register_capability(id: String, registrations: Vec<Registration>) -> Result<()> {
   send_message(Request {
     id: id.into(),
@@ -651,6 +655,19 @@ struct RequestHandler {
   id: RequestId,
   #[allow(unused)]
   cancel: Arc<AtomicBool>,
+}
+
+/// Dispatch an LSP request, as the native message loop does on receiving one.
+///
+/// There is no socket to carry requests in on wasm32, so the JS client calls
+/// this instead. The response is sent on `conn.sender` like any other, meaning
+/// it arrives through the same queue the client already polls.
+#[cfg(target_arch = "wasm32")]
+pub fn handle_request(id: i32, method: String, params: serde_json::Value) -> Result<()> {
+  if let Some((id, req)) = parse_request(Request { id: id.into(), method, params })? {
+    Job::RequestHandler(id, Some(Box::new(req))).spawn();
+  }
+  Ok(())
 }
 
 impl RequestHandler {
@@ -1362,6 +1379,7 @@ macro_rules! token_types {
   ($([$e:literal]: const $name:ident => $val:path;)*) => {
     const _: () = { let mut _n = 0; $(assert!(_n == $e); _n += 1;)* };
     mod token_types { $(pub(super) const $name: u32 = $e;)* }
+    #[cfg(not(target_arch = "wasm32"))]
     fn get_token_types() -> Vec<SemanticTokenType> { vec![$($val),*] }
   }
 }
@@ -1521,12 +1539,14 @@ impl std::fmt::Debug for Server {
 /// be useful to tell whether a certain option has been set by the user or left
 /// as the default. If they were just T, `T::Default` could mean that the user selected
 /// a value that's the same as the default, or it could mean that it was untouched.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InitOptions {
   extra_capabilities: Option<ClientCapabilitiesExt>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClientCapabilitiesExt {
@@ -1534,11 +1554,13 @@ struct ClientCapabilitiesExt {
 }
 
 struct ClientCapabilities {
+  #[cfg(not(target_arch = "wasm32"))]
   reg_id: Option<RequestId>,
   definition_location_links: bool,
   goal_view: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ClientCapabilities {
   fn new(params: InitializeParams) -> ClientCapabilities {
     let dll = match params.capabilities.text_document.as_ref()
@@ -1587,14 +1609,15 @@ impl std::fmt::Display for DepChangeReason {
 }
 
 #[derive(Debug)]
-enum ElabReason { Open, Save, Change(Position) }
+enum ElabReason { Open, #[cfg(not(target_arch = "wasm32"))] Save, Change(Position) }
 
 impl ElabReason {
   fn start(&self) -> Option<Position> {
     match *self {
       Self::Change(p) => Some(p),
       Self::Open => Some(Position::default()),
-      Self::Save => None
+      #[cfg(not(target_arch = "wasm32"))]
+      Self::Save => None,
     }
   }
 }
@@ -1603,6 +1626,7 @@ impl std::fmt::Display for ElabReason {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Open => write!(f, "open"),
+      #[cfg(not(target_arch = "wasm32"))]
       Self::Save => write!(f, "save"),
       Self::Change(_) => write!(f, "change"),
     }
@@ -1621,6 +1645,7 @@ impl std::fmt::Display for Job {
     match self {
       Job::RequestHandler(id, _) => write!(f, "handle request {id}"),
       Job::Elaborate(path, ElabReason::Open) => write!(f, "elaborate {path} on open"),
+      #[cfg(not(target_arch = "wasm32"))]
       Job::Elaborate(path, ElabReason::Save) => write!(f, "elaborate {path} on save"),
       Job::Elaborate(path, ElabReason::Change(_)) => write!(f, "elaborate {path} on change"),
       Job::ElaborateDep(from, to, _) => write!(f, "elaborate {from} needed for {to}"),
@@ -1715,6 +1740,7 @@ enum ElabOn {
   Save,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn send_config_request() -> Result<()> {
   use lsp_types::request::{WorkspaceConfiguration, Request};
   let params = lsp_types::ConfigurationParams {
@@ -1774,7 +1800,6 @@ impl Server {
     let conn = Connection { sender: serv.sender, receiver: cli.receiver };
     // skip the initial handshake
     let caps = ClientCapabilities {
-      reg_id: None,
       definition_location_links: true,
       goal_view: false,
     };
