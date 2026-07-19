@@ -1,0 +1,6 @@
+# m0e is a browser crate: it is a cdylib built against wasm-bindgen and the
+# wasm32-only parts of mm0-rs, so a native build cannot work. Default the
+# target here so that a bare `cargo build`/`cargo check` (and rust-analyzer)
+# do the right thing without needing --target on every invocation.
+[build]
+target = "wasm32-unknown-unknown"

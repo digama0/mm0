@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use mm0_rs::server::*;
 
@@ -26,7 +26,7 @@ struct ModelContentChange {
 
 #[wasm_bindgen]
 pub fn update_file(file: String, version: i32, changes: JsValue) {
-  let changes: Vec<ModelContentChange> = JsValue::into_serde(&changes).unwrap();
+  let changes: Vec<ModelContentChange> = serde_wasm_bindgen::from_value(changes).unwrap();
   SERVER.vfs.update(PathBuf::from(file).into(), version,
     |s| s.apply_changes(changes.into_iter().map(|change| {
       lsp_types::TextDocumentContentChangeEvent {
@@ -49,7 +49,12 @@ pub fn update_file(file: String, version: i32, changes: JsValue) {
 #[wasm_bindgen]
 pub fn poll_message() -> JsValue {
   match SERVER.conn.receiver.try_recv() {
-    Ok(msg) => JsValue::from_serde(&msg).unwrap(),
+    // `params` is a `serde_json::Value`, whose maps serde_wasm_bindgen would
+    // otherwise hand back as JS `Map`s rather than plain objects -- so
+    // `msg.params.diagnostics` would silently read as `undefined`.
+    Ok(msg) => msg.serialize(
+      &serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true)
+    ).unwrap(),
     Err(_) => JsValue::NULL,
   }
 }
