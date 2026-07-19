@@ -436,7 +436,7 @@ impl<'a> UnelabArgKind<'a> {
 }
 
 /// The data for an individual label in a label group. We keep this data structure around while
-/// evaluating later statements in the block, and finalize it into a [`hir::Stmt::Label`] when
+/// evaluating later statements in the block, and finalize it into a [`hir::StmtKind::Label`] when
 /// exiting the block.
 #[derive(Debug)]
 struct UnelabLabelData<'a> {

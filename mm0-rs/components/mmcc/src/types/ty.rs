@@ -8,8 +8,8 @@ use crate::{FileSpan, Symbol};
 use super::{Binop, IntTy, LambdaId, Unop, VarId, ast::TyVarId};
 pub use super::ast::ArgAttr;
 
-/// A trait for displaying with a "context" struct. This is a generalization of [`EnvDisplay`] to
-/// other forms of context.
+/// A trait for displaying with a "context" struct. This is a generalization of `EnvDisplay`
+/// (from the `mm0-rs` crate) to other forms of context.
 pub trait CtxDisplay<C> where C: ?Sized {
   /// Display this object, using the given context and printing into the given formatter.
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;

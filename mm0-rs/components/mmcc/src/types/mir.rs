@@ -498,11 +498,11 @@ impl HasAlpha for EPlaceKind {
 }
 
 /// A pure expression. (Regular expressions are not manipulated like types,
-/// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
+/// i.e. copied and substituted around, so they are in the [`hir`] module.)
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression. (Regular expressions are not manipulated like types,
-/// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
+/// i.e. copied and substituted around, so they are in the [`hir`] module.)
 pub type ExprTy = (Option<Expr>, Ty);
 
 /// A pure expression.

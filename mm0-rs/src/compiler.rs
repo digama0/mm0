@@ -35,7 +35,7 @@ static VFS: LazyLock<Vfs> = LazyLock::new(|| Vfs(Mutex::new(HashMap::new())));
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MAX_EMITTED_ERROR: AtomicU8 = AtomicU8::new(0);
 
-/// The cached [`Environment`](crate::elab::Environment) representing a
+/// The cached [`Environment`](crate::elab::environment::Environment) representing a
 /// completed parse, or an incomplete parse.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 enum FileCache {
@@ -43,9 +43,9 @@ enum FileCache {
   /// contains tasks that are waiting to be sent the completed [`Environment`];
   /// A thread that sees that the file is in progress should construct a
   /// channel, store the [`Sender`] here, and return the [`Receiver`] to
-  /// the elaborator (in the `mk` callback of [`elab::elaborate`]).
+  /// the elaborator (in the [`recv_dep`](ElaborateBuilder::recv_dep) callback).
   ///
-  /// [`Environment`]: crate::elab::Environment
+  /// [`Environment`]: crate::elab::environment::Environment
   /// [`Sender`]: FSender
   /// [`Receiver`]: futures::channel::oneshot::Receiver
   InProgress(Vec<FSender<ElabResult<()>>>),
@@ -147,7 +147,7 @@ impl VirtualFile {
   }
 }
 
-/// The virtual file system (a singleton accessed through the global variable [`struct@VFS`]).
+/// The virtual file system (a singleton accessed through the global variable [`static@VFS`]).
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
@@ -300,7 +300,7 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
   println!("{s}")
 }
 
-/// Elaborate a file for an [`Environment`](crate::elab::Environment) result.
+/// Elaborate a file for an [`Environment`](crate::elab::environment::Environment) result.
 ///
 /// This is the main elaboration function, as an `async fn`. Given a `path`,
 /// it gets it from the [`VFS`] (which will probably load it from the filesystem),
@@ -308,16 +308,16 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
 /// awaiting if it is in progress in another task.
 ///
 /// If the file has not yet been elaborated, it parses it into an [`Ast`], reports
-/// parse errors, then elaborates it using [`elab::elaborate`] and reports
+/// parse errors, then elaborates it using [`ElaborateBuilder::elab`] and reports
 /// elaboration errors. Finally, it broadcasts the completed file to all waiting
 /// tasks, and returns it.
 ///
-/// The callback passed to [`elab::elaborate`], called on the imports in the file,
-/// will allocate a new [`elaborate_and_send`] task to the task pool [`struct@POOL`],
+/// The [`recv_dep`](ElaborateBuilder::recv_dep) callback, called on the imports in the file,
+/// will allocate a new [`elaborate_and_send`] task to the task pool [`static@POOL`],
 /// which will later be joined when the result is required.
 /// (**Note**: This can result in deadlock if the import graph has a cycle.)
 ///
-/// [`Ast`]: crate::parser::Ast
+/// [`Ast`]: mm1_parser::Ast
 async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
   let (path, file) = VFS.get_or_insert(path)?;
   {
@@ -413,7 +413,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   Ok(res)
 }
 
-/// Elaborate a file, and pass the [`Environment`](crate::elab::Environment)
+/// Elaborate a file, and pass the [`Environment`](crate::elab::environment::Environment)
 /// result to a [`Sender`](FSender).
 ///
 /// See [`elaborate`] for details on elaboration. This function encapsulates

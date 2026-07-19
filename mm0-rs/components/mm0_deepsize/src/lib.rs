@@ -43,7 +43,7 @@ pub trait DeepSizeOf {
     /// doesn't account for allocator's overhead.
     ///
     /// This is an internal function (this shouldn't be called directly),
-    /// and requires a [`Context`](Context) to track visited references.
+    /// and requires a [`Context`] to track visited references.
     /// Implementations of this function should only call `deep_size_of_children`,
     /// and not `deep_size_of` so that they reference tracking is not reset.
     ///

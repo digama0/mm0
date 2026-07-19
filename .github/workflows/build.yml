@@ -97,6 +97,29 @@ jobs:
         run: cargo check --locked ${{ matrix.args }}
           ${{ matrix.target && format('--target {0}', matrix.target) }}
 
+  doc-mm0-rs:
+    name: Check mm0-rs docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache doc
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mm0-rs/target
+          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('mm0-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-doc-
+      # rustdoc's own `--check` would be cheaper, but it is nightly-only and
+      # `cargo rustdoc` takes one package at a time; this is the stable
+      # workspace-wide equivalent.
+      - working-directory: mm0-rs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --workspace --no-deps --document-private-items
+
   clippy-mm0-rs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest

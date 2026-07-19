@@ -1,9 +1,10 @@
 //! The AST building compiler pass.
 //!
-//! This pass is responsible mainly for name resolution. The [parser](super::parser) works on-demand,
-//! so the entire parsed MMC syntax doesn't exist all at once, but conceptually it is made up of recursive
-//! applications of the constructors in [`types::parse`](super::types::parse). This contains `Symbol`s
-//! referencing variable names as provided by the user, and the task here is to undo all the name shadowing
+//! This pass is responsible mainly for name resolution. The parser lives in the
+//! `mm0-rs` crate (`mmc::parser`) and works on-demand, so the entire parsed MMC syntax
+//! doesn't exist all at once: it maps lisp literals to calls on [`BuildAst`] as it goes.
+//! The names it supplies are `Symbol`s referencing variable names as provided by the
+//! user, and the task here is to undo all the name shadowing
 //! and resolve references to loop labels, named constants, and so on, so that elaboration has a
 //! reasonably well formed input to work on.
 //!

@@ -18,6 +18,7 @@
   missing_docs
 )]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(rustdoc::private_intra_doc_links)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
@@ -140,7 +141,7 @@ pub fn u32_as_usize(n: u32) -> usize {
 
 /// Translate a number into an alphabetic numbering system, indexing into the following infinite
 /// sequence:
-/// ```ignore
+/// ```text
 /// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
 /// ```
 #[must_use]
@@ -473,7 +474,7 @@ static CURRENT_DIR: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
 /// Example: If [`CURRENT_DIR`] is `/home/johndoe/mm0`, and `buf` is
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
-/// [`CURRENT_DIR`]: struct@CURRENT_DIR
+/// [`CURRENT_DIR`]: static@CURRENT_DIR
 #[cfg(feature = "lined_string")]
 fn make_relative(buf: &std::path::Path) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR)
@@ -499,8 +500,8 @@ struct FileRefInner {
 /// A [`FileRef`] can be constructed either from a [`PathBuf`] or a
 /// (`file://`) [`Uri`](lsp_types::Uri),
 /// and provides (precomputed) access to these views using
-/// [`path()`](FileRef::path) and [`uri()`](FileRef::uri), as well as
-/// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
+/// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
+/// [`rel()`](FileRef::rel) to get the relative path from [`static@CURRENT_DIR`].
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Clone, Default)]
 pub struct FileRef(Arc<FileRefInner>);
@@ -646,7 +647,7 @@ pub fn get_memory_usage() -> usize {
 pub fn get_memory_usage() -> usize { get_memory_rusage() }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
-/// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
+/// Falls back on `getrusage()` if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
 #[must_use]
 pub fn get_memory_usage() -> usize { 0 }

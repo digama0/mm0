@@ -70,7 +70,7 @@ impl<D: EnvDisplay + ?Sized> fmt::Display for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-/// Items implementing [`EnvDebug`] can be put in formatters using `{:#?}`.
+/// Items implementing [`EnvDebug`](super::debug::EnvDebug) can be put in formatters using `{:#?}`.
 impl<D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'_, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.e.env_dbg(self.fe, f)

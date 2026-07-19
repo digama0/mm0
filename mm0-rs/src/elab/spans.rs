@@ -26,7 +26,7 @@ pub struct Spans<T> {
   /// The span that encloses the entire declaration, from the first command keyword
   /// to the final semicolon. All spans in `data` will be sub-spans of this.
   ///
-  /// We will always set this value before storing the span in [`Environment.spans`].
+  /// We will always set this value before storing the span in [`Environment::spans`](super::environment::Environment::spans).
   stmt: MaybeUninit<Span>,
   /// The name of the present declaration. This is set to `AtomId::UNDER` for
   /// declarations that don't have names, like [`delimiter`](mm1_parser::ast::Delimiter).
@@ -77,7 +77,7 @@ impl<T> Spans<T> {
   /// # Safety
   /// This function must only be called if [`set_stmt`](Self::set_stmt) has previously
   /// been called. We ensure that this is the case for any [`Spans`] object put into
-  /// [`Environment.spans`].
+  /// [`Environment::spans`](super::environment::Environment::spans).
   #[must_use] pub fn stmt(&self) -> Span {
     // Safety: by assumption
     unsafe { self.stmt.assume_init() }

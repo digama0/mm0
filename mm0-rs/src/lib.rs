@@ -23,6 +23,7 @@
   rust_2018_idioms, trivial_numeric_casts, variant_size_differences, unreachable_pub,
   unused, missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(rustdoc::private_intra_doc_links)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want

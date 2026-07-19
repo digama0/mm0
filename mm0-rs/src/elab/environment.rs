@@ -21,7 +21,7 @@ pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomId,
   /// The sort's name, as a string. (This is a shortcut; you can also look up the atom in
-  /// [`Environment.data`] and get the name from there.)
+  /// [`Environment::data`] and get the name from there.)
   pub name: ArcString,
   /// The span for the name of the sort. This is `"foo"` in the statement `sort foo;`.
   pub span: FileSpan,
@@ -245,7 +245,7 @@ pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ProofNode]>,
-  /// The hypotheses, where `hyps[i]` points to <code>[Hyp](i, e)</code>. Because these terms
+  /// The hypotheses, where `hyps[i]` points to <code>[Hyp](ProofNode::Hyp)(i, e)</code>. Because these terms
   /// are deduplicated with everything else, the [`Hyp`] itself will probably be
   /// on the heap (unless it is never used), and then a [`Ref`] will be stored
   /// in the `hyps` array.
@@ -1473,7 +1473,7 @@ impl Environment {
 /// required to perform this evaluation.
 /// So instead, we poll [`EnvMergeIter::next`], receiving [`AwaitingMerge`] objects
 /// that represent an unevaluated merge request; the request is fulfilled by calling
-/// [`EnvMergeIter::apply_merge`].
+/// [`Elaborator::apply_merge`](super::Elaborator::apply_merge).
 #[derive(Debug)]
 pub struct EnvMergeIter<'a> {
   remap: Remapper,
@@ -1487,7 +1487,7 @@ pub struct EnvMergeIter<'a> {
 /// The elaborator receives this struct containing a merge strategy
 /// and the `old` and `new` values in `val` and `new.val` respectively, and it fills
 /// `val` with the result of the request and completes the request by calling
-/// [`EnvMergeIter::apply_merge`].
+/// [`Elaborator::apply_merge`](super::Elaborator::apply_merge).
 #[derive(Debug)]
 pub struct AwaitingMerge<'a> {
   /// The new atom ID
@@ -1496,7 +1496,7 @@ pub struct AwaitingMerge<'a> {
   /// directly without a request).
   pub strat: MergeStrategy,
   /// The old value, when returned by [`next`](EnvMergeIter::next);
-  /// also the result value when passed to [`apply_merge`](EnvMergeIter::apply_merge).
+  /// also the result value when passed to [`apply_merge`](super::Elaborator::apply_merge).
   pub val: LispVal,
   /// The data record for the new value.
   pub new: LispData,

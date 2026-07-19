@@ -405,7 +405,7 @@ impl<'a> ToGlobal<'a> for hir::Variant<'a> {
 }
 
 /// A pure expression. (Regular expressions are not manipulated like types,
-/// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
+/// i.e. copied and substituted around, so they are in the [`hir`] module.)
 pub type Place = Rc<PlaceKind>;
 
 /// A pure expression.
@@ -442,7 +442,7 @@ impl<'a> ToGlobal<'a> for ty::PlaceKind<'a> {
 }
 
 /// A pure expression. (Regular expressions are not manipulated like types,
-/// i.e. copied and substituted around, so they are in the [`hir`](super::hir) module.)
+/// i.e. copied and substituted around, so they are in the [`hir`] module.)
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression.

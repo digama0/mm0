@@ -416,11 +416,11 @@ pub struct DefBuilder<'a, W>(StmtBuilder<'a, W>, TermId);
 
 impl<W: Reopen> DefBuilder<'_, W> {
   /// A reference to the unify stream for this definition. Use [`UnifyCmd::write_to`] to add
-  /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
+  /// commands to this stream. Do not add an `END` command at the end; [`Self::finish`] will handle that.
   pub fn unify(&mut self) -> &mut (impl Write + use<W>) { self.0.unify() }
 
   /// A reference to the proof stream for this definition. Use [`ProofCmd::write_to`] to add
-  /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
+  /// commands to this stream. Do not add an `END` command at the end; [`Self::finish`] will handle that.
   pub fn proof(&mut self) -> &mut (impl Write + use<W>) { self.0.proof() }
 
   /// Finish the unify and proof streams for this definition, and finalize the term addition.
@@ -444,11 +444,11 @@ pub struct ThmBuilder<'a, W>(StmtBuilder<'a, W>, ThmId);
 
 impl<'a, W: Reopen> ThmBuilder<'a, W> {
   /// A reference to the unify stream for this theorem. Use [`UnifyCmd::write_to`] to add
-  /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
+  /// commands to this stream. Do not add an `END` command at the end; [`Self::finish`] will handle that.
   pub fn unify(&mut self) -> &mut (impl Write + 'a) { self.0.unify() }
 
   /// A reference to the proof stream for this theorem. Use [`ProofCmd::write_to`] to add
-  /// commands to this stream. Do not add an `END` command at the end; [`finish`] will handle that.
+  /// commands to this stream. Do not add an `END` command at the end; [`Self::finish`] will handle that.
   pub fn proof(&mut self) -> &mut (impl Write + 'a) { self.0.proof() }
 
   /// Finish the unify and proof streams for this theorem, and finalize the theorem addition.

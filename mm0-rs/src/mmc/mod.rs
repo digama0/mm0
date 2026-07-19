@@ -121,7 +121,7 @@ impl CompilerInner {
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 pub struct Compiler {
   inner: Rc<CompilerInner>,
-  /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
+  /// The map from [`Predefs`](proof::Predefs) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.
   predef: proof::Predefs,
 }
