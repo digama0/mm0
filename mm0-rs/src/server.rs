@@ -1,6 +1,7 @@
 //! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
 
-use std::{fs, io};
+use std::io;
+#[cfg(not(target_arch = "wasm32"))] use std::fs;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, LazyLock};
 use std::collections::{VecDeque, HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
@@ -431,15 +432,40 @@ impl Vfs {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
-        let fc = if path.has_extension("mmb") {
-          FileContents::new_bin_from_file(path.path())?
-        } else {
-          FileContents::new(fs::read_to_string(path.path())?)
-        };
-        let val = e.insert(Arc::new(VirtualFile::new(None, fc))).clone();
-        Ok((path, val))
+        // On wasm32 there is nothing to fall back on: a file is reachable only
+        // if it was seeded (see `seed`). Say so, rather than letting the read
+        // fail with the unhelpful "operation not supported on this platform".
+        #[cfg(target_arch = "wasm32")]
+        {
+          drop(e);
+          Err(io::Error::new(io::ErrorKind::NotFound,
+            format!("'{path}' is not one of the bundled files")))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          let fc = if path.has_extension("mmb") {
+            FileContents::new_bin_from_file(path.path())?
+          } else {
+            FileContents::new(fs::read_to_string(path.path())?)
+          };
+          let val = e.insert(Arc::new(VirtualFile::new(None, fc))).clone();
+          Ok((path, val))
+        }
       }
     }
+  }
+
+  /// Make `text` available at `path` as if it were a file on disk: it is not
+  /// opened in an editor and no elaboration is scheduled for it.
+  ///
+  /// This exists for wasm32, where there is no filesystem for
+  /// [`get_or_insert`](Self::get_or_insert) to fall back on, so the files an
+  /// `import` might reach must be seeded in advance. Files already in the VFS
+  /// are left alone, so this will not clobber the user's edits.
+  #[cfg(target_arch = "wasm32")]
+  pub fn seed(&self, path: FileRef, text: String) {
+    self.0.ulock().entry(path)
+      .or_insert_with(|| Arc::new(VirtualFile::new(None, FileContents::new(text))));
   }
 
   fn source(&self, file: &FileRef) -> Arc<LinedString> {
@@ -1506,8 +1532,12 @@ struct ThreadPool;
 #[cfg(target_arch = "wasm32")]
 impl ThreadPool {
   fn new() -> Result<Self> { Ok(Self) }
+  /// Schedule onto the JS microtask queue rather than blocking on the future.
+  /// A file that `import`s another spawns a job for the dependency while it is
+  /// itself still running, which `block_on` cannot serve: it would re-enter the
+  /// executor and panic. This also keeps elaboration off the UI thread's back.
   fn spawn_ok(&self, future: impl std::future::Future<Output = ()> + Send + 'static) {
-    futures::executor::block_on(future)
+    wasm_bindgen_futures::spawn_local(future)
   }
 }
 

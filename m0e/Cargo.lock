@@ -859,6 +859,7 @@ dependencies = [
  "test_each_file",
  "typed-arena",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "zerocopy",
 ]
@@ -1420,6 +1421,18 @@ dependencies = [
  "rustversion",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-futures"
+version = "0.4.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f741de44b75e14c35df886aff5f1eb73aa114fa5d4d00dcd37b5e01259bf3b2"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

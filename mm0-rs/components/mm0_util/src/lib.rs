@@ -559,8 +559,11 @@ impl From<lsp_types::Uri> for FileRef {
     }
     #[cfg(not(target_arch = "wasm32"))]
     let path = to_file_path(&uri).expect("bad URI");
+    // Must invert the `wasm:/{rel}` built in `From<PathBuf>`: the paths there
+    // are relative, so the leading slash of the URI path has to come back off,
+    // or this would produce a `FileRef` that compares unequal to the original.
     #[cfg(target_arch = "wasm32")]
-    let path = PathBuf::from(uri.path().as_str());
+    let path = PathBuf::from(uri.path().as_str().trim_start_matches('/'));
     // If the file already has a `FileRef`, that one's URL is kept rather than this
     // client-supplied one: they name the same file, and identity is what matters here.
     FileRef::intern(make_relative(&path), move |rel| FileRefInner { path, rel, uri: Some(uri) })

@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use mm0_rs::server::*;
 
+/// Make an example available to the VFS without elaborating it, so that an
+/// `import` from another file can resolve. There is no filesystem to fall back
+/// on here, so every file reachable by `import` must be seeded up front.
+#[wasm_bindgen]
+pub fn seed_file(file: String, text: String) {
+  SERVER.vfs.seed(PathBuf::from(file).into(), text);
+}
+
 #[wasm_bindgen]
 pub fn open_file(file: String, version: i32, text: String) {
   SERVER.vfs.open_virt(PathBuf::from(file).into(), version, text);
@@ -44,6 +52,15 @@ pub fn update_file(file: String, version: i32, changes: JsValue) {
         text: change.text
       }
     }))).unwrap();
+}
+
+/// Send an LSP request (hover, definition, semantic tokens, ...). The reply is
+/// not returned here: it comes back from `poll_message` as a response carrying
+/// this `id`, just as it would over a socket.
+#[wasm_bindgen]
+pub fn send_request(id: i32, method: String, params: JsValue) -> Result<(), JsValue> {
+  let params = serde_wasm_bindgen::from_value(params)?;
+  handle_request(id, method, params).map_err(|e| JsValue::from_str(&format!("{e:?}")))
 }
 
 #[wasm_bindgen]

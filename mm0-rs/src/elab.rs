@@ -834,7 +834,11 @@ where F: FnMut(FileRef) -> Result<Receiver<ElabResult<T>>, BoxError> {
       (|| -> Result<_> {
         let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
         let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
-        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
+        // wasm32 has no filesystem to canonicalize against; the names seeded
+        // into the VFS are already in their canonical (flat) form there.
+        #[cfg(not(target_arch = "wasm32"))]
+        let path = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?;
+        let r: FileRef = path.into();
         let tok = recv_dep(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
         recv.insert(sp, (r, tok));
         Ok(())

@@ -1,0 +1,264 @@
+/* Night Owl, the editor's own palette: the chrome is made of the same
+   material as the code it frames. The accents are not decorative -- each
+   one already means something in the editor, and means the same here. */
+:root {
+  --bg: #011627;
+  --raised: #071e33;
+  --line: #1d3b53;
+  --fg: #d6deeb;
+  --muted: #5f7e97;
+  --faint: #486078;
+  --sort: #ffcb8b;
+  --term: #addb67;
+  --axiom: #f78c6c;
+  --theorem: #82aaff;
+  --lisp: #c792ea;
+  --ok: #addb67;
+  --err: #ff5874;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  /* Every noun in this interface is code -- a file, a sort, a theorem.
+     Hierarchy comes from size, weight and colour, not a second family. */
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--theorem);
+  outline-offset: 2px;
+}
+
+/* ---- header ------------------------------------------------------ */
+
+#bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  height: 38px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+}
+
+#file {
+  appearance: none;          /* a native select ignores background */
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0.15rem 1.4rem 0.15rem 0.4rem;
+  /* the caret, drawn rather than native so it matches the palette */
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 0.62rem center, right 0.35rem center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+#file:hover { border-color: var(--line); background-color: var(--bg); }
+#file option { background: var(--bg); color: var(--fg); }
+
+#imports {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#imports button {
+  font: inherit;
+  color: var(--theorem);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+#imports button:hover { border-bottom-color: var(--theorem); }
+
+/* The one thing this page exists to tell you, so it sits against the name
+   of the file it is talking about rather than in the far corner. */
+#state {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+#state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+#state[data-state="verified"] { color: var(--ok); }
+#state[data-state="errors"] { color: var(--err); }
+#state[data-state="checking"]::before { animation: pulse 1.2s ease-in-out infinite; }
+
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  #state[data-state="checking"]::before { animation: none; }
+}
+
+/* ---- body -------------------------------------------------------- */
+
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#side {
+  flex: none;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.panel-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem 0.35rem;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.panel-head .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+#outline { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#outline-list, #problem-list {
+  margin: 0;
+  padding: 0 0 0.5rem;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Rows are buttons: they move the cursor, so they should say so. */
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.1rem 0.75rem;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.row:hover { background: var(--bg); }
+.row .kw {
+  flex: none;
+  width: 3.6rem;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* An axiom is assumed and a theorem is proved -- the single most
+   important distinction in a proof file, so it is the one carried by
+   colour. These match the semantic token colours in the editor. */
+.row[data-kw="sort"] .kw { color: var(--sort); }
+.row[data-kw="term"] .kw, .row[data-kw="def"] .kw { color: var(--term); }
+.row[data-kw="axiom"] .kw { color: var(--axiom); }
+.row[data-kw="theorem"] .kw { color: var(--theorem); }
+.row[data-kw="lisp"] .kw { color: var(--lisp); }
+
+#problems { flex: none; display: none; flex-direction: column; max-height: 40%; }
+#problems[data-shown="yes"] { display: flex; }
+#problems { border-top: 1px solid var(--line); }
+#problem-list .row { align-items: baseline; }
+#problem-list .line {
+  flex: none;
+  width: 3.6rem;
+  color: var(--err);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+}
+/* An error message is the one string here worth reading in full, so it
+   wraps rather than being clipped. There are never many at once. */
+#problem-list .msg { color: var(--muted); }
+#problem-list .row { align-items: flex-start; padding-bottom: 0.25rem; }
+
+/* An import that resolves to nothing is not somewhere you can go. */
+#imports button.missing {
+  color: var(--err);
+  cursor: default;
+  text-decoration: line-through;
+}
+#imports button.missing:hover { border-bottom-color: transparent; }
+
+#outline-filter {
+  flex: none;
+  margin: 0 0.75rem 0.4rem;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+#outline-filter::placeholder { color: var(--faint); }
+
+.empty { padding: 0.1rem 0.75rem; color: var(--faint); }
+
+/* ---- inline diagnostics ------------------------------------------ */
+
+/* The annotation takes the colour of the squiggle it belongs to. Night
+   Owl sets no diagnostic colours, so these are monaco's own defaults for
+   `editorError`/`editorWarning`/`editorInfo` -- matching them is what ties
+   the message to the underline that put it there. */
+/* Doubled up on purpose. Monaco also puts its own token class on injected
+   text (`mtk1 lens lens-error`), and that rule is a single class too -- with
+   equal specificity the winner is whichever stylesheet came last, which is
+   monaco's, since it injects its theme at runtime. Two classes settles it
+   without reaching for !important. */
+.lens.lens-error { color: #f14c4c; }
+.lens.lens-warning { color: #cca700; }
+.lens.lens-info { color: #3794ff; }
+.lens.lens-hint { color: rgba(238, 238, 238, 0.7); }
+
+/* Strong enough to read as a band you can find by scrolling, which is the
+   point of the thing, and in the same hue as the message so the two read
+   as one annotation. Info gets one too: an MM0 `do` block's output is
+   worth spotting, not just its failures. */
+.lens-line-error { background: rgba(241, 76, 76, 0.22); }
+.lens-line-warning { background: rgba(204, 167, 0, 0.20); }
+.lens-line-info { background: rgba(55, 148, 255, 0.18); }
+.lens-line-hint { background: rgba(238, 238, 238, 0.08); }
+
+#container { flex: 1; min-width: 0; }
+
+/* The sidebar is an index; below this width the code itself needs the
+   room more than the index does. */
+@media (max-width: 860px) {
+  #side { display: none; }
+  #imports { display: none; }
+}

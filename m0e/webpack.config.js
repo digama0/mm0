@@ -14,10 +14,11 @@ module.exports = {
   },
   output: {
     path: dist,
-    filename: "[name].js"
-  },
-  devServer: {
-    static: dist,
+    filename: "[name].js",
+    // Drops stale hashed assets from previous builds. Doing this here rather
+    // than with `rimraf dist` means it happens only for a build that writes to
+    // dist -- `webpack serve` keeps its output in memory and never does.
+    clean: true
   },
   module: {
     rules: [{

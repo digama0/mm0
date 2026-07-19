@@ -1,22 +1,31 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MM0 Explorer</title>
-    <style>
-      #container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        overflow: hidden;
-      }
-    </style>
   </head>
   <body>
-    <div id="container"></div>
+    <header id="bar">
+      <label class="visually-hidden" for="file" hidden>File</label>
+      <select id="file" aria-label="File"></select>
+      <span id="state" data-state="checking">checking</span>
+      <span id="imports"></span>
+    </header>
+    <div id="main">
+      <aside id="side">
+        <section id="outline">
+          <h2 class="panel-head">Contents <span class="count" id="outline-count"></span></h2>
+          <input id="outline-filter" type="search" placeholder="filter" aria-label="Filter contents">
+          <ul id="outline-list"></ul>
+        </section>
+        <section id="problems">
+          <h2 class="panel-head">Problems <span class="count" id="problem-count"></span></h2>
+          <ul id="problem-list"></ul>
+        </section>
+      </aside>
+      <div id="container"></div>
+    </div>
     <script src="index.js"></script>
   </body>
 </html>
