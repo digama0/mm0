@@ -92,6 +92,22 @@ body {
 }
 #imports button:hover { border-bottom-color: var(--theorem); }
 
+/* Compile this file and open it in the proof explorer. Sits at the far end of
+   the bar, since it is where you go next rather than something about the file. */
+#explore {
+  margin-left: auto;
+  font: inherit;
+  color: var(--theorem);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#explore:hover:not(:disabled) { background: var(--bg); border-color: var(--theorem); }
+#explore:disabled { color: var(--faint); cursor: default; }
+
 /* The one thing this page exists to tell you, so it sits against the name
    of the file it is talking about rather than in the far corner. */
 #state {

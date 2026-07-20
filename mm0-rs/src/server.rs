@@ -683,6 +683,37 @@ struct RequestHandler {
   cancel: Arc<AtomicBool>,
 }
 
+/// Elaborate the file at `path` and compile it to an `.mmb`, returning the
+/// bytes.
+///
+/// This is not an LSP request: the reply would be a JSON array of bytes, and
+/// these files run to hundreds of kilobytes. It returns them directly instead,
+/// which wasm-bindgen hands to JS as a `Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+pub async fn export_mmb(path: FileRef) -> Result<Vec<u8>> {
+  let env = elaborate(path.clone(), Some(Position::default()),
+    Default::default(), Default::default()).await?;
+  let env = match env {
+    ElabResult::Ok(_, _, env) => env,
+    ElabResult::Canceled => return Err("elaboration was canceled".into()),
+    ElabResult::ImportCycle(_) => return Err("import cycle".into()),
+  };
+  // The source is what lets the exporter record where each declaration came
+  // from, which is the difference between the explorer being able to show a
+  // proof's origin and not.
+  let source = SERVER.vfs.source(&path);
+  let mut buf = vec![];
+  {
+    let mut report = |_: crate::ErrorLevel, _: &str| {};
+    let mut ex = crate::mmb::export::Exporter::new(
+      path, Some(&source), &env, &mut report,
+      crate::mmb::export::BigBuffer::new(&mut buf));
+    ex.run(true)?;
+    ex.finish()?;
+  }
+  Ok(buf)
+}
+
 /// Dispatch an LSP request, as the native message loop does on receiving one.
 ///
 /// There is no socket to carry requests in on wasm32, so the JS client calls

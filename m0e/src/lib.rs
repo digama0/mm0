@@ -54,6 +54,13 @@ pub fn update_file(file: String, version: i32, changes: JsValue) {
     }))).unwrap();
 }
 
+/// Compile a file to an `.mmb`, for handing to the proof explorer.
+#[wasm_bindgen]
+pub async fn export_mmb(file: String) -> Result<Vec<u8>, JsValue> {
+  mm0_rs::server::export_mmb(PathBuf::from(file).into())
+    .await.map_err(|e| JsValue::from_str(&format!("{e:?}")))
+}
+
 /// Send an LSP request (hover, definition, semantic tokens, ...). The reply is
 /// not returned here: it comes back from `poll_message` as a response carrying
 /// this `id`, just as it would over a socket.

@@ -170,6 +170,36 @@ const problemCount = document.getElementById("problem-count");
 const state = document.getElementById("state");
 const importsEl = document.getElementById("imports");
 const outlineFilter = document.getElementById("outline-filter");
+const exploreButton = document.getElementById("explore");
+
+// Hand a compiled .mmb to the proof explorer, which lives under this same
+// origin at explorer/. It reopens a stored file whose name matches the one in
+// its address (see mm0-js's `resolveFile`), so the handoff is: write the bytes
+// into its IndexedDB store under that name, then navigate there.
+//
+// `resolveFile` prefers a bundled example when the name matches one, so the
+// exported name keeps the source extension -- `peano.mm1.mmb`, never the bare
+// `peano.mmb` that would reopen the example instead of what was just compiled.
+const EXPLORER_DB = "mm0-js";
+const EXPLORER_STORE = "files";
+const EXPLORER_KEY = "last";
+const putInExplorerStore = (name, bytes) => new Promise((resolve, reject) => {
+  const open = indexedDB.open(EXPLORER_DB, 1);
+  // Match the store mm0-js creates, in case the explorer has not run yet.
+  open.onupgradeneeded = () => {
+    if (!open.result.objectStoreNames.contains(EXPLORER_STORE)) {
+      open.result.createObjectStore(EXPLORER_STORE);
+    }
+  };
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result;
+    const tx = db.transaction(EXPLORER_STORE, "readwrite");
+    tx.objectStore(EXPLORER_STORE).put({ name, bytes: bytes.slice().buffer }, EXPLORER_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  };
+});
 
 const empty = (list, text) => {
   list.replaceChildren(Object.assign(document.createElement("li"),
@@ -271,6 +301,10 @@ import("../pkg/index.js").then(wasm => {
       state.dataset.state = "verified";
       state.textContent = "verified";
     }
+
+    // Only a file that elaborated without errors can be compiled and handed
+    // to the explorer.
+    exploreButton.disabled = !diagnosed.has(nameOf(model.uri.path)) || errors.length > 0;
 
     refreshLens();
     problems.dataset.shown = errors.length ? "yes" : "no";
@@ -442,6 +476,25 @@ import("../pkg/index.js").then(wasm => {
       }
     }
   }, 50);
+
+  exploreButton.addEventListener("click", async () => {
+    const source = nameOf(editor.getModel().uri.path);
+    const mmbName = `${source}.mmb`;
+    exploreButton.disabled = true;
+    const previous = exploreButton.textContent;
+    exploreButton.textContent = "compiling…";
+    try {
+      const bytes = await wasm.export_mmb(source);
+      await putInExplorerStore(mmbName, bytes);
+      // Same-tab navigation, so the store write is visible: it is the same
+      // origin and the write has already committed.
+      window.location.href = `explorer/#/${encodeURIComponent(mmbName)}`;
+    } catch (e) {
+      exploreButton.textContent = "export failed";
+      console.error("export_mmb", e);
+      setTimeout(() => { exploreButton.textContent = previous; refreshProblems(); }, 2000);
+    }
+  });
 
   // After `request` exists: opening a file asks for its outline.
   select.addEventListener("change", () => show(select.value));
