@@ -4,8 +4,8 @@
 
 The `.mmb` file format is a binary format for compactly expressing proofs that can be verified by checkers like `mm0-c`. The details of this format will eventually become part of the formal proof of correctness of a verifier based on `mm0-c`. This verifier reads an `.mm0` file (using the [MM0 file format](../mm0.md)) and a companion `.mmb` file, and checks that the proofs in the `.mmb` file are correct and align with the `.mm0` theorem statements.
 
-Encoding and types
----
+## Encoding and types
+
 All numbers are expressed in little endian fixed width types. Some tables require 4 or 8 byte alignment, but the proof stream is 1 byte aligned.
 
 * `u8`: a 1 byte unsigned integer
@@ -141,9 +141,9 @@ The operations are written in "polish notation", where a term constructor like `
 
 Since a term is "saved" before the contents of the term are read, cyclic terms are representable in this encoding; for example `UTermSave 0, URef 0` is the term `x = (t0 x)`. Cyclic terms are not legal in MMB files.
 
-For definitions, the unify stream encodes the value of the definition. For theorems and axioms, the unify stream has the pattern `UHyp, <h1>, UHyp, <h2>, ..., UHyp, <hn>, <concl>` for a theorem with `n` hypotheses, where each `<hi>` is the encoding of the hypothesis expression and `<concl>` is the encoding of the conclusion expression.
+For definitions, the unify stream encodes the value of the definition. For theorems and axioms, the unify stream has the pattern `<concl>, UHyp, <hn>, ..., UHyp, <h1>` for a theorem with `n` hypotheses, where `<concl>` is the encoding of the conclusion expression and each `<hi>` is the encoding of the `i`th hypothesis expression. Note that the conclusion comes *first*, and the hypotheses follow it in *reverse* declaration order.
 
-The `END` terminator is redundant because it is possible to predict the end of the stream, since each `UTerm[Save]` must be followed by `num_args` subexpressions, `URef` and `UDummy` have no subexpressions, and `UHyp` has two subexpressions (the first hypothesis and the remainder of the hypotheses and conclusion). A unify stream that terminates too early or too late is malformed.
+Within a single expression the end of the stream is predictable, since each `UTerm[Save]` must be followed by `num_args` subexpressions and `URef` and `UDummy` have none. So for a definition, whose stream is exactly one expression, the `END` terminator is redundant. For a theorem or axiom it is not: `UHyp` is followed by exactly one subexpression, and the number of hypotheses is not recorded anywhere else in the file — the [`thm`](#theorem-table) entry has no hypothesis count — so `END` is what says that the hypotheses have run out. A unify stream that terminates too early or too late is malformed.
 
 To permit read-ahead, the `END` terminator must begin at least 5 bytes prior to the end of the file. This is generally not a problem since unify streams are usually in the middle of the file.
 
@@ -374,9 +374,21 @@ The proof opcodes have the following operation on the state:
 
 ## Unification
 
-Unification is called during proof checking, in the `Unfold` and `Thm` rules, as well as when verifying `Def` statements. The unifier uses the following state:
+Unification is called from four places during proof checking, in three *modes*:
 
-* `MS`: The main stack (which was called `S` in the previous section) is consulted to get hypotheses, but is not otherwise used.
+| Mode      | Called from | Initial unify stack | Initial unify heap
+| --------- | ----------- | ------------------- | ------------------
+| `UThm`    | the `Thm`/`ThmSave` rule | the conclusion `e` that the rule popped, i.e. the one being claimed | the substitution `e1, ..., en` for the theorem's arguments
+| `UDef`    | the `Unfold` rule | the expression `e` that the definition is claimed to unfold to | the arguments `e1, ..., en` of the term being unfolded
+| `UDef`    | the [end of a `Def`/`LocalDef` statement](#checking-a-declaration-against-its-header) | the value the proof stream constructed | the declaration's own arguments
+| `UThmEnd` | the [end of an `Axiom`/`Thm`/`LocalThm` statement](#checking-a-declaration-against-its-header) | the statement the proof stream proved | the declaration's own arguments
+
+The mode is a property of the caller rather than of the stream: a theorem's stream is read in `UThmEnd` mode once, when the theorem is declared, and in `UThm` mode every time the theorem is applied. The commands mean the same thing in all three modes except for `UDummy`, `UHyp` and `END`, as noted below. Since a `def`'s stream is only ever read in `UDef` mode and a `theorem`'s only in `UThm` or `UThmEnd`, the mode restrictions amount to saying that `UDummy` may only appear in a `def`'s stream and `UHyp` only in a `theorem`'s.
+
+The unifier uses the following state:
+
+* `MS`: The main stack (which was called `S` in the previous section) is consulted to get hypotheses in `UThm` mode, but is not otherwise used.
+* `HS`: The hypothesis list of the declaration being checked, which `UHyp` consumes in `UThmEnd` mode. It is not used in the other two modes.
 * `S`: The unify stack, which contains expressions that have yet to be unified. Unification starts with a single expression on the unify stack, and it should be empty when unification is done.
 * `H`: The unify heap, which contains substitutions, and is extended by `UDummy` and `UTermSave` steps. It is initialized to the list of substitutions to the variables in the `theorem` or `def`.
 
@@ -403,17 +415,22 @@ The action of the unify commands is as follows:
 * ```
   UDummy s: H; S, x --> H, x; S
   ```
-  `UDummy` is only allowed in `def` declarations.
+  `UDummy` is only legal in `UDef` mode, and so only in a `def`'s stream: a theorem's statement has no dummies.
   * Pop `x`.
   * Ensure that `x` is a variable and `sort(x) = s`.
   * Ensure that `V(e) ∩ V(x) = {}` for all `e` in `H`.
   * Push `x` to the unify heap.
 
 * ```
-  UHyp: MS, |- e; S --> MS; S, e
+  UHyp (UThm):     MS, |- e; S --> MS; S, e
+  UHyp (UThmEnd):  HS, e; S --> HS; S, e     (where S = ·)
   ```
-  `UHyp` is only allowed in `theorem` declarations.
-  * Pop `|- e` from the main stack.
+  `UHyp` is illegal in `UDef` mode, and so appears only in a `theorem` or `axiom` stream. Where it gets its expression depends on the mode:
+  * In `UThm` mode:
+    * Pop `|- e` from the main stack.
+  * In `UThmEnd` mode:
+    * Assert `S` is empty.
+    * Pop `e` from the hypothesis list.
   * Push `e` to the unify stack.
 
 * ```
@@ -421,6 +438,24 @@ The action of the unify commands is as follows:
   ```
   (`USave` is not an available opcode but is used to describe the operation of `UTermSave`.)
   * Pop `e`, push `e` to the heap and the stack.
+
+* ```
+  END
+  ```
+  * Ensure that the unify stack `S` is empty.
+  * In `UThmEnd` mode, additionally ensure that the hypothesis list `HS` is empty.
+
+### Checking a declaration against its header
+
+The rules above cover unification as called from the `Thm` and `Unfold` rules, where the caller is a proof command. The other two calls happen once per declaration, when its proof stream ends, and check the proof against the declaration's own entry in the term or theorem table to ensure that the theorem proved matches the original signature.
+
+In both cases the main stack must contain exactly one element, the unify heap is initialized to the declaration's own arguments (that is, `H[i]` is the `i`th variable), and the single stack element is the initial unify stack.
+
+* For a `Def` or `LocalDef`, the element is `expr e`, the value the proof stream constructed. Check that `sort(e)` is compatible with `term[t].ret` and that `e` has no dependencies outside those of `term[t].ret`, then run unification in `UDef` mode for `term[t].unify` with `[e]` on the unify stack.
+
+  A definition's value is therefore given twice — once by the proof stream and once by the unify stream — and the two must agree. That redundancy is deliberate: it is what rules out cyclic terms, which the unify stream can express (see [Unify Stream](#unify-stream)) but the proof stream cannot.
+
+* For an `Axiom`, the element is `expr e`; for a `Thm` or `LocalThm` it is `proof e`. Check that `sort(e)` is provable, then run unification in `UThmEnd` mode for `thm[T].unify` with `[e]` on the unify stack. The hypotheses that the proof stream declared with `Hyp` are consumed from the hypothesis list by the stream's `UHyp` commands, and `END` checks that none are left over.
 
 ## Debugging Index
 
@@ -447,7 +482,7 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 | --------------------- | ------ | ---------------- | -----------
 | `"Name" = 0x656D614E` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems
 | `"VarN" = 0x4E726156` | `0`    | `p64<var_names>` | String names for variables
-| `"HypN" = 0x4E726156` | `0`    | `p64<hyp_names>` | String names for hypotheses
+| `"HypN" = 0x4E707948` | `0`    | `p64<hyp_names>` | String names for hypotheses
 
 ## The `Name` table: names for statements
 
