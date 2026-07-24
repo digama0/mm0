@@ -1,10 +1,22 @@
 const path = require("path");
+const webpack = require("webpack");
 const CopyPlugin = require("copy-webpack-plugin");
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
 const dist = path.resolve(__dirname, "dist");
 const examples = path.resolve(dist, "examples");
+
+// Where the "open in explorer" handoff navigates to. The editor and the MMB
+// proof explorer are separate apps under one origin (the handoff goes through a
+// per-origin IndexedDB store, so any same-origin path works); a full site
+// deploys them as siblings and sets this to e.g. `../mmb/`. It is optional and
+// has no default: with M0E_EXPLORER_URL unset there is no explorer to hand off
+// to, so the button is dropped entirely (see src/index.js). A trailing slash is
+// added when the value is set. The explorer is never copied into this bundle.
+const explorerUrl = process.env.M0E_EXPLORER_URL
+  ? process.env.M0E_EXPLORER_URL.replace(/\/?$/, "/")
+  : null;
 
 module.exports = {
   mode: "production",
@@ -50,17 +62,15 @@ module.exports = {
         { from: "../examples/*.mm0", to: examples },
         { from: "../examples/*.mm1", to: examples },
         { from: "../examples/*.mmu", to: examples },
-        // The proof explorer, served under this same origin so the handoff can
-        // go through its IndexedDB store (which is per-origin) and a same-tab
-        // navigation. Its index.html loads ./ui and ./dist by relative path, so
-        // it works unchanged under the explorer/ subpath. Only the browser
-        // runtime is copied -- dist/test and dist/tools are Node-only and would
-        // choke the minifier.
-        { from: "../mm0-js/index.html", to: path.resolve(dist, "explorer") },
-        { from: "../mm0-js/ui", to: path.resolve(dist, "explorer/ui") },
-        { from: "../mm0-js/dist/src", to: path.resolve(dist, "explorer/dist/src") },
-        { from: "../mm0-js/dist/ui", to: path.resolve(dist, "explorer/dist/ui") },
       ]
+    }),
+
+    // The explorer handoff target, frozen into the bundle so index.js can build
+    // its navigation URL (or `null` to drop the feature). Not read from
+    // process.env at runtime -- there is no process in the browser; DefinePlugin
+    // substitutes the literal at build.
+    new webpack.DefinePlugin({
+      "process.env.EXPLORER_URL": JSON.stringify(explorerUrl),
     }),
 
     new WasmPackPlugin({

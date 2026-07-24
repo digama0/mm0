@@ -172,14 +172,22 @@ const importsEl = document.getElementById("imports");
 const outlineFilter = document.getElementById("outline-filter");
 const exploreButton = document.getElementById("explore");
 
-// Hand a compiled .mmb to the proof explorer, which lives under this same
-// origin at explorer/. It reopens a stored file whose name matches the one in
-// its address (see mm0-js's `resolveFile`), so the handoff is: write the bytes
-// into its IndexedDB store under that name, then navigate there.
+// Hand a compiled .mmb to the proof explorer, a sibling app under this same
+// origin (EXPLORER_BASE, set from M0E_EXPLORER_URL; see webpack.config.js). It
+// reopens a stored file whose name matches the one in its address (see
+// mm0-js's `resolveFile`), so the handoff is: write the bytes into its
+// IndexedDB store under that name, then navigate there. The store is
+// per-origin, not per-path, so the write is visible across the two apps.
 //
 // `resolveFile` prefers a bundled example when the name matches one, so the
 // exported name keeps the source extension -- `peano.mm1.mmb`, never the bare
 // `peano.mmb` that would reopen the example instead of what was just compiled.
+// Substituted by webpack's DefinePlugin: the explorer's base URL (ending in a
+// slash), or `null` when M0E_EXPLORER_URL was unset at build time. Null means
+// there is nowhere to hand a proof off to, so the button is removed and the
+// rest of the handoff never runs.
+const EXPLORER_BASE = process.env.EXPLORER_URL;
+if (!EXPLORER_BASE) exploreButton.remove();
 const EXPLORER_DB = "mm0-js";
 const EXPLORER_STORE = "files";
 const EXPLORER_KEY = "last";
@@ -303,8 +311,10 @@ import("../pkg/index.js").then(wasm => {
     }
 
     // Only a file that elaborated without errors can be compiled and handed
-    // to the explorer.
-    exploreButton.disabled = !diagnosed.has(nameOf(model.uri.path)) || errors.length > 0;
+    // to the explorer. No-op when there is no explorer (button removed).
+    if (EXPLORER_BASE) {
+      exploreButton.disabled = !diagnosed.has(nameOf(model.uri.path)) || errors.length > 0;
+    }
 
     refreshLens();
     problems.dataset.shown = errors.length ? "yes" : "no";
@@ -477,7 +487,7 @@ import("../pkg/index.js").then(wasm => {
     }
   }, 50);
 
-  exploreButton.addEventListener("click", async () => {
+  if (EXPLORER_BASE) exploreButton.addEventListener("click", async () => {
     const source = nameOf(editor.getModel().uri.path);
     const mmbName = `${source}.mmb`;
     exploreButton.disabled = true;
@@ -488,7 +498,7 @@ import("../pkg/index.js").then(wasm => {
       await putInExplorerStore(mmbName, bytes);
       // Same-tab navigation, so the store write is visible: it is the same
       // origin and the write has already committed.
-      window.location.href = `explorer/#/${encodeURIComponent(mmbName)}`;
+      window.location.href = `${EXPLORER_BASE}#/${encodeURIComponent(mmbName)}`;
     } catch (e) {
       exploreButton.textContent = "export failed";
       console.error("export_mmb", e);
