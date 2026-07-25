@@ -1,8 +1,9 @@
 module MM0.FrontEnd.LocalContext where
 
+import Control.Monad (void)
+import Control.Monad.Trans.Class
 import Control.Applicative
 import Control.Monad.Trans.Reader
-import Control.Monad.Except
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T

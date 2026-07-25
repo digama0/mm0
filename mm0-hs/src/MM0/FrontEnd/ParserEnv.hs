@@ -4,6 +4,7 @@ module MM0.FrontEnd.ParserEnv (Token,
   NotaInfo(..),
   addNotation, recalcCoeProv, tokenize, getCoe, getCoeProv) where
 
+import Control.Monad.Trans.Class
 import Control.Monad.Except
 import Control.Monad.Trans.State
 import Control.Applicative ((<|>))

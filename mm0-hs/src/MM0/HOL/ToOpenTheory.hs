@@ -2,6 +2,7 @@
 module MM0.HOL.ToOpenTheory (writeOT, otToString) where
 
 import Prelude hiding (log)
+import Control.Monad
 import Data.Default
 import Data.Semigroup
 import Control.Monad.Reader

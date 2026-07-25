@@ -42,7 +42,9 @@ checkExpr db hy = modify . checkExpr' where
   checkExpr' :: MMExpr -> S.Set Label -> S.Set Label
   checkExpr' (SVar v) = if hy then S.insert v else id
   checkExpr' (App t es) = checkApp hs es where
-    Term _ (hs, _) _ _ = snd $ getStmt db t
+    hs = case snd $ getStmt db t of
+      Term _ (x, _) _ _ -> x
+      _ -> error "Emancipate: expected Term"
 
   checkApp :: [(VarStatus, Label)] -> [MMExpr] -> S.Set Label -> S.Set Label
   checkApp [] [] = id
@@ -54,9 +56,13 @@ checkProof :: MMDatabase -> MMProof -> State (S.Set Label) ()
 checkProof db = modify . checkProof' where
   checkProof' :: MMProof -> S.Set Label -> S.Set Label
   checkProof' (PTerm t ps) = checkApp hs ps where
-    Term _ (hs, _) _ _ = snd $ getStmt db t
+    hs = case snd $ getStmt db t of
+      Term _ (x, _) _ _ -> x
+      _ -> error "Emancipate: expected Term"
   checkProof' (PThm t ps) = checkApp hs ps where
-    Thm _ (hs, _) _ _ = snd $ getStmt db t
+    hs = case snd $ getStmt db t of
+      Thm _ (x, _) _ _ -> x
+      _ -> error "Emancipate: expected Thm"
   checkProof' (PSave p) = checkProof' p
   checkProof' _ = id
 

@@ -1,5 +1,6 @@
 module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 
+import Control.Monad.Trans.Class
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
@@ -7,7 +8,7 @@ import Data.Maybe
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
-import Text.Megaparsec hiding (runParser, unPos)
+import Text.Megaparsec hiding (runParser, unPos, setErrorOffset)
 import Text.Megaparsec.Internal (ParsecT(..))
 import MM0.Compiler.AST
 import MM0.Compiler.Env hiding (try)
@@ -38,25 +39,25 @@ unquote = do
   lift $ QUnquote <$> lispVal
 
 token1 :: MathParser (Span T.Text)
-token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
+token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst errs) cok _ _ eerr ->
   let
-    unspace t' o' = State t2 (o'+T.length t1) where
+    unspace t' o' = State t2 (o'+T.length t1) pst errs where
       (t1, t2) = T.span isSpace t'
     go t' i = case T.uncons t' of
       Nothing | i == 0 ->
                 eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
               | otherwise ->
-                cok (Span (o, o+i) (T.take i t)) (State t' (o+i) pst) mempty
+                cok (Span (o, o+i) (T.take i t)) (State t' (o+i) pst errs) mempty
       Just (c, t2) -> case delimVal (pDelims pe) c of
         0 -> go t2 (i+1)
         4 | i == 0 ->
             eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
           | otherwise ->
-            cok (Span (o, o+i) (T.take i t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t2 (o+i+1)) mempty
         d | isRightDelim d && i /= 0 ->
-            cok (Span (o, o+i) (T.take i t)) (unspace t' (o+i) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t' (o+i)) mempty
           | isLeftDelim d ->
-            cok (Span (o, o+i+1) (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i+1) (T.take (i+1) t)) (unspace t2 (o+i+1)) mempty
           | otherwise -> go t2 (i+1)
   in go t 0
 
@@ -130,6 +131,21 @@ parsePrefix p =
         else return [])
       <?> "identifier") })
 
+parseLiteralsInfix :: Int -> QExpr -> [PLiteral] -> MathParser [QExpr]
+parseLiteralsInfix n1 lhs = go (I.singleton n1 lhs) where
+  go :: I.IntMap QExpr -> [PLiteral] -> MathParser [QExpr]
+  go m [] = return (I.elems m)
+  go m (PConst t : lits) = tk t >> go m lits
+  go m (PVar n p : lits) = do
+    e <- parseExpr p
+    go (I.insert n e m) lits
+
+isVarLast :: [PLiteral] -> Bool
+isVarLast [] = False
+isVarLast [PVar _ _] = True
+isVarLast [PConst _] = False
+isVarLast (_:ls) = isVarLast ls
+
 getLhs :: Prec -> QExpr -> MathParser QExpr
 getLhs p lhs =
   ((do
@@ -138,10 +154,14 @@ getLhs p lhs =
     NotaInfo _ x (llit, lits) _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     let (i, _) = fromJust llit
     _ <- token1
-    (m, n, e) <- parseLiterals' i lhs lits
-    rhs <- getRhs q e
-    let args = I.elems (I.insert n rhs m)
-    getLhs p (QApp (Span o x) args))
+    if isVarLast lits then do
+      (m, n, e) <- parseLiterals' i lhs lits
+      rhs <- getRhs q e
+      let args = I.elems (I.insert n rhs m)
+      getLhs p (QApp (Span o x) args)
+    else do
+      args <- parseLiteralsInfix i lhs lits
+      getLhs p (QApp (Span o x) args))
     <?> ("infix >= " ++ show p)) <|>
   return lhs
 

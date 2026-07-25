@@ -1,11 +1,11 @@
 module MM0.HOL.Check where
 
-import Control.Monad.Except
+import Control.Monad.Trans.Class (lift)
+import Control.Monad
 import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import MM0.Kernel.Environment (Ident, WithComment(..))
 import MM0.HOL.Types
 import MM0.Util
 
@@ -50,22 +50,24 @@ addDecl gctx = addDecl' where
 
   addDecl' :: HDecl -> Either String GlobalCtx
   addDecl' (HDSort s) = do
-    guard (S.notMember s (gSorts gctx))
+    guardError ("sort '" ++ T.unpack s ++ "' already declared") (S.notMember s (gSorts gctx))
     return $ gctx {gSorts = S.insert s (gSorts gctx)}
   addDecl' (HDTerm x t) = do
-    guard (M.notMember x (gTerms gctx))
+    guardError ("term '" ++ T.unpack x ++ "' already declared") (M.notMember x (gTerms gctx))
     return $ gctx {gTerms = M.insert x t (gTerms gctx)}
   addDecl' (HDDef x ts ss r e) = do
-    guard (M.notMember x (gTerms gctx))
+    guardError ("term '" ++ T.unpack x ++ "' already declared") (M.notMember x (gTerms gctx))
     let ctx = mkLC ts ss
-    withContext x $ inferTerm ctx e >>= guard . (r ==)
+    withContext x $ do
+      t <- inferTerm ctx e
+      guardError ("def type mismatch: " ++ show r ++ " != " ++ show t) (r == t)
     return $ gctx {
       gTerms = M.insert x (HType (snd <$> ts) (SType (snd <$> ss) r)) (gTerms gctx),
       gDefs = M.insert x (HDef ts ss r e) (gDefs gctx) }
   addDecl' (HDThm x t@(TType ts hs (GType ss r)) pr) = do
-    guard (M.notMember x (gThms gctx))
+    guardError ("thm '" ++ T.unpack x ++ "' already declared") (M.notMember x (gThms gctx))
     withContext x $ forM_ pr $ \(vs, p) -> do
-      guard (length vs == length hs)
+      guardError "arg length mismatch" (length vs == length hs)
       let ctx = mkLC ts ss
       r' <- evalStateT (inferProof ctx p) (M.fromList (zip vs hs))
       guardError ("result does not match theorem statement:\n    " ++
@@ -90,7 +92,7 @@ addDecl gctx = addDecl' where
       guard (ts == ts')
       mapM (lcLVar ctx) vs >>= guard . (ss ==)
       return r
-  inferTerm _ HTSorry = fail "sorry found"
+  inferTerm _ HTSorry = error "sorry found"
 
   inferSLam :: LocalCtx -> SLam -> Either String SType
   inferSLam ctx (SLam ss t) = SType (snd <$> ss) <$> go ctx ss where
@@ -147,9 +149,10 @@ addDecl gctx = addDecl' where
       return t
   inferProof ctx (HConv eq p) = do
     (t1, t2, _) <- inferConv ctx eq
-    inferProof ctx p >>= guard . (t1 ==)
+    t <- inferProof ctx p
+    guardError ("conv mismatch: " ++ show t1 ++ " != " ++ show t) (t1 == t)
     return t2
-  inferProof _ HSorry = fail "sorry found"
+  inferProof _ HSorry = error "sorry found"
 
   inferConvLam :: LocalCtx -> HConvLam -> ProofM (SLam, SLam, SType)
   inferConvLam ctx (HConvLam ss p) = do
@@ -170,7 +173,7 @@ addDecl gctx = addDecl' where
   inferConv ctx (CTrans p1 p2) = do
     (e1, e2, r) <- inferConv ctx p1
     (e2', e3, _) <- inferConv ctx p2
-    guard (e2 == e2')
+    guardError ("trans mismatch: " ++ show e2 ++ " != " ++ show e2') (e2 == e2')
     return (e1, e3, r)
   inferConv ctx c@(CCong t ps xs) = do
     (es, es', ts') <- unzip3 <$> mapM (inferConvLam ctx) ps

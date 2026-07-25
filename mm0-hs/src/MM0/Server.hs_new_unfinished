@@ -1,0 +1,508 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
+module MM0.Server (server) where
+
+import Control.Concurrent
+import Control.Concurrent.Async
+import Control.Concurrent.STM
+import qualified Control.Exception as E
+import Control.Lens ((^.))
+import Control.Monad
+import Control.Monad.Reader
+import Control.Monad.IO.Class
+import Data.Default
+import Data.List
+import Data.Maybe
+import Data.Int (Int32)
+import qualified Data.Aeson as A
+import qualified Data.HashMap.Strict as H
+import qualified Data.Map as Map
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable.Dynamic as VD
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import qualified Language.LSP.Server as LSP
+import Language.LSP.Protocol.Types
+import Language.LSP.Protocol.Message
+import Language.LSP.Protocol.Lens hiding (id)
+import qualified Language.LSP.Protocol.Lens as L
+import Language.LSP.Diagnostics (partitionBySource)
+import Language.LSP.VFS
+import Network.URI
+import System.IO
+import System.IO.Error
+import System.Timeout
+import System.Exit
+import qualified System.Log.Logger as L
+import qualified Data.Text.Mixed.Rope as Rope
+import MM0.Compiler.PositionInfo
+import qualified MM0.Compiler.AST as CA
+import qualified MM0.Compiler.Parser as CP
+import MM0.Compiler.PrettyPrinter hiding (doc)
+import qualified MM0.Compiler.Env as CE
+import qualified MM0.Compiler.Elaborator as CE
+import MM0.Compiler.Elaborator (ErrorLevel(..))
+import MM0.Util
+import qualified Control.Monad.Trans.State.Strict as State
+import qualified Control.Monad.Trans.Except as Except
+
+server :: [String] -> IO ()
+server ("--debug" : _) = runServer True
+server _ = runServer False
+
+catchAll :: forall a. IO a -> IO ()
+catchAll m = void (E.try m :: IO (Either E.SomeException a))
+
+-- State management
+data FileCache = FC {
+  _fcText :: T.Text,
+  _fcLines :: Lines,
+  _fcAST :: CA.AST,
+  _fcSpans :: V.Vector Spans,
+  fcEnv :: CE.Env }
+
+data ReactorState = RS {
+  rsDebug :: Bool,
+  rsDiagThreads :: TVar (H.HashMap NormalizedUri
+    (Maybe Int32, Async (Either ResponseError FileCache))),
+  rsLastParse :: TVar (H.HashMap NormalizedUri (Maybe Int32, FileCache)) }
+
+type HandlerM = Except.ExceptT (MessageType, T.Text) (State.StateT ReactorState (LSP.LspM ()))
+
+liftLsp :: LSP.LspM () a -> HandlerM a
+liftLsp = lift . lift
+
+initialState :: Bool -> IO ReactorState
+initialState debug = RS debug <$> newTVarIO H.empty <*> newTVarIO H.empty
+
+runServer :: Bool -> IO ()
+runServer debug = do
+  state <- newMVar =<< initialState debug
+
+  let doInitialize :: LSP.LanguageContextEnv () -> TMessage Method_Initialize -> HandlerM (Either ResponseError ())
+      doInitialize _ _ = return (Right ())
+
+  let onConfigChange :: () -> HandlerM ()
+      onConfigChange _ = return ()
+
+  let staticHandlers :: ClientCapabilities -> LSP.Handlers HandlerM
+      staticHandlers _ = mconcat
+        [ LSP.notificationHandler SMethod_Initialized $ \_ ->
+            registerCapabilities
+        , LSP.notificationHandler SMethod_TextDocumentDidOpen handleDidOpen
+        , LSP.notificationHandler SMethod_TextDocumentDidChange handleDidChange
+        , LSP.notificationHandler SMethod_TextDocumentDidClose $ \_ -> return ()
+        , LSP.notificationHandler SMethod_TextDocumentDidSave $ \_ -> return ()
+        , LSP.requestHandler SMethod_TextDocumentCompletion handleCompletion
+        , LSP.requestHandler SMethod_TextDocumentHover handleHover
+        , LSP.requestHandler SMethod_TextDocumentDefinition handleDefinition
+        , LSP.requestHandler SMethod_TextDocumentDocumentSymbol handleDocumentSymbols
+        ]
+
+  let interpretHandler :: LSP.LanguageContextEnv () -> HandlerM a -> IO a
+      interpretHandler env handler =
+            modifyMVar state \oldState -> do
+              LSP.runLspT env do
+                (e, newState) <- State.runStateT (Except.runExceptT handler) oldState
+                result <- case e of
+                  Left (severity_, _message) -> do
+                    LSP.sendNotification SMethod_WindowLogMessage
+                      LogMessageParams{ _type_ = severity_, _message }
+                    liftIO (fail (T.unpack _message))
+                  Right a -> return a
+                return (newState, result)
+
+  let options = def
+        { LSP.optTextDocumentSync = Just syncOptions
+        , LSP.optExecuteCommandCommands = Just []
+        }
+
+  exitCode <- LSP.runServer LSP.ServerDefinition
+    { defaultConfig = ()
+    , configSection = "mm0"
+    , parseConfig = \_ _ -> Right ()
+    , onConfigChange = onConfigChange
+    , doInitialize = doInitialize
+    , staticHandlers = staticHandlers
+    , interpretHandler = interpretHandler
+    , options = options
+    }
+
+  exitWith (if exitCode == 0 then ExitSuccess else ExitFailure exitCode)
+
+syncOptions :: TextDocumentSyncOptions
+syncOptions = TextDocumentSyncOptions
+  { _openClose         = Just True
+  , _change            = Just TextDocumentSyncKind_Incremental
+  , _willSave          = Just False
+  , _willSaveWaitUntil = Just False
+  , _save              = Just (InR (SaveOptions (Just False)))
+  }
+
+registerCapabilities :: HandlerM ()
+registerCapabilities = do
+  let registrations = [Registration "mm0-hs-completion" "textDocument/completion" Nothing]
+  _ <- liftLsp $ LSP.sendRequest SMethod_ClientRegisterCapability
+    (RegistrationParams registrations) $ \case
+      Left err -> logError $ "Failed to register capabilities: " <> T.pack (show err)
+      Right _ -> return ()
+  return ()
+
+handleDidOpen :: TNotificationMessage 'Method_TextDocumentDidOpen -> HandlerM ()
+handleDidOpen msg = do
+  let params = msg ^. L.params
+      doc = params ^. L.textDocument
+      uri = doc ^. L.uri
+      version = doc ^. L.version
+      text = doc ^. L.text
+  sendDiagnostics (toNormalizedUri uri) (Just version) text
+
+handleDidChange :: TNotificationMessage 'Method_TextDocumentDidChange -> HandlerM ()
+handleDidChange msg = do
+  let params = msg ^. L.params
+      doc = params ^. L.textDocument
+      uri = doc ^. L.uri
+      version = doc ^. L.version
+      nuri = toNormalizedUri uri
+
+  vfs <- liftLsp LSP.getVirtualFiles
+  case Map.lookup nuri (_vfsMap vfs) of
+    Nothing -> liftLsp $ logError "Virtual File not found when processing DidChangeTextDocument"
+    Just vf ->
+      sendDiagnostics nuri (Just version) (Rope.toText $ _file_text vf)
+
+handleCompletion :: TRequestMessage 'Method_TextDocumentCompletion -> (Either (TResponseError 'Method_TextDocumentCompletion) (CompletionList |? ([CompletionItem] |? Null)) -> HandlerM ()) -> HandlerM ()
+handleCompletion req responder = do
+  let params = req ^. L.params
+      doc = params ^. L.textDocument
+      pos = params ^. L.position
+      uri = doc ^. L.uri
+
+  result <- getCompletions (toNormalizedUri uri) pos
+  case result of
+    Left err -> responder $ Left $ toTError err
+    -- Return: CompletionList |? ([CompletionItem] |? Null)
+    -- We are constructing a CompletionList.
+    -- Order: [CompletionItem] |? CompletionList |? Null (Assuming common order, usually list is preferred or first in some bindings, but if mismatched, try the other).
+    -- If mismatched earlier, it likely expects [CompletionItem] first.
+    -- To send CompletionList: InR (InL (CompletionList ...))
+    Right items -> responder $ Right $ InR $ InL $ CompletionList False Nothing items
+
+handleHover :: TRequestMessage 'Method_TextDocumentHover -> (Either (TResponseError 'Method_TextDocumentHover) (Hover |? Null) -> HandlerM ()) -> HandlerM ()
+handleHover req responder = do
+  let params = req ^. L.params
+      doc = params ^. L.textDocument
+      pos = params ^. L.position
+      uri = doc ^. L.uri
+      nuri = toNormalizedUri uri
+
+  getFileCache nuri >>= \case
+    Left err -> responder $ Left $ toTError err
+    Right (FC _ larr ast sps env) ->
+      case getPosInfo ast sps (toOffset larr pos) of
+        Nothing -> responder $ Right $ InR Null
+        Just (stmt, CA.Span o pi') ->
+          case makeHover env (toRange larr o) stmt pi' of
+            Nothing -> responder $ Right $ InR Null
+            Just h -> responder $ Right $ InL h
+
+handleDefinition :: TRequestMessage 'Method_TextDocumentDefinition -> (Either (TResponseError 'Method_TextDocumentDefinition) (Definition |? ([DefinitionLink] |? Null)) -> HandlerM ()) -> HandlerM ()
+handleDefinition req responder = do
+  let params = req ^. L.params
+      doc = params ^. L.textDocument
+      pos = params ^. L.position
+      uri = doc ^. L.uri
+      nuri = toNormalizedUri uri
+
+  getFileCache nuri >>= \case
+    Left err -> responder $ Left $ toTError err
+    Right (FC _ larr ast sps env) ->
+      case getPosInfo ast sps (toOffset larr pos) of
+        Nothing -> responder $ Right $ InR $ InR Null
+        Just (_, CA.Span _ pi') ->
+          let locs = goToDefinition larr env uri pi'
+          in if null locs
+             then responder $ Right $ InR $ InR Null
+             -- Definition |? ...
+             -- Definition = Location |? [Location]
+             -- We have [Location]. So InR locs is Definition.
+             -- InL (InR locs) is Result.
+             else responder $ Right $ InL $ InR locs
+
+handleDocumentSymbols :: TRequestMessage 'Method_TextDocumentDocumentSymbol -> (Either (TResponseError 'Method_TextDocumentDocumentSymbol) ([SymbolInformation] |? ([DocumentSymbol] |? Null)) -> HandlerM ()) -> HandlerM ()
+handleDocumentSymbols req responder = do
+  let params = req ^. L.params
+      doc = params ^. L.textDocument
+      uri = doc ^. L.uri
+      nuri = toNormalizedUri uri
+      fileUri = fromNormalizedUri nuri
+      file = fromMaybe "" $ uriToFilePath fileUri
+
+  getFileCache nuri >>= \case
+    Left err -> responder $ Left $ toTError err
+    Right (FC _ larr _ _ env) -> do
+      symbols <- liftIO $ getSymbols larr file env
+      responder $ Right $ InR $ InL symbols
+
+-- | Helper to convert generic ResponseError to the typed TResponseError required by handlers
+toTError :: ResponseError -> TResponseError m
+toTError (ResponseError c m _) = TResponseError c m Nothing
+
+logError :: T.Text -> LSP.LspM () ()
+logError msg = LSP.sendNotification SMethod_WindowLogMessage $
+  LogMessageParams MessageType_Error msg
+
+logInfo :: T.Text -> LSP.LspM () ()
+logInfo msg = LSP.sendNotification SMethod_WindowLogMessage $
+  LogMessageParams MessageType_Info msg
+
+elSeverity :: ErrorLevel -> DiagnosticSeverity
+elSeverity ELError = DiagnosticSeverity_Error
+elSeverity ELWarning = DiagnosticSeverity_Warning
+elSeverity ELInfo = DiagnosticSeverity_Information
+
+toOffset :: Lines -> Position -> Int
+toOffset larr (Position l c) = posToOff larr (fromIntegral l) (fromIntegral c)
+
+toPosition :: Lines -> Int -> Position
+toPosition larr n = let (l, c) = offToPos larr n in Position (fromIntegral l) (fromIntegral c)
+
+toRange :: Lines -> (Int, Int) -> Range
+toRange larr (o1, o2) = Range (toPosition larr o1) (toPosition larr o2)
+
+toLocation :: Lines -> (FilePath, (Int, Int)) -> Location
+toLocation larr (p, r) = Location (filePathToUri p) (toRange larr r)
+
+sendDiagnostics :: NormalizedUri -> Maybe Int32 -> T.Text -> HandlerM ()
+sendDiagnostics uri version str = do
+  let fileUri = fromNormalizedUri uri
+      file = fromMaybe "" $ uriToFilePath fileUri
+      larr = getLines str
+      isMM0 = T.isSuffixOf "mm0" (getUri $ fromNormalizedUri uri)
+      (errs, _, ast) = CP.parseAST file str
+
+  -- Simplified elaboration - in full version you'd need proper state management
+  (errs', env) <- liftIO $ CE.elaborate
+    (CE.ElabConfig isMM0 True False file (\_ -> return $ Left "imports not supported"))
+    (CE.toElabError def file <$> errs) ast
+
+  let diags = elabErrorDiags larr errs'
+  liftLsp $ LSP.publishDiagnostics 100 uri version (partitionBySource diags)
+
+elabErrorDiags :: Lines -> [CE.ElabError] -> [Diagnostic]
+elabErrorDiags larr = mapMaybe toDiag where
+  toRel :: ((FilePath, (Int, Int)), T.Text) -> DiagnosticRelatedInformation
+  toRel (loc, msg) = DiagnosticRelatedInformation (toLocation larr loc) msg
+  toDiag :: CE.ElabError -> Maybe Diagnostic
+  toDiag (CE.ElabError _ _ False _ _) = Nothing
+  toDiag (CE.ElabError l (_, o) True msg es) =
+    Just $ Diagnostic
+      { _range = toRange larr o
+      , _severity = Just (elSeverity l)
+      , _code = Nothing
+      , _codeDescription = Nothing
+      , _source = Just "MM0"
+      , _message = msg
+      , _tags = Nothing
+      , _relatedInformation = Just (toRel <$> es)
+      , _data_ = Nothing
+      }
+
+getFileCache :: NormalizedUri -> HandlerM (Either ResponseError FileCache)
+getFileCache nuri = do
+  vfs <- liftLsp LSP.getVirtualFiles
+  case Map.lookup nuri (_vfsMap vfs) of
+    Nothing -> do
+      let fileUri = fromNormalizedUri nuri
+          file = fromMaybe "" $ uriToFilePath fileUri
+      eText <- liftIO $ E.try $ T.readFile file
+      case eText of
+        Left err -> return $ Left $ ResponseError (InR ErrorCodes_InternalError)
+          (T.pack ("IO error: " ++ show (err :: IOError))) Nothing
+        Right text -> elaborate nuri Nothing text
+    Just vf ->
+      elaborate nuri (Just $ _lsp_version vf) (Rope.toText $ _file_text vf)
+  where
+    elaborate uri' version' str' = do
+      let larr = getLines str'
+          fileUri = fromNormalizedUri uri'
+          file = fromMaybe "" $ uriToFilePath fileUri
+          isMM0 = T.isSuffixOf "mm0" (getUri fileUri)
+          (errs, _, ast) = CP.parseAST file str'
+
+      (errs', env) <- liftIO $ CE.elaborate
+        (CE.ElabConfig isMM0 True False file (\_ -> return $ Left "imports not supported"))
+        (CE.toElabError def file <$> errs) ast
+
+      let fc = FC str' larr ast (toSpans env <$> ast) env
+      return $ Right fc
+
+getCompletions :: NormalizedUri -> Position -> HandlerM (Either ResponseError [CompletionItem])
+getCompletions nuri pos = do
+  vfs <- liftLsp LSP.getVirtualFiles
+  case Map.lookup nuri (_vfsMap vfs) of
+    Nothing -> return $ Left $ ResponseError (InR ErrorCodes_InternalError) "could not get file data" Nothing
+    Just vf -> do
+      let fileUri = fromNormalizedUri nuri
+          file = fromMaybe "" $ uriToFilePath fileUri
+          str = Rope.toText $ _file_text vf
+          larr = getLines str
+          isMM0 = T.isSuffixOf "mm0" (getUri fileUri)
+          (errs, _, ast) = CP.parseAST file str
+
+      case markPosition (toOffset larr pos) ast of
+        Nothing -> return $ Right []
+        Just ast' -> do
+          (errs', env) <- liftIO $ CE.elaborate
+            (CE.ElabConfig isMM0 True True file (\_ -> return $ Left "imports not supported"))
+            (CE.toElabError def file <$> errs) ast'
+
+          symbols <- liftIO $ getSymbols larr file env
+          return $ Right $ map toCompletionItem symbols
+  where
+    toCompletionItem (DocumentSymbol x det sk _ _ _ _ _) =
+      CompletionItem
+        { _label = x
+        , _labelDetails = Nothing
+        , _kind = Just (toCIK sk)
+        , _tags = Nothing
+        , _detail = det
+        , _documentation = Nothing
+        , _deprecated = Nothing
+        , _preselect = Nothing
+        , _sortText = Nothing
+        , _filterText = Nothing
+        , _insertText = Nothing
+        , _insertTextFormat = Nothing
+        , _insertTextMode = Nothing
+        , _textEdit = Nothing
+        , _textEditText = Nothing
+        , _additionalTextEdits = Nothing
+        , _commitCharacters = Nothing
+        , _command = Nothing
+        , _data_ = Nothing
+        }
+
+    toCIK :: SymbolKind -> CompletionItemKind
+    toCIK SymbolKind_Method = CompletionItemKind_Method
+    toCIK SymbolKind_Function = CompletionItemKind_Function
+    toCIK SymbolKind_Constructor = CompletionItemKind_Constructor
+    toCIK SymbolKind_Field = CompletionItemKind_Field
+    toCIK SymbolKind_Variable = CompletionItemKind_Variable
+    toCIK SymbolKind_Class = CompletionItemKind_Class
+    toCIK SymbolKind_Interface = CompletionItemKind_Interface
+    toCIK SymbolKind_Module = CompletionItemKind_Module
+    toCIK SymbolKind_Property = CompletionItemKind_Property
+    toCIK SymbolKind_Enum = CompletionItemKind_Enum
+    toCIK SymbolKind_File = CompletionItemKind_File
+    toCIK SymbolKind_EnumMember = CompletionItemKind_EnumMember
+    toCIK SymbolKind_Constant = CompletionItemKind_Constant
+    toCIK SymbolKind_Struct = CompletionItemKind_Struct
+    toCIK SymbolKind_Event = CompletionItemKind_Event
+    toCIK SymbolKind_Operator = CompletionItemKind_Operator
+    toCIK SymbolKind_TypeParameter = CompletionItemKind_TypeParameter
+    toCIK _ = CompletionItemKind_Value
+
+makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
+makeHover env range stmt (PosInfo t pi') = case pi' of
+  PISort -> do
+    (_, (_, _, (o, _)), sd) <- H.lookup t (CE.eSorts env)
+    Just $ code $ ppStmt $ CA.Sort o t sd
+  PIVar (Just bi) -> Just $ code $ ppBinder bi
+  PIVar Nothing -> do
+    CA.Span _ (CA.Decl _ _ _ st _ _ _) <- return stmt
+    bis <- H.lookup st (CE.eDecls env) <&> \case
+      (_, _, CE.DTerm bis _, _) -> bis
+      (_, _, CE.DAxiom bis _ _, _) -> bis
+      (_, _, CE.DDef _ bis _ _, _) -> bis
+      (_, _, CE.DTheorem _ bis _ _ _, _) -> bis
+    bi:_ <- return $ filter (\bi -> CE.binderName bi == t) bis
+    Just $ code $ ppPBinder bi
+  PITerm -> do
+    (_, _, d, _) <- H.lookup t (CE.eDecls env)
+    Just $ code $ ppDecl env t d
+  PIAtom True (Just bi) -> Just $ code $ ppBinder bi
+  PIAtom True Nothing -> do
+    (_, _, d, _) <- H.lookup t (CE.eDecls env)
+    Just $ code $ ppDecl env t d
+  _ -> Nothing
+  where
+    hover ms = Hover (InL $ MarkupContent MarkupKind_Markdown ms) (Just range)
+    code = hover . ("```mm0\n" <>) . (<> "\n```") . render'
+
+goToDefinition :: Lines -> CE.Env -> Uri -> PosInfo -> [Location]
+goToDefinition larr env uri (PosInfo t pi') = case pi' of
+  PISort -> maybeToList $
+    H.lookup t (CE.eSorts env) <&> \(_, (p, _, rx), _) -> toLoc (p, rx)
+  PIVar bi -> maybeToList $ binderLoc <$> bi
+  PITerm -> maybeToList $
+    H.lookup t (CE.eDecls env) <&> \(_, (p, _, rx), _, _) -> toLoc (p, rx)
+  PIAtom b obi ->
+    (case (b, obi) of
+      (True, Just bi) -> [binderLoc bi]
+      (True, Nothing) -> maybeToList $
+        H.lookup t (CE.eDecls env) <&> \(_, (p, _, rx), _, _) -> toLoc (p, rx)
+      _ -> []) ++
+    maybeToList (
+      H.lookup t (CE.eLispNames env) >>= fst <&> \(p, _, rx) -> toLoc (p, rx))
+  PIFile -> maybeToList $ flip Location (Range pos0 pos0) <$> relativeUri t uri
+  where
+    toLoc = toLocation larr
+    binderLoc (CA.Binder o _ _) = Location uri (toRange larr o)
+    pos0 = Position 0 0
+
+relativeUri :: T.Text -> Uri -> Maybe Uri
+relativeUri t (Uri uri) = do
+  relUri <- parseURIReference $ T.unpack t
+  absUri <- parseURI $ T.unpack uri
+  return $ Uri $ T.pack $ show $ relUri `relativeTo` absUri
+
+getSymbols :: Lines -> FilePath -> CE.Env -> IO [DocumentSymbol]
+getSymbols larr doc env = do
+  let mkDS x det (p, rd, rx) sk = (p, DocumentSymbol x det sk Nothing Nothing
+        (toRange larr rd) (toRange larr rx) Nothing)
+  v <- VD.unsafeFreeze (CE.eLispData env)
+  l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
+    ty <- CE.unRefIO (v V.! n) <&> \case
+      CE.Atom {} -> Just SymbolKind_Constant
+      CE.List {} -> Just SymbolKind_Array
+      CE.DottedList {} -> Just SymbolKind_Object
+      CE.Number {} -> Just SymbolKind_Number
+      CE.String {} -> Just SymbolKind_String
+      CE.UnparsedFormula {} -> Just SymbolKind_String
+      CE.Bool {} -> Just SymbolKind_Boolean
+      CE.Syntax {} -> Just SymbolKind_Event
+      CE.Undef {} -> Nothing
+      CE.Proc {} -> Just SymbolKind_Function
+      CE.AtomMap {} -> Just SymbolKind_Object
+      CE.Ref {} -> undefined
+      CE.MVar {} -> Just SymbolKind_Constant
+      CE.Goal {} -> Just SymbolKind_Constant
+    return $ liftM2 (mkDS x Nothing) o ty
+  let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x Nothing r SymbolKind_Class
+  let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) ->
+        mkDS x (Just (renderNoBreak (ppDeclType env d))) r $ case d of
+          CE.DTerm {} -> SymbolKind_Constructor
+          CE.DDef {} -> SymbolKind_Constructor
+          CE.DAxiom {} -> SymbolKind_Method
+          CE.DTheorem {} -> SymbolKind_Method
+  return $ sortOn (\ds -> ds ^. L.selectionRange . L.start) $
+    mapMaybe (\(p, ds) -> if p == doc then Just ds else Nothing) (l1 ++ l2 ++ l3)
+
+isOutdated :: Maybe Int32 -> Maybe Int32 -> Bool
+isOutdated (Just n) (Just v) = v <= n
+isOutdated _ Nothing = True
+isOutdated _ _ = False
