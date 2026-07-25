@@ -131,6 +131,21 @@ parsePrefix p =
         else return [])
       <?> "identifier") })
 
+parseLiteralsInfix :: Int -> QExpr -> [PLiteral] -> MathParser [QExpr]
+parseLiteralsInfix n1 lhs = go (I.singleton n1 lhs) where
+  go :: I.IntMap QExpr -> [PLiteral] -> MathParser [QExpr]
+  go m [] = return (I.elems m)
+  go m (PConst t : lits) = tk t >> go m lits
+  go m (PVar n p : lits) = do
+    e <- parseExpr p
+    go (I.insert n e m) lits
+
+isVarLast :: [PLiteral] -> Bool
+isVarLast [] = False
+isVarLast [PVar _ _] = True
+isVarLast [PConst _] = False
+isVarLast (_:ls) = isVarLast ls
+
 getLhs :: Prec -> QExpr -> MathParser QExpr
 getLhs p lhs =
   ((do
@@ -139,10 +154,14 @@ getLhs p lhs =
     NotaInfo _ x (llit, lits) _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     let (i, _) = fromJust llit
     _ <- token1
-    (m, n, e) <- parseLiterals' i lhs lits
-    rhs <- getRhs q e
-    let args = I.elems (I.insert n rhs m)
-    getLhs p (QApp (Span o x) args))
+    if isVarLast lits then do
+      (m, n, e) <- parseLiterals' i lhs lits
+      rhs <- getRhs q e
+      let args = I.elems (I.insert n rhs m)
+      getLhs p (QApp (Span o x) args)
+    else do
+      args <- parseLiteralsInfix i lhs lits
+      getLhs p (QApp (Span o x) args))
     <?> ("infix >= " ++ show p)) <|>
   return lhs
 

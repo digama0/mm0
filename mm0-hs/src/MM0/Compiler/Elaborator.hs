@@ -203,6 +203,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
   insertDecl x decl rd rx ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
 
 insertDecl :: T.Text -> Decl -> Range -> Range -> T.Text -> ElabM ()
+insertDecl "_" _ _ _ _ = return ()
 insertDecl x decl rd rx err = do
   fp <- asks efName
   ins <- gets eDecls >>= checkNew ELError rx err (\(_, (p, _, i), _, _) -> (p, i)) x
@@ -647,6 +648,10 @@ evalSyntax o ctx MatchFn es = do
 evalSyntax o ctx MatchFns es = do
   ms <- mapM (parseMatchBranch ctx) es
   return $ Proc $ \_ -> runMatch ms o . List
+evalSyntax o ctx SetMergeStrategy (Span (no, _) (AAtom _ x) : strat : _) = do
+  stratVal <- evalAt ctx strat
+  Undef <$ lispSetMergeStrategy (no, no) x stratVal
+evalSyntax o _ SetMergeStrategy _ = escapeAt o "set-merge-strategy: expected two arguments (name strategy)"
 
 data LambdaSpec = LSExactly [Ident] | LSAtLeast [Ident] Ident
 
@@ -678,17 +683,41 @@ mkLambda ls ctx es (o, _) vs = do
   ctx' <- mkCtx o ls vs ctx
   eval1 ctx' es
 
-parseDef :: ElabM (Span Ident, LCtx -> ElabM LispVal) ->
-  [AtLisp] -> ElabM (Span Ident, LCtx -> ElabM LispVal)
-parseDef _ (Span o (AAtom _ x) : es) = return (Span o x, (`eval1` es))
-parseDef _ (Span _ (AList (Span o (AAtom _ x) : xs)) : es) = do
+data DefItem =
+    DIList [Ident]
+  | DIDotted [Ident] Ident
+
+parseDefVar :: AtLisp -> ElabM (Span Ident, [DefItem])
+parseDefVar (Span o (AAtom _ x)) = return (Span o x, [])
+parseDefVar (Span _ (AList (e : xs))) = do
+  (x, stack) <- parseDefVar e
   xs' <- mapM toIdent xs
-  return (Span o x, \ctx -> return $ Proc $ mkLambda (LSExactly xs') ctx es)
-parseDef _ (Span _ (ADottedList (Span o (AAtom _ x)) xs r) : es) = do
+  return (x, stack ++ [DIList xs'])
+parseDefVar (Span _ (ADottedList e xs r)) = do
+  (x, stack) <- parseDefVar e
   xs' <- mapM toIdent xs
   r' <- toIdent r
-  return (Span o x, \ctx -> return $ Proc $ mkLambda (LSAtLeast xs' r') ctx es)
-parseDef err _ = err
+  return (x, stack ++ [DIDotted xs' r'])
+parseDefVar (Span (o, _) _) = escapeAt o "def: invalid spec"
+
+buildDefVal :: [DefItem] -> [AtLisp] -> LCtx -> ElabM LispVal
+buildDefVal [] es ctx = eval1 ctx es
+buildDefVal (DIList xs : items) es ctx =
+  return $ Proc $ \os@(o, _) vs -> do
+    ctx' <- mkCtx o (LSExactly xs) vs ctx
+    buildDefVal items es ctx'
+buildDefVal (DIDotted xs r : items) es ctx =
+  return $ Proc $ \os@(o, _) vs -> do
+    ctx' <- mkCtx o (LSAtLeast xs r) vs ctx
+    buildDefVal items es ctx'
+
+parseDef :: ElabM (Span Ident, LCtx -> ElabM LispVal) ->
+  [AtLisp] -> ElabM (Span Ident, LCtx -> ElabM LispVal)
+parseDef err [] = err
+parseDef err (e : es) = try (parseDefVar e) >>= \case
+  Just (x, []) -> return (x, \ctx -> eval1 ctx es)
+  Just (x, items) -> return (x, buildDefVal items es)
+  Nothing -> err
 
 evalDefine :: Offset -> LCtx -> [AtLisp] -> ElabM (Span Ident, LispVal)
 evalDefine o ctx es = do
@@ -708,6 +737,48 @@ parseLet (Span _ (AList ls) : es) = (, es) <$> mapM parseLetVar ls
 parseLet (Span (o, _) _ : _) = escapeAt o "invalid syntax"
 parseLet _ = return ([], [])
 
+lispEq :: LispVal -> LispVal -> Bool
+lispEq (Atom _ _ x1) (Atom _ _ x2) = x1 == x2
+lispEq (List l1) (List l2) = length l1 == length l2 && and (zipWith lispEq l1 l2)
+lispEq (DottedList l1 es1 r1) (DottedList l2 es2 r2) = lispEq l1 l2 && length es1 == length es2 && and (zipWith lispEq es1 es2) && lispEq r1 r2
+lispEq (Number n1) (Number n2) = n1 == n2
+lispEq (String s1) (String s2) = s1 == s2
+lispEq (Bool b1) (Bool b2) = b1 == b2
+lispEq _ _ = False
+
+lispEqM :: LispVal -> LispVal -> IO Bool
+lispEqM v1 v2 = do
+  v1' <- unRefIO v1
+  v2' <- unRefIO v2
+  case (v1', v2') of
+    (Atom _ _ x1, Atom _ _ x2) -> return (x1 == x2)
+    (List l1, List l2) ->
+      if length l1 /= length l2 then return False
+      else and <$> zipWithM lispEqM l1 l2
+    (DottedList l1 es1 r1, DottedList l2 es2 r2) -> do
+      b1 <- lispEqM l1 l2
+      if not b1 || length es1 /= length es2 then return False
+      else do
+        b2 <- and <$> zipWithM lispEqM es1 es2
+        if not b2 then return False
+        else lispEqM r1 r2
+    (Number n1, Number n2) -> return (n1 == n2)
+    (String s1, String s2) -> return (s1 == s2)
+    (Bool b1, Bool b2) -> return (b1 == b2)
+    _ -> return False
+
+lispEqMElab :: LispVal -> LispVal -> ElabM Bool
+lispEqMElab v1 v2 = liftIO $ lispEqM v1 v2
+
+lcInsertM :: T.Text -> LispVal -> LCtx -> ElabM LCtx
+lcInsertM "_" _ ctx = return ctx
+lcInsertM x v ctx = case H.lookup x m of
+  Nothing -> return $ lcInsert x v ctx
+  Just v' -> do
+    eq <- lispEqMElab v v'
+    if eq then return ctx else mzero
+  where LCtx m = ctx
+
 runMatch :: [LispVal -> ElabM LispVal -> ElabM LispVal] -> Offset -> LispVal -> ElabM LispVal
 runMatch fs o v = foldr ($ v) (escapeAt o $! "match failed: " <> T.pack (show v)) fs
 
@@ -715,46 +786,46 @@ parseMatchBranch :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM LispVal -> ElabM L
 parseMatchBranch ctx (Span _ (AList (pat :
     Span _ (AList [Span _ (AAtom _ "=>"), Span _ (AAtom _ x)]) : es))) = do
   f <- parsePatt ctx pat
-  return $ \e k -> try (f e) >>= \case
+  return $ \e k -> try (f e ctx) >>= \case
     Nothing -> k
-    Just g -> eval1 (lcInsert x (Proc $ \_ _ -> k) $ g ctx) es
+    Just ctx' -> eval1 (lcInsert x (Proc $ \_ _ -> k) ctx') es
 parseMatchBranch ctx (Span _ (AList (pat : es))) = do
   f <- parsePatt ctx pat
-  return $ \e k -> try (f e) >>= \case
+  return $ \e k -> try (f e ctx) >>= \case
     Nothing -> k
-    Just g -> eval1 (g ctx) es
+    Just ctx' -> eval1 ctx' es
 parseMatchBranch _ (Span (o, _) _) = escapeAt o "invalid syntax"
 
-data ListPatt = LPCons (LispVal -> ElabM (LCtx -> LCtx)) ListPatt
+data ListPatt = LPCons (LispVal -> LCtx -> ElabM LCtx) ListPatt
   | LPNil | LPAtLeast Int
 
-parseListPatt :: (AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))) ->
-  [AtLisp] -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseListPatt :: (AtLisp -> ElabM (LispVal -> LCtx -> ElabM LCtx)) ->
+  [AtLisp] -> ElabM (LispVal -> LCtx -> ElabM LCtx)
 parseListPatt p = \es -> do
   fs <- patts es
-  return $ unRef >=> \case List vs -> go fs vs; _ -> mzero
+  return $ \v ctx -> unRef v >>= \case List vs -> go fs vs ctx; _ -> mzero
   where
   patts :: [AtLisp] -> ElabM ListPatt
   patts [] = return LPNil
   patts (Span _ (AList [Span _ (AAtom _ "quote"), Span _ (AAtom _ x)]) : es) =
-    LPCons (\case Atom _ _ x' | x == x' -> return id; _ -> mzero) <$> patts es
+    LPCons (\v ctx -> unRef v >>= \case Atom _ _ x' | x == x' -> return ctx; _ -> mzero) <$> patts es
   patts [Span _ (AAtom _ "___")] = return (LPAtLeast 0)
   patts [Span _ (AAtom _ "...")] = return (LPAtLeast 0)
   patts [Span _ (AAtom _ "__"), Span _ (ANumber n)] = return (LPAtLeast $ fromIntegral n)
   patts (e : es) = liftM2 LPCons (p e) (patts es)
-  go :: ListPatt -> [LispVal] -> ElabM (LCtx -> LCtx)
-  go LPNil [] = return id
-  go (LPCons f fs) (v:vs) = liftM2 (flip (.)) (f v) (go fs vs)
-  go (LPAtLeast 0) _ = return id
-  go (LPAtLeast n) vs | length vs >= n = return id
-  go _ _ = mzero
+  go :: ListPatt -> [LispVal] -> LCtx -> ElabM LCtx
+  go LPNil [] ctx = return ctx
+  go (LPCons f fs) (v:vs) ctx = f v ctx >>= go fs vs
+  go (LPAtLeast 0) _ ctx = return ctx
+  go (LPAtLeast n) vs ctx | length vs >= n = return ctx
+  go _ _ _ = mzero
 
-parseDottedListPatt :: (AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))) ->
-  AtLisp -> [AtLisp] -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseDottedListPatt :: (AtLisp -> ElabM (LispVal -> LCtx -> ElabM LCtx)) ->
+  AtLisp -> [AtLisp] -> AtLisp -> ElabM (LispVal -> LCtx -> ElabM LCtx)
 parseDottedListPatt = \p l es r -> liftM2 go (mapM p (l : es)) (p r) where
-  go [] fr v = fr v
-  go (f:fs) fr v = lispUncons <$> unRef v >>= \case
-    Just (vl, vr) -> liftM2 (flip (.)) (f vl) (go fs fr vr)
+  go [] fr v ctx = fr v ctx
+  go (f:fs) fr v ctx = lispUncons <$> unRef v >>= \case
+    Just (vl, vr) -> f vl ctx >>= go fs fr vr
     Nothing -> mzero
 
 lispUncons :: LispVal -> Maybe (LispVal, LispVal)
@@ -763,68 +834,67 @@ lispUncons (DottedList l [] r) = Just (l, r)
 lispUncons (DottedList l (e : es) r) = Just (l, DottedList e es r)
 lispUncons _ = Nothing
 
-parsePatt :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
-parsePatt _ (Span _ (AAtom _ x)) = return $ \v -> return $ lcInsert x v
-parsePatt _ (Span _ (ANumber n)) = return $ unRef >=> \case Number n' | n == n' -> return id; _ -> mzero
-parsePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s == s' -> return id; _ -> mzero
-parsePatt _ (Span _ (ABool b)) = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
+parsePatt :: LCtx -> AtLisp -> ElabM (LispVal -> LCtx -> ElabM LCtx)
+parsePatt _ (Span _ (AAtom _ x)) = return $ \v ctx -> unRef v >>= \v' -> lcInsertM x v' ctx
+parsePatt _ (Span _ (ANumber n)) = return $ \v ctx -> unRef v >>= \case Number n' | n == n' -> return ctx; _ -> mzero
+parsePatt _ (Span _ (AString s)) = return $ \v ctx -> unRef v >>= \case String s' | s == s' -> return ctx; _ -> mzero
+parsePatt _ (Span _ (ABool b)) = return $ \v ctx -> unRef v >>= \case Bool b' | b == b' -> return ctx; _ -> mzero
 parsePatt ctx (Span _ (AList [Span _ (AAtom _ "quote"), e])) = parseQuotePatt ctx e
 parsePatt ctx (Span _ (AList [Span _ (AAtom _ "mvar"), e1, e2])) = liftM2 go (parsePatt ctx e1) (parsePatt ctx e2) where
-  go f g = unRef >=> \case
-    MVar _ o s bd -> liftM2 (flip (.)) (f $ Atom False o s) (g $ Bool bd)
+  go f g v ctx = unRef v >>= \case
+    MVar _ o s bd -> f (Atom False o s) ctx >>= g (Bool bd)
     _ -> mzero
 parsePatt ctx (Span _ (AList [Span _ (AAtom _ "goal"), e])) = go <$> parsePatt ctx e where
-  go f = unRef >=> \case Goal _ v -> f v; _ -> mzero
+  go f v ctx = unRef v >>= \case Goal _ v' -> f v' ctx; _ -> mzero
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "and") : es))) = go <$> mapM (parsePatt ctx) es where
-  go [] _ = return id
-  go (f:fs) v = liftM2 (flip (.)) (f v) (go fs v)
+  go [] _ ctx = return ctx
+  go (f:fs) v ctx = f v ctx >>= go fs v
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "or") : es))) = go <$> mapM (parsePatt ctx) es where
-  go [] _ = mzero
-  go (f:fs) v = try (f v) >>= \case
+  go [] _ _ = mzero
+  go (f:fs) v ctx = try (f v ctx) >>= \case
     Just a -> return a
-    Nothing -> go fs v
+    Nothing -> go fs v ctx
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "not") : es))) =
-  mapM (parsePatt ctx) es <&> \fs v -> do
-    forM_ fs $ \f -> try (f v) >>= \case Just _ -> mzero; Nothing -> return ()
-    return id
+  mapM (parsePatt ctx) es <&> \fs v ctx -> do
+    forM_ fs $ \f -> try (f v ctx) >>= \case Just _ -> mzero; Nothing -> return ()
+    return ctx
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "?") : Span os p : es))) =
   eval os ctx p >>= \case
-    Proc f -> mapM (parsePatt ctx) es <&> \fs v -> do
+    Proc f -> mapM (parsePatt ctx) es <&> \fs v ctx' -> do
       f os [v] >>= unRef >>= guard . truthy
-      go fs v
+      go fs v ctx'
     e -> escapeSpan os $ "not a function: " <> T.pack (show e)
   where
-  go [] _ = return id
-  go (f:fs) v = liftM2 (flip (.)) (f v) (go fs v)
+  go [] _ ctx = return ctx
+  go (f:fs) v ctx = f v ctx >>= go fs v
 parsePatt ctx (Span _ (AList es)) = parseListPatt (parsePatt ctx) es
 parsePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parsePatt ctx) l es r
 parsePatt ctx (Span _ (AFormula f)) = parseMath f >>= parseQExprPatt ctx
 
-parseQuotePatt :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
-parseQuotePatt _ (Span _ (AAtom _ x)) = return $ unRef >=> \case Atom _ _ x' | x == x' -> return id; _ -> mzero
-parseQuotePatt _ (Span _ (ANumber n)) = return $ unRef >=> \case Number n' | n == n' -> return id; _ -> mzero
-parseQuotePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s == s' -> return id; _ -> mzero
-parseQuotePatt _ (Span _ (ABool b))   = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
+parseQuotePatt :: LCtx -> AtLisp -> ElabM (LispVal -> LCtx -> ElabM LCtx)
+parseQuotePatt _ (Span _ (AAtom _ x)) = return $ \v ctx -> unRef v >>= \case Atom _ _ x' | x == x' -> return ctx; _ -> mzero
+parseQuotePatt _ (Span _ (ANumber n)) = return $ \v ctx -> unRef v >>= \case Number n' | n == n' -> return ctx; _ -> mzero
+parseQuotePatt _ (Span _ (AString s)) = return $ \v ctx -> unRef v >>= \case String s' | s == s' -> return ctx; _ -> mzero
+parseQuotePatt _ (Span _ (ABool b))   = return $ \v ctx -> unRef v >>= \case Bool b' | b == b' -> return ctx; _ -> mzero
 parseQuotePatt ctx (Span _ (AList [Span _ (AAtom _ "unquote"), e])) = parsePatt ctx e
 parseQuotePatt ctx (Span _ (AList es)) = parseListPatt (parseQuotePatt ctx) es
 parseQuotePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parseQuotePatt ctx) l es r
 parseQuotePatt ctx (Span _ (AFormula f)) = parseMath f >>= parseQExprPatt ctx
 
-parseQExprPatt :: LCtx -> QExpr -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
-parseQExprPatt _ (QApp (Span _ t) []) = return $ unRef >=> \case
-  Atom _ _ t' | t == t' -> return id
-  List [Atom _ _ t'] | t == t' -> return id
+parseQExprPatt :: LCtx -> QExpr -> ElabM (LispVal -> LCtx -> ElabM LCtx)
+parseQExprPatt _ (QApp (Span _ t) []) = return $ \v ctx -> unRef v >>= \case
+  Atom _ _ t' | t == t' -> return ctx
+  List [Atom _ _ t'] | t == t' -> return ctx
   _ -> mzero
 parseQExprPatt ctx (QApp (Span _ t) es) = do
   fs <- mapM (parseQExprPatt ctx) es
-  return $ unRef >=> \case List (Atom _ _ t' : vs) | t == t' -> go fs vs; _ -> mzero
+  return $ \v ctx' -> unRef v >>= \case List (Atom _ _ t' : vs) | t == t' -> go fs vs ctx'; _ -> mzero
   where
-  go [] [] = return id
-  go (f:fs) (v:vs) = liftM2 (flip (.)) (f v) (go fs vs)
-  go _ _ = mzero
+  go [] [] ctx = return ctx
+  go (f:fs) (v:vs) ctx = f v ctx >>= go fs vs
+  go _ _ _ = mzero
 parseQExprPatt ctx (QUnquote e) = parsePatt ctx e
 
-quoteAt :: LCtx -> AtLisp -> ElabM LispVal
 quoteAt ctx (Span (o, _) e) = quote o ctx e
 
 quote :: Offset -> LCtx -> LispAST -> ElabM LispVal
@@ -839,17 +909,20 @@ quote _ _ (ABool b) = return $ Bool b
 quote _ _ (AFormula (Formula o f)) = return $ UnparsedFormula o f
 
 asString :: Offset -> LispVal -> ElabM T.Text
-asString _ (String s) = return s
-asString o e = escapeAt o $ "expected a string, got " <> T.pack (show e)
+asString o e = unRef e >>= \case
+  String s -> return s
+  e' -> escapeAt o $ "expected a string, got " <> T.pack (show e')
 
 asAtomString :: Offset -> LispVal -> ElabM T.Text
-asAtomString _ (Atom _ _ s) = return s
-asAtomString _ (String s) = return s
-asAtomString o e = escapeAt o $ "expected an atom, got " <> T.pack (show e)
+asAtomString o e = unRef e >>= \case
+  Atom _ _ s -> return s
+  String s -> return s
+  e' -> escapeAt o $ "expected an atom, got " <> T.pack (show e')
 
 asInt :: Offset -> LispVal -> ElabM Integer
-asInt _ (Number n) = return n
-asInt o e = escapeAt o $ "expected an integer, got " <> T.pack (show e)
+asInt o e = unRef e >>= \case
+  Number n -> return n
+  e' -> escapeAt o $ "expected an integer, got " <> T.pack (show e')
 
 goalType :: Offset -> LispVal -> ElabM LispVal
 goalType _ (Goal _ ty) = return ty
@@ -865,6 +938,7 @@ inferType _ (Goal _ ty) = return ty
 inferType o (Atom _ _ h) = try (getSubproof h) >>= \case
   Just v -> return v
   Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
+inferType o (List (Atom _ _ ":conv" : ty : _)) = return ty
 inferType o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, _, ret) ->
@@ -897,7 +971,7 @@ evalFoldl1 o _ [] = escapeAt o "expected at least one argument"
 evalFoldl1 _ f es = return (foldl1 f es)
 
 intBoolBinopProc :: (Integer -> Integer -> Bool) -> Proc
-intBoolBinopProc f (o, _) es = mapM (asInt o) es >>= \case
+intBoolBinopProc f (o, _) es = mapM (unRef >=> asInt o) es >>= \case
     e : es' -> return $ Bool $ go e es'
     _ -> escapeAt o "expected at least one argument"
   where
@@ -972,15 +1046,32 @@ parseMapIns _ = Nothing
 
 initialBindings :: [(T.Text, LispVal)]
 initialBindings = [
+  ("#undef", Undef),
   ("def", Syntax Define), ("quote", Syntax Quote),
   ("fn", Syntax Lambda), ("if", Syntax If),
   ("let", Syntax Let), ("letrec", Syntax Letrec),
   ("focus", Syntax Focus), ("match", Syntax Match),
-  ("match-fn", Syntax MatchFn), ("match-fn*", Syntax MatchFns) ] ++
+  ("match-fn", Syntax MatchFn), ("match-fn*", Syntax MatchFns),
+  ("set-merge-strategy", Syntax SetMergeStrategy) ] ++
   (mapSnd Proc <$> initialProcs) where
 
   initialProcs :: [(T.Text, Proc)]
   initialProcs = [
+    ("copy-span", \o -> \case
+      [_, to] -> return to
+      es -> escapeAt (fst o) $ "expected two arguments, got " <> T.pack (show (length es))),
+    ("stack-span", \o -> \case
+      [_] -> return Undef
+      es -> escapeAt (fst o) $ "expected one argument, got " <> T.pack (show (length es))),
+    ("report-at", \os@(o, _) -> \case
+      [_, Atom _ _ ty, String msg] -> do
+        let elty = case ty of
+              "error" -> ELError
+              "warn" -> ELWarning
+              _ -> ELInfo
+        reportSpan os elty msg
+        pure Undef
+      es -> escapeAt o $ "expected three arguments (span, type, message), got " <> T.pack (show (length es))),
     ("display", \os@(o, _) es ->
       unary o es >>= asString o >>= reportSpan os ELInfo >> pure Undef),
     ("error", \os@(o, _) es -> unary o es >>= asString o >>= escapeSpan os),
@@ -1015,6 +1106,11 @@ initialBindings = [
     (">", intBoolBinopProc (>)),
     (">=", intBoolBinopProc (>=)),
     ("=", intBoolBinopProc (==)),
+    ("==", \(o, _) es -> do
+      es' <- mapM unRef es
+      case es' of
+        [] -> return $ Bool True
+        e : es2 -> Bool . all id <$> mapM (lispEqMElab e) es2),
     ("->string", \(o, _) es -> unary o es >>= \case
       Number n -> return $ String $ T.pack $ show n
       String s -> return $ String s
@@ -1045,14 +1141,14 @@ initialBindings = [
         ls <- forM es $ \case List l' -> return l'; _ -> escapeSpan o "invalid arguments"
         List <$> go l ls
       _ -> escapeSpan o "invalid arguments"),
-    ("bool?", \(o, _) es -> Bool . isBool <$> unary o es),
-    ("atom?", \(o, _) es -> Bool . isAtom <$> unary o es),
-    ("pair?", \(o, _) es -> Bool . isPair <$> unary o es),
-    ("null?", \(o, _) es -> Bool . isNull <$> unary o es),
-    ("number?", \(o, _) es -> Bool . isInt <$> unary o es),
-    ("string?", \(o, _) es -> Bool . isString <$> unary o es),
-    ("fn?", \(o, _) es -> Bool . isProc <$> unary o es),
-    ("def?", \(o, _) es -> Bool . isDef <$> unary o es),
+    ("bool?", \(o, _) es -> Bool . isBool <$> (unary o es >>= unRef)),
+    ("atom?", \(o, _) es -> Bool . isAtom <$> (unary o es >>= unRef)),
+    ("pair?", \(o, _) es -> Bool . isPair <$> (unary o es >>= unRef)),
+    ("null?", \(o, _) es -> Bool . isNull <$> (unary o es >>= unRef)),
+    ("number?", \(o, _) es -> Bool . isInt <$> (unary o es >>= unRef)),
+    ("string?", \(o, _) es -> Bool . isString <$> (unary o es >>= unRef)),
+    ("fn?", \(o, _) es -> Bool . isProc <$> (unary o es >>= unRef)),
+    ("def?", \(o, _) es -> Bool . isDef <$> (unary o es >>= unRef)),
     ("ref?", \(o, _) es -> Bool . isRef <$> unary o es),
     ("ref!", \_ -> \case
       [] -> Ref <$> newRef Undef
@@ -1127,10 +1223,19 @@ initialBindings = [
     ("stat", \o _ ->
       getStat >>= reportSpan o ELInfo . render >> pure Undef),
     ("get-decl", \os@(o, _) -> \case
-      [Atom _ _ x] -> gets (H.lookup x . eDecls) <&> \case
-        Just (_, (_, _, px), d, _) -> declToLisp o (fst px) x d
-        _ -> Undef
-      _ -> escapeSpan os "invalid arguments"),
+      [arg] -> unRef arg >>= \case
+        Atom _ _ x -> do
+          decls <- gets eDecls
+          liftIO $ putStrLn $ "get-decl lookup: " ++ show x ++ ", present in eDecls: " ++ show (H.member x decls)
+          case H.lookup x decls of
+            Just (_, (_, _, px), d, _) -> return $ declToLisp o (fst px) x d
+            _ -> return Undef
+        e' -> do
+          liftIO $ putStrLn $ "get-decl got non-atom: " ++ show e'
+          escapeSpan os "expected an atom"
+      es -> do
+        liftIO $ putStrLn $ "get-decl got wrong number of arguments: " ++ show (length es)
+        escapeSpan os "invalid arguments"),
     ("add-decl!", \o -> \case
       Atom _ _ "term" : es -> Undef <$ lispAddTerm o es
       Atom _ _ "def" : es -> Undef <$ lispAddTerm o es
@@ -1164,9 +1269,47 @@ initialBindings = [
 
     -- redefinable configuration functions
     ("refine-extra-args", \(o, _) -> \case
-      [_, e] -> return e
-      _:e:_ -> e <$ reportAt o ELError "too many arguments"
-      _ -> escapeAt o "expected at least two arguments")]
+      [_, _, e] -> return e
+      _:_:e:_ -> e <$ reportAt o ELError "too many arguments"
+      _ -> escapeAt o "expected at least three arguments"),
+
+    -- Merge map: merges two atom-maps by unioning them (new values overwrite old)
+    ("merge-map", \(o, _) -> \case
+      [] -> return $ Proc $ \(o2, _) -> \case
+        [Ref r1, Ref r2] -> do
+          m1 <- getRef r1 >>= \case
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          m2 <- getRef r2 >>= \case
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          return $ AtomMap (H.union m2 m1)
+        [Ref r1, m2val] -> do
+          m1 <- getRef r1 >>= \case
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          m2 <- case m2val of
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          return $ AtomMap (H.union m2 m1)
+        [m1val, m2val] -> do
+          m1 <- case m1val of
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          m2 <- case m2val of
+            AtomMap m -> return m
+            _ -> escapeAt o2 "merge-map: expected an atom-map"
+          return $ AtomMap (H.union m2 m1)
+        _ -> escapeAt o2 "merge-map: expected two arguments"
+      [m1val, m2val] -> do
+        m1 <- case m1val of
+          AtomMap m -> return m
+          _ -> escapeAt o "merge-map: expected an atom-map"
+        m2 <- case m2val of
+          AtomMap m -> return m
+          _ -> escapeAt o "merge-map: expected an atom-map"
+        return $ AtomMap (H.union m2 m1)
+      _ -> escapeAt o "merge-map: expected 0 or 2 arguments")]
 
 evalQExpr :: LCtx -> QExpr -> ElabM LispVal
 evalQExpr ctx (QApp (Span (o, _) e) es) =
@@ -1592,7 +1735,7 @@ refineProof gv = refinePf where
     es <- forM rs $ \r' -> do
       mv <- newUnknownMVar o
       refinePf (Ref mv) r'
-    e' <- call (reOffset r) "refine-extra-args" $ Proc callback : e : es
+    e' <- call (reOffset r) "refine-extra-args" $ Proc callback : ty : e : es
     coerceTo' o ty e'
     where
     callback (o', _) [ty', e'] = parseRefine o' e' >>= refinePf ty'

@@ -43,7 +43,7 @@ import MM0.Compiler.Parser (ParseError)
 -- (<!>) m k = case H.lookup k m of Nothing -> error $ "<!>" ++ show k; Just a -> a
 
 data Syntax = Define | Lambda | Quote | If | Focus | Let | Letrec
-  | Match | MatchFn | MatchFns
+  | Match | MatchFn | MatchFns | SetMergeStrategy
 
 instance Show Syntax where
   showsPrec _ Define = ("def" ++)
@@ -56,6 +56,7 @@ instance Show Syntax where
   showsPrec _ Match = ("match" ++)
   showsPrec _ MatchFn = ("match-fn" ++)
   showsPrec _ MatchFns = ("match-fn*" ++)
+  showsPrec _ SetMergeStrategy = ("set-merge-strategy" ++)
 
 type Proc = Range -> [LispVal] -> ElabM LispVal
 
@@ -322,6 +323,9 @@ data Env = Env {
   eReportMode :: ReportMode,
   eLispData :: VD.IOVector LispVal,
   eLispNames :: H.HashMap Ident (Maybe (FilePath, Range, Range), Int),
+  -- | Merge strategies for global definitions: when a name is re-defined,
+  -- the strategy function is called as (strategy old new) and the result stored.
+  eLispMerge :: H.HashMap Ident LispVal,
   eCounter :: SeqCounter,
   eSorts :: H.HashMap Sort (SeqNum, (FilePath, Range, Range), SortData),
   eProvableSorts :: [Sort],
@@ -332,7 +336,7 @@ data Env = Env {
   eThmCtx :: Maybe ThmCtx }
 
 instance Default Env where
-  def = Env 5000000 True def undefined H.empty def H.empty def H.empty def def undefined def
+  def = Env 5000000 True def undefined H.empty H.empty def H.empty def H.empty def def undefined def
 
 data ElabFuncs = ElabFuncs {
   efMM0 :: Bool,
@@ -489,10 +493,25 @@ lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
 
 lispDefine :: Range -> Range -> T.Text -> LispVal -> ElabM ()
 lispDefine rd rx x v = do
-  n <- lispAlloc v
+  env <- get
+  -- If a merge strategy is set for this name, apply it when re-defining
+  v' <- case (H.lookup x (eLispNames env), H.lookup x (eLispMerge env)) of
+    (Just (_, oldIdx), Just (Proc strat)) -> do
+      oldVal <- lispLookupNum oldIdx
+      strat rd [oldVal, v]
+    _ -> return v
+  n <- lispAlloc v'
   p <- asks efName
-  modify $ \env -> env {eLispNames =
-    H.insert x (Just (p, rd, rx), n) (eLispNames env)}
+  modify $ \env2 -> env2 {eLispNames =
+    H.insert x (Just (p, rd, rx), n) (eLispNames env2)}
+
+-- | Set the merge strategy for a global definition.
+-- When the definition is re-defined, the strategy is called as (strategy old new).
+lispSetMergeStrategy :: Range -> T.Text -> LispVal -> ElabM ()
+lispSetMergeStrategy o x strat =
+  gets (H.lookup x . eLispNames) >>= \case
+    Nothing -> escapeSpan o $ "unknown definition '" <> x <> "', cannot set merge strategy"
+    Just _ -> modify $ \env -> env {eLispMerge = H.insert x strat (eLispMerge env)}
 
 newRef :: a -> ElabM (TVar a)
 newRef = liftIO . newTVarIO

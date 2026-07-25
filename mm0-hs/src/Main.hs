@@ -22,7 +22,9 @@ main = getArgs >>= \case
   "compile" : rest -> compile rest
   _ -> die $ "incorrect args; use\n" ++
     "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
+    "    (Verifies a compiled MMU proof file against an MM0 specification)\n" ++
     "  mm0-hs export MMU-FILE [-S] -o MMB-FILE\n" ++
+    "    (Exports an MMU proof file to the binary MMB format)\n" ++
     "  mm0-hs show-bundled MM-FILE\n" ++
     "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU/MMB-FILE]\n" ++
     "  mm0-hs to-hol MMU-FILE [-o HOL-FILE]\n" ++
@@ -30,4 +32,5 @@ main = getArgs >>= \case
     "  mm0-hs to-othy MMU-FILE [-o ART-FILE]\n" ++
     "  mm0-hs to-lean MMU-FILE [-o LEAN-FILE]\n" ++
     "  mm0-hs server [--debug]\n" ++
-    "  mm0-hs compile [MM0/MM1-FILE]\n"
+    "  mm0-hs compile [MM0/MM1-FILE]\n" ++
+    "    (Compiles an MM1 file into an MMB file, or checks an MM0 file)\n"

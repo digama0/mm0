@@ -198,7 +198,7 @@ declStmt = fmap toSpan <$> do
         (DKTheorem <$ kw "theorem") <|> (DKDef <$ kw "def")
   commit' $ do
     px <- getOffset
-    x <- ident
+    x <- ident_
     bis <- binders
     ret <- optional (symbol ":" *> sepBy1 ptype (symbol ">"))
     o <- getOffset
@@ -388,6 +388,7 @@ toCurlyList (Span r@(o, _) e) =
 hashAtom :: T.Text -> Parser LispAST
 hashAtom "t" = return (ABool True)
 hashAtom "f" = return (ABool False)
+hashAtom "undef" = return (AAtom False "#undef")
 hashAtom _ = empty
 
 atom :: T.Text -> Parser LispAST
