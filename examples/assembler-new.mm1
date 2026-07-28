@@ -367,7 +367,7 @@ do (ignore @ on-hexstrings @ fn (n) @ if (not {n == "4"}) @ begin
 @mmc-th theorem sibSideCond_M1: $ sibSideCond base 1 $ = '(orr d0lt1);
 @mmc-th theorem sibSideCond_M2: $ sibSideCond base 2 $ = '(orr d0lt2);
 
-do (ignore @ on-hexstrings @ fn (n) @ if (not {n == "5"}) @ begin
+do (for 0 8 @ fn (n) @ if (not {n == 5}) @ begin
   (def name (atom-app 'sibSideCond_B n))
   (add-tac-thm! name '((md nat ())) ()
     $ sibSideCond (,(atom-app 'x n)) md $ () @ fn ()
@@ -410,9 +410,10 @@ $ E. l1 (l = l1 ++ l2 /\ E. rm (rmi = suc (immRM_rm rm) /\ readModRM2 rex rm rm2
   (h5: $ parseSI sc index osi $)
   (h6: $ REX_B rex = rb $)
   (h7: $ splitBits31 bs rb base $)
-  (h8: $ sibSideCond base md $)
-  (h9: $ parseDisplacement md a l2 l3 $)
-  (h10: $ consStr (ch x y) l2 l $):
+  (h8: $ bsh = bs $)
+  (h9: $ sibSideCond bsh md $)
+  (h10: $ parseDisplacement md a l2 l3 $)
+  (h11: $ consStr (ch x y) l2 l $):
   $ parseModRM2 rex (IRM_mem osi (base_reg base) a) 4 md l l3 $ = 'sorry;
 @mmc-th theorem parseModRM2_disp
   (h1: $ REX_B rex = b $)

@@ -413,7 +413,7 @@ impl BuildAssemblyProc<'_> {
 
       let (rb, h6) = self.rex_val(rex, Rex::B);
       let (base, h7) = self.hex.unsplit_bits_31(&mut self.thm, bs.0, rb.0);
-      if base.0 == 5 && md.0 == 0 {
+      if bs.0 == 5 && md.0 == 0 {
         // ModRMLayout::Sib0:
         // `00ooo100 + ssiii101 + imm32` where `rn = o` and `rm = [0 + sc*ix + imm32]`
         let ([a, l, l2, h8], ret) = self.parse_imm_32_then(p, f);
@@ -428,18 +428,20 @@ impl BuildAssemblyProc<'_> {
         // ModRMLayout::SibReg:
         // `mmooo100 + ssiiibbb + disp0/8/32` where `rn = o` and `rm = [reg(b) + sc*ix + disp]`
         // we have to prove a side condition saying we aren't in any of the other cases
-        let h8 = if base.0 == 5 {
-          thm!(self, sibSideCond_M[md.0](base.1): (sibSideCond {base.1} {md.1}))
+        let bsh = self.hex[bs.0];
+        let h8 = thm!(self.thm, h2nn[bs.0](): (h2n bsh) = {bs.1});
+        let h9 = if bs.0 == 5 {
+          thm!(self, sibSideCond_M[md.0](bsh): (sibSideCond bsh {md.1}))
         } else {
-          thm!(self, sibSideCond_B[base.0](md.1): (sibSideCond {base.1} {md.1}))
+          thm!(self, sibSideCond_B[bs.0](md.1): (sibSideCond bsh {md.1}))
         };
-        let ([a, l2, l3, h9], ret) = self.parse_displacement_then(p, md, f);
+        let ([a, l2, l3, h10], ret) = self.parse_displacement_then(p, md, f);
         let rm = app!(self.thm, (IRM_mem osi (base_reg (h2n {base.1})) a));
-        let [l, h10] = self.cons_str(sibch, l2);
+        let [l, h11] = self.cons_str(sibch, l2);
         (rm, l, l3, ret, thm!(self, (parseModRM2[rex.1, rm, rm2.1, md.1, l, l3]) =>
-          parseModRM2_sibReg(a, base.1, bs.1, index.1, ixh.1, ixl.1, l, l2, l3,
+          parseModRM2_sibReg(a, base.1, bs.1, bsh, index.1, ixh.1, ixl.1, l, l2, l3,
             md.1, osi, rb.1, rex.1, rx.1, sc.1, self.hex[x], self.hex[y],
-            h1, h2, h3, h4, h5, h6, h7, h8, h9, h10)))
+            h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11)))
       }
 
     } else {

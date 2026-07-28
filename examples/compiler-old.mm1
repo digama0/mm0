@@ -1365,10 +1365,11 @@ theorem hoareCfg_writeEA64_r
 
 theorem hoareCfg_writeEA_m {x p}
   (hn: $ wsizeBits sz = n $)
+  (hnb: $ wsizeBytes sz = nb $)
   (hv: $ G -> v e. u64 $)
   (hsz: $ G -> sz e. WSize $)
-  (hl1: $ G -> len l1 = n $)
-  (hl2: $ G -> l2 = toBytes n w $)
+  (hl1: $ G -> len l1 = nb $)
+  (hl2: $ G -> l2 = toBytes nb w $)
   (hw: $ G -> chop n v = w $)
   (hp: $ G /\ PROT_READ + PROT_WRITE C_ p -> x, p e. P -> x, p e. Q $):
   $ G -> hoareCfg k {k2 | writeEA k sz (EA_m a) v k2}
@@ -1376,7 +1377,7 @@ theorem hoareCfg_writeEA_m {x p}
     (s_ERR \/s s_OK *s s_mem Q a l2) $ =
 (named @ focus
   (have 'H1 '(syl5eq (chopeq1 hn) hw))
-  (have 'H2 '(anwll @ syl6eqr (toByteseq1 hn) hl2))
+  (have 'H2 '(anwll @ syl6eqr (toByteseq1 hnb) hl2))
   '(hoareCfg_writeEA hv H1 @ hoareCfg_Td @
     mpbird (hoareCfgeq2d @ abeqd @ bitr4d _ @ writeMemeq3d H2) @
     hoareCfg_writeMem (mpbiri toBytesT2 @ eleq1d H2)

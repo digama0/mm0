@@ -286,6 +286,10 @@ theorem u32Bytes_determ2 (h1: $ G -> a e. u32 /\ b e. u32 $)
   (h2: $ G -> l = u32Bytes a /\ l ++ l2 = u32Bytes b $): $ G -> a = b /\ l2 = 0 $ =
 '(toBytes_determ2 (a1i d8mul4) h1 h2);
 
+theorem u16Bytes_determ2 (h1: $ G -> a e. u16 /\ b e. u16 $)
+  (h2: $ G -> l = u16Bytes a /\ l ++ l2 = u16Bytes b $): $ G -> a = b /\ l2 = 0 $ =
+'(toBytes_determ2 (a1i d8mul2) h1 h2);
+
 theorem u64Bytes_determ (h1: $ G -> a e. u64 /\ b e. u64 $)
   (h2: $ G -> l = u64Bytes a /\ l = u64Bytes b $): $ G -> a = b $ =
 '(toBytes_determ (a1i d8mul8) h1 h2);
@@ -415,6 +419,7 @@ do (begin
   (def (B refine t) @ refine t @ match t
     [$ splitBits ,bs ,_ /\ ,_ -> ,_ $ (splitBits bs)])
   (def (U32 x y) '(u32Bytes_determ2 ,x ,y))
+  (def (U16 x y) '(u16Bytes_determ2 ,x ,y))
 
   (def N @ mk-thm 'readImmN_determ '(l l2 sz w1 w2)
     $ readImmN sz w1 l /\ readImmN sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
@@ -489,8 +494,8 @@ do (begin
     (df 'decodeTwoAux_ifp _)
     @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p
     @ cons (ian (R 1 eq0) @ r el)
-    @ cons (ian (R 1 eq0) @ r el) (E 2 @ q (L 2 B) @ qe (R 1 N))
-    @ rmap '(3 3 3 3 4) @ fn (n) (E n @ q (L 2 B) @ qe (R 1 M)))
+    @ cons (ian (R 1 eq0) @ r el) (E 2 @ q (L 3 B) @ qe (R 1 N))
+    @ rmap '(3 3 3 3 4) '(3 2 3 2 2) @ fn (n m) (E n @ q (L m B) @ qe (R 1 M)))
 
   (def Tw @ mk-thm 'decodeTwo_determ '(ast1 ast2 b l l2 rex)
     $ decodeTwo rex ast1 b l /\
@@ -527,7 +532,7 @@ do (begin
       '(anwl efal) -- F. (hole for REX byte)
       (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N)) -- BinopHi
       (ian (R 1 eq0) @ r el) -- Leave
-      (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N)) -- Ret
+      (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) @ U16 (l 'id) (r 'id))) -- Ret
       (E 5 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I)) -- MovImm
       (E 2 @ q (L 2 B) @ qe (R 1 N)) -- PushImm
       (e @ qe (R 1 N)) -- Call
@@ -535,7 +540,7 @@ do (begin
       (E 2 @ q (L 2 B) @ qe (R 1 N)) -- Jump
       (ian (l eq0) @ r @ e @ q (l B) @ r el) -- PushReg
       (ian (l eq0) @ r @ e @ q (l B) @ r el) -- PopReg
-      (E 2 @ q (L 2 B) @ qe (R 1 N)) -- JCC8
+      (E 2 @ q (L 3 B) @ qe (R 1 N)) -- JCC8
       (E 4 @ q (L 3 B) @ qe (R 2 O)) -- BinopHiReg
       (ian (R 1 eq0) @ r el) -- CLC
       (ian (R 1 eq0) @ r el) -- STC

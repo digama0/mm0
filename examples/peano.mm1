@@ -5786,6 +5786,13 @@ theorem rnwrite: $ Ran (write F a b) C_ Ran F u. sn b $ =
   (syl elun2 @ sylibr elsn anr)
   (syl elun1 @ anwr prelrn));
 
+theorem writeself: $ isfun F /\ a e. Dom F -> write F a (F @ a) == F $ =
+'(!! eqrd2 x y @ casesda
+  (syl5bb elwrite @ bitrd (syl ifppos anr) @ bicomd @
+    bitrd (bitrd (bitrd (eleq1d @ syl preq1 anr) (syl isfappb anll))
+      (syl bian1 anlr)) (a1i eqcomb))
+  (syl5bb elwrite @ syl ifpneg anr));
+
 theorem writeArrow
   (hf: $ G -> f e. Arrow A B $) (ha: $ G -> a e. A $) (hb: $ G -> b e. B $)
   (h: $ G -> write f a b == g $): $ G -> g e. Arrow A B $ =

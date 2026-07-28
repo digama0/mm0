@@ -1557,7 +1557,7 @@ theorem readDisplacement_32
   '(ian (ian chopZT eqid) @ eqcom @ sExt_chopZ @ iani d32le64 h1));
 
 @_ def readSIBDisplacement (mod bbase q base l .w: nat): wff =
-$ ifp (bbase = RBP /\ mod = 0)
+$ ifp (chop 3 bbase = 5 /\ mod = 0)
     (E. w (w e. u32 /\ q = sExtq 32 w /\ base = 0 /\ l = u32Bytes w))
     (readDisplacement mod q l /\ base = base_reg bbase) $;
 pub theorem readSIBDisplacementT (mod bbase q base l: nat):
@@ -1578,10 +1578,10 @@ theorem readSIBDisplacement_len_le: $ readSIBDisplacement md bbase q base l -> l
   rsyl anrl readDisplacement_len_le));
 
 theorem readSIBDisplacement_0
-  (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
-  $ readSIBDisplacement 0 x5 (chopZ 64 a) 0 l $ =
+  (h0: $ chop 3 bbase = x5 $) (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
+  $ readSIBDisplacement 0 bbase (chopZ 64 a) 0 l $ =
 (focus
-  '(mpbir (ifppos @ ian h2n5 eqid) _)
+  '(mpbir (ifppos @ ian (eqtr h0 h2n5) eqid) _)
   '(iexie @ mpbiri (iani (iani _ eqid) (eqtr h2 i32Bytes_val)) ,eqtac)
   '(iani chopZT @ eqcom @ sExt_chopZ @ iani d32le64 h1));
 
@@ -1620,7 +1620,7 @@ theorem readSIB_len_le: $ readSIB rex md rm l -> len l <= 5 $ =
   rsyl anllr @ sylib lesuc readSIBDisplacement_len_le));
 
 theorem readSIBDisplacement_reg
-  (h1: $ bbase != x5 \/ 0 < md $)
+  (h1: $ chop 3 bbase != x5 \/ 0 < md $)
   (h2: $ readDisplacement md q l $):
   $ readSIBDisplacement md bbase q (base_reg bbase) l $ =
 (named '(mpbir (ifpneg @ mpbir notan @ mpbi (oreq (neeq2 h2n5) lt01) h1) @ ian h2 eqid));
@@ -2078,6 +2078,10 @@ pub theorem condAlwaysT: $ condAlways e. Cond $ = 'opt0;
 pub theorem condPosT (c: nat): $ c e. BCond <-> condPos c e. Cond $ = '(bitr4 b0Bits optS);
 pub theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $ = '(bitr4 b1Bits optS);
 
+--| Conditions `10` (parity) and `11` (non-parity) are rejected
+--| because we do not model the `PF` flag
+@_ def ccModeled (c: nat): wff = $ c // 2 != 5 $;
+
 @_ def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize (Option DestSrc))) $;
@@ -2101,6 +2105,9 @@ $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
 @_ def xastMov (sz ds: nat): nat = $ xastCMov condAlways sz ds $;
 @_ def xastMovZX (sz ds sz2: nat): nat = $ xastMovX 0 sz ds sz2 $;
 @_ def xastMovSX (sz ds sz2: nat): nat = $ xastMovX 1 sz ds sz2 $;
+
+--| `nop`, as an alias for the 64 bit `xchg rax, rax`.
+def xastNop: nat = $ xastXchg wSz64 (RM_reg RAX) RAX $;
 
 @_ def XASTFlow: set =
 $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
@@ -2182,6 +2189,9 @@ pub theorem xastMovT (sz ds: nat):
 '(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @
   bitr (bian1 condAlwaysT) @ bitr Suml prelxp);
 
+pub theorem xastNopT: $ xastNop e. XAST $ =
+'(mpbir xastXchgT @ ian (ian wSz64T @ mpbir RM_regT RAX_T) RAX_T);
+
 pub theorem xastJumpT (rm: nat): $ xastJump rm e. XAST <-> rm e. RM $ =
 '(bitr Sumr @ bitr Suml @ bitr Suml @ bitr Suml Suml);
 pub theorem xastJCC_T (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $ =
@@ -2210,49 +2220,49 @@ pub theorem xastSysCallT: $ xastSysCall e. XAST $ =
 
 @_ def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4, c) : (4, 4) : 0) b /\
-    readModRM rex reg r l /\
+    ccModeled c /\ readModRM rex reg r l /\
     ast = xastCMov (suc c) (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
 pub theorem decodeTwoCMovT (rex ast b l: nat):
   $ decodeTwoCMov rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named @ focus
-  '(eex @ eex @ eex @ iand (iand _ @ anwll @ splitBitsTi ,bvSizeSi) @
+  '(eex @ eex @ eex @ iand (iand _ @ anw3l @ splitBitsTi ,bvSizeSi) @
     rsyl anlr @ anrd readModRM_T)
   '(mpbird (eleq1d anr) @
     sylibr xastCMovT @ iand (iand _ @ a1i opSizeT) @
     rsyl anlr @ sylibr R_rmT @ anld readModRM_T)
-  '(sylibr optS @ sylib elBitvec2 @ elListHd an3l));
+  '(sylibr optS @ sylib elBitvec2 @ elListHd an4l));
 
 theorem decodeTwoCMov_len_le: $ decodeTwoCMov rex ast b l -> len l <= 6 $ =
 (named '(eex @ eex @ eex @ rsyl anlr readModRM_len_le));
 
 @_ def decodeTwoJCC (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 8) : 0) b /\
-    readImmN 32 imm l /\
+    ccModeled c /\ readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
 pub theorem decodeTwoJCC_T (rex ast b l: nat):
   $ decodeTwoJCC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named @ focus
-  '(eex @ eex @ iand (iand _ @ anwll @ splitBitsTi ,bvSizeSi) @
+  '(eex @ eex @ iand (iand _ @ anw3l @ splitBitsTi ,bvSizeSi) @
     anrd @ sylan readImmN_T (a1i d32le64) anlr)
   '(mpbird (eleq1d anr) @
     sylibr xastJCC_T @ iand _ @ rsyl anlr @ anld readImm32T)
-  '(sylibr optS @ sylib elBitvec2 @ elListHd an3l));
+  '(sylibr optS @ sylib elBitvec2 @ elListHd an4l));
 
 theorem decodeTwoJCC_len_le: $ decodeTwoJCC rex ast b l -> len l <= 6 $ =
 (named '(eex @ eex @ rsyl anlr @ mpbird (leeq1d readImm32_len) @ a1i ,norm_num));
 
 @_ def decodeTwoSetCC (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4, c) : (4, 9) : 0) b /\
-    readModRM rex reg r l /\
+    ccModeled c /\ readModRM rex reg r l /\
     ast = xastSetCC (suc c) (nat (rex != 0)) r) $;
 pub theorem decodeTwoSetCC_T (rex ast b l: nat):
   $ decodeTwoSetCC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named @ focus
-  '(eex @ eex @ eex @ iand (iand _ @ anwll @ splitBitsTi ,bvSizeSi) @
+  '(eex @ eex @ eex @ iand (iand _ @ anw3l @ splitBitsTi ,bvSizeSi) @
     rsyl anlr @ anrd readModRM_T)
   '(mpbird (eleq1d anr) @ sylibr xastSetCC_T @
     iand (iand _ @ a1i boolnat) @ rsyl anlr @ syl anlr readModRM_T)
-  '(sylibr optS @ sylib elBitvec2 @ elListHd an3l));
+  '(sylibr optS @ sylib elBitvec2 @ elListHd an4l));
 
 theorem decodeTwoSetCC_len_le: $ decodeTwoSetCC rex ast b l -> len l <= 6 $ =
 (named '(eex @ eex @ eex @ rsyl anlr readModRM_len_le));
@@ -2693,14 +2703,14 @@ theorem decodeJump_len_le: $ decodeJump rex ast b l -> len l <= 10 $ =
 
 @_ def decodeJCC8 (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 7) : 0) b /\
-    readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
+    ccModeled c /\ readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
 pub theorem decodeJCC8T (rex ast b l: nat):
   $ decodeJCC8 rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named @ focus
   '(eex @ eex @ iand (iand (mpbird (eleq1d anr) @ sylibr xastJCC_T @ iand _ _) _) _)
-  '(sylibr optS @ sylib elBitvec2 @ elListHd an3l)
+  '(sylibr optS @ sylib elBitvec2 @ elListHd an4l)
   '(rsyl anlr @ anld readImm8T)
-  '(anwll @ splitBitsTi ,bvSizeSi)
+  '(anw3l @ splitBitsTi ,bvSizeSi)
   '(anrd @ sylan readImmN_T (a1i d8le64) anlr));
 
 theorem decodeJCC8_len: $ decodeJCC8 rex ast b l -> len l = 1 $ =
@@ -2727,21 +2737,21 @@ theorem decodeCall_len_le: $ decodeCall rex ast b l -> len l <= 10 $ =
 @_ def decodeRet (_rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1, v) : (3, 1) : (4, 12) : 0) b /\
-    ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
+    ifp (true v) (imm = 0 /\ l = 0) (imm e. u16 /\ l = u16Bytes imm) /\
     ast = xastRet imm) $;
 pub theorem decodeRetT (rex ast b l: nat):
   $ decodeRet rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named '(eex @ eex @ iand (iand
   (mpbird (eleq1d anr) @ rsyl anlr @ sylibr xastRetT @
-    eor (mpbiri elBits01 @ eleq1d anrl) (anwr @ anld readImm16T))
+    eor (mpbiri elBits01 @ eleq1d anrl) (syl (ssel u16ss64) anrl))
   (anwll @ splitBitsTi ,bvSizeSi))
   (rsyl anlr @ eor (mpbiri elList0 @ eleq1d anrr) @
-    anrd @ sylan readImmN_T (a1i d16le64) anr)));
+    mpbiri u16BytesList @ eleq1d anrr)));
 
 theorem decodeRet_len_le: $ decodeRet rex ast b l -> len l <= 10 $ =
 (named '(eex @ eex @ rsyl anlr @ eor
   (rsyl anrr @ mpbiri le01 @ leeq1d @ syl6eq len0 leneq)
-  (anwr @ mpbird (leeq1d readImm16_len) @ a1i ,norm_num)));
+  (mpbird (leeq1d @ syl6eq u16Bytes_len @ leneqd anrr) @ a1i ,norm_num)));
 
 @_ def decodeLeave (_rex ast b l: nat): wff =
 $ b = ch xc x9 /\ l = 0 /\ ast = xastLeave $;
@@ -2788,11 +2798,12 @@ theorem decodeXchg_len_le: $ decodeXchg rex ast b l -> len l <= 10 $ =
 @_ def decodeXchgRAX (rex ast b l .v .reg .r: nat): wff =
 $ l = 0 /\ E. r (
     splitBits ((3, r) : (1, 0) : (4, 9) : 0) b /\
-    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r)) $;
+    ast = if (rex_reg (REX_B rex) r = RAX) xastNop
+      (xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
 pub theorem decodeXchgRAX_T (rex ast b l: nat):
   $ decodeXchgRAX rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $ =
 (named '(imp @ eexda @ iand (iand
-  (anwr @ mpbird (eleq1d anr) @ sylibr xastXchgT @
+  (anwr @ mpbird (eleq1d anr) @ syl ifT @ iand (a1i xastNopT) @ sylibr xastXchgT @
     iand (a1i @ ian opSizeW_T @ mpbir RM_regT RAX_T) @
     sylan rex_regT (a1i REX_B_T) @ sylib elBitvec2 @
     elListHd anll)
@@ -3154,7 +3165,7 @@ theorem decode_s1 (h: $ decode ast (c ': s0) $):
 
 theorem decodeRetI
   (h1: $ splitBits ((1, v) : (3, 1) : 0) a $)
-  (h2: $ ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) $):
+  (h2: $ ifp (true v) (imm = 0 /\ l = 0) (imm e. u16 /\ l = u16Bytes imm) $):
   $ decode (xastRet imm) (ch xc a ': l) $ =
 (focus
   '(decode0I @ decodeFlowI @ orl @ orr @ iexie @ iexde @
@@ -3165,9 +3176,9 @@ theorem decodeRet0I: $ decode (xastRet 0) (s1 (ch xc x3)) $ =
 '(decode_s1 @ decodeRetI xsplitBits_313 @ mpbir (ifppos true1) @ iani eqid s2ns0);
 
 theorem decodeRetSI
-  (h: $ readImmN 16 imm l $):
+  (h1: $ imm e. u16 $) (h2: $ l = u16Bytes imm $):
   $ decode (xastRet imm) (ch xc x2 ': l) $ =
-'(decodeRetI xsplitBits_213 @ mpbir (ifpneg true0) h);
+'(decodeRetI xsplitBits_213 @ mpbir (ifpneg true0) @ iani h1 h2);
 
 theorem decodeSysCallI: $ decode xastSysCall (ch x0 xf ': s1 (ch x0 x5)) $ =
 '(decode0I @ decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
@@ -3682,6 +3693,15 @@ pub theorem srcEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> srcEA k ds e.
 $ chop (wsizeBits sz)
     (if (sz = wSz8 F. /\ 2 e. r) (shr (readReg k (r - 4)) 8) (readReg k r)) $;
 theorem readRegSzT2: $ readRegSz k sz r e. Bits (wsizeBits sz) $ = 'chopT;
+
+theorem readRegSz_gt: $ 8 < wsizeBits sz ->
+  readRegSz k sz r = chop (wsizeBits sz) (readReg k r) $ =
+'(syl chopeq2 @ syl ifneg @ syl (con3 anl) @
+  syl (con3 @ syl6eq wSz8Bits wsizeBitseq) ltner);
+
+theorem readRegSz64: $ k e. Config /\ r e. Regs -> readRegSz k wSz64 r = readReg k r $ =
+'(eqtrd (a1i @ readRegSz_gt @ mpbir (lteq2 wSz64Bits) ,norm_num) @
+  eqtrd (a1i @ chopeq1 wSz64Bits) @ syl Bits_chop readRegT);
 pub theorem readRegSzT (k sz r: nat):
   $ k e. Config /\ sz e. WSize /\ r e. Regs ->
     readRegSz k sz r e. Bits (wsizeBits sz) $ = '(a1i readRegSzT2);
@@ -3794,6 +3814,15 @@ pub theorem setRegT (k r q: nat):
 theorem setRegMem: $ getMemory (setReg k r q) = getMemory k $ =
 '(sndeq pi22pr);
 
+theorem setReg_id: $ k e. Config /\ r e. Regs -> setReg k r (readReg k r) = k $ =
+(named @ focus
+  '(mpi mkCfg_ex @ eexd @ eexd @ eexd @ eexd @ eexda _)
+  (have 'hrs '(anrd @ anld @ anld @ mpbid (syl6bb mkCfgT @ eleq1d anr) anll))
+  '(eqtrd (setRegeq1d anr) @ eqtr4d (syl6eq setRegVal @ syl setRegeq3 _) @
+    eqtr4d anr @ syl mkCfgeq3 @ syl6eq lowerns @ syl lowereq @
+    sylan writeself (syl Arrowisf hrs) @ mpbird (syl eleq2 @ syl Arrowdm hrs) anlr)
+  '(syl6eq readReg_mk @ syl readRegeq1 anr));
+
 theorem readRIP_setReg: $ readRIP (setReg k r q) = readRIP k $ = '(sndeq fstpr);
 theorem readFlags_setReg: $ readFlags (setReg k r q) = readFlags k $ = '(fsteq pi22pr);
 theorem getMemory_setReg: $ getMemory (setReg k r q) = getMemory k $ = '(sndeq pi22pr);
@@ -3844,7 +3873,7 @@ pub theorem writeRegT (k sz r v: nat): $ k e. Config /\ sz e. WSize /\
 @_ abstract def writeEASz (k sz ea v k2: nat): wff =
 $ k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
   ea e. Sum {i | F.} (Sum {r | k2 = writeReg k sz r v}
-    {a | writeMem k a (toBytes (wsizeBits sz) v) k2}) $;
+    {a | writeMem k a (toBytes (wsizeBytes sz) v) k2}) $;
 pub theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $ =
 -- (named '(inot @ imp @ syl5bi Suml @ eelabd @ a1i efal));
 (named '(inot @ imp @ syl5bi Suml @ eelabd @ a1i efal));
@@ -3856,7 +3885,7 @@ theorem writeEASz_r2:
 theorem writeEASz_m2:
   $ writeEASz k sz (EA_m a) v k2 <->
     k e. Config /\ sz e. WSize /\ a e. u64 /\ v e. Bits (wsizeBits sz) /\
-    writeMem k a (toBytes (wsizeBits sz) v) k2 $ =
+    writeMem k a (toBytes (wsizeBytes sz) v) k2 $ =
 (named '(aneq (aneq1i @ aneq2i EA_mT) @ bitr Sumr @ bitr Sumr @ elabe ,eqtac));
 pub theorem writeEASz_r (k sz r v k2: nat):
   $ k e. Config /\ sz e. WSize /\ r e. Regs /\ v e. Bits (wsizeBits sz) ->
@@ -3865,7 +3894,7 @@ pub theorem writeEASz_r (k sz r v k2: nat):
 pub theorem writeEASz_m (k sz a v k2: nat):
   $ k e. Config /\ sz e. WSize /\ a e. u64 /\ v e. Bits (wsizeBits sz) ->
     (writeEASz k sz (EA_m a) v k2 <->
-     writeMem k a (toBytes (wsizeBits sz) v) k2) $ =
+     writeMem k a (toBytes (wsizeBytes sz) v) k2) $ =
 '(syl5bb writeEASz_m2 bian1);
 pub theorem writeEASzT (k sz ea v k2: nat):
   $ writeEASz k sz ea v k2 ->
@@ -3971,6 +4000,11 @@ pub theorem setCZSO_T (k: nat) (c z s o: wff):
   $ k e. Config -> setCZSO k c z s o e. Config $ =
 '(sylan writeFlagsT id @ syl setOF_T @ syl setSF_T @ syl setZF_T @ syl setCF_T readFlagsT);
 
+--| Set `CF` and `OF` to `p`, leaving the other flags alone.
+@_ def setCFOF (k: nat) (p: wff): nat = $ writeFlags k (setOF (setCF (readFlags k) p) p) $;
+pub theorem setCFOF_T (k: nat) (p: wff): $ k e. Config -> setCFOF k p e. Config $ =
+'(sylan writeFlagsT id @ syl setOF_T @ syl setCF_T readFlagsT);
+
 @_ def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
 @_ def writeResultFlags (k sz w: nat) (c o: wff): nat =
@@ -4036,7 +4070,7 @@ do {
     [unopInc $ E. w E. c E. o (addCarry sz a 1 w c o /\ writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $]
     [unopDec $ E. w E. c E. o (subBorrow sz a 1 w c o /\ writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $]
     [unopNot $ writeEA k sz ea (bitsNot (wsizeBits sz) a) k2 $]
-    [unopNeg $ E. b (b = bitsNeg (wsizeBits sz) a /\ writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2) $]
+    [unopNeg $ E. b (b = bitsNeg (wsizeBits sz) a /\ writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ MSB sz b) k2) $]
   ))
   (def ((writeOp_stmt clauses lhs) n)
     @ match (nth n clauses) @ (x e) (if {e == $F.$} $~,(lhs x)$ $ ,(lhs x) <-> ,e $))
@@ -4133,7 +4167,7 @@ pub theorem popRIP_T (k k2: nat):
 @_ def pushAux (k q k2 .sp: nat): wff =
 $ k e. Config /\
   E. sp (sp = readReg k RSP -_64 8 /\
-    writeEA (setReg k RSP sp) (EA_m sp) wSz64 q k2) $;
+    writeEA (setReg k RSP sp) wSz64 (EA_m sp) q k2) $;
 pub theorem pushAuxT (k q k2: nat):
   $ pushAux k q k2 -> k e. Config /\ q e. u64 /\ k2 e. Config $ =
 (named '(imp @ eexda @ sylibr anass @ anim2 @ anwr @ rsyl writeEA_T @ anim1 anr));
@@ -4162,16 +4196,17 @@ do {
             readEA k sz (srcEA k ds) s /\
             writeBinop k op sz (destEA k ds) d s k2) $)}
       + {(<> =>
-        {(#f => (sz rm) => (xastMul n src res lo hi)
-          $ E. n E. src E. res (
+        {(#f => (sz rm) => (xastMul n src res k3 lo hi)
+          $ E. n E. src E. res E. k3 (
             n = wsizeBits sz /\
             readEA k sz (RM_EA k rm) src /\
             res = readRegSz k sz RAX * src /\
             ifp (n = 8)
-              (k2 = writeReg k wSz16 RAX res)
+              (eraseFlags (writeReg k wSz16 RAX res) k3)
               (E. lo E. hi (
                 splitBits ((n, lo) : (n, hi) : 0) res /\
-                k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $)
+                eraseFlags (writeReg (writeReg k sz RAX lo) sz RDX hi) k3)) /\
+            k2 = setCFOF k3 (2 ^ n <= res)) $)
        + (#t => (sz rm) => (xastDiv n a b d m)
           $ E. n E. a E. b E. d E. m (
             n = wsizeBits sz /\
@@ -4179,7 +4214,7 @@ do {
             divModSz sz a b d m /\
             ifp (n = 8)
               (a = readRegSz k wSz16 RAX /\
-                eraseFlags (writeReg k sz RAX (shl m 8 + d)) k2)
+                eraseFlags (writeReg k wSz16 RAX (shl m 8 + d)) k2)
               (splitBits ((n, readRegSz k sz RAX) :
                           (n, readRegSz k sz RDX) : 0) a /\
                 eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $)})
@@ -4216,7 +4251,8 @@ do {
               (writeEA ki sz (EA_r RAX) dst k2)) $)
        + (2 => (rm r) => (xastXadd v)
           $ E. v (readEA k sz (RM_EA k rm) v /\
-            writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
+            writeBinop (writeReg k sz r v) binopAdd sz
+              (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
     + (<> => c =>
         {((sz ds) => (xastCMov v)
           $ E. v (readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
@@ -4423,23 +4459,9 @@ pub theorem execXAST_T (k ast k2: nat):
     '(iand _ @ anwr @ anwll @ anrd readEA_T64)
     '(iand an3l anllr))
   (focus -- Mul
-    '(eexd @ eexd @ eexd @ impd @ exp @ eord _ _)
-    (focus
-      '(exp @ mpbird (eleq1d anrr) @
-        sylan writeRegT (iand (iand an4l @ a1i wSz16T) @ a1i RAX_T) @
-        mpbird (elneqd (rsyl anlr anr) @ Bitseqd _) @
-        sylan mulBitsT (sylan readRegSzT an3l @ a1i RAX_T) @
-        rsyl anlr @ rsyl anlr @ anrd readEA_T)
-      (have 'h1 '(eqtr3d anrl @ rsyl anlr anll))
-      '(syl5eq wSz16Bits @ syl5eqr d8add8 @ addeqd h1 h1))
-    (focus
-      '(syl5 anr @ eexd @ eexda @ mpbird (eleq1d anrr) _)
-      (have 'h2 '(Bitseqd @ rsyl anlr anll))
-      (have 'h3 '(sylib elListS @ rsyl anrl anl))
-      '(sylan writeRegT (iand (iand _ an3lr) @ a1i RDX_T) @
-        mpbid (elneq2d h2) @ sylib elBitvec2 @ elListHd @ anrd h3)
-      '(sylan writeRegT (iand an3l @ a1i RAX_T) @
-        mpbid (elneq2d h2) @ sylib elBitvec2 @ anld h3)))
+    '(a1i @ eex @ eex @ eex @ eex @ mpbird (eleq1d anr) @ syl setCFOF_T @ rsyl anlr @ eor
+      (anwr @ anrd eraseFlagsT)
+      (anwr @ eex @ eex @ anwr @ anrd eraseFlagsT)))
   (focus -- Div
     (def h '(rsyl anrr @ anrd eraseFlagsT))
     '(a1i @ eex @ eex @ eex @ eex @ eex @ anwr @ eor ,h ,h))
@@ -4460,7 +4482,8 @@ pub theorem execXAST_T (k ast k2: nat):
     '(iand _ @ rsyl anrl @ syl anllr readEA_T64)
     '(iand _ @ rsyl anrl @ anrd readEA_T64)
     '(iand _ @ mpi readRegSzT2 @ syl ssel @ syl Bitsss @ syl wsizeBits_le64 an3lr)
-    '(iand (iand an4l @ a1i binopAddT) @ an3lr))
+    '(iand (iand (sylan writeRegT (iand an3l anlr) _) @ a1i binopAddT) an3lr)
+    '(rsyl anrl @ rsyl readEA_T anr))
   (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- CMov
   (focus '(a1i @ anrd writeEA_T)) -- SetCC
   (focus -- Jump
@@ -4484,6 +4507,26 @@ pub theorem execXAST_T (k ast k2: nat):
     '(sylan setExceptionT _ @ a1i @ mpbir optS exSysCallT)
     '(sylan setRegT (iand _ @ a1i R11_T) anrl)
     '(sylan setRegT (anim2 @ a1i RCX_T) @ anwl readRIP_T)));
+
+theorem execXASTXchg_self (k k2: nat): $ r e. Regs ->
+  (execXAST k (xastXchg wSz64 (RM_reg r) r) k2 <-> k e. Config /\ k2 = k) $ =
+(named @ focus
+  (have 'h1 '(sylib (elneq2 @ Bitseq wSz64Bits) readRegSzT))
+  '(syl5bb execXASTXchg @
+    bitrd (exeqd @ bian11d @ syl5bb (readEAeq3 RM_EAreg) @
+      syl5bbr (bian2a @ syl an3l readEA_T) @ aneq1da @ rsyl ancom @
+      bitrd (sylan readEA_r id @ a1i wSz64T) @ eqeq2d readRegSz64) @
+    exeqed @ aneq2da @ bitrd (writeEAeq1d @ syl5eq writeReg64 @
+      eqtrd (setRegeq3d anlr) @ sylan setReg_id anr anll) @
+    rsyl (iand (iand anr @ a1i wSz64T) anll) @
+    bitrd (syl5bb (writeEAeq3 RM_EAreg) @ syl bian1 h1) @
+    bitrd (sylan writeEASz_r id @ a1i chopT) @ eqeq2d @
+    syl5eq writeReg64 @ eqtrd (setRegeq3d @ syl5eq (chopeq1 wSz64Bits) @
+      eqtrd (syl Bits_chop h1) @ sylan readRegSz64 anll anr) @ sylan setReg_id anll anr));
+
+--| `nop = xchg rax, rax` really is a no-op.
+pub theorem execXASTNop (k k2: nat): $ execXAST k xastNop k2 <-> k e. Config /\ k2 = k $ =
+'(execXASTXchg_self RAX_T);
 
 --| This is the step relation for the x86 semantic model, excluding IO.
 --| `step k k2` means that k2 is a possible next state after k. Multiple
@@ -4759,7 +4802,8 @@ pub theorem execWriteT (l k l2 ret: nat):
       sylc Bitsle1 (anwr anrl) @ mpbird (eleq1d @ rsyl anlr anllr) @
       sylan readRegT (anwl h) @ a1i RDX_T)));
 
-@_ def Stat: set = $ Array u8 (8 * 10) $;
+--| `struct stat` as laid out by the x86-64 Linux kernel: `0x90` = 144 bytes.
+@_ def Stat: set = $ Array u8 (9 * 16) $;
 @(add-eval) def sys_fstat: nat = $ 5 $;
 @_ def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
 $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
@@ -5038,10 +5082,14 @@ theorem fin_execIO (ks: nat): $ finite {ks2 | execIO ks ks2} $ =
 @_ def sys_exit: nat = $ ch x3 xc $;
 --| We consider protection faults as a valid way to exit with a nonzero exit code
 --| (usually `0xD` or `0xE` but often reported as `0x8D` and `0x8E` by shells).
+--| Only the low byte of `RDI` is observable to the parent process (`waitpid`
+--| reports `RDI & 0xff`), so that is what counts as the exit code here: a program
+--| exiting with `RDI = 256` reports success and must therefore satisfy the
+--| postcondition.
 @_ def execExit (k ret: nat): wff =
 $ k e. Config /\ ret e. u32 /\ (
     readException k = suc exGPF /\ ret != 0 \/
-    readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = readReg k RDI) $;
+    readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = chop 8 (readReg k RDI)) $;
 pub theorem execExitT (k ret: nat):
   $ execExit k ret -> k e. Config /\ ret e. u32 $ = 'anl;
 

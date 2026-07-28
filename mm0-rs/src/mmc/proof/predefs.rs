@@ -412,7 +412,7 @@ make_predefs! {
   /// `sibSideCond (base: hex) (md: nat): wff`
   sibSideCond: TermId;
   sibSideCond_M[m: 3]: ThmId if m != 0 => format!("sibSideCond_M{m}");
-  sibSideCond_B[b: 16]: ThmId if b != 5 => format!("sibSideCond_B{b:x}");
+  sibSideCond_B[b: 8]: ThmId if b != 5 => format!("sibSideCond_B{b:x}");
 
   /// `modrmSideCond (base md: nat): wff`
   modrmSideCond: TermId;

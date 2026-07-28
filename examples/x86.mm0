@@ -155,7 +155,7 @@ theorem readDisplacementT (mod q l: nat):
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $;
 
 def readSIBDisplacement (mod bbase q base l .w: nat): wff =
-$ ifp (bbase = RBP /\ mod = 0)
+$ ifp (chop 3 bbase = 5 /\ mod = 0)
     (E. w (w e. u32 /\ q = sExtq 32 w /\ base = 0 /\ l = u32Bytes w))
     (readDisplacement mod q l /\ base = base_reg bbase) $;
 theorem readSIBDisplacementT (mod bbase q base l: nat):
@@ -288,6 +288,10 @@ theorem condAlwaysT: $ condAlways e. Cond $;
 theorem condPosT (c: nat): $ c e. BCond <-> condPos c e. Cond $;
 theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $;
 
+--| Conditions `10` (parity) and `11` (non-parity) are rejected
+--| because we do not model the `PF` flag
+def ccModeled (c: nat): wff = $ c // 2 != 5 $;
+
 def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize (Option DestSrc))) $;
@@ -311,6 +315,9 @@ def xastSetCC (c b ds: nat): nat = $ b0 (b1 (b1 (c, b1 (b, ds)))) $;
 def xastMov (sz ds: nat): nat = $ xastCMov condAlways sz ds $;
 def xastMovZX (sz ds sz2: nat): nat = $ xastMovX 0 sz ds sz2 $;
 def xastMovSX (sz ds sz2: nat): nat = $ xastMovX 1 sz ds sz2 $;
+
+--| `nop`, as an alias for the 64 bit `xchg rax, rax`.
+def xastNop: nat = $ xastXchg wSz64 (RM_reg RAX) RAX $;
 
 def XASTFlow: set =
 $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
@@ -365,6 +372,8 @@ theorem xastMovSX_T (sz ds sz2: nat):
 theorem xastMovT (sz ds: nat):
   $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
+theorem xastNopT: $ xastNop e. XAST $;
+
 theorem xastJumpT (rm: nat): $ xastJump rm e. XAST <-> rm e. RM $;
 theorem xastJCC_T (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $;
 theorem xastCallT (irm: nat): $ xastCall irm e. XAST <-> irm e. ImmRM $;
@@ -381,21 +390,21 @@ theorem xastSysCallT: $ xastSysCall e. XAST $;
 
 def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4, c) : (4, 4) : 0) b /\
-    readModRM rex reg r l /\
+    ccModeled c /\ readModRM rex reg r l /\
     ast = xastCMov (suc c) (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
 theorem decodeTwoCMovT (rex ast b l: nat):
   $ decodeTwoCMov rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
 def decodeTwoJCC (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 8) : 0) b /\
-    readImmN 32 imm l /\
+    ccModeled c /\ readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
 theorem decodeTwoJCC_T (rex ast b l: nat):
   $ decodeTwoJCC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
 def decodeTwoSetCC (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4, c) : (4, 9) : 0) b /\
-    readModRM rex reg r l /\
+    ccModeled c /\ readModRM rex reg r l /\
     ast = xastSetCC (suc c) (nat (rex != 0)) r) $;
 theorem decodeTwoSetCC_T (rex ast b l: nat):
   $ decodeTwoSetCC rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
@@ -586,7 +595,7 @@ theorem decodeJumpT (rex ast b l: nat):
 
 def decodeJCC8 (_rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4, c) : (4, 7) : 0) b /\
-    readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
+    ccModeled c /\ readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
 theorem decodeJCC8T (rex ast b l: nat):
   $ decodeJCC8 rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
@@ -599,7 +608,7 @@ theorem decodeCallT (rex ast b l: nat):
 def decodeRet (_rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1, v) : (3, 1) : (4, 12) : 0) b /\
-    ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
+    ifp (true v) (imm = 0 /\ l = 0) (imm e. u16 /\ l = u16Bytes imm) /\
     ast = xastRet imm) $;
 theorem decodeRetT (rex ast b l: nat):
   $ decodeRet rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
@@ -626,7 +635,8 @@ theorem decodeXchgT (rex ast b l: nat):
 def decodeXchgRAX (rex ast b l .v .reg .r: nat): wff =
 $ l = 0 /\ E. r (
     splitBits ((3, r) : (1, 0) : (4, 9) : 0) b /\
-    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r)) $;
+    ast = if (rex_reg (REX_B rex) r = RAX) xastNop
+      (xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
 theorem decodeXchgRAX_T (rex ast b l: nat):
   $ decodeXchgRAX rex ast b l -> ast e. XAST /\ b e. u8 /\ l e. List u8 $;
 
@@ -974,7 +984,7 @@ theorem writeEASz_r (k sz r v k2: nat):
 theorem writeEASz_m (k sz a v k2: nat):
   $ k e. Config /\ sz e. WSize /\ a e. u64 /\ v e. Bits (wsizeBits sz) ->
     (writeEASz k sz (EA_m a) v k2 <->
-     writeMem k a (toBytes (wsizeBits sz) v) k2) $;
+     writeMem k a (toBytes (wsizeBytes sz) v) k2) $;
 theorem writeEASzT (k sz ea v k2: nat):
   $ writeEASz k sz ea v k2 ->
     k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
@@ -1023,6 +1033,10 @@ theorem setCZSOVal (ex ip rs f m: nat) (c z s o: wff):
     mkCfg ex ip rs (setOF (setSF (setZF (setCF f c) z) s) o) m $;
 theorem setCZSO_T (k: nat) (c z s o: wff):
   $ k e. Config -> setCZSO k c z s o e. Config $;
+
+--| Set `CF` and `OF` to `p`, leaving the other flags alone.
+def setCFOF (k: nat) (p: wff): nat = $ writeFlags k (setOF (setCF (readFlags k) p) p) $;
+theorem setCFOF_T (k: nat) (p: wff): $ k e. Config -> setCFOF k p e. Config $;
 
 def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
@@ -1124,7 +1138,7 @@ theorem writeUnopNot (k sz ea a k2: nat):
 theorem writeUnopNeg {b: nat} (k sz ea a k2: nat):
   $ writeUnop k unopNeg sz ea a k2 <->
     E. b (b = bitsNeg (wsizeBits sz) a /\
-      writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2) $;
+      writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ MSB sz b) k2) $;
 theorem writeUnopT (k op sz ea a k2: nat):
   $ k e. Config /\ op e. Unop /\ sz e. WSize /\ a e. u64 /\
     ea e. EA /\ writeUnop k op sz ea a k2 -> k2 e. Config $;
@@ -1148,7 +1162,7 @@ theorem popRIP_T (k k2: nat):
 def pushAux (k q k2 .sp: nat): wff =
 $ k e. Config /\
   E. sp (sp = readReg k RSP -_64 8 /\
-    writeEA (setReg k RSP sp) (EA_m sp) wSz64 q k2) $;
+    writeEA (setReg k RSP sp) wSz64 (EA_m sp) q k2) $;
 theorem pushAuxT (k q k2: nat):
   $ pushAux k q k2 -> k e. Config /\ q e. u64 /\ k2 e. Config $;
 
@@ -1174,16 +1188,17 @@ theorem execXASTBinop {d s: nat} (k op sz ds k2: nat):
       readEA k sz (destEA k ds) d /\
       readEA k sz (srcEA k ds) s /\
       writeBinop k op sz (destEA k ds) d s k2) $;
-theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
-  $ execXAST k (xastMul sz rm) k2 <-> E. n E. src E. res (
+theorem execXASTMul {n src res k3 lo hi: nat} (k sz rm k2: nat):
+  $ execXAST k (xastMul sz rm) k2 <-> E. n E. src E. res E. k3 (
       n = wsizeBits sz /\
       readEA k sz (RM_EA k rm) src /\
       res = readRegSz k sz RAX * src /\
       ifp (n = 8)
-        (k2 = writeReg k wSz16 RAX res)
+        (eraseFlags (writeReg k wSz16 RAX res) k3)
         (E. lo E. hi (
           splitBits ((n, lo) : (n, hi) : 0) res /\
-          k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $;
+          eraseFlags (writeReg (writeReg k sz RAX lo) sz RDX hi) k3)) /\
+      k2 = setCFOF k3 (2 ^ n <= res)) $;
 theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
   $ execXAST k (xastDiv sz rm) k2 <-> E. n E. a E. b E. d E. m (
       n = wsizeBits sz /\
@@ -1191,7 +1206,7 @@ theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
       divModSz sz a b d m /\
       ifp (n = 8)
         (a = readRegSz k wSz16 RAX /\
-          eraseFlags (writeReg k sz RAX (shl m 8 + d)) k2)
+          eraseFlags (writeReg k wSz16 RAX (shl m 8 + d)) k2)
         (splitBits ((n, readRegSz k sz RAX) :
                     (n, readRegSz k sz RDX) : 0) a /\
           eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $;
@@ -1228,7 +1243,8 @@ theorem execXASTCmpXchg {src acc dst ki: nat} (k sz rm r k2: nat):
 theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
   $ execXAST k (xastXadd sz rm r) k2 <-> E. v (
       readEA k sz (RM_EA k rm) v /\
-      writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $;
+      writeBinop (writeReg k sz r v) binopAdd sz
+        (RM_EA k rm) (readRegSz k sz r) v k2) $;
 theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
   $ execXAST k (xastCMov c sz ds) k2 <-> E. v (
       readEA k sz (if (readCond k c) (srcEA k ds) (destEA k ds)) v /\
@@ -1270,6 +1286,9 @@ theorem execXASTSysCall {r11: nat} (k k2: nat):
 
 theorem execXAST_T (k ast k2: nat):
   $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $;
+
+--| `nop = xchg rax, rax` really is a no-op.
+theorem execXASTNop (k k2: nat): $ execXAST k xastNop k2 <-> k e. Config /\ k2 = k $;
 
 --| This is the step relation for the x86 semantic model, excluding IO.
 --| `step k k2` means that k2 is a possible next state after k. Multiple
@@ -1393,7 +1412,8 @@ theorem execWriteT (l k l2 ret: nat):
     l e. List u8 /\ k e. Config /\
     l2 e. List u8 /\ ret e. u64 $;
 
-def Stat: set = $ Array u8 (8 * 10) $;
+--| `struct stat` as laid out by the x86-64 Linux kernel: `0x90` = 144 bytes.
+def Stat: set = $ Array u8 (9 * 16) $;
 def sys_fstat: nat = $ 5 $;
 def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
 $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
@@ -1471,10 +1491,14 @@ theorem execIO_T (ks ks2: nat):
 def sys_exit: nat = $ ch x3 xc $;
 --| We consider protection faults as a valid way to exit with a nonzero exit code
 --| (usually `0xD` or `0xE` but often reported as `0x8D` and `0x8E` by shells).
+--| Only the low byte of `RDI` is observable to the parent process (`waitpid`
+--| reports `RDI & 0xff`), so that is what counts as the exit code here: a program
+--| exiting with `RDI = 256` reports success and must therefore satisfy the
+--| postcondition.
 def execExit (k ret: nat): wff =
 $ k e. Config /\ ret e. u32 /\ (
     readException k = suc exGPF /\ ret != 0 \/
-    readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = readReg k RDI) $;
+    readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = chop 8 (readReg k RDI)) $;
 theorem execExitT (k ret: nat):
   $ execExit k ret -> k e. Config /\ ret e. u32 $;
 

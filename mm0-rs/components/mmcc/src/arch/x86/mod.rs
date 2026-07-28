@@ -1797,14 +1797,16 @@ fn layout_opc_reg(rex: &mut bool, rm: PReg) -> ModRMLayout {
 fn layout_opc_mem(rex: &mut bool, a: &PAMode) -> ModRMLayout {
   if a.base.is_valid() { *rex |= a.base.large() }
   if let Some(si) = a.si { *rex |= si.index.large() }
+  let layout = |base: PReg, layout| match layout {
+    DispLayout::S0 if base.index() & 7 == 5 => DispLayout::S8,
+    layout => layout,
+  };
   match a {
     _ if !a.base().is_valid() => ModRMLayout::Sib0,
     PAMode {off, si: None, ..} if a.base().index() & 7 != 4 =>
-      ModRMLayout::Disp(layout_offset(off)),
-    PAMode {off, base, ..} => match (*base, layout_offset(off)) {
-      (RBP, DispLayout::S0) => ModRMLayout::SibReg(DispLayout::S8),
-      (_, layout) => ModRMLayout::SibReg(layout)
-    }
+      ModRMLayout::Disp(layout(a.base(), layout_offset(off))),
+    PAMode {off, base, ..} =>
+      ModRMLayout::SibReg(layout(*base, layout_offset(off))),
   }
 }
 
