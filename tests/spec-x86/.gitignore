@@ -1,0 +1,6 @@
+__pycache__/
+
+# The root .gitignore has `*.s` (generated assembly), which also matches
+# `trampoline.S` because core.ignorecase is set. That file is source, not a
+# build product, and without it the runtime half of the suite cannot build.
+!trampoline.S

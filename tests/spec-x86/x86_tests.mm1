@@ -1,0 +1,1453 @@
+import "../../examples/assembler-new.mm1";
+
+--| Spec test suite: each test proves a *positive* instance of `step`, exhibiting a
+--| successor state and pinning the observables the runtime harness reads back --
+--| `readRIP` (which pins the instruction length), the registers, and the flags.
+--|
+--| Positive instances matter: the `pushAux` bug survived because every theorem about
+--| it was of the form `X -> well-typed`, which holds vacuously of an unsatisfiable
+--| definition. `E. k2 (step k k2 /\ ...)` cannot.
+
+----------------------------------------
+-- Shared machinery
+----------------------------------------
+
+--| Positive introduction for `step`. `hn` supplies the instruction length separately
+--| so that callers work with a literal rather than an unreduced `len l`.
+theorem stepI (k k2 l n ast: nat)
+  (hn: $ len l = n $)
+  (h1: $ k e. Config $)
+  (h2: $ readException k = 0 $)
+  (h3: $ readMemX k (readRIP k) l $)
+  (h4: $ decode ast l $)
+  (h5: $ execXAST (writeRIP k (readRIP k +_64 n)) ast k2 $):
+  $ step k k2 $ =
+'(iani (iani h1 h2) @ iexie @ iexde @ mpbiri (iani (iani h3 h4) @
+  mpbi (execXASTeq1 @ writeRIPeq2 @ add64eq2 @ eqcom hn) h5) ,eqtac);
+
+--| `len` of a one byte instruction, from the assembler's generated `strlen` family.
+theorem len_s1 (c: char): $ len (s1 c) = 1 $ = '(eqtr strlen1 h2n1);
+
+--| `len` of a three byte instruction.
+theorem len_s3 (a b c: char): $ len (a ': b ': s1 c) = 3 $ = '(eqtr strlen3 h2n3);
+
+--| `execXASTNop` in the forward direction, as a deduction over `k e. Config`.
+theorem execXASTNop_i (k: nat): $ k e. Config -> execXAST k xastNop k $ =
+'(sylibr execXASTNop @ iand id @ a1i eqid);
+
+--| Stated rather than left to `,bvSizeSi`, whose metavariables are not resolved at
+--| the point `splitBitsA4ic` needs it.
+theorem bvSize_31 (a b: nat): $ bvSize ((3, a) : (1, b) : 0) = 4 $ =
+'(eqtr bvSizeS @ eqtr (addeq2 @ eqtr bvSizeS @ eqtr (addeq2 bvSize0) add0) ,norm_num);
+
+----------------------------------------
+-- nop (opcode 90)
+----------------------------------------
+
+--| Leaf constructor for the `nop` case of `decodeXchgRAX`: opcode `90` with no REX
+--| selects `rAX`, which the SDM makes an alias for `nop`.
+theorem decodeNopI: $ decodeXchgRAX 0 xastNop (ch x9 x0) s0 $ =
+'(iani s2ns0 @ iexie @ mpbiri (iani
+  (splitBitsA4ic (appendSi append1) bvSize_31 xsplitBits_031 @ splitBits14ie dec9)
+  (eqcom @ ifpos @ eqtr (rex_regeq1 REX_B_0) @ eqtr (rex_reg_i xsplitBits_031) h2n0))
+  ,eqtac);
+
+theorem decodeNop: $ decode xastNop ,"\x90" $ =
+'(decode_s1 @ decode0I @ decodeMiscI @ orl @ orl @ orl @ orl @ orl @ orr decodeNopI);
+
+--| `nop` advances RIP by one and changes nothing else.
+--|
+--| This is the test the pre-fix model would have failed: opcode `90` decoded to a
+--| 32 bit `xchg rax, rax`, whose write clears `RAX[63:32]`, so `readReg k2 r =
+--| readReg k r` was false at `r = RAX`.
+theorem decodeSTC_I: $ decodeSTC 0 xastSTC (ch xf x9) s0 $ =
+'(iani (iani eqid s2ns0) eqid);
+
+theorem decode_stc: $ decode xastSTC ,"\xf9" $ =
+'(decode_s1 @ decode0I @ decodeMiscI @ orr @ orr decodeSTC_I);
+
+pub theorem test_nop {k2: nat} (k rip r: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x90" $)
+  (hrip: $ readRIP k = rip $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 1 /\
+      readReg k2 r = readReg k r /\
+      readFlags k2 = readFlags k) $ =
+(focus
+  (have 'hW $ writeRIP k (readRIP k +_64 1) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hexec $ execXAST (writeRIP k (readRIP k +_64 1)) xastNop
+      (writeRIP k (readRIP k +_64 1)) $
+    '(execXASTNop_i hW))
+  '(iexie @ mpbiri (iani (iani (iani
+      (stepI len_s1 hk hex hc decodeNop hexec)
+      (eqtr read_writeRIP @ add64eq1 hrip))
+      readReg_writeRIP)
+      readFlags_writeRIP) ,eqtac));
+
+----------------------------------------
+-- stc (opcode F9)
+----------------------------------------
+
+--| `stc` sets CF, leaves the other flags and all registers alone, and advances
+--| RIP by one. Its decode is as simple as `nop`'s, so this isolates the flag
+--| read-back path from the ModRM plumbing.
+pub theorem test_stc {k2: nat} (k rip r: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\xf9" $)
+  (hrip: $ readRIP k = rip $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 1 /\
+      readReg k2 r = readReg k r /\
+      CF (readFlags k2) /\
+      (ZF (readFlags k2) <-> ZF (readFlags k)) /\
+      (SF (readFlags k2) <-> SF (readFlags k)) /\
+      (OF (readFlags k2) <-> OF (readFlags k))) $ =
+(focus
+  (have 'hexec $ execXAST (writeRIP k (readRIP k +_64 1)) xastSTC
+      (writeFlags (writeRIP k (readRIP k +_64 1))
+        (setCF (readFlags (writeRIP k (readRIP k +_64 1))) T.)) $
+    '(mpbir execXASTSTC eqid))
+  (have 'hf $ readFlags (writeFlags (writeRIP k (readRIP k +_64 1))
+        (setCF (readFlags (writeRIP k (readRIP k +_64 1))) T.))
+      = setCF (readFlags k) T. $
+    '(eqtr read_writeFlags @ setCFeq1 readFlags_writeRIP))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani
+      (stepI len_s1 hk hex hc decode_stc hexec)
+      (eqtr (eqtr readRIP_writeFlags read_writeRIP) @ add64eq1 hrip))
+      (eqtr readReg_writeFlags readReg_writeRIP))
+      (mpbir (bitr (CFeq hf) CF_setCF) itru))
+      (bitr (ZFeq hf) @ ZF_setCF biid))
+      (bitr (SFeq hf) @ SF_setCF biid))
+      (bitr (OFeq hf) @ OF_setCF biid)) ,eqtac));
+
+----------------------------------------
+-- neg rax (48 F7 D8) -- decode half
+----------------------------------------
+
+theorem bvSize_121 (a b c: nat): $ bvSize ((1, a) : (2, b) : (1, c) : 0) = 4 $ =
+'(eqtr bvSizeS @ eqtr (addeq2 @ eqtr bvSizeS @ eqtr (addeq2 @ eqtr bvSizeS @
+    eqtr (addeq2 bvSize0) add0) ,norm_num) ,norm_num);
+
+--| `REX.W` alone (byte 48) selects the 64 bit operand size.
+theorem opSizeW_rexW_64: $ opSizeW (suc x8) 1 = wSz64 $ = '(opSizeW_S xbit83 opSize_64);
+
+----------------------------------------
+-- Bridging the assembler layer to `decode`
+----------------------------------------
+
+--| Membership in `instSimple`, which is what the assembler's `inst*` families
+--| ultimately carry: `instSimple ast = S\ p, S\ s, {x | decode ast s}`.
+theorem el_instSimple: $ p, s, x e. instSimple ast <-> decode ast s $ =
+'(!! elsabe pv @ a1i @ !! elsabe sv @
+  bitrd (a1i @ !! elabe xv @ a1i biid) @ decodeeq2d id);
+
+--| Strip `parseInst`'s assembly-position wrapper down to a bare `decode`.
+--| `parseInstN p ip s I` is
+--| `text_start + p + ip e. u64 -> A. x (ip = x + len s -> p, s, x e. I)`,
+--| so a test discharges the address-range side condition once and instantiates
+--| the position; everything after that is ordinary decoding.
+theorem parseInst_mem (p ip x: nat) (s: string) (I: set)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h:  $ parseInst p ip s I $):
+  $ p, s, x e. I $ =
+(focus
+  (have 'hall $ A. xv (ip = xv + len s -> p, s, xv e. I) $ '(ax_mp h h1))
+  '(ax_mp (ax_mp (!! eale xv @ imeqd (eqeq2d @ addeq1d id) @
+      eleq1d @ preq2d @ preq2d id) hall) h2));
+
+theorem parseInst_decode (p ip x ast: nat) (s: string)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h:  $ parseInst p ip s (instSimple ast) $):
+  $ decode ast s $ =
+'(mpbi el_instSimple @ parseInst_mem h1 h2 h);
+
+--| Membership in `instUnop`, which carries a `Unop` side condition beside the
+--| `decode`.
+theorem el_instUnop:
+  $ p, s, x e. instUnop op sz dst <->
+    op e. Unop /\ decode (xastUnop op sz (RM_reg dst)) s $ =
+'(!! elsabe pv @ a1i @ !! elsabe sv @
+  bitrd (a1i @ !! elabe xv @ a1i biid) @ aneq2d @ decodeeq2d id);
+
+theorem parseInst_decode_unop (p ip x op sz: nat) (dst: hex) (s: string)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h:  $ parseInst p ip s (instUnop op sz dst) $):
+  $ decode (xastUnop op sz (RM_reg dst)) s $ =
+'(ax_mp anr @ mpbi el_instUnop @ parseInst_mem h1 h2 h);
+
+----------------------------------------
+-- The 64 bit unops on rax: 48 <opc> <modrm> -- decode half
+----------------------------------------
+
+--| ModRM byte `mod=11, /<n>, r/m=rax`.  The `/<n>` digit lands in the reg field,
+--| which `parseModRM_I` splits as `o` (bit 0), `pc` (bits 1-2) and REX.R (bit 3);
+--| `mod=11` and `r/m=rax` are the same in all four, so only the reg field moves.
+theorem parseModRM_C0_rax:
+  $ parseModRM (suc x8) x0 (IRM_reg x0) ,"\xc0" s0 $ =
+'(parseModRM_I xsplitBits_031 xsplitBits_c22 (REX_R_Si xbit82) xsplitBits_0121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_031) consStr0);
+
+theorem parseModRM_C8_rax:
+  $ parseModRM (suc x8) x1 (IRM_reg x0) ,"\xc8" s0 $ =
+'(parseModRM_I xsplitBits_831 xsplitBits_c22 (REX_R_Si xbit82) xsplitBits_1121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_031) consStr0);
+
+theorem parseModRM_D0_rax:
+  $ parseModRM (suc x8) x2 (IRM_reg x0) ,"\xd0" s0 $ =
+'(parseModRM_I xsplitBits_031 xsplitBits_d22 (REX_R_Si xbit82) xsplitBits_2121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_031) consStr0);
+
+theorem parseModRM_D8_rax:
+  $ parseModRM (suc x8) x3 (IRM_reg x0) ,"\xd8" s0 $ =
+'(parseModRM_I xsplitBits_831 xsplitBits_d22 (REX_R_Si xbit82) xsplitBits_3121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_031) consStr0);
+
+
+--| `parseInst`'s address-range side condition, at the concrete position the test
+--| picks. `p` and `ip` are the assembler's position variables; `decode` does not
+--| mention them, so a test is free to instantiate them at the one place where the
+--| obligation is a closed arithmetic fact rather than an assumption. `text_start`
+--| is `0x400078`, so the instruction at file offset 0 ends at `0x40007b`.
+theorem text_start_3: $ text_start + 0 + 3 e. u64 $ =
+'(mpbir (elneq (eqtr (addeq1 add0)
+    {,norm_num : $ ,0x400078 + 3 = ,0x40007b $}) eqid) load_start_T);
+
+--| Every unop test is three bytes at the same position, so both positional
+--| obligations are discharged once, here, and each instruction is then a closed
+--| fact about its own encoding.
+theorem decode_unop_rax (op sz: nat) (a b c: char)
+  (h: $ parseInst 0 3 (a ': b ': s1 c) (instUnop op sz x0) $):
+  $ decode (xastUnop op sz (RM_reg x0)) (a ': b ': s1 c) $ =
+'(parseInst_decode_unop text_start_3 (eqcom @ eqtr add01 len_s3) h);
+
+--| `48 FF C0` decodes to `inc rax`.
+theorem decode_inc_rax: $ decode (xastUnop unopInc wSz64 (RM_reg x0)) ,"\x48\xff\xc0" $ =
+'(decode_unop_rax @ parseInst11 @
+  parseInc xsplitBits_f13 opSizeW_rexW_64 parseModRM_C0_rax);
+
+--| `48 FF C8` decodes to `dec rax`.
+theorem decode_dec_rax: $ decode (xastUnop unopDec wSz64 (RM_reg x0)) ,"\x48\xff\xc8" $ =
+'(decode_unop_rax @ parseInst11 @
+  parseDec xsplitBits_f13 opSizeW_rexW_64 parseModRM_C8_rax);
+
+--| `48 F7 D0` decodes to `not rax`.
+theorem decode_not_rax: $ decode (xastUnop unopNot wSz64 (RM_reg x0)) ,"\x48\xf7\xd0" $ =
+'(decode_unop_rax @ parseInst11 @
+  parseNot xsplitBits_713 opSizeW_rexW_64 parseModRM_D0_rax);
+
+--| `48 F7 D8` decodes to `neg rax`.
+theorem decode_neg_rax: $ decode (xastUnop unopNeg wSz64 (RM_reg x0)) ,"\x48\xf7\xd8" $ =
+'(decode_unop_rax @ parseInst11 @
+  parseNeg xsplitBits_713 opSizeW_rexW_64 parseModRM_D8_rax);
+
+
+----------------------------------------
+-- The 64 bit unops on rax -- shared exec machinery
+----------------------------------------
+
+--| The operand read, for any unop on `rax` at 64 bits.
+theorem readEA_rax (K a: nat) (hK: $ K e. Config $) (ha: $ readReg K RAX = a $):
+  $ readEA K wSz64 (RM_EA K (RM_reg RAX)) a $ =
+'(mpbir (readEAeq3 RM_EAreg) @
+  mpbir (readEA_r @ iani (iani hK RAX_T) wSz64T) @
+  eqcom @ eqtr (readRegSz64 @ iani hK RAX_T) ha);
+
+--| The step itself: read `rax`, write the unop's result back to it.
+theorem exec_unop_rax (K op a k2: nat)
+  (hK: $ K e. Config $) (ha: $ readReg K RAX = a $)
+  (hw: $ writeUnop K op wSz64 (EA_r RAX) a k2 $):
+  $ execXAST K (xastUnop op wSz64 (RM_reg RAX)) k2 $ =
+'(mpbir execXASTUnop @ iexie @ mpbiri
+   (iani (readEA_rax hK ha) (mpbir (writeUnopeq4 RM_EAreg) hw)) ,eqtac);
+
+--| The write-back shared by `inc`, `dec` and `neg`: result `w` into `rax`, with
+--| `ZF`/`SF` derived from `w` and `CF`/`OF` supplied by the instruction.
+theorem writeCFOFResult_rax (K w: nat) (c o: wff)
+  (hK: $ K e. Config $) (hw: $ w e. u64 $):
+  $ writeCFOFResult K wSz64 (EA_r RAX) w c o
+      (setReg (writeResultFlags K wSz64 w c o) RAX w) $ =
+(focus
+  (have 'hW $ writeResultFlags K wSz64 w c o e. Config $
+    '(writeResultFlagsT @ iani (iani hK wSz64T) hw))
+  '(iani hK @ iani hw @
+    mpbir (writeEASz_r @ iani (iani (iani hW wSz64T) RAX_T) chopT) @
+    eqcom @ eqtr writeReg64 @ setRegeq3 @
+      eqtr (chopeq1 wSz64Bits) @ Bits_chop hw));
+
+-- `setCZSO` is `writeFlags` of the four setters, so the state projections go
+-- straight through it, and `writeResultFlags` is `setCZSO` transparently.
+theorem readRIP_setCZSO: $ readRIP (setCZSO k c z s o) = readRIP k $ = 'readRIP_writeFlags;
+theorem readReg_setCZSO: $ readReg (setCZSO k c z s o) r = readReg k r $ = 'readReg_writeFlags;
+theorem readFlags_setCZSO:
+  $ readFlags (setCZSO k c z s o) = setOF (setSF (setZF (setCF (readFlags k) c) z) s) o $ =
+'read_writeFlags;
+
+--| The flag word a `writeCFOFResult` write-back leaves behind.
+theorem readFlags_unop (K w: nat) (c z s o: wff):
+  $ readFlags (setReg (setCZSO K c z s o) RAX w) =
+    setOF (setSF (setZF (setCF (readFlags K) c) z) s) o $ =
+'(eqtr readFlags_setReg readFlags_setCZSO);
+
+--| RIP is untouched by the write-back, so it is whatever `stepI` advanced it to.
+theorem readRIP_unop (K w: nat) (c z s o: wff):
+  $ readRIP (setReg (setCZSO K c z s o) RAX w) = readRIP K $ =
+'(eqtr readRIP_setReg readRIP_setCZSO);
+
+----------------------------------------
+-- Arithmetic at the boundary values
+----------------------------------------
+
+--| `1 e. Bits 64`, via x86.mm1's `(to-elu N <hex literal>)`. Two splicing
+--| gotchas: the result must be wrapped in `verb`, or the literal it carries is
+--| re-elaborated as a proof term (`unknown theorem/hypothesis 'h2n'`); and the
+--| `hex > nat` coercion has to be applied by hand, since `$ x1 $` in a bare math
+--| string elaborates at sort `hex` and `to-elu`'s match on `h2n` then fails.
+theorem d1elBits64: $ 1 e. Bits 64 $ =
+'(mpbi (elneq h2n1 eqid) ,(verb @ to-elu 64 '(h2n @ ,(hexdigit 1))));
+
+--| `upto 64` written out, so that a test can state the value the runtime harness
+--| actually loads rather than a symbolic all-ones. Follows `peano_hex.mm1`'s
+--| `upto16`, doubling the exponent twice to reach 64.
+theorem d2pow32x: $ 2 ^ 32 = ,0x100000000 $ =
+'(eqtr3 (poweq2 {,norm_num : $ 16 + 16 = 32 $}) @ eqtr powadd @
+  eqtr (muleq d2pow16x d2pow16x) ,norm_num);
+theorem d2pow64x: $ 2 ^ 64 = ,0x10000000000000000 $ =
+'(eqtr3 (poweq2 {,norm_num : $ 32 + 32 = 64 $}) @ eqtr powadd @
+  eqtr (muleq d2pow32x d2pow32x) ,norm_num);
+theorem upto64hex: $ upto 64 = ,0xffffffffffffffff $ =
+'(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow64x ,norm_num);
+
+--| All-ones is nonzero, so `neg` sets CF and `dec`'s result leaves ZF clear.
+theorem upto64ne0: $ upto 64 != 0 $ =
+(focus (have 'h0 $ 0 e. upto 64 $ '(mpbir elupto ,norm_num))
+  '(mt (mpbii h0 elneq2) nel0));
+
+theorem d1leupto64: $ 1 <= upto 64 $ = '(mpbir lt01 upto64ne0);
+
+--| `1` fits in 63 bits, which is what makes its bit 63 -- the sign bit at
+--| `wSz64` -- zero.
+theorem d1elBits63: $ 1 e. Bits ,63 $ =
+(focus (have 'hle $ 1 <= ,63 $ ',norm_num)
+  '(ax_mp (ssel @ Bitsss hle) @ mpbir elBits1 bool1));
+
+
+--| `bitsMSB k n` is `k - 1 e. n`, and `upto k` is the bitset `{0, ..., k-1}`, so
+--| the sign bit of all-ones is just `63 < 64`.
+theorem MSB64_upto: $ MSB wSz64 (upto 64) $ =
+'(mpbir (bitsMSBeq1 wSz64Bits) @ iani ,norm_num @
+  mpbir (elneq d64sub1 eqid) @ mpbir elupto ,norm_num);
+
+--| Nothing is a member of `0`, so `0` has every bit clear, sign bit included.
+theorem notMSB64_0: $ ~ MSB wSz64 0 $ =
+'(mt (bi1 @ bitsMSBeq1 wSz64Bits) @ mpbir notan @ orr nel0);
+
+theorem notMSB64_1: $ ~ MSB wSz64 1 $ =
+'(mt (bi1 @ bitr (bitsMSBeq1 wSz64Bits) @ bitsMSB_Bits d1elBits64) @
+  ax_mp notnot1 @ mpbir (elneq2 @ Bitseq d64sub1) d1elBits63);
+
+--| `-1 + 1` wraps to zero: `upto 64 + 1` is exactly `2 ^ 64`, and `chop` is `%`.
+theorem add64_upto1: $ upto 64 +_64 1 = 0 $ = '(eqtr (chopeq2 uptoadd1) modid);
+
+--| `neg` of one is all-ones, which is what makes `0 - 1` wrap.
+theorem bitsNeg64_1: $ bitsNeg 64 1 = upto 64 $ =
+'(eqtr (bitsAddeq2 @ bitsNot_sub d1elBits64) @
+  eqtr (chopeq2 @ npcan d1leupto64) @ Bits_chop uptoT);
+
+theorem sub64_01: $ 0 -_64 1 = upto 64 $ =
+'(eqtr (bitsAddeq3 bitsNeg64_1) @ eqtr bitsAdd02 @ Bits_chop uptoT);
+
+--| `neg` of all ones is `1`.
+theorem bitsNeg_upto (k: nat) (h: $ 1 e. Bits k $): $ bitsNeg k (upto k) = 1 $ =
+'(eqtr (bitsAddeq2 @ eqtr (bitsNot_sub uptoT) subid) @ eqtr bitsAdd02 @ Bits_chop h);
+
+--| `not` of all ones is `0`.
+theorem bitsNot64_upto: $ bitsNot (wsizeBits wSz64) (upto 64) = 0 $ =
+'(eqtr (bitsNoteq1 wSz64Bits) @ eqtr (bitsNot_sub uptoT) subid);
+
+--| `chop` at `wSz64` is the identity on `Bits 64`; the two cases the tests need.
+theorem chop64_0: $ chop (wsizeBits wSz64) 0 = 0 $ =
+'(eqtr (chopeq1 wSz64Bits) @ Bits_chop elBits01);
+theorem chop64_upto_ne0: $ chop (wsizeBits wSz64) (upto 64) != 0 $ =
+'(mpbir (neeq1 @ eqtr (chopeq1 wSz64Bits) @ Bits_chop uptoT) upto64ne0);
+theorem chop64_1_ne0: $ chop (wsizeBits wSz64) 1 != 0 $ =
+'(mpbir (neeq1 @ eqtr (chopeq1 wSz64Bits) @ Bits_chop d1elBits64) d1ne0);
+
+----------------------------------------
+-- inc rax (48 FF C0), at -1
+----------------------------------------
+
+--| `-1 + 1`: carry out (the operand is the top of the range) but no *signed*
+--| overflow, since the operands differ in sign.  `inc` discards the carry --
+--| leaving CF alone is the SDM's defining quirk of `inc`/`dec` -- and the
+--| model's `writeCFOFResult` is handed `CF (readFlags k)` for exactly that.
+theorem addCarry_upto1: $ addCarry wSz64 (upto 64) 1 0 1 0 $ =
+'(iani (iani (iani (iani (iani wSz64T uptoT) d1elBits64) (eqcom add64_upto1))
+   (eqcom @ mpbir nateq1 @
+     mpbir (bitr (leeq1 @ poweq2 wSz64Bits) @ leeq2 uptoadd1) leid))
+   (eqcom @ mpbir nateq0 @ mpbir notan @ orl @
+     mt (mpbii MSB64_upto id) notMSB64_1));
+
+theorem exec_inc_rax (K: nat) (hK: $ K e. Config $)
+  (ha: $ readReg K RAX = upto 64 $):
+  $ execXAST K (xastUnop unopInc wSz64 (RM_reg RAX))
+      (setReg (writeResultFlags K wSz64 0 (CF (readFlags K)) (true 0)) RAX 0) $ =
+'(exec_unop_rax hK ha @ mpbir writeUnopInc @ iexie @ iexde @ iexde @ mpbiri
+   (iani addCarry_upto1 (writeCFOFResult_rax hK elBits01)) ,eqtac);
+
+--| `inc rax` with `rax = -1`: the result is zero, so ZF is set and SF is clear,
+--| OF is clear, and CF comes back exactly as it went in.  The last is what the
+--| two rflags seeds in the runtime harness are there for.
+pub theorem test_inc_rax_minus1 {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xff\xc0" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffffffffffff $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      (CF (readFlags k2) <-> CF (readFlags k)) /\
+      ZF (readFlags k2) /\
+      ~SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrax @ eqcom upto64hex))
+  (have 'hdec $ decode (xastUnop unopInc wSz64 (RM_reg RAX)) ,"\x48\xff\xc0" $
+    '(mpbi (decodeeq1 @ xastUnopeq3 @ RM_regeq h2n0) decode_inc_rax))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani
+      (stepI len_s3 hk hex hc hdec @ exec_inc_rax hK hKa)
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg @ eqcom h2n0))
+      (bitr (bitr (CFeq readFlags_unop) CF_setCZSO) (CFeq readFlags_writeRIP)))
+      (mpbir (bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_0))
+      (mt (bi1 @ bitr (SFeq readFlags_unop) SF_setCZSO) notMSB64_0))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) true0)) ,eqtac));
+
+----------------------------------------
+-- dec rax (48 FF C8), at 0
+----------------------------------------
+
+--| `0 - 1` borrows, wrapping to all-ones, and again there is no signed overflow:
+--| the operands agree in sign (both non-negative), which is the first conjunct
+--| of the model's OF and is false here.
+theorem subBorrow_01: $ subBorrow wSz64 0 1 (upto 64) 1 0 $ =
+'(iani (iani (iani (iani (iani wSz64T elBits01) d1elBits64) (eqcom sub64_01))
+   (eqcom @ mpbir nateq1 ,norm_num))
+   (eqcom @ mpbir nateq0 @ mpbir notan @ orl @ ax_mp notnot1 @
+     ibii (absurd notMSB64_0) (absurd notMSB64_1)));
+
+theorem exec_dec_rax (K: nat) (hK: $ K e. Config $)
+  (ha: $ readReg K RAX = 0 $):
+  $ execXAST K (xastUnop unopDec wSz64 (RM_reg RAX))
+      (setReg (writeResultFlags K wSz64 (upto 64) (CF (readFlags K)) (true 0))
+        RAX (upto 64)) $ =
+'(exec_unop_rax hK ha @ mpbir writeUnopDec @ iexie @ iexde @ iexde @ mpbiri
+   (iani subBorrow_01 (writeCFOFResult_rax hK uptoT)) ,eqtac);
+
+--| `dec rax` with `rax = 0`: wraps to `-1`, so ZF is clear and SF is set, OF is
+--| clear, and CF is again preserved rather than set by the borrow.
+pub theorem test_dec_rax_zero {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xff\xc8" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x0 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0xffffffffffffffff /\
+      (CF (readFlags k2) <-> CF (readFlags k)) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = 0 $
+    '(eqtr readReg_writeRIP @ eqtr hrax h2n0))
+  (have 'hdec $ decode (xastUnop unopDec wSz64 (RM_reg RAX)) ,"\x48\xff\xc8" $
+    '(mpbi (decodeeq1 @ xastUnopeq3 @ RM_regeq h2n0) decode_dec_rax))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani
+      (stepI len_s3 hk hex hc hdec @ exec_dec_rax hK hKa)
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg upto64hex))
+      (bitr (bitr (CFeq readFlags_unop) CF_setCZSO) (CFeq readFlags_writeRIP)))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_upto_ne0))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO) MSB64_upto))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) true0)) ,eqtac));
+
+----------------------------------------
+-- not rax (48 F7 D0), at -1
+----------------------------------------
+
+--| `not` is the one unop that goes straight to `writeEA` with no
+--| `writeResultFlags` and no `eraseFlags`, so the flag word comes back
+--| *identical* -- which is what the SDM says and what this test pins.
+theorem exec_not_rax (K: nat) (hK: $ K e. Config $)
+  (ha: $ readReg K RAX = upto 64 $):
+  $ execXAST K (xastUnop unopNot wSz64 (RM_reg RAX)) (setReg K RAX 0) $ =
+'(exec_unop_rax hK ha @ mpbir writeUnopNot @
+  mpbir (writeEAeq4 bitsNot64_upto) @ iani elBits01 @
+  mpbir (writeEASz_r @ iani (iani (iani hK wSz64T) RAX_T) chopT) @
+  eqcom @ eqtr writeReg64 @ setRegeq3 chop64_0);
+
+--| `not rax` with `rax = -1`: the result is zero and *no* flag moves.
+pub theorem test_not_rax_minus1 {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xf7\xd0" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffffffffffff $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      readFlags k2 = readFlags k) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrax @ eqcom upto64hex))
+  (have 'hdec $ decode (xastUnop unopNot wSz64 (RM_reg RAX)) ,"\x48\xf7\xd0" $
+    '(mpbi (decodeeq1 @ xastUnopeq3 @ RM_regeq h2n0) decode_not_rax))
+  '(iexie @ mpbiri (iani (iani (iani
+      (stepI len_s3 hk hex hc hdec @ exec_not_rax hK hKa)
+      (eqtr readRIP_setReg @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg @ eqcom h2n0))
+      (eqtr readFlags_setReg readFlags_writeRIP)) ,eqtac));
+
+----------------------------------------
+-- neg rax (48 F7 D8), at -1
+----------------------------------------
+
+--| `-1` is the operand that makes every flag observable at once, and `OF` is the
+--| interesting one: the model computes it as `MSB a /\ MSB (-a)`, true only at
+--| `INT_MIN`, so `-1` pins the conjunction's second half.
+theorem exec_neg_rax (K: nat) (hK: $ K e. Config $)
+  (ha: $ readReg K RAX = upto 64 $):
+  $ execXAST K (xastUnop unopNeg wSz64 (RM_reg RAX))
+      (setReg (writeResultFlags K wSz64 1 (upto 64 != 0)
+         (MSB wSz64 (upto 64) /\ MSB wSz64 1)) RAX 1) $ =
+'(exec_unop_rax hK ha @ mpbir writeUnopNeg @ iexie @ mpbiri (iani
+    (eqcom @ eqtr (bitsNegeq1 wSz64Bits) @ bitsNeg_upto d1elBits64)
+    (writeCFOFResult_rax hK d1elBits64)) ,eqtac);
+
+--| `neg rax` with `rax = -1`: the result is 1, CF is set because the operand was
+--| nonzero, and ZF/SF/OF are all clear.
+pub theorem test_neg_rax_minus1 {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xf7\xd8" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffffffffffff $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x1 /\
+      CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      ~SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrax @ eqcom upto64hex))
+  (have 'hdec $ decode (xastUnop unopNeg wSz64 (RM_reg RAX)) ,"\x48\xf7\xd8" $
+    '(mpbi (decodeeq1 @ xastUnopeq3 @ RM_regeq h2n0) decode_neg_rax))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani
+      (stepI len_s3 hk hex hc hdec @ exec_neg_rax hK hKa)
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg @ eqcom h2n1))
+      (mpbir (bitr (CFeq readFlags_unop) CF_setCZSO) upto64ne0))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_1_ne0))
+      (mt (bi1 @ bitr (SFeq readFlags_unop) SF_setCZSO) notMSB64_1))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) @
+        mpbir notan2 @ a1i notMSB64_1)) ,eqtac));
+
+----------------------------------------
+-- The 64 bit binops: 48 <opc> C1, dest = rax, src = rcx
+----------------------------------------
+
+--| `stepI` in deduction form. The binop path hands back an existential over the
+--| `DestSrc`, so everything downstream of it is a deduction over that variable.
+theorem stepId (k k2 l n ast: nat) (G: wff)
+  (hn: $ len l = n $)
+  (h1: $ k e. Config $) (h2: $ readException k = 0 $)
+  (h3: $ readMemX k (readRIP k) l $)
+  (h4: $ G -> decode ast l $)
+  (h5: $ G -> execXAST (writeRIP k (readRIP k +_64 n)) ast k2 $):
+  $ G -> step k k2 $ =
+'(iand (a1i @ iani h1 h2) @ iexde @ iexde @ mpbird ,eqtac @
+  iand (iand (a1i h3) (anwl @ anwl h4)) @ anwl @ anwl @
+  mpbid (a1i @ execXASTeq1 @ writeRIPeq2 @ add64eq2 @ eqcom hn) h5);
+
+--| Membership in `instBinop`. Unlike `instUnop` this carries an existential over
+--| the `DestSrc`, and `opc < 8` as an antecedent rather than a conjunct.
+theorem el_instBinop {ds: nat}:
+  $ p, s, x e. instBinop opc sz dst src <->
+    (opc < 8 -> E. ds (mkRegRMI dst src ds /\ decode (xastBinop opc sz ds) s)) $ =
+'(!! elsabe pv @ a1i @ !! elsabe sv @
+  bitrd (a1i @ !! elabe xv @ a1i biid) @ imeqd biidd @ exeqd @ aneq2d @ decodeeq2d id);
+
+theorem parseInst_decode_binop {ds: nat} (p ip x sz src: nat) (opc dst: hex) (s: string)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h3: $ opc < 8 $)
+  (h:  $ parseInst p ip s (instBinop opc sz dst src) $):
+  $ E. ds (mkRegRMI dst src ds /\ decode (xastBinop opc sz ds) s) $ =
+'(ax_mp (mpbi el_instBinop @ parseInst_mem h1 h2 h) h3);
+
+--| `mkRegRMI` pins the two effective addresses, and `execXASTBinop` depends on the
+--| `DestSrc` only through them -- so it does not matter that `mkRegRMI` leaves the
+--| `DestSrc` itself ambiguous (`R_rm x0 (RM_reg x1)` and `Rm_r (RM_reg x0) x1`
+--| both satisfy it, and `destsrcIRM` does not tell them apart).
+theorem mkRegRMI_destEA_rax (K ds: nat):
+  $ mkRegRMI x0 (IRM_reg x1) ds -> destEA K ds = EA_r RAX $ =
+'(syl6eq (eqtr RM_EAreg @ EA_req h2n0) @ RM_EAeq2d anlr);
+
+theorem mkRegRMI_srcEA_rcx (K ds: nat):
+  $ mkRegRMI x0 (IRM_reg x1) ds -> srcEA K ds = EA_r RCX $ =
+'(syl6eq (eqtr immRM_EArm @ eqtr RM_EAreg @ EA_req h2n1) @ immRM_EAeq2d @
+  sylib peano2 @ syl eqcom anr);
+
+--| The operand read at any register, generalising `readEA_rax`.
+theorem readEA_reg (K r a: nat) (hK: $ K e. Config $) (hr: $ r e. Regs $)
+  (ha: $ readReg K r = a $): $ readEA K wSz64 (EA_r r) a $ =
+'(mpbir (readEA_r @ iani (iani hK hr) wSz64T) @
+  eqcom @ eqtr (readRegSz64 @ iani hK hr) ha);
+
+--| The step, for any binop with `rax` as destination and `rcx` as source.
+theorem exec_binop_rr (K op ds a b k2: nat)
+  (hK: $ K e. Config $)
+  (hra: $ readReg K RAX = a $) (hrb: $ readReg K RCX = b $)
+  (hw: $ writeBinop K op wSz64 (EA_r RAX) a b k2 $):
+  $ mkRegRMI x0 (IRM_reg x1) ds -> execXAST K (xastBinop op wSz64 ds) k2 $ =
+'(sylibr execXASTBinop @ iexde @ iexde @ mpbird ,eqtac @ iand (iand
+    (mpbird (readEAeq3d @ anwl @ anwl mkRegRMI_destEA_rax)
+      (a1i @ readEA_reg hK RAX_T hra))
+    (mpbird (readEAeq3d @ anwl @ anwl mkRegRMI_srcEA_rcx)
+      (a1i @ readEA_reg hK RCX_T hrb)))
+    (mpbird (writeBinopeq4d @ anwl @ anwl mkRegRMI_destEA_rax) (a1i hw)));
+
+--| ModRM `C1`: mod=11, reg (the destination) = rax, r/m (the source) = rcx.
+theorem parseModRM_C1_rax_rcx:
+  $ parseModRM (suc x8) x0 (IRM_reg x1) ,"\xc1" s0 $ =
+'(parseModRM_I xsplitBits_131 xsplitBits_c22 (REX_R_Si xbit82) xsplitBits_0121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_131) consStr0);
+
+--| Every binop test is `48 <8n+3> C1` at the same position, so the positional
+--| obligations and the `opc < 8` side condition are discharged once here.
+theorem decode_binop_rax_rcx {ds: nat} (opc: hex) (a b c: char)
+  (h3: $ opc < 8 $)
+  (h: $ parseInst 0 3 (a ': b ': s1 c) (instBinop opc wSz64 x0 (IRM_reg x1)) $):
+  $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+      decode (xastBinop opc wSz64 ds) (a ': b ': s1 c)) $ =
+'(parseInst_decode_binop text_start_3 (eqcom @ eqtr add01 len_s3) h3 h);
+
+theorem decode_add_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x0 wSz64 ds) ,"\x48\x03\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_3121 xsplitBits_022 xsplitBits_0121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+theorem decode_or_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x1 wSz64 ds) ,"\x48\x0b\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_b121 xsplitBits_022 xsplitBits_1121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+theorem decode_and_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x4 wSz64 ds) ,"\x48\x23\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_3121 xsplitBits_222 xsplitBits_4121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+theorem decode_sub_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x5 wSz64 ds) ,"\x48\x2b\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_b121 xsplitBits_222 xsplitBits_5121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+theorem decode_cmp_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x7 wSz64 ds) ,"\x48\x3b\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_b121 xsplitBits_322 xsplitBits_7121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+--| `add` differs from `inc` exactly in CF: the carry is *published* rather than
+--| discarded, so `writeCFOFResult` gets `true c` where `inc` got `CF (readFlags k)`.
+theorem writeBinop_add_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x0 wSz64 (EA_r RAX) (upto 64) 1
+      (setReg (writeResultFlags K wSz64 0 (true 1) (true 0)) RAX 0) $ =
+'(mpbir (writeBinopeq2 h2n0) @ mpbir writeBinopAdd @ iexie @ iexde @ iexde @
+  mpbiri (iani addCarry_upto1 (writeCFOFResult_rax hK elBits01)) ,eqtac);
+
+theorem writeBinop_sub_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x5 wSz64 (EA_r RAX) 0 1
+      (setReg (writeResultFlags K wSz64 (upto 64) (true 1) (true 0)) RAX (upto 64)) $ =
+'(mpbir (writeBinopeq2 {,norm_num : $ x5 = 5 $}) @ mpbir writeBinopSub @
+  iexie @ iexde @ iexde @
+  mpbiri (iani subBorrow_01 (writeCFOFResult_rax hK uptoT)) ,eqtac);
+
+--| `cmp` is `sub` that does not write back: the model's clause ends in
+--| `k2 = writeResultFlags ...` rather than a `writeCFOFResult`.
+theorem writeBinop_cmp_rr (K: nat):
+  $ writeBinop K x7 wSz64 (EA_r RAX) 0 1
+      (writeResultFlags K wSz64 (upto 64) (true 1) (true 0)) $ =
+'(mpbir (writeBinopeq2 {,norm_num : $ x7 = 7 $}) @ mpbir writeBinopCmp @
+  iexie @ iexde @ iexde @ mpbiri (iani subBorrow_01 eqid) ,eqtac);
+
+--| The logical binops clear CF and OF outright rather than computing them.
+theorem writeBinop_and_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x4 wSz64 (EA_r RAX) (upto 64) 0
+      (setReg (writeResultFlags K wSz64 0 F. F.) RAX 0) $ =
+'(mpbir (writeBinopeq2 {,norm_num : $ x4 = 4 $}) @ mpbir writeBinopAnd @
+  mpbir (writeCFOFResulteq4 bitAnd02) (writeCFOFResult_rax hK elBits01));
+
+theorem writeBinop_or_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x1 wSz64 (EA_r RAX) 0 (upto 64)
+      (setReg (writeResultFlags K wSz64 (upto 64) F. F.) RAX (upto 64)) $ =
+'(mpbir (writeBinopeq2 h2n1) @ mpbir writeBinopOr @
+  mpbir (writeCFOFResulteq4 bitOr01) (writeCFOFResult_rax hK uptoT));
+
+--| `add rax, rcx` with `rax = -1, rcx = 1`: wraps to zero, and unlike `inc` the
+--| carry is published, so CF is *set* rather than preserved.
+pub theorem test_add_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x03\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffffffffffff $)
+  (hrcx: $ readReg k RCX = ,0x1 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      CF (readFlags k2) /\
+      ZF (readFlags k2) /\
+      ~SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrax @ eqcom upto64hex))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = 1 $
+    '(eqtr readReg_writeRIP @ eqtr hrcx h2n1))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 0 (true 1) (true 0)) RAX 0) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc @ writeBinop_add_rr hK) anl)
+      (!! decode_add_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg @ eqcom h2n0))
+      (mpbir (bitr (CFeq readFlags_unop) CF_setCZSO) true1))
+      (mpbir (bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_0))
+      (mt (bi1 @ bitr (SFeq readFlags_unop) SF_setCZSO) notMSB64_0))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) true0)) ,eqtac));
+
+--| `or rax, rcx` with `rax = 0, rcx = -1`: the logical binops clear CF and OF
+--| outright, and the result's sign bit is set.
+pub theorem test_or_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x0b\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x0 $)
+  (hrcx: $ readReg k RCX = ,0xffffffffffffffff $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0xffffffffffffffff /\
+      ~CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = 0 $
+    '(eqtr readReg_writeRIP @ eqtr hrax h2n0))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrcx @ eqcom upto64hex))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 (upto 64) F. F.) RAX (upto 64)) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc @ writeBinop_or_rr hK) anl)
+      (!! decode_or_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg upto64hex))
+      (mt (bi1 @ bitr (CFeq readFlags_unop) CF_setCZSO) notfal))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_upto_ne0))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO) MSB64_upto))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) notfal)) ,eqtac));
+
+--| `and rax, rcx` with `rax = -1, rcx = 0`: masks everything off.
+pub theorem test_and_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x23\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffffffffffff $)
+  (hrcx: $ readReg k RCX = ,0x0 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      ~CF (readFlags k2) /\
+      ZF (readFlags k2) /\
+      ~SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = upto 64 $
+    '(eqtr readReg_writeRIP @ eqtr hrax @ eqcom upto64hex))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = 0 $
+    '(eqtr readReg_writeRIP @ eqtr hrcx h2n0))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 0 F. F.) RAX 0) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc @ writeBinop_and_rr hK) anl)
+      (!! decode_and_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg @ eqcom h2n0))
+      (mt (bi1 @ bitr (CFeq readFlags_unop) CF_setCZSO) notfal))
+      (mpbir (bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_0))
+      (mt (bi1 @ bitr (SFeq readFlags_unop) SF_setCZSO) notMSB64_0))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) notfal)) ,eqtac));
+
+--| `sub rax, rcx` with `rax = 0, rcx = 1`: borrows, and unlike `dec` the borrow is
+--| published, so CF is set rather than preserved.
+pub theorem test_sub_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x2b\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x0 $)
+  (hrcx: $ readReg k RCX = ,0x1 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0xffffffffffffffff /\
+      CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = 0 $
+    '(eqtr readReg_writeRIP @ eqtr hrax h2n0))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = 1 $
+    '(eqtr readReg_writeRIP @ eqtr hrcx h2n1))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 (upto 64) (true 1) (true 0)) RAX (upto 64)) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc @ writeBinop_sub_rr hK) anl)
+      (!! decode_sub_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg upto64hex))
+      (mpbir (bitr (CFeq readFlags_unop) CF_setCZSO) true1))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_upto_ne0))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO) MSB64_upto))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) true0)) ,eqtac));
+
+--| `cmp rax, rcx` with `rax = 0, rcx = 1`: the same flags as `sub`, but `rax` is
+--| left alone -- the model's `cmp` clause ends in `k2 = writeResultFlags ...` with
+--| no `writeEA` at all, so this is the test that would catch a stray write-back.
+pub theorem test_cmp_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x3b\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x0 $)
+  (hrcx: $ readReg k RCX = ,0x1 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = 0 $
+    '(eqtr readReg_writeRIP @ eqtr hrax h2n0))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = 1 $
+    '(eqtr readReg_writeRIP @ eqtr hrcx h2n1))
+  (have 'hstep $ step k (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 (upto 64) (true 1) (true 0)) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc writeBinop_cmp_rr) anl)
+      (!! decode_cmp_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_setCZSO @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr readReg_setCZSO @ eqtr readReg_writeRIP hrax))
+      (mpbir (bitr (CFeq readFlags_setCZSO) CF_setCZSO) true1))
+      (mt (bi1 @ bitr (ZFeq readFlags_setCZSO) ZF_setCZSO) chop64_upto_ne0))
+      (mpbir (bitr (SFeq readFlags_setCZSO) SF_setCZSO) MSB64_upto))
+      (mt (bi1 @ bitr (OFeq readFlags_setCZSO) OF_setCZSO) true0)) ,eqtac));
+
+----------------------------------------
+-- xor rax, rcx (48 33 C1) -- computed, not an identity
+----------------------------------------
+
+theorem decode_xor_rax_rcx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x6 wSz64 ds) ,"\x48\x33\xc1") $ =
+'(decode_binop_rax_rcx ,norm_num @ parseInst11 @
+  parseBinopReg xsplitBits_3121 xsplitBits_322 xsplitBits_6121 opSizeW_rexW_64
+    parseModRM_C1_rax_rcx parseBinopBinop);
+
+--| The result is all ones, computed digit by digit with x86.mm1's `to-bitop`
+--| rather than read off an algebraic identity -- this is the first test whose
+--| arithmetic is a real bitwise evaluation.
+theorem bitXor_ff00: $ bitXor ,0xff00ff00ff00ff00 ,0x00ff00ff00ff00ff = upto 64 $ =
+(focus
+  (have 'h $ bitXor ,0xff00ff00ff00ff00 ,0x00ff00ff00ff00ff = ,0xffffffffffffffff $
+    (to-bitop 'bitXor (->hex 0xff00ff00ff00ff00) (->hex 0x00ff00ff00ff00ff)))
+  '(eqtr h @ eqcom upto64hex));
+
+theorem writeBinop_xor_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x6 wSz64 (EA_r RAX) ,0xff00ff00ff00ff00 ,0x00ff00ff00ff00ff
+      (setReg (writeResultFlags K wSz64 (upto 64) F. F.) RAX (upto 64)) $ =
+'(mpbir (writeBinopeq2 {,norm_num : $ x6 = 6 $}) @ mpbir writeBinopXor @
+  mpbir (writeCFOFResulteq4 bitXor_ff00) (writeCFOFResult_rax hK uptoT));
+
+--| `xor rax, rcx` with two interleaved byte patterns: every bit differs, so the
+--| result is all ones.
+pub theorem test_xor_rax_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\x33\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xff00ff00ff00ff00 $)
+  (hrcx: $ readReg k RCX = ,0x00ff00ff00ff00ff $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0xffffffffffffffff /\
+      ~CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      ~OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = ,0xff00ff00ff00ff00 $
+    '(eqtr readReg_writeRIP hrax))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = ,0x00ff00ff00ff00ff $
+    '(eqtr readReg_writeRIP hrcx))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 3))
+        wSz64 (upto 64) F. F.) RAX (upto 64)) $
+    '(ax_mp (!! eex dsv @ stepId len_s3 hk hex hc anr @
+        syl (exec_binop_rr hK hKa hKc @ writeBinop_xor_rr hK) anl)
+      (!! decode_xor_rax_rcx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr read_setReg upto64hex))
+      (mt (bi1 @ bitr (CFeq readFlags_unop) CF_setCZSO) notfal))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) chop64_upto_ne0))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO) MSB64_upto))
+      (mt (bi1 @ bitr (OFeq readFlags_unop) OF_setCZSO) notfal)) ,eqtac));
+
+----------------------------------------
+-- neg rax (48 F7 D8) at INT_MIN -- the one case where neg overflows
+----------------------------------------
+
+theorem intmin_elBits64: $ ,0x8000000000000000 e. Bits 64 $ =
+(verb (to-elu 64 (->hex 0x8000000000000000)));
+
+--| `neg INT_MIN` is a fixed point: `~INT_MIN + 1` wraps back to `INT_MIN`.
+theorem bitsNeg64_intmin:
+  $ bitsNeg (wsizeBits wSz64) ,0x8000000000000000 = ,0x8000000000000000 $ =
+'(eqtr (bitsNegeq1 wSz64Bits) @
+  eqtr (bitsAddeq2 @ eqtr (bitsNot_sub intmin_elBits64) @ eqtr (subeq1 upto64hex) @
+    eqsub1 {,norm_num :
+      $ ,0x7fffffffffffffff + ,0x8000000000000000 = ,0xffffffffffffffff $}) @
+  eqtr (chopeq2 {,norm_num : $ ,0x7fffffffffffffff + 1 = ,0x8000000000000000 $}) @
+  Bits_chop intmin_elBits64);
+
+theorem MSB64_intmin: $ MSB wSz64 ,0x8000000000000000 $ =
+(to-MSB64 (->hex 0x8000000000000000));
+
+theorem exec_neg_rax_intmin (K: nat) (hK: $ K e. Config $)
+  (ha: $ readReg K RAX = ,0x8000000000000000 $):
+  $ execXAST K (xastUnop unopNeg wSz64 (RM_reg RAX))
+      (setReg (writeResultFlags K wSz64 ,0x8000000000000000
+         (,0x8000000000000000 != 0)
+         (MSB wSz64 ,0x8000000000000000 /\ MSB wSz64 ,0x8000000000000000))
+        RAX ,0x8000000000000000) $ =
+'(exec_unop_rax hK ha @ mpbir writeUnopNeg @ iexie @ mpbiri (iani
+    (eqcom bitsNeg64_intmin) (writeCFOFResult_rax hK intmin_elBits64)) ,eqtac);
+
+--| `neg rax` at `INT_MIN`. This is the *only* operand at which `neg` sets OF, and
+--| it is what makes the model's `MSB a /\ MSB (-a)` the right formula rather than
+--| a suspicious-looking conjunction: `INT_MIN` is the fixed point of negation, so
+--| it is the one value whose negation keeps the sign bit.
+pub theorem test_neg_rax_intmin {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xf7\xd8" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x8000000000000000 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x8000000000000000 /\
+      CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = ,0x8000000000000000 $
+    '(eqtr readReg_writeRIP hrax))
+  (have 'hdec $ decode (xastUnop unopNeg wSz64 (RM_reg RAX)) ,"\x48\xf7\xd8" $
+    '(mpbi (decodeeq1 @ xastUnopeq3 @ RM_regeq h2n0) decode_neg_rax))
+  (have 'hnz $ chop (wsizeBits wSz64) ,0x8000000000000000 != 0 $
+    '(mpbir (neeq1 @ eqtr (chopeq1 wSz64Bits) @ Bits_chop intmin_elBits64)
+      {,norm_num : $ ,0x8000000000000000 != 0 $}))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani
+      (stepI len_s3 hk hex hc hdec @ exec_neg_rax_intmin hK hKa)
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      read_setReg)
+      (mpbir (bitr (CFeq readFlags_unop) CF_setCZSO)
+        {,norm_num : $ ,0x8000000000000000 != 0 $}))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) hnz))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO) MSB64_intmin))
+      (mpbir (bitr (OFeq readFlags_unop) OF_setCZSO) @
+        iani MSB64_intmin MSB64_intmin)) ,eqtac));
+
+----------------------------------------
+-- add eax, ecx (03 C1) -- 32 bit, which zero-extends
+----------------------------------------
+
+--| Two byte instructions: no REX prefix, so `opSizeW` sees `rex = 0`.
+theorem len_s2 (a b: char): $ len (a ': s1 b) = 2 $ = '(eqtr strlen2 h2n2);
+theorem text_start_2: $ text_start + 0 + 2 e. u64 $ =
+'(mpbir (elneq (eqtr (addeq1 add0)
+    {,norm_num : $ ,0x400078 + 2 = ,0x40007a $}) eqid) load_start_T);
+theorem opSizeW_norex_32: $ opSizeW 0 1 = wSz32 $ = '(opSizeW_0 opSize_32);
+
+theorem parseModRM_C1_rax_rcx_norex:
+  $ parseModRM 0 x0 (IRM_reg x1) ,"\xc1" s0 $ =
+'(parseModRM_I xsplitBits_131 xsplitBits_c22 REX_R_0 xsplitBits_0121
+  (parseModRM2_reg REX_B_0 xsplitBits_131) consStr0);
+
+--| `exec_binop_rr` at 32 bits: the reads go through `readRegSz`, which truncates.
+theorem exec_binop_rr32 (K op ds a b k2: nat)
+  (hK: $ K e. Config $)
+  (hra: $ readRegSz K wSz32 RAX = a $) (hrb: $ readRegSz K wSz32 RCX = b $)
+  (hw: $ writeBinop K op wSz32 (EA_r RAX) a b k2 $):
+  $ mkRegRMI x0 (IRM_reg x1) ds -> execXAST K (xastBinop op wSz32 ds) k2 $ =
+'(sylibr execXASTBinop @ iexde @ iexde @ mpbird ,eqtac @ iand (iand
+    (mpbird (readEAeq3d @ anwl @ anwl mkRegRMI_destEA_rax)
+      (a1i @ mpbir (readEA_r @ iani (iani hK RAX_T) wSz32T) @ eqcom hra))
+    (mpbird (readEAeq3d @ anwl @ anwl mkRegRMI_srcEA_rcx)
+      (a1i @ mpbir (readEA_r @ iani (iani hK RCX_T) wSz32T) @ eqcom hrb)))
+    (mpbird (writeBinopeq4d @ anwl @ anwl mkRegRMI_destEA_rax) (a1i hw)));
+
+theorem decode_add_eax_ecx {ds: nat}: $ E. ds (mkRegRMI x0 (IRM_reg x1) ds /\
+    decode (xastBinop x0 wSz32 ds) ,"\x03\xc1") $ =
+'(parseInst_decode_binop text_start_2 (eqcom @ eqtr add01 len_s2) ,norm_num @
+  parseInst01 @ parseBinopReg xsplitBits_3121 xsplitBits_022 xsplitBits_0121
+    opSizeW_norex_32 parseModRM_C1_rax_rcx_norex parseBinopBinop);
+
+--| The operands are read at 32 bits, so the upper halves of `rax` and `rcx` are
+--| discarded before the addition. `shladd_uniq` splits a literal at bit 32.
+theorem chop32_rax: $ chop 32 ,0xffffffff7fffffff = ,0x7fffffff $ =
+'(anr @ mpbi shladd_uniq @ iani
+  ,(verb @ to-elu 32 (->hex 0x7fffffff))
+  (eqtr (addeq1 @ eqtr (muleq2 d2pow32x)
+      {,norm_num : $ ,0xffffffff * ,0x100000000 = ,0xffffffff00000000 $})
+    {,norm_num : $ ,0xffffffff00000000 + ,0x7fffffff = ,0xffffffff7fffffff $}));
+theorem chop32_rcx: $ chop 32 ,0xffffffff00000001 = ,0x1 $ =
+'(anr @ mpbi shladd_uniq @ iani
+  ,(verb @ to-elu 32 (->hex 1))
+  (eqtr (addeq1 @ eqtr (muleq2 d2pow32x)
+      {,norm_num : $ ,0xffffffff * ,0x100000000 = ,0xffffffff00000000 $})
+    {,norm_num : $ ,0xffffffff00000000 + ,0x1 = ,0xffffffff00000001 $}));
+
+theorem readRegSz32 (K r a: nat) (h: $ readReg K r = a $):
+  $ readRegSz K wSz32 r = chop 32 a $ =
+'(eqtr (readRegSz_gt @ mpbir (lteq2 wSz32Bits) ,norm_num) @
+  eqtr (chopeq1 wSz32Bits) @ chopeq2 h);
+
+--| `0x7fffffff + 1` overflows *signed* 32 bit arithmetic but does not carry out of
+--| it: the operands agree in sign and the result does not.
+theorem addCarry32_intmax: $ addCarry wSz32 ,0x7fffffff ,0x1 ,0x80000000 0 1 $ =
+(focus
+  (have 'ha $ ,0x7fffffff e. u64 $ (verb (to-elu 64 (->hex 0x7fffffff))))
+  (have 'hb $ ,0x1 e. u64 $ (verb (to-elu 64 (->hex 1))))
+  (have 'hw $ ,0x80000000 e. Bits 64 $ (verb (to-elu 64 (->hex 0x80000000))))
+  (have 'hsum $ ,0x7fffffff +_64 ,0x1 = ,0x80000000 $
+    '(eqtr (chopeq2 {,norm_num : $ ,0x7fffffff + ,0x1 = ,0x80000000 $}) @ Bits_chop hw))
+  (have 'hnc $ ~ (2 ^ wsizeBits wSz32 <= ,0x7fffffff + ,0x1) $
+    '(mpbir (noteq @ bitr (leeq1 @ poweq2 wSz32Bits) @
+        leeq d2pow32x {,norm_num : $ ,0x7fffffff + ,0x1 = ,0x80000000 $})
+      (mpbi ltnle {,norm_num : $ ,0x80000000 < ,0x100000000 $})))
+  (have 'hna $ ~ MSB wSz32 ,0x7fffffff $ (to-notMSB32 (->hex 0x7fffffff)))
+  (have 'hnb $ ~ MSB wSz32 ,0x1 $ (to-notMSB32 (->hex 1)))
+  (have 'hmw $ MSB wSz32 ,0x80000000 $ (to-MSB32 (->hex 0x80000000)))
+  (have 'hmsum $ MSB wSz32 (,0x7fffffff +_64 ,0x1) $ '(mpbir (MSBeq2 hsum) hmw))
+  '(iani (iani (iani (iani (iani wSz32T ha) hb) (eqcom hsum))
+     (eqcom @ mpbir nateq0 hnc))
+     (eqcom @ mpbir nateq1 @ iani (ibii (absurd hna) (absurd hnb))
+       (mt (mpbii hmsum id) hna))));
+
+theorem writeBinop_add32_rr (K: nat) (hK: $ K e. Config $):
+  $ writeBinop K x0 wSz32 (EA_r RAX) ,0x7fffffff ,0x1
+      (setReg (writeResultFlags K wSz32 ,0x80000000 (true 0) (true 1))
+        RAX ,0x80000000) $ =
+(focus
+  (have 'hw $ ,0x80000000 e. u64 $ (verb (to-elu 64 (->hex 0x80000000))))
+  (have 'hW $ writeResultFlags K wSz32 ,0x80000000 (true 0) (true 1) e. Config $
+    '(writeResultFlagsT @ iani (iani hK wSz32T) hw))
+  (have 'hchop $ chop (wsizeBits wSz32) ,0x80000000 = ,0x80000000 $
+    '(eqtr (chopeq1 wSz32Bits) @ Bits_chop ,(verb @ to-elu 32 (->hex 0x80000000))))
+  '(mpbir (writeBinopeq2 h2n0) @ mpbir writeBinopAdd @ iexie @ iexde @ iexde @
+    mpbiri (iani addCarry32_intmax @ iani hK @ iani hw @
+      mpbir (writeEASz_r @ iani (iani (iani hW wSz32T) RAX_T) chopT) @
+      eqcom @ eqtr writeReg32 @ setRegeq3 hchop) ,eqtac));
+
+--| `add eax, ecx` at 32 bits. Two things at once, and both are the shape of bugs
+--| the audit already found: the operands are *truncated* to 32 bits before the
+--| addition, and the result is written back through `writeReg32`, which is a full
+--| `setReg` -- so the upper half of `rax` is **cleared**, not preserved. `rax`
+--| goes in as `0xffffffff7fffffff` and comes out as `0x0000000080000000`.
+--|
+--| The flags are the 32 bit boundary: `INT_MAX + 1` sets OF (signed overflow) but
+--| leaves CF clear, because it does not carry out of 32 bits.
+pub theorem test_add_eax_ecx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x03\xc1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0xffffffff7fffffff $)
+  (hrcx: $ readReg k RCX = ,0xffffffff00000001 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 2 /\
+      readReg k2 RAX = ,0x80000000 /\
+      ~CF (readFlags k2) /\
+      ~ZF (readFlags k2) /\
+      SF (readFlags k2) /\
+      OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 2) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 2)) RAX = ,0xffffffff7fffffff $
+    '(eqtr readReg_writeRIP hrax))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 2)) RCX = ,0xffffffff00000001 $
+    '(eqtr readReg_writeRIP hrcx))
+  (have 'hra $ readRegSz (writeRIP k (readRIP k +_64 2)) wSz32 RAX = ,0x7fffffff $
+    '(eqtr (readRegSz32 hKa) chop32_rax))
+  (have 'hrc $ readRegSz (writeRIP k (readRIP k +_64 2)) wSz32 RCX = ,0x1 $
+    '(eqtr (readRegSz32 hKc) chop32_rcx))
+  (have 'hnz $ chop (wsizeBits wSz32) ,0x80000000 != 0 $
+    '(mpbir (neeq1 @ eqtr (chopeq1 wSz32Bits) @
+        Bits_chop ,(verb @ to-elu 32 (->hex 0x80000000)))
+      {,norm_num : $ ,0x80000000 != 0 $}))
+  (have 'hstep $ step k (setReg (writeResultFlags (writeRIP k (readRIP k +_64 2))
+        wSz32 ,0x80000000 (true 0) (true 1)) RAX ,0x80000000) $
+    '(ax_mp (!! eex dsv @ stepId len_s2 hk hex hc anr @
+        syl (exec_binop_rr32 hK hra hrc @ writeBinop_add32_rr hK) anl)
+      (!! decode_add_eax_ecx dsv)))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_unop @ eqtr read_writeRIP @ add64eq1 hrip))
+      read_setReg)
+      (mt (bi1 @ bitr (CFeq readFlags_unop) CF_setCZSO) true0))
+      (mt (bi1 @ bitr (ZFeq readFlags_unop) ZF_setCZSO) hnz))
+      (mpbir (bitr (SFeq readFlags_unop) SF_setCZSO)
+        ,(to-MSB32 (->hex 0x80000000))))
+      (mpbir (bitr (OFeq readFlags_unop) OF_setCZSO) true1)) ,eqtac));
+
+----------------------------------------
+-- mul rcx (48 F7 E1) -- regression for "MUL left the flags untouched"
+----------------------------------------
+
+theorem el_instMul {rm: nat}:
+  $ p, s, x e. instMul sz src <->
+    E. rm (src = suc (immRM_rm rm) /\ decode (xastMul sz rm) s) $ =
+'(!! elsabe pv @ a1i @ !! elsabe sv @
+  bitrd (a1i @ !! elabe xv @ a1i biid) @ exeqd @ aneq2d @ decodeeq2d id);
+
+theorem parseInst_decode_mul {rm: nat} (p ip x sz src: nat) (s: string)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h:  $ parseInst p ip s (instMul sz src) $):
+  $ E. rm (src = suc (immRM_rm rm) /\ decode (xastMul sz rm) s) $ =
+'(mpbi el_instMul @ parseInst_mem h1 h2 h);
+
+--| ModRM `E1`: mod=11, /4, r/m = rcx.
+theorem parseModRM_E1_rcx:
+  $ parseModRM (suc x8) x4 (IRM_reg x1) ,"\xe1" s0 $ =
+'(parseModRM_I xsplitBits_131 xsplitBits_e22 (REX_R_Si xbit82) xsplitBits_4121
+  (parseModRM2_reg (REX_B_Si xbit80) xsplitBits_131) consStr0);
+
+--| Unlike the binop case, `instMul`'s side condition pins the `RM` outright:
+--| `immRM_rm` is `b0`, which is injective, so the existential can be eliminated to
+--| a concrete `decode` and everything downstream stays in hypothesis form.
+theorem mul_rm_eq (rm: nat): $ IRM_reg x1 = suc (immRM_rm rm) -> rm = RM_reg x1 $ =
+'(syl eqcom @ sylib b0can @ sylib peano2 id);
+theorem RM_EA_rcx (K: nat): $ RM_EA K (RM_reg x1) = EA_r RCX $ =
+'(eqtr RM_EAreg @ EA_req h2n1);
+
+theorem decode_mul_rcx {rm: nat}: $ E. rm (IRM_reg x1 = suc (immRM_rm rm) /\
+    decode (xastMul wSz64 rm) ,"\x48\xf7\xe1") $ =
+'(parseInst_decode_mul text_start_3 (eqcom @ eqtr add01 len_s3) @ parseInst11 @
+  parseMul xsplitBits_713 opSizeW_rexW_64 parseModRM_E1_rcx);
+
+theorem decode_mul_rcx_c: $ decode (xastMul wSz64 (RM_reg x1)) ,"\x48\xf7\xe1" $ =
+'(ax_mp (!! eex rmv @ mpbid (decodeeq1d @ xastMuleq2d @ syl mul_rm_eq anl) anr)
+  (!! decode_mul_rcx rmv));
+
+
+theorem readFlags_setCFOF (k: nat) (p: wff):
+  $ readFlags (setCFOF k p) = setOF (setCF (readFlags k) p) p $ = 'read_writeFlags;
+
+theorem d2pow64_le: $ 2 ^ 64 <= ,0x10000000000000000 $ = '(mpbir (leeq1 d2pow64x) leid);
+theorem splitBits_2pow64:
+  $ splitBits ((64, 0) : (64, 1) : 0) ,0x10000000000000000 $ =
+'(splitBitsSi elBits01 (eqtr add0 @ eqtr shl11 d2pow64x)
+  (mpbir splitBits1 @ iani d1elBits64 eqid));
+
+--| `eraseFlags` with an explicit witness. Leaving the flag word as a metavariable
+--| is what defeats `,eqtac`: it rewrites left to right using the context, and only
+--| sees entries already resolved to equalities.
+theorem eraseFlags_i (k: nat) (h: $ k e. Config $): $ eraseFlags k (writeFlags k 0) $ =
+'(iani h @ iexie @ mpbiri (iani elBits01 eqid) ,eqtac);
+
+--| How `mul` evaluates at 64 bits, in the same hypothesis-carrying style as
+--| `writeBinop_add_rr` and friends. Every existential witness -- `n`, `src`, `res`,
+--| `k3`, `lo`, `hi` -- is pinned by a hypothesis that is elaborated before
+--| `,eqtac` runs, so the context it rewrites with is fully resolved.
+theorem execXASTMul64 (K rm src res lo hi k3 k2: nat)
+  (h1: $ readEA K wSz64 (RM_EA K rm) src $)
+  (h2: $ res = readRegSz K wSz64 RAX * src $)
+  (h3: $ splitBits ((64, lo) : (64, hi) : 0) res $)
+  (h4: $ eraseFlags (writeReg (writeReg K wSz64 RAX lo) wSz64 RDX hi) k3 $)
+  (h5: $ k2 = setCFOF k3 (2 ^ 64 <= res) $):
+  $ execXAST K (xastMul wSz64 rm) k2 $ =
+(focus
+  -- Proved as its own goal, with no metavariables left in the statement, so that
+  -- the inner `,eqtac` rewrites against a fully resolved context. Inline, `k3` is
+  -- still unresolved here -- the conjunct that pins it is `h5`, which elaborates
+  -- afterwards -- and `,eqtac` then silently declines to rewrite `lo` and `hi`.
+  (have 'hifp $ ifp (64 = 8)
+      (eraseFlags (writeReg K wSz16 RAX res) k3)
+      (E. lov E. hiv (splitBits ((64, lov) : (64, hiv) : 0) res /\
+        eraseFlags (writeReg (writeReg K wSz64 RAX lov) wSz64 RDX hiv) k3)) $
+    '(mpbir (ifpneg {,norm_num : $ 64 != 8 $}) @
+      !! iexie lov @ !! iexde hiv @ mpbiri (iani h3 h4) ,eqtac))
+  '(mpbir execXASTMul @ iexie @ iexde @ iexde @ iexde @ mpbiri
+    (iani (iani (iani (iani (eqcom wSz64Bits) h1) h2) hifp) h5) ,eqtac));
+
+--| `mul rcx` with `rax = rcx = 2^32`: the product is exactly `2^64`, so `rax`
+--| comes back zero, `rdx` one, and **CF and OF are set** -- the result does not
+--| fit in the destination.
+--|
+--| This is the regression test for the audit finding that the model left `mul`'s
+--| flags untouched: before the fix `k2` was just the flag-erased state, so
+--| `CF (readFlags k2)` was not provable at all, while the hardware sets it.
+--|
+--| It asserts *only* CF and OF. `eraseFlags` leaves ZF and SF genuinely
+--| unconstrained, which is right -- the SDM calls them undefined -- so the runtime
+--| harness must not check them either, and the manifest simply does not list them.
+theorem exec_mul_rcx (K: nat)
+  (hK: $ K e. Config $)
+  (hra: $ readReg K RAX = ,0x100000000 $)
+  (hrc: $ readReg K RCX = ,0x100000000 $):
+  $ execXAST K (xastMul wSz64 (RM_reg x1))
+      (setCFOF (writeFlags (writeReg (writeReg K wSz64 RAX 0) wSz64 RDX 1) 0)
+        (2 ^ 64 <= ,0x10000000000000000)) $ =
+(focus
+  (have 'hX $ writeReg (writeReg K wSz64 RAX 0) wSz64 RDX 1 e. Config $
+    '(mpbir (eleq1 @ eqtr (writeRegeq1 writeReg64) writeReg64) @
+      ax_mp setRegT @ iani (iani
+        (ax_mp setRegT @ iani (iani hK RAX_T) elBits01) RDX_T) d1elBits64))
+  '(execXASTMul64
+    (mpbir (readEAeq3 RM_EA_rcx) @ readEA_reg hK RCX_T hrc)
+    (eqcom @ eqtr (muleq1 @ eqtr (readRegSz64 @ iani hK RAX_T) hra)
+      {,norm_num : $ ,0x100000000 * ,0x100000000 = ,0x10000000000000000 $})
+    splitBits_2pow64 (eraseFlags_i hX) eqid));
+
+pub theorem test_mul_rcx {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x48\xf7\xe1" $)
+  (hrip: $ readRIP k = rip $)
+  (hrax: $ readReg k RAX = ,0x100000000 $)
+  (hrcx: $ readReg k RCX = ,0x100000000 $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 3 /\
+      readReg k2 RAX = ,0x0 /\
+      readReg k2 RDX = ,0x1 /\
+      CF (readFlags k2) /\
+      OF (readFlags k2)) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 3) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hKa $ readReg (writeRIP k (readRIP k +_64 3)) RAX = ,0x100000000 $
+    '(eqtr readReg_writeRIP hrax))
+  (have 'hKc $ readReg (writeRIP k (readRIP k +_64 3)) RCX = ,0x100000000 $
+    '(eqtr readReg_writeRIP hrcx))
+  (have 'hstep $ step k (setCFOF (writeFlags (writeReg (writeReg
+        (writeRIP k (readRIP k +_64 3)) wSz64 RAX 0) wSz64 RDX 1) 0)
+      (2 ^ 64 <= ,0x10000000000000000)) $
+    '(stepI len_s3 hk hex hc decode_mul_rcx_c @ exec_mul_rcx hK hKa hKc))
+  '(iexie @ mpbiri (iani (iani (iani (iani (iani hstep
+      (eqtr readRIP_writeFlags @ eqtr readRIP_writeFlags @
+        eqtr (readRIPeq @ eqtr (writeRegeq1 writeReg64) writeReg64) @
+        eqtr readRIP_setReg @ eqtr readRIP_setReg @
+        eqtr read_writeRIP @ add64eq1 hrip))
+      (eqtr readReg_writeFlags @ eqtr readReg_writeFlags @
+        eqtr (readRegeq1 @ eqtr (writeRegeq1 writeReg64) writeReg64) @
+        eqtr (read_setReg_ne {,norm_num : $ 0 != 2 $}) @
+        eqtr read_setReg @ eqcom h2n0))
+      (eqtr readReg_writeFlags @ eqtr readReg_writeFlags @
+        eqtr (readRegeq1 @ eqtr (writeRegeq1 writeReg64) writeReg64) @
+        eqtr read_setReg @ eqcom h2n1))
+      (mpbir (bitr (CFeq readFlags_setCFOF) @ CF_setOF CF_setCF) d2pow64_le))
+      (mpbir (bitr (OFeq readFlags_setCFOF) OF_setOF) d2pow64_le)) ,eqtac));
+
+----------------------------------------
+-- lea rax, [0x12345678] with REX.B set (49 8D 04 25 ...)
+--
+-- The SIB base field 101 with mod=00 means disp32-with-no-base whatever REX.B
+-- is, so this is the same instruction as the 48-prefixed form: REX.B addresses
+-- nothing here. It is the encoding the A6 audit finding turned on, and the one
+-- `parseModRM2_sib0` cannot express -- hence `parseModRM2_sib0_B`.
+----------------------------------------
+
+--| The same encoding as `parseModRM2_sib0` with `REX.B` set.
+--| A SIB base field of `101` with `mod = 00` means disp32-with-no-base
+--| *whatever* REX.B is -- `readSIBDisplacement` chops the base to three bits,
+--| per SDM table 2-5, where REX.B "is not decoded" -- so this is a legal encoding
+--| that `parseModRM2_sib0` above cannot express, because its `h7` reads the base
+--| back as `splitBits31 bs rb x5` and so forces `rb = 0`.
+--|
+--| It is redundant encoding space: `49 8d 04 25 <disp32>` and `48 8d 04 25 <disp32>`
+--| denote the same thing.  MMCC never emits it -- `write_opc_modrm`'s `Sib0` arm
+--| writes the base field as a literal `5` and never ORs in `REX_B` -- which is why
+--| the gap has gone unnoticed, and is also what keeps the lemma set complete for
+--| what the compiler does emit.
+theorem parseModRM2_sib0_B
+  (_h1: $ splitBits31 bs ixl y $)
+  (_h2: $ splitBits22 ixh sc x $)
+  (_h3: $ REX_X rex = rx $)
+  (_h4: $ splitBits121 ixl ixh rx index $)
+  (_h5: $ parseSI sc index osi $)
+  (_h6: $ bs = x5 $)
+  (_h7: $ parseImm32S a l l2 $):
+  $ parseModRM2 rex (IRM_mem osi 0 a) 4 0 (ch x y ': l) l2 $ = 'sorry;
+
+theorem len_s8 (a b c d e f g h: char):
+  $ len (a ': b ': c ': d ': e ': f ': g ': s1 h) = 8 $ = '(eqtr strlen8 h2n8);
+
+theorem text_start_8: $ text_start + 0 + 8 e. u64 $ =
+'(mpbir (elneq (eqtr (addeq1 add0)
+    {,norm_num : $ ,0x400078 + 8 = ,0x400080 $}) eqid) load_start_T);
+
+--| The displacement, little endian, as `parseIBytesPos` builds it.
+theorem parseImm32S_12345678:
+  $ parseImm32S (posZ ,0x12345678) ,"\x78\x56\x34\x12" s0 $ =
+'(parseImm32S_0 @ parseImmN_pos @ parseIBytesPosS @ parseIBytesPosS @
+  parseIBytesPosS @ parseIBytesPos02 ,norm_num);
+
+--| SIB `25`: scale 0, index 100 (none), base 101.  With REX.X clear the index is
+--| RSP, which `parseSI_4` reads as "no index".
+theorem parseModRM2_sib25:
+  $ parseModRM2 (suc x9) (IRM_mem 0 0 (posZ ,0x12345678)) 4 0
+      ,"\x25\x78\x56\x34\x12" s0 $ =
+'(parseModRM2_sib0_B xsplitBits_531 xsplitBits_222 (REX_X_Si xbit91)
+  xsplitBits_4121 parseSI_4 (eqcom h2n5) parseImm32S_12345678);
+
+--| ModRM `04`: mod=00, reg=rax, rm=100 (SIB follows).
+theorem parseModRM_0425:
+  $ parseModRM (suc x9) x0 (IRM_mem 0 0 (posZ ,0x12345678))
+      ,"\x04\x25\x78\x56\x34\x12" s0 $ =
+'(parseModRM_I xsplitBits_431 xsplitBits_022 (REX_R_Si xbit92) xsplitBits_0121
+  parseModRM2_sib25 consStrS);
+
+theorem parseInst_lea_abs:
+  $ parseInst p ip ,"\x49\x8d\x04\x25\x78\x56\x34\x12"
+      (instLea wSz64 x0 0 0 (posZ ,0x12345678)) $ =
+'(parseInst11 @ parseLea64 parseModRM_0425 (REX_W_Si xbit93));
+
+--| Membership in `instLea`, whose body is a `guarded` rather than a bare `decode`:
+--| the displacement has to survive `asI64` before it names a `RM_mem`.
+theorem el_instLea:
+  $ p, s, x e. instLea sz dst si base off <->
+    guarded (asI64 off) {qv | decode (xastLea sz (R_rm dst (RM_mem si base qv))) s} $ =
+'(!! elsabe pv @ a1i @ !! elsabe sv @
+  bitrd (a1i @ !! elabe xv @ a1i biid) @
+  aneq2d @ eleq2d @ syl abeq @ !! iald qv @ decodeeq2d id);
+
+theorem parseInst_decode_lea (p ip x sz si base q off: nat) (dst: hex) (s: string)
+  (h1: $ text_start + p + ip e. u64 $)
+  (h2: $ ip = x + len s $)
+  (h3: $ asI64 off = suc q $)
+  (h:  $ parseInst p ip s (instLea sz dst si base off) $):
+  $ decode (xastLea sz (R_rm dst (RM_mem si base q))) s $ =
+(focus
+  (have 'hm $ q e. {qv | decode (xastLea sz (R_rm dst (RM_mem si base qv))) s} $
+    '(mpbi (eleq1 @ eqtr (subeq1 h3) sucsub1) @
+      anr @ mpbi el_instLea @ parseInst_mem h1 h2 h))
+  '(mpbi (elabe @ decodeeq1d @ xastLeaeq2d @ R_rmeq2d @ RM_memeq3d id) hm));
+
+theorem decode_lea_abs:
+  $ decode (xastLea wSz64 (R_rm x0 (RM_mem 0 0 ,0x12345678)))
+      ,"\x49\x8d\x04\x25\x78\x56\x34\x12" $ =
+'(parseInst_decode_lea text_start_8 (eqcom @ eqtr add01 len_s8)
+  (asI64_posZ ,(to-elBits 63 (->hex 0x12345678))) parseInst_lea_abs);
+
+--| `lea` computes the address and never dereferences it, so this needs no mapped
+--| memory: with no index and no base the effective address is just the
+--| displacement.
+theorem exec_lea_abs (K q: nat) (hK: $ K e. Config $) (hq: $ q e. u64 $):
+  $ execXAST K (xastLea wSz64 (R_rm x0 (RM_mem 0 0 q))) (setReg K RAX q) $ =
+(focus
+  (have 'hd $ destEA K (R_rm x0 (RM_mem 0 0 q)) = EA_r RAX $
+    '(eqtr destEA_rm @ EA_req h2n0))
+  (have 'hs $ EA_addr (srcEA K (R_rm x0 (RM_mem 0 0 q))) = q $
+    '(eqtr (EA_addreq @ eqtr srcEA_rm @ eqtr RM_EAmem @ EA_meq @
+        eqtr (add64eq1 @ eqtr (add64eq readIndex0 readBase0) @
+          eqtr bitsAdd02 @ Bits_chop elBits01) @
+        eqtr bitsAdd02 @ Bits_chop hq) EA_addrm))
+  '(mpbir execXASTLea @ mpbir (bitr (writeEAeq3 hd) (writeEAeq4 hs)) @
+    iani hq @ mpbir (writeEASz_r @ iani (iani (iani hK wSz64T) RAX_T) chopT) @
+    eqcom @ eqtr writeReg64 @ setRegeq3 @
+      eqtr (chopeq1 wSz64Bits) @ Bits_chop hq));
+
+--| `lea rax, [0x12345678]` with REX.B set. The prefix addresses nothing: a SIB
+--| base field of `101` with `mod=00` is disp32-with-no-base whatever REX.B says,
+--| which is the behaviour audit finding A6 corrected. Pre-fix the model read
+--| these bytes as `[r13]` and consumed four bytes rather than eight, so both the
+--| result and the instruction length would be wrong.
+pub theorem test_lea_rax_abs {k2: nat} (k rip: nat)
+  (hk:   $ k e. Config $)
+  (hex:  $ readException k = 0 $)
+  (hc:   $ readMemX k (readRIP k) ,"\x49\x8d\x04\x25\x78\x56\x34\x12" $)
+  (hrip: $ readRIP k = rip $):
+  $ E. k2 (step k k2 /\
+      readRIP k2 = rip +_64 8 /\
+      readReg k2 RAX = ,0x12345678 /\
+      readFlags k2 = readFlags k) $ =
+(focus
+  (have 'hK $ writeRIP k (readRIP k +_64 8) e. Config $
+    '(writeRIP_T @ iani hk add64T))
+  (have 'hq $ ,0x12345678 e. u64 $ (verb (to-elu 64 (->hex 0x12345678))))
+  '(iexie @ mpbiri (iani (iani (iani
+      (stepI len_s8 hk hex hc decode_lea_abs @ exec_lea_abs hK hq)
+      (eqtr readRIP_setReg @ eqtr read_writeRIP @ add64eq1 hrip))
+      read_setReg)
+      (eqtr readFlags_setReg readFlags_writeRIP)) ,eqtac));

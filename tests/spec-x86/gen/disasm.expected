@@ -1,0 +1,18 @@
+# test name <TAB> bytes objdump consumed <TAB> objdump's disassembly.
+# One line per test: more than one means the encoding decoded short.
+test_nop	90	nop
+test_stc	f9	stc
+test_inc_rax_minus1	48 ff c0	inc rax
+test_dec_rax_zero	48 ff c8	dec rax
+test_not_rax_minus1	48 f7 d0	not rax
+test_neg_rax_minus1	48 f7 d8	neg rax
+test_add_rax_rcx	48 03 c1	add rax,rcx
+test_or_rax_rcx	48 0b c1	or rax,rcx
+test_and_rax_rcx	48 23 c1	and rax,rcx
+test_sub_rax_rcx	48 2b c1	sub rax,rcx
+test_cmp_rax_rcx	48 3b c1	cmp rax,rcx
+test_xor_rax_rcx	48 33 c1	xor rax,rcx
+test_neg_rax_intmin	48 f7 d8	neg rax
+test_add_eax_ecx	03 c1	add eax,ecx
+test_mul_rcx	48 f7 e1	mul rcx
+test_lea_rax_abs	49 8d 04 25 78 56 34 12	lea rax,ds:0x12345678

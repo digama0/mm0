@@ -1,6 +1,11 @@
 #!/bin/sh
 # Runs all tests. Run this from the tests/ directory;
 # you need mm0-rs and mm0-c to be on your path.
+#
+# The x86 spec suite additionally wants python3, objdump and a C compiler, and
+# will use qemu-x86_64 as a second runtime oracle if it is installed. It is run
+# without STRICT here, so a missing emulator degrades to the native oracle
+# instead of failing; CI sets STRICT=1 to require both.
 
 escape=$(printf '\033')
 red="$escape[0;31m"
@@ -55,6 +60,11 @@ cd mmb
 for test in run/*.mmb; do
   run_test ./run.sh mmb/ ${test%.*} mmb "0 1 2 3 4 255"
 done; echo
+cd ..
+
+cd spec-x86
+TERSE=1 ./run.sh || exit_code=1
+echo
 cd ..
 
 exit $exit_code

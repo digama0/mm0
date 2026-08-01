@@ -231,8 +231,10 @@ theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $) (h3: $ suc n = p $):
 theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
 '(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
 
+--| `a :x b` is `a * 16 + b`, the accumulator step for writing multi-digit
+--| hexadecimal literals: `x4 :x x0 :x x7 :x x8` is `0x4078`.
 @(add-eval @ fn (a b) {{16 * (eval a)} + (eval b)})
-local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
+def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
 infixl hex: $:x$ prec 120;
 
 @(register-eqd 'hex) theorem hexeqd (G a1 a2 x1 x2)
@@ -287,7 +289,8 @@ do {
       [(f i out) @ if {i = 0} out @ begin
         (def j {i - 1})
         (f j '(scons ,(number->ch @ string-nth j s) ,out))])
-    (f n '(s0)))
+    @ if {n = 0} '(s0)
+    @ let ([j {n - 1}]) (f j '(s1 ,(number->ch @ string-nth j s))))
 };
 
 do {

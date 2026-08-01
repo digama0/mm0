@@ -144,3 +144,8 @@ theorem s1str (c: char): $ isStr (c : 0) $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 theorem saddstr (s t: string): $ isStr (s ++ t) $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+
+--| `a :x b` is `a * 16 + b`, the accumulator step for writing multi-digit
+--| hexadecimal literals: `x4 :x x0 :x x7 :x x8` is `0x4078`.
+def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
+infixl hex: $:x$ prec 120;

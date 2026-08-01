@@ -503,6 +503,168 @@ theorem shr_bitOr: $ shr (bitOr a b) m = bitOr (shr a m) (shr b m) $ =
 theorem shr_bitDif: $ shr (bitDif a b) m = bitDif (shr a m) (shr b m) $ =
 '(axext @ !! ax_gen x @ bitr4 elshr @ bitr4 elbitDif @ bitr4 elbitDif @ aneq elshr @ noteq elshr);
 
+theorem bitXor_dif: $ bitXor a b = bitDif (bitOr a b) (bitAnd a b) $ =
+'(axext @ !! ax_gen i @ bitr4 (bitr bitXor_mem nbioran) @
+  bitr elbitDif @ aneq elbitOr @ noteq elbitAnd);
+
+theorem chop_bitXor: $ chop m (bitXor a b) = bitXor (chop m a) (chop m b) $ =
+'(eqtr (chopeq2 bitXor_dif) @ eqtr chop_bitDif @
+  eqtr (bitDifeq chop_bitOr chop_bitAnd) @ eqcom bitXor_dif);
+
+theorem shr_bitXor: $ shr (bitXor a b) m = bitXor (shr a m) (shr b m) $ =
+'(eqtr (shreq1 bitXor_dif) @ eqtr shr_bitDif @
+  eqtr (bitDifeq shr_bitOr shr_bitAnd) @ eqcom bitXor_dif);
+
+theorem bitAndssOr: $ bitAnd a b C_ bitOr a b $ =
+'(mpbir dfss @ !! ax_gen i @ sylbi elbitAnd @ sylibr elbitOr @ syl orl anl);
+
+theorem bitXor_sub: $ bitXor a b = bitOr a b - bitAnd a b $ =
+'(eqtr bitXor_dif @ bitDifsub bitAndssOr);
+
+--| `a :x x` splits at bit 4 into `a` and `x`; `shrhex4` is the other half.
+theorem chophex4: $ chop 4 (a :x x) = x $ =
+'(anr @ mpbi shladd_uniq @ iani
+  (mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt) (eqcom hexshl4));
+
+--| The step lemma: a bitwise operation on hex numerals is the operation on the
+--| leading digits beside the operation on the last digits. Together with a 16x16
+--| table on digits this computes any bit operation in one pass over the numeral,
+--| rather than the 4x longer walk down `b0`/`b1`.
+theorem xbitAndS_ (x y z: hex) (a b: nat) (h: $ bitAnd x y = z $):
+  $ bitAnd (a :x x) (b :x y) = bitAnd a b :x z $ =
+'(eqcom @ eqtr hexshl4 @ anr @ mpbir shladd_uniq @ iani
+  (eqtr shr_bitAnd @ bitAndeq shrhex4 shrhex4)
+  (eqtr chop_bitAnd @ eqtr (bitAndeq chophex4 chophex4) h));
+theorem xbitAndS (x y z: hex) (a b c: nat) (h1: $ bitAnd a b = c $) (h2: $ bitAnd x y = z $):
+  $ bitAnd (a :x x) (b :x y) = c :x z $ = '(eqtr (xbitAndS_ h2) @ hexeql h1);
+theorem xbitOrS_ (x y z: hex) (a b: nat) (h: $ bitOr x y = z $):
+  $ bitOr (a :x x) (b :x y) = bitOr a b :x z $ =
+'(eqcom @ eqtr hexshl4 @ anr @ mpbir shladd_uniq @ iani
+  (eqtr shr_bitOr @ bitOreq shrhex4 shrhex4)
+  (eqtr chop_bitOr @ eqtr (bitOreq chophex4 chophex4) h));
+theorem xbitOrS (x y z: hex) (a b c: nat) (h1: $ bitOr a b = c $) (h2: $ bitOr x y = z $):
+  $ bitOr (a :x x) (b :x y) = c :x z $ =
+'(eqtr (xbitOrS_ h2) @ hexeql h1);
+theorem xbitXorS_ (x y z: hex) (a b: nat) (h: $ bitXor x y = z $):
+  $ bitXor (a :x x) (b :x y) = bitXor a b :x z $ =
+'(eqcom @ eqtr hexshl4 @ anr @ mpbir shladd_uniq @ iani
+  (eqtr shr_bitXor @ bitXoreq shrhex4 shrhex4)
+  (eqtr chop_bitXor @ eqtr (bitXoreq chophex4 chophex4) h));
+theorem xbitXorS (x y z: hex) (a b c: nat) (h1: $ bitXor a b = c $) (h2: $ bitXor x y = z $):
+  $ bitXor (a :x x) (b :x y) = c :x z $ =
+'(eqtr (xbitXorS_ h2) @ hexeql h1);
+
+--| Appending a hex digit costs exactly four bits.  With this, the size of a hex
+--| literal is read off its digit count -- no powers of two needed.
+theorem elBitshex (x: hex) (a k m: nat) (h1: $ a e. Bits k $) (h2: $ k + 4 = m $):
+  $ (a :x x) e. Bits m $ =
+'(mpbi (elneq (eqcom hexshl4) @ Bitseq h2) @ shladdT @ iani h1 @
+  mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt);
+--| A digit is four bits; a digit below 8 is three, which is what makes a 16 digit
+--| literal with a small leading digit fit in 63.
+theorem elBitshex4 (x: hex): $ h2n x e. Bits 4 $ =
+'(mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt);
+theorem elBitshex3 (x: hex) (h: $ x < 8 $): $ h2n x e. Bits 3 $ =
+'(mpbir elBits2 @ mpbir (lteq2 d2pow3) h);
+theorem elBitsle (a m n: nat) (h1: $ a e. Bits m $) (h2: $ m <= n $): $ a e. Bits n $ =
+'(ax_mp (ssel @ Bitsss h2) h1);
+
+--| `2 ^ 63` as a literal, by fifteen four-bit steps from `x2pow3`.  This is the
+--| other half: `bitsMSB_le` turns a set sign bit into a comparison against it.
+theorem d2pow63x: $ ,0x8000000000000000 = 2 ^ ,63 $ =
+'(eqtr ,(iterate 15 (fn (x) '(x2powS ,x)) 'x2pow3) (poweq2 ,norm_num));
+
+do {
+  --| `(to-elBits n A)` proves `$ A e. Bits n $` for a hex literal `A`, by counting
+  --| digits: four bits each, three for a leading digit below 8, then `Bitsss`.
+  (def (to-elBits-exact a)
+    @ match a
+    ['(hex ,a1 ,x)
+      (def sub (to-elBits-exact a1))
+      '[,{(hd sub) + 4} (elBitshex ,(hd (tl sub)) ,norm_num)]]
+    ['(h2n ,x)
+      @ if {(hexdigit->number (if (pair? x) (hd x) x)) < 8}
+        '[3 (elBitshex3 ,norm_num)] '[4 (elBitshex4)]])
+  (def (to-elBits n a)
+    (def r (to-elBits-exact a))
+    @ if {(hd r) = n} (hd (tl r)) '(elBitsle ,(hd (tl r)) ,norm_num))
+};
+
+theorem bitXor02: $ bitXor a 0 = a $ =
+'(eqtr bitXor_sub @ eqtr (subeq bitOr02 bitAnd02) sub02);
+theorem bitXor01: $ bitXor 0 a = a $ =
+'(eqtr bitXor_sub @ eqtr (subeq bitOr01 bitAnd01) sub02);
+
+theorem xbitAndS1 (x y z: hex) (a: nat) (h: $ bitAnd x y = z $):
+  $ bitAnd (a :x x) (h2n y) = z $ =
+'(eqtr (bitAndeq2 @ eqcom hex01_) @ eqtr (xbitAndS_ h) @ eqtr (hexeql bitAnd02) hex01_);
+theorem xbitAnd1S (x y z: hex) (b: nat) (h: $ bitAnd x y = z $):
+  $ bitAnd (h2n x) (b :x y) = z $ =
+'(eqtr (bitAndeq1 @ eqcom hex01_) @ eqtr (xbitAndS_ h) @ eqtr (hexeql bitAnd01) hex01_);
+theorem xbitOrS1 (x y z: hex) (a: nat) (h: $ bitOr x y = z $):
+  $ bitOr (a :x x) (h2n y) = a :x z $ =
+'(eqtr (bitOreq2 @ eqcom hex01_) @ eqtr (xbitOrS_ h) @ hexeql bitOr02);
+theorem xbitOr1S (x y z: hex) (b: nat) (h: $ bitOr x y = z $):
+  $ bitOr (h2n x) (b :x y) = b :x z $ =
+'(eqtr (bitOreq1 @ eqcom hex01_) @ eqtr (xbitOrS_ h) @ hexeql bitOr01);
+theorem xbitXorS1 (x y z: hex) (a: nat) (h: $ bitXor x y = z $):
+  $ bitXor (a :x x) (h2n y) = a :x z $ =
+'(eqtr (bitXoreq2 @ eqcom hex01_) @ eqtr (xbitXorS_ h) @ hexeql bitXor02);
+theorem xbitXor1S (x y z: hex) (b: nat) (h: $ bitXor x y = z $):
+  $ bitXor (h2n x) (b :x y) = b :x z $ =
+'(eqtr (bitXoreq1 @ eqcom hex01_) @ eqtr (xbitXorS_ h) @ hexeql bitXor01);
+
+theorem xbitAnd00: $ bitAnd x0 x0 = x0 $ =
+'(eqtr (bitAndeq h2n0 h2n0) @ eqtr bitAnd01 @ eqcom h2n0);
+theorem xbitOr00: $ bitOr x0 x0 = x0 $ =
+'(eqtr (bitOreq h2n0 h2n0) @ eqtr bitOr01 @ eqcom h2n0);
+
+do {
+  --| The 16x16 digit tables: `xbitAnd35: $ bitAnd x3 x5 = x1 $`, and likewise
+  --| `xbitOr..` and `xbitXor..`.  `bitAnd` and `bitOr` recurse on `b0`/`b1`
+  --| using the halving family; `bitXor` is then arithmetic, since
+  --| `(i ^ j) + (i & j) = i | j`.
+  (def (bitop-name op i j) (atom-app 'x op (hexstring i) (hexstring j)))
+  (def (digit-tac op step i j)
+    @ letrec ([(f i j) @ if {{i = 0} and {j = 0}}
+      '(,(bitop-name op 0 0))
+      @ let ([i2 {i // 2}] [j2 {j // 2}] [r (step {i % 2} {j % 2})])
+        '(eqtr (,(atom-app op 'eq) ,(hexnhalf i) ,(hexnhalf j)) @
+          eqtr ,(atom-app op 'b (->string {i % 2}) (->string {j % 2})) @
+          eqtr (,(if {r = 1} 'b1eq 'b0eq) ,(f i2 j2)) @
+          eqcom ,(hexnhalf (step i j)))])
+    (f i j))
+  (for 0 16 @ fn (i) @ for 0 16 @ fn (j)
+    (def (mk op step tac)
+      (add-tac-thm! (bitop-name op i j) () ()
+        '(eq (,op (h2n (,(hexdigit i))) (h2n (,(hexdigit j))))
+             (h2n (,(hexdigit (step i j))))) () tac))
+    (def (band2 a b) {a band b})
+    (def (bor2 a b) {a bor b})
+    (def (bxor2 a b) {{a bor b} - {a band b}})
+    (if (not {{i = 0} and {j = 0}}) @ begin
+      (mk 'bitAnd band2 @ fn () (digit-tac 'bitAnd band2 i j))
+      (mk 'bitOr bor2 @ fn () (digit-tac 'bitOr bor2 i j)))
+    (mk 'bitXor bxor2 @ fn ()
+      '(eqtr bitXor_sub @ eqtr (subeq ,(bitop-name 'bitOr i j) ,(bitop-name 'bitAnd i j)) @
+         eqsub1 {,norm_num : $ ,(hexdigit (bxor2 i j)) + ,(hexdigit {i band j}) =
+           ,(hexdigit {i bor j}) $})))
+
+  --| `(to-bitop 'bitAnd A B)` proves `$ bitAnd A B = C $` for hex literals, one
+  --| step per digit rather than one per bit.
+  (def to-bitop
+    (def (dig e) @ if (pair? e) (hexdigit->number (hd e)) (hexdigit->number e))
+    @ fn (op a b) @ match (list a b)
+    [('(hex ,a1 ,x) '(hex ,b1 ,y))
+      '(,(atom-app 'x op 'S) ,(to-bitop op a1 b1)
+        ,(bitop-name op (dig x) (dig y)))]
+    [('(hex ,a1 ,x) '(h2n ,y))
+      '(,(atom-app 'x op 'S1) ,(bitop-name op (dig x) (dig y)))]
+    [('(h2n ,x) '(hex ,b1 ,y))
+      '(,(atom-app 'x op '1S) ,(bitop-name op (dig x) (dig y)))]
+    [('(h2n ,x) '(h2n ,y)) '(,(bitop-name op (dig x) (dig y)))])
+};
+
 theorem eqm_chopd (h: $ G -> mod(2 ^ k): a = b $):
   $ G -> mod(2 ^ k): chop k a = b $ = '(syl (eqmtr eqm_chop) h);
 theorem zeqm_chopd (h: $ G -> modZ(2 ^ k): b0 a = b $):
@@ -4006,6 +4168,44 @@ pub theorem setCFOF_T (k: nat) (p: wff): $ k e. Config -> setCFOF k p e. Config 
 '(sylan writeFlagsT id @ syl setOF_T @ syl setCF_T readFlagsT);
 
 @_ def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
+
+--| The sign bit at `wSz64`, both ways.  Clear is the cheap direction: it is just
+--| "fits in 63 bits", which `(to-elBits 63 A)` reads off the digit count.  Set
+--| needs the comparison, hence `d2pow63x`.
+theorem notMSBk (sz n k m: nat) (h1: $ wsizeBits sz = k $) (h2: $ k - 1 = m $)
+  (h3: $ n e. Bits m $): $ ~MSB sz n $ =
+'(mt (bi1 @ bitr (bitsMSBeq1 h1) @ bitsMSB_Bits @
+    elBitsle h3 @ mpbi (leeq1 h2) subleid) @
+  ax_mp notnot1 @ mpbi (elneq2 @ eqcom @ Bitseq h2) h3);
+theorem MSBk (sz n k m p: nat) (h1: $ wsizeBits sz = k $) (h2: $ n e. Bits k $)
+  (h3: $ k - 1 = m $) (h4: $ 2 ^ m = p $) (h5: $ p <= n $): $ MSB sz n $ =
+'(mpbir (bitr (bitsMSBeq1 h1) @ bitr (bitsMSB_le h2) @
+  leeq1 @ eqtr (poweq2 h3) h4) h5);
+
+theorem d64sub1: $ 64 - 1 = ,63 $ = '(eqsub1 {,norm_num : $ ,63 + 1 = 64 $});
+theorem d32sub1: $ 32 - 1 = ,31 $ = '(eqsub1 {,norm_num : $ ,31 + 1 = 32 $});
+theorem d2pow31x: $ ,{2 ^ 31} = 2 ^ ,31 $ =
+'(eqtr ,(iterate 7 (fn (x) '(x2powS ,x)) 'x2pow3) (poweq2 ,norm_num));
+
+theorem notMSB64 (n: nat) (h: $ n e. Bits ,63 $): $ ~MSB wSz64 n $ =
+'(notMSBk wSz64Bits d64sub1 h);
+theorem MSB64 (n: nat) (h1: $ n e. Bits 64 $) (h2: $ ,{2 ^ 63} <= n $):
+  $ MSB wSz64 n $ = '(MSBk wSz64Bits h1 d64sub1 (eqcom d2pow63x) h2);
+theorem notMSB32 (n: nat) (h: $ n e. Bits ,31 $): $ ~MSB wSz32 n $ =
+'(notMSBk wSz32Bits d32sub1 h);
+theorem MSB32 (n: nat) (h1: $ n e. Bits 32 $) (h2: $ ,{2 ^ 31} <= n $):
+  $ MSB wSz32 n $ = '(MSBk wSz32Bits h1 d32sub1 (eqcom d2pow31x) h2);
+
+do {
+  --| `(to-notMSB64 a)` proves `|- ~MSB wSz64 a`
+  (def (to-notMSB64 a) '(notMSB64 ,(to-elBits 63 a)))
+  --| `(to-MSB64 a)` proves `|- MSB wSz64 a`
+  (def (to-MSB64 a) '(MSB64 ,(verb @ to-elu 64 a) ,norm_num))
+  --| `(to-notMSB32 a)` proves `|- ~MSB wSz32 a`
+  (def (to-notMSB32 a) '(notMSB32 ,(to-elBits 31 a)))
+  --| `(to-MSB32 a)` proves `|- MSB wSz32 a`
+  (def (to-MSB32 a) '(MSB32 ,(verb @ to-elu 32 a) ,norm_num))
+};
 
 @_ def writeResultFlags (k sz w: nat) (c o: wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;

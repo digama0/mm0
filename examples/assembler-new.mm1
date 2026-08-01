@@ -264,6 +264,15 @@ $ n e. Bits (8 * k + 7) /\ s = toIBytes (suc k) (b1 n) $;
 @mmc-th theorem znsub_negZ (h: $ suc (a + c) = b $): $ a -ZN b = negZ c $ =
 '(eqtr3 (znsubeq2 h) @ eqtr (znsubneg @ mpbi leltsuc leaddid1) @ b1eq @ eqtr subSS pncan2);
 
+theorem posZ_elu64 (n: nat) (h: $ n e. Bits ,63 $): $ posZ n e. u64 $ =
+'(mpbi (elneq2 @ Bitseq {,norm_num : $ suc ,63 = 64 $}) @ b0Bitsi eqid h);
+
+theorem chopZ64_posZ (n: nat) (h: $ n e. u64 $): $ chopZ 64 (posZ n) = n $ =
+'(eqtr zmodb0 @ Bits_chop h);
+
+theorem asI64_posZ (n: nat) (h: $ n e. Bits ,63 $): $ asI64 (posZ n) = suc n $ =
+'(eqtr (ifpos @ posZ_elu64 h) @ suceq @ chopZ64_posZ @ elBitsle h ,norm_num);
+
 @_ local def parseImmN_N (k imm l: nat): wff =
 $ imm e. Bits (8 * suc k) /\ l = toBytes (suc k) (chopZ (8 * suc k) imm) $;
 @mmc-th local def parseImmN (k imm: nat) (s: string): wff = $ parseImmN_N k imm s $;
@@ -438,15 +447,15 @@ $ parseModRM_N rex rn rm l l2 $;
   $ parseModRM rex rn rm s l2 $ = 'sorry;
 
 @_ local def mkRegRMI_N (dst src ds): wff =
-$ ds e. DestSrc /\ destRM ds = IRM_reg_N dst /\ src = suc (srcIRM ds) $;
+$ ds e. DestSrc /\ destRM ds = RM_reg dst /\ src = suc (srcIRM ds) $;
 
 local def mkRegRMI (dst src ds): wff = $ mkRegRMI_N dst src ds $;
 
 @_ local def instBinopN (opc sz dst src: nat): set =
-$ S\ p, S\ s, {x | E. ds (mkRegRMI_N dst src ds /\ opc < 8 -> decode (xastBinop opc sz ds) s)} $;
+$ S\ p, S\ s, {x | opc < 8 -> E. ds (mkRegRMI_N dst src ds /\ decode (xastBinop opc sz ds) s)} $;
 
 @mmc-th local def instBinop (opc: hex) (sz: nat) (dst: hex) (src: nat): set =
-$ S\ p, S\ s, {x | E. ds (mkRegRMI dst src ds /\ opc < 8 -> decode (xastBinop opc sz ds) s)} $;
+$ S\ p, S\ s, {x | opc < 8 -> E. ds (mkRegRMI dst src ds /\ decode (xastBinop opc sz ds) s)} $;
 
 @_ local def instAddN (sz dst src: nat): set = $ instBinopN x0 sz dst src $;
 @_ local def instSubN (sz dst src: nat): set = $ instBinopN x5 sz dst src $;

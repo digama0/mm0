@@ -766,6 +766,11 @@ theorem bior1: $ ~a -> (a \/ b <-> b) $ = '(syl bior1a absurd);
 theorem bior2: $ ~b -> (a \/ b <-> a) $ = '(syl bior2a absurd);
 theorem em: $ p \/ ~p $ = 'id;
 theorem emr: $ ~p \/ p $ = '(orcom em);
+theorem oriman: $ (a <-> b) <-> (a \/ b -> a /\ b) $ =
+'(ibii (eorda (iand anr (imp bi1)) (iand (imp bi2) anr)) @
+  ibida (anrd @ imp @ imim1i orl) (anld @ imp @ imim1i orr));
+theorem nbioran: $ ~(a <-> b) <-> (a \/ b) /\ ~(a /\ b) $ =
+'(mpbi con1bb @ bitr2 oriman iman);
 
 --| Selection: `ifp p a b` is equivalent to `a` if `p` is true,
 --| and equivalent to `b` if `p` is false.

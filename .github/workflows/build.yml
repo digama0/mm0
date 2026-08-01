@@ -223,7 +223,16 @@ jobs:
         run: |
           chmod +x mm0-rs
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Install qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+          # Fail here rather than inside run.sh if the package ever stops
+          # providing this binary.
+          qemu-x86_64 --version
       - working-directory: tests
+        env:
+          STRICT: 1
         run: ./run-tests.sh
 
   build-mm0-hs:
