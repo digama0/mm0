@@ -15,11 +15,12 @@ All numbers are expressed in little endian fixed width types. Some tables requir
 * `u1`: a bit, used in bit packing descriptions
 * `u7`: sorts are 7 bits, so the high bit is used to encode additional information.
 * `[T; n]`: a list of exactly `n` elements of type `T`
+* `[T]`: a list of unspecified length with elements of type `T`
 * `p32<T>`: a 32 bit pointer to `T`, relative to the start of the file
 * `p64<T>`: a 64 bit pointer to `T`, relative to the start of the file
 * `p32?<T>` / `p64?<T>`: a nullable pointer. If the value is zero then it is null, else it is a pointer to `T`
 * `str4`: a fixed length 4 byte string
-* `cstr`: a UTF-8 null terminated string
+* `cstr = [u8] 0`: a UTF-8 null terminated string
 * `(cmd, data)`: see below
 
 Command pairs are denoted `(cmd, data)` and use a variable length encoding, from 1 to 5 bytes. The low six bits of the first byte are `cmd`, while the high two bits give the number of `data` bytes:
@@ -483,6 +484,8 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 | `"Name" = 0x656D614E` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems
 | `"VarN" = 0x4E726156` | `0`    | `p64<var_names>` | String names for variables
 | `"HypN" = 0x4E707948` | `0`    | `p64<hyp_names>` | String names for hypotheses
+| `"Delm" = 0x6D6C6544` | `0`    | `p64<delimiters>` | Delimiter characters for tokenization
+| `"Nota" = 0x61746F4E` | `0`    | `p64<notations>` | Notations for terms
 
 ## The `Name` table: names for statements
 
@@ -527,3 +530,57 @@ The list `term_vars[t]` is the list of variable names in `term[t]` in the order 
 | `thm_hyps`  | `[p64?<str_list>; num_thms]` | The list of hypotheses in a `axiom`/`theorem`
 
 The `hyp_names` table is similar to `var_names`, and reuses the `str_list` type. The list gives the names of hypotheses in the order of `Hyp` commands in the statement.
+
+## The `Delm` table: delimiters for tokenization
+
+`align(delimiters) = 1; delimiters =`
+| Field   | Type        | Description
+| ------- | ----------- | -----------
+| `left`  | `[u8; _] 0` | The left-delimiter bytes, then a `0`
+| `right` | `[u8; _] 0` | The right-delimiter bytes, then a `0`
+
+The `Delm` table stores *delimiters*, the equivalent to the `delimiter` command in `.mm0` and `.mm1` files. Like the rest of the index it is advisory: it governs how the human notation is lexed, never verification, and a verifier may ignore it.
+
+A list is the delimiter bytes one after another, ended by a `0`. A `0` byte never occurs in a math string and is not a legal delimiter, so it terminates the list unambiguously. To use this in a term printer, join tokens with a single space, but drop the space between two adjacent tokens when the left token ends with a left delimiter, or the right token begins with a right delimiter.
+
+## The `Nota` table: notations for terms
+
+`align(notations) = 8; notations =`
+| Field        | Type            | Description
+| ------------ | --------------- | -----------
+| `p_overflow` | `p64<overflow>` | Points at the end of `notas`, which is where `overflow` begins
+| `notas`      | `[nota]`        | `nota` entries, one after another, up to `p_overflow`
+| `overflow`   | `[cstr] 0`      | The tokens that do not fit inline
+
+This table says how to *print* a term, based on the `coercion`, `infix`, `infixr`, `prefix`, and `notation` commands in `.mm0` and `.mm1` files. There is one entry per notation, in declaration order. A term may have either zero, one, or more notations; a consumer that wants to print the way MM1 does uses the first entry for a given term. The `notas` list consists of a sequence of `nota` one after another, terminated at `p_overflow`.
+
+`sizeof(nota)` varies; `align(nota) = 4; nota =`
+| Field      | Type                  | Description
+| ---------- | --------------------- | -----------
+| `term_id`  | `u32`                 | The term this notation applies to
+| `prec`     | `u16`                 | The precedence of the notation, or `0xFFFF` for `max`
+| `num_lits` | `u8`                  | The number of literals
+| `reserved` | `u8`                  | Reserved, should be set to `0`.
+| `lits`     | `[literal; num_lits]` | The literals, in the order they are printed
+
+A `coercion` is encoded using `num_lits = 0` and `prec = max`. Otherwise, `num_lits > 0`.An `infixl` is recognizable as starting with a variable with `prec` and ending with a variable at `prec + 1`, and vice versa for `infixr`.
+
+`sizeof(literal) = 4; align(literal) = 4`. A literal is discriminated by its first byte, which for an inline constant is the first byte of the token itself — neither `0x00` nor `0xFF` can begin one, since a token is a non-empty UTF-8 string and `0xFF` is not a UTF-8 lead byte.
+
+| First byte | Meaning
+| ---------- | -------
+| `0x00`     | A variable. Byte 1 is the index of the argument, and bytes 2-3 are a `u16` giving the precedence to print it at (`0xFFFF` for `max`).
+| `0xFF`     | A constant from the `overflow` area. Bytes 1-3 are reserved and should be `0`.
+| otherwise  | A constant, stored inline: bytes 0-3 are the token, padded with `0x00`. A token of exactly 4 bytes fills the field and is not terminated.
+
+`overflow` stores the tokens that are too long to store inline, laid out as `<string> 0 <string> 0 ... <string> 0 0`: each is a UTF-8 string with a `0` terminator, and an empty string ends the list. They are in the same order as the literals that name them: the `n`th `0xFF` literal encountered while walking `notas` in order is the `n`th string here.
+
+Two notations cannot be recorded here: one with a precedence of `0xFFFF` or above, and one with more than `255` literals or an argument index above `255`. Currently, if `mm0-rs` encounters one it omits the entry with a warning.
+
+To print `(t e1 ... en)` at precedence `p`, where `nota` is the first entry for `t`:
+
+* If there is no entry for `t`, print `(t e1 ... en)`, with each `ei` printed at `max`, wrapping the whole in parentheses if `p > 1024`. A term with no arguments prints as just `t`, at precedence `max`.
+* If the entry is a coercion, print `e1` at precedence `p`.
+* Otherwise print each literal in order: a constant as its token, and a variable as its argument printed at the literal's own precedence. Wrap the result in parentheses if `p` is greater than the notation's `prec`.
+
+Note that the literals are the *whole* notation, including the leading or infix constant.

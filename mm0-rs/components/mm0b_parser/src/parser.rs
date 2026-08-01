@@ -1,13 +1,14 @@
 //! Parser for MMB binary proof files.
 use crate::{
-  Arg, Header, NameEntry, NumdStmtCmd, ProofCmd, SortData, StmtCmd, TableEntry, TermEntry,
-  ThmEntry, UnifyCmd, cmd, cstr_from_bytes_prefix, exhausted, u32_as_usize, u64_as_usize,
+  Arg, Header, NameEntry, NumdStmtCmd, ProofCmd, SortData, StmtCmd, TableEntry,
+  TermEntry, ThmEntry, UnifyCmd, cmd, cstr_from_bytes_prefix, exhausted, u32_as_usize,
+  u64_as_usize,
 };
-use mm0_util::{SortId, TermId, ThmId};
+use mm0_util::{Prec, SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::ops::Range;
 use std::{io, mem, mem::size_of};
-use zerocopy::{FromBytes, Immutable, LE, Ref, U16, U32, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, Ref, U16, U32, U64};
 
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
@@ -213,8 +214,264 @@ make_index_trait! {
 impl NoHypNames for Option<SymbolNames<'_>> {}
 impl NoHypNames for Option<VarNames<'_>> {}
 
+impl<'a> Delimiters<'a> {
+  /// The left-delimiter bytes, each of which forces a token split *after* it.
+  #[must_use]
+  pub fn left(&self) -> &'a [u8] { self.left }
+  /// The right-delimiter bytes, each of which forces a token split *before* it.
+  #[must_use]
+  pub fn right(&self) -> &'a [u8] { self.right }
+  /// Whether byte `c` is a left delimiter (a token boundary follows it).
+  #[must_use]
+  pub fn is_left(&self, c: u8) -> bool { self.left.contains(&c) }
+  /// Whether byte `c` is a right delimiter (a token boundary precedes it).
+  #[must_use]
+  pub fn is_right(&self, c: u8) -> bool { self.right.contains(&c) }
+}
+
+make_index_trait! {
+  [<'a>, Delimiters, HasDelimiters, NoDelimiters, get_delimiters, get_delimiters_mut]
+}
+impl NoDelimiters for Option<SymbolNames<'_>> {}
+impl NoDelimiters for Option<VarNames<'_>> {}
+impl NoDelimiters for Option<HypNames<'_>> {}
+impl NoSymbolNames for Option<Delimiters<'_>> {}
+impl NoVarNames for Option<Delimiters<'_>> {}
+impl NoHypNames for Option<Delimiters<'_>> {}
+
+/// One literal of a notation, as stored in the [`Notations`] table. See the "Nota"
+/// section of `mm0-c/mmb.md`.
+#[derive(Debug, Clone, Copy)]
+pub enum NotaLit<'a> {
+  /// A constant token, printed verbatim.
+  Const(&'a str),
+  /// The `idx`th argument of the term, printed at precedence `prec`.
+  Var {
+    /// The argument index.
+    idx: u8,
+    /// The precedence to print the argument at.
+    prec: Prec,
+  },
+}
+
+/// The fixed-size header of a `nota` entry in the notation table, followed by
+/// `num_lits` four-byte literals. See the "Nota" section of `mm0-c/mmb.md`.
+#[repr(C, align(4))]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+struct NotaEntry {
+  /// The term this notation applies to.
+  term: U32<LE>,
+  /// The precedence of the notation, or `0xFFFF` for `max`.
+  prec: U16<LE>,
+  /// The number of literals following the header.
+  num_lits: u8,
+  /// Padding.
+  reserved: u8,
+}
+
+/// A handle to one notation entry in the [`Notations`] table: the notation for a
+/// single term, as the literals to print in order. See the "Nota" section of
+/// `mm0-c/mmb.md`.
+#[derive(Debug, Clone, Copy)]
+pub struct NotaRef<'a> {
+  /// The term this notation applies to.
+  pub term: TermId,
+  /// The precedence of the notation as a whole.
+  pub prec: Prec,
+  /// The `num_lits` four-byte literals.
+  lits: &'a [u8],
+  /// The overflow area from this entry's first long constant onwards. The `n`th
+  /// `0xFF` literal in `lits` names the `n`th string here.
+  overflow: &'a [u8],
+}
+
+// The 4-byte code for a variable literal, and the byte that starts an overflow
+// constant. Neither can begin an inline constant, whose first byte is the first
+// byte of a token — a non-empty UTF-8 string, so never `0x00` and never `0xFF`.
+const NOTA_VAR: u8 = 0x00;
+const NOTA_OVERFLOW: u8 = 0xFF;
+
+impl<'a> NotaRef<'a> {
+  /// `true` if this entry is a coercion, which has no literals and prints as its
+  /// single argument at the caller's precedence.
+  #[must_use]
+  pub fn is_coercion(&self) -> bool { self.lits.is_empty() }
+
+  /// Iterate the literals of the notation, in print order.
+  #[must_use]
+  pub fn lits(&self) -> NotaLitIter<'a> {
+    NotaLitIter { lits: self.lits, overflow: self.overflow }
+  }
+}
+
+/// An iterator over the literals of a [`NotaRef`].
+#[derive(Debug, Clone)]
+pub struct NotaLitIter<'a> {
+  lits: &'a [u8],
+  overflow: &'a [u8],
+}
+
+impl<'a> Iterator for NotaLitIter<'a> {
+  type Item = NotaLit<'a>;
+  fn next(&mut self) -> Option<NotaLit<'a>> {
+    let (lit, rest) = self.lits.split_first_chunk::<4>()?;
+    self.lits = rest;
+    Some(match lit[0] {
+      NOTA_VAR => NotaLit::Var {
+        idx: lit[1],
+        prec: u16_to_prec(u16::from_le_bytes([lit[2], lit[3]])),
+      },
+      NOTA_OVERFLOW => {
+        // The next overflow string; advance past it so the following `0xFF` takes
+        // the one after.
+        let (s, rest) = cstr_from_bytes_prefix(self.overflow)?;
+        self.overflow = rest;
+        NotaLit::Const(s.to_str().ok()?)
+      }
+      _ => {
+        // Inline: the token is up to 4 bytes, NUL-padded. A 4-byte token fills the
+        // field with no terminator.
+        let end = memchr::memchr(0, lit).unwrap_or(4);
+        NotaLit::Const(std::str::from_utf8(&lit[..end]).ok()?)
+      }
+    })
+  }
+}
+
+/// `0xFFFF` is the on-disk encoding of `max`; every other value is a finite
+/// precedence.
+fn u16_to_prec(n: u16) -> Prec {
+  if n == u16::MAX { Prec::Max } else { Prec::Prec(n.into()) }
+}
+
+/// This index subcomponent supplies notations for terms, for printing expressions
+/// the way the source wrote them. See the "Nota" section of `mm0-c/mmb.md`.
+#[derive(Debug, Clone, Copy)]
+pub struct Notations<'a> {
+  /// The `nota` entries, variable length, walked in order.
+  notas: &'a [u8],
+  /// The overflow area: the tokens too long to store inline.
+  overflow: &'a [u8],
+}
+
+impl<'a> MmbIndexBuilder<'a> for Option<Notations<'a>> {
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    if e.id == cmd::INDEX_NOTATION {
+      let base = u64_as_usize(e.ptr);
+      let (p_overflow, _) = Ref::<_, U64<LE>>::from_prefix(
+        f.buf.get(base..).ok_or_else(|| f.bad_index_parse())?,
+      ).map_err(|_| f.bad_index_parse())?;
+      let ov = u64_as_usize(*p_overflow);
+      let notas = f.buf.get(base + 8..ov).ok_or_else(|| f.bad_index_parse())?;
+      let overflow = f.buf.get(ov..).ok_or_else(|| f.bad_index_parse())?;
+      if self.replace(Notations { notas, overflow }).is_some() {
+        return Err(ParseError::DuplicateIndexTable {
+          p_index: u64_as_usize(f.header.p_index),
+          id: e.id,
+        })
+      }
+    }
+    Ok(())
+  }
+}
+
+impl<'a> Notations<'a> {
+  /// Iterate every notation entry, in declaration order.
+  #[must_use]
+  pub fn iter(&self) -> NotaIter<'a> {
+    NotaIter { notas: self.notas, overflow: self.overflow }
+  }
+}
+
+impl<'a> IntoIterator for &Notations<'a> {
+  type Item = NotaRef<'a>;
+  type IntoIter = NotaIter<'a>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    self.iter()
+  }
+}
+
+/// An iterator over the entries of a [`Notations`] table.
+#[derive(Debug, Clone)]
+pub struct NotaIter<'a> {
+  notas: &'a [u8],
+  overflow: &'a [u8],
+}
+
+impl<'a> Iterator for NotaIter<'a> {
+  type Item = NotaRef<'a>;
+  fn next(&mut self) -> Option<NotaRef<'a>> {
+    let (hd, rest) = Ref::<_, NotaEntry>::from_prefix(self.notas).ok()?;
+    let term = TermId(hd.term.get());
+    let prec = u16_to_prec(hd.prec.get());
+    let (lits, rest) = rest.split_at_checked(4 * usize::from(hd.num_lits))?;
+    self.notas = rest;
+    let overflow = self.overflow;
+    for lit in lits.as_chunks::<4>().0 {
+      if lit[0] == NOTA_OVERFLOW {
+        self.overflow = cstr_from_bytes_prefix(self.overflow)?.1;
+      }
+    }
+    Some(NotaRef { term, prec, lits, overflow })
+  }
+}
+
+make_index_trait! {
+  [<'a>, Notations, HasNotations, NoNotations, get_notations, get_notations_mut]
+}
+impl NoNotations for Option<SymbolNames<'_>> {}
+impl NoNotations for Option<VarNames<'_>> {}
+impl NoNotations for Option<HypNames<'_>> {}
+impl NoNotations for Option<Delimiters<'_>> {}
+impl NoSymbolNames for Option<Notations<'_>> {}
+impl NoVarNames for Option<Notations<'_>> {}
+impl NoHypNames for Option<Notations<'_>> {}
+impl NoDelimiters for Option<Notations<'_>> {}
+
+/// Split a byte slice at the first `0`, returning the bytes before it and the
+/// bytes after it. `None` if there is no `0`; every list in the `Delm` table is
+/// terminated by one.
+fn split_nul(data: &[u8]) -> Option<(&[u8], &[u8])> {
+  let i = data.iter().position(|&b| b == 0)?;
+  Some((&data[..i], &data[i + 1..]))
+}
+
+/// This index subcomponent supplies the delimiter bytes for tokenizing math
+/// strings — spacing printed notation, and, with [`Notations`], reading it back.
+/// See the "Delm" section of `mm0-c/mmb.md`.
+#[derive(Debug, Clone, Copy)]
+pub struct Delimiters<'a> {
+  /// The left-delimiter bytes: a token boundary follows each.
+  left: &'a [u8],
+  /// The right-delimiter bytes: a token boundary precedes each.
+  right: &'a [u8],
+}
+
+impl<'a> MmbIndexBuilder<'a> for Option<Delimiters<'a>> {
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    if e.id == cmd::INDEX_DELIMITER {
+      let base = u64_as_usize(e.ptr);
+      let data = f.buf.get(base..).ok_or_else(|| f.bad_index_parse())?;
+      // Two `0`-terminated byte runs: `left`, then `right`.
+      let (left, rest) = split_nul(data).ok_or_else(|| f.bad_index_parse())?;
+      let (right, _) = split_nul(rest).ok_or_else(|| f.bad_index_parse())?;
+      if self.replace(Delimiters { left, right }).is_some() {
+        return Err(ParseError::DuplicateIndexTable {
+          p_index: u64_as_usize(f.header.p_index),
+          id: e.id,
+        })
+      }
+    }
+    Ok(())
+  }
+}
+
 /// A basic index, usable for getting names of declarations and variables.
-pub type BasicIndex<'a> = (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
+pub type BasicIndex<'a> = (
+  Option<SymbolNames<'a>>,
+  (Option<VarNames<'a>>, (Option<HypNames<'a>>, (Option<Delimiters<'a>>, Option<Notations<'a>>))),
+);
 
 /// Parse a single command.
 ///
@@ -1028,6 +1285,26 @@ impl<'a, X: HasHypNames<'a>> MmbFile<'a, X> {
       Sort { .. } | TermDef { .. } => HypListRef::new(self.buf),
       Axiom { thm_id } | Thm { thm_id, .. } => self.thm_hyps(thm_id),
     }
+  }
+}
+
+impl<'a, X: HasDelimiters<'a>> MmbFile<'a, X> {
+  /// The delimiter characters for tokenizing math strings, or `None` if the index
+  /// has no `Delm` table. See [`Delimiters`] and the "Delm" section of
+  /// `mm0-c/mmb.md`.
+  #[must_use]
+  pub fn delimiters(&self) -> Option<Delimiters<'a>> {
+    self.index.get_delimiters().copied()
+  }
+}
+
+impl<'a, X: HasNotations<'a>> MmbFile<'a, X> {
+  /// Iterate the notation entries, or `None` if the index does not exist. The
+  /// entries are in declaration order, one per notation, and a term with several
+  /// appears once for each; the first entry for a term is the one MM1 prints with.
+  #[must_use]
+  pub fn notations(&self) -> Option<NotaIter<'a>> {
+    Some(self.index.get_notations()?.iter())
   }
 }
 

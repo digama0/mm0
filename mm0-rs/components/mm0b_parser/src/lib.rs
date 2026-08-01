@@ -157,6 +157,10 @@ pub mod cmd {
   pub const INDEX_VAR_NAME: [u8; 4] = *b"VarN";
   /// `"HypN"` is the magic number for the hypothesis name table.
   pub const INDEX_HYP_NAME: [u8; 4] = *b"HypN";
+  /// `"Nota"` is the magic number for the notation table.
+  pub const INDEX_NOTATION: [u8; 4] = *b"Nota";
+  /// `"Delm"` is the magic number for the delimiter table.
+  pub const INDEX_DELIMITER: [u8; 4] = *b"Delm";
 }
 
 #[inline]

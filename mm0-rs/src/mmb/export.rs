@@ -6,9 +6,9 @@ use byteorder::{LE, ByteOrder, WriteBytesExt};
 use mm0b_parser::MAX_BOUND_VARS;
 use zerocopy::{IntoBytes, LE as ZLE, U32, U64};
 use crate::{
-  Type, SortId, AtomId, AtomVec, TermKind, ThmKind,
+  ArcString, Type, SortId, AtomId, AtomVec, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers,
-  FrozenEnv, FileRef, LinedString, ErrorLevel};
+  FrozenEnv, FileRef, LinedString, ErrorLevel, Literal, Prec};
 
 #[allow(clippy::wildcard_imports)]
 use mm0b_parser::{ProofCmd, UnifyCmd, cmd::*, write_cmd_bytes};
@@ -242,6 +242,25 @@ struct IndexTemp {
   thm_names: Vec<((NameData, VarData), VarData)>,
 }
 
+/// One literal of a notation, ready to write. See the "Nota" section of `mm0-c/mmb.md`.
+#[allow(variant_size_differences)]
+enum NotaLitOut<'a> {
+  /// A constant token. Written inline if at most 4 bytes, else to the overflow area.
+  Const(&'a ArcString),
+  /// A variable: the argument index and the precedence to print it at (`0xFFFF` = `max`).
+  Var(u8, u16),
+}
+
+/// `0xFFFF` encodes `max`; a finite precedence must be strictly below it, both so
+/// the two do not collide and because that is far above any precedence MM0 uses.
+/// Returns `None` for a precedence that cannot be represented in the table.
+fn prec_to_u16(p: Prec) -> Option<u16> {
+  match p {
+    Prec::Max => Some(u16::MAX),
+    Prec::Prec(n) => u16::try_from(n).ok().filter(|&n| n != u16::MAX),
+  }
+}
+
 impl<'a, W: Write + Seek> Exporter<'a, W> {
   /// Construct a new [`Exporter`] from an input file `file` with text `source`,
   /// a source environment containing proved theorems, and output writer `w`.
@@ -256,6 +275,10 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       term_reord: TermVec(Vec::with_capacity(env.terms().len())),
       file, source, env, report, w, pos: 0, fixups: vec![]
     }
+  }
+
+  fn write_u16(&mut self, n: u16) -> io::Result<()> {
+    WriteBytesExt::write_u16::<LE>(self, n)
   }
 
   fn write_u32(&mut self, n: u32) -> io::Result<()> {
@@ -706,8 +729,98 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       let p_hyps = self.pos;
       for (_, hs) in &thm_names { self.write_u64(hs.p_vars)? }
 
+      // The delimiter table: the left-delimiter bytes, then the right, each run
+      // ended by a `0` — never a delimiter, so an unambiguous terminator.
+      let p_delm = self.pos;
+      let pe = self.env.pe();
+      for c in 0..=u8::MAX {
+        if pe.delims_l.get(c) { self.write_u8(c)? }
+      }
+      self.write_u8(0)?;
+      for c in 0..=u8::MAX {
+        if pe.delims_r.get(c) { self.write_u8(c)? }
+      }
+      self.write_u8(0)?;
+
+      // The notation table: a header pointing past the entries to the overflow
+      // area, the variable-length entries, then the long tokens as plain strings.
+      self.align_to(8)?;
+      let p_nota = self.pos;
+      let overflow_fixup = self.fixup64()?;
+      let mut overflow: Vec<&'a ArcString> = vec![];
+      for (term, _) in self.env.terms().enum_iter() {
+        let Some((coe, fix)) = pe.decl_nota.get(&term) else { continue };
+        if *coe {
+          self.write_u32(term.0)?;
+          self.write_u16(u16::MAX)?;
+          self.write_u8(0)?; // len 0 = coercion
+          self.write_u8(0)?; // reserved
+        }
+        'fix: for &(ref tk, infix) in fix {
+          macro_rules! skip { () => {{
+            (self.report)(ErrorLevel::Warning,
+              &format!("notation for '{tk}' does not fit the mmb index and was omitted"));
+            continue 'fix
+          }}}
+          let info = if infix { &pe.infixes[tk] } else { &pe.prefixes[tk] };
+          let Some(prec) = pe.consts.get(tk).and_then(|&(_, p)| prec_to_u16(p)) else { skip!() };
+          let mut lits = vec![];
+          // A prefix's leading constant is not in `info.lits`; an infix's is.
+          if !infix { lits.push(NotaLitOut::Const(tk)) }
+          for lit in &info.lits {
+            match *lit {
+              Literal::Const(ref s) => lits.push(NotaLitOut::Const(s)),
+              Literal::Var(idx, p) => match (u8::try_from(idx), prec_to_u16(p)) {
+                (Ok(idx), Some(p)) => lits.push(NotaLitOut::Var(idx, p)),
+                _ => skip!()
+              },
+            }
+          }
+          let Some(num_lits) = u8::try_from(lits.len()).ok() else { skip!() };
+          self.write_u32(term.0)?;
+          self.write_u16(prec)?;
+          self.write_u8(num_lits)?;
+          self.write_u8(0)?; // reserved
+          for lit in lits {
+            match lit {
+              NotaLitOut::Var(idx, prec) => {
+                self.write_u8(0)?;
+                self.write_u8(idx)?;
+                self.write_u16(prec)?;
+              }
+              // Up to 4 bytes go inline, NUL-padded; a 4-byte token has no terminator.
+              NotaLitOut::Const(s) if s.len() <= 4 => {
+                let mut buf = [0u8; 4];
+                buf[..s.len()].copy_from_slice(s);
+                self.write_all(&buf)?;
+              }
+              // Longer tokens are marked `0xFF` and named by position in the overflow area.
+              NotaLitOut::Const(s) => {
+                self.write_all(&[0xFF, 0, 0, 0])?;
+                overflow.push(s);
+              }
+            }
+          }
+        }
+      }
+      overflow_fixup.commit(self); // p_overflow = start of the overflow area
+      for s in &overflow {
+        self.write_all(s)?;
+        self.write_u8(0)?;
+      }
+      self.write_u8(0)?; // the empty string that ends the overflow list
+
+      // The tables end on an arbitrary byte, but the index table is `align(8)`
+      // (`TableEntry` holds a `u64`), which the earlier tables got for free by
+      // ending on `u64` writes.
+      self.align_to(8)?;
       p_index.commit(self);
-      let index = [(INDEX_NAME, p_names), (INDEX_VAR_NAME, p_vars), (INDEX_HYP_NAME, p_hyps)];
+      // Each entry is `(magic, data, ptr)`; `data` is `0` except the `Lisp` table's
+      // format version.
+      let index = vec![
+        (INDEX_NAME, p_names), (INDEX_VAR_NAME, p_vars), (INDEX_HYP_NAME, p_hyps),
+        (INDEX_DELIMITER, p_delm), (INDEX_NOTATION, p_nota),
+      ];
       self.write_u64(index.len() as u64)?;
       for (name, ptr) in &index {
         self.write_all(name)?;
