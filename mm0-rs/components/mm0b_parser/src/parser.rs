@@ -882,6 +882,11 @@ impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
   /// Parse a [`MmbFile`] from a file, provided as a byte slice.
   /// This does the minimum checking to construct the parsed object,
   /// it is not a verifier.
+  ///
+  /// `buf` must be **8-byte aligned**, since [`Header`] is `align(8)`; otherwise
+  /// this returns [`ParseError::Unaligned`]. A `Vec<u8>` from `fs::read` is
+  /// suitably aligned in practice, but a subslice at an arbitrary offset, or a
+  /// short array literal, may not be — wrap such data in an `align(8)` struct.
   pub fn parse(buf: &'a [u8]) -> Result<Self, ParseError> {
     use ParseError::{BadIndexParse, BadSorts, BadTerms, BadThms};
     let (zc_header, sorts) =
