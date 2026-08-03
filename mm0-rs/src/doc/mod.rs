@@ -752,7 +752,7 @@ impl Args {
   /// - `doc` is the output folder, which will be created if not present.
   pub fn main(self) -> io::Result<()> {
     let path: FileRef = fs::canonicalize(self.input)?.into();
-    let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
+    let (fc, old) = crate::compiler::elab_for_result(path.clone(), false)?;
     let old = old.unwrap_or_else(|| std::process::exit(1));
     println!("writing docs");
     let mut env = Environment::new();

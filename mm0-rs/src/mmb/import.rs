@@ -1,6 +1,9 @@
 //! Importer for MMB files into the [`Environment`].
 #![allow(clippy::or_fun_call)] // false positive: clippy#9608
 
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
@@ -520,6 +523,54 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   let base = fref.path().parent().unwrap_or_else(|| std::path::Path::new(""));
   crate::mmb::lisp::import::deserialize(env, &file, base)?;
   Ok(())
+}
+
+/// Read the `Deps` index table from the `.mmb` at `path`.
+///
+/// This is the transitive source-file closure recorded by a `--cache` build. Returns
+/// `None` if the file has no such table (a normal, non-cache export), or if it is
+/// unreadable or malformed. See [`INDEX_DEP`](mm0b_parser::cmd::INDEX_DEP).
+///
+/// The format is built for seeking, so this follows the pointers rather than reading the
+/// file: the header word at 32, the index it points at, then the dependency list. A
+/// cached `.mmb` is mostly proof stream, none of which the freshness check looks at.
+#[must_use] pub fn read_deps(path: &Path) -> Option<Vec<PathBuf>> {
+  /// Seek to `pos` and read the `u64` there.
+  fn word(f: &mut BufReader<File>, pos: u64) -> Option<u64> {
+    f.seek(SeekFrom::Start(pos)).ok()?;
+    let mut b = [0; 8];
+    f.read_exact(&mut b).ok()?;
+    Some(u64::from_le_bytes(b))
+  }
+
+  let mut f = BufReader::new(File::open(path).ok()?);
+  let len = f.get_ref().metadata().ok()?.len();
+  // `Header::p_index` is the `u64` at offset 32, or `0` for a file with no index.
+  let p_index = word(&mut f, 32)?;
+  if p_index == 0 { return None }
+  // The index is a `u64` count then that many 16 byte `(id: str4, data: u32, ptr: u64)`
+  // entries. Bound it by what the file can actually hold before allocating, then read it
+  // whole — it is a handful of entries — rather than seeking once per entry.
+  let count = usize::try_from(word(&mut f, p_index)?).ok()?;
+  let avail = usize::try_from(len.checked_sub(p_index + 8)?).ok()?;
+  let mut index = vec![0; count.checked_mul(16).filter(|&n| n <= avail)?];
+  f.read_exact(&mut index).ok()?;
+  let entry = index.as_chunks::<16>().0.iter().find(|e| e[..4] == mm0b_parser::cmd::INDEX_DEP)?;
+  let ptr = u64::from_le_bytes(entry[8..].try_into().expect("16 byte entry"));
+
+  // The table is a `u64` count then that many NUL-terminated paths, back to back. They
+  // have no length prefix, so read through each terminator in turn; a short file leaves
+  // the last read unterminated and fails here rather than yielding a truncated closure.
+  let n = usize::try_from(word(&mut f, ptr)?).ok()?;
+  let mut deps = Vec::with_capacity(n.min(4096));
+  let mut buf = Vec::new();
+  for _ in 0..n {
+    buf.clear();
+    f.read_until(0, &mut buf).ok()?;
+    if buf.pop() != Some(0) { return None }
+    deps.push(String::from_utf8_lossy(&buf).into_owned().into());
+  }
+  Some(deps)
 }
 
 /// Construct an [`Environment`] from an `mmb` file.

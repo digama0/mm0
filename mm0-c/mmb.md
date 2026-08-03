@@ -489,6 +489,7 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 | `"Delm" = 0x6D6C6544` | `0`    | `p64<delimiters>` | Delimiter characters for tokenization
 | `"Nota" = 0x61746F4E` | `0`    | `p64<notations>` | Notations for terms
 | `"Lisp" = 0x7073694C` | version| `p64<lisp_stream>` | Serialized global lisp definitions ([spec](../mm0-rs/mmb-lisp.md))
+| `"Deps" = 0x73706544` | `0`    | `p64<deps>`      | The source files this build depends on ([see below](#the-deps-table-build-dependencies))
 
 ## The `Name` table: names for statements
 
@@ -591,3 +592,15 @@ Note that the literals are the *whole* notation, including the leading or infix 
 ## The `Lisp` table: serialized global lisp definitions
 
 The `Lisp` table serializes the global lisp environment an `.mm1` file builds up — its `(def ...)`s, tables, and tactics — so that a file depending on it can be compiled without re-elaborating it. It is an `mm0-rs` extension: like the other index tables it is reached through `p_index` and a verifier such as `mm0-c` skips it, and unlike the [`Nota`](#the-nota-table-notations-for-terms) table it versions independently, through its `index_entry`'s `data` field. Its format is specified separately, in [`mm0-rs/mmb-lisp.md`](../mm0-rs/mmb-lisp.md).
+
+## The `Deps` table: build dependencies
+
+The `Deps` table lists the source files this build depends on, so a build cache can decide whether a cached `.mmb` is still current without re-elaborating: if the `.mmb` is older than any listed source, it is stale and must be rebuilt. It is written by `mm0-rs --cache`, and like the other index tables a verifier ignores it.
+
+`sizeof(deps)` varies; `align(deps) = 1; deps =`
+| Field      | Type               | Description
+| ---------- | ------------------ | -----------
+| `num_deps` | `u64`              | The number of dependency paths
+| `paths`    | `[cstr; num_deps]` | The dependency source paths, stored back to back
+
+Each path is a UTF-8 NUL-terminated path to a source file, stored relative to this `.mmb`'s own directory (the same convention as an `import "a/b.mm1"`, which is resolved against the importing file's directory) and localized against it on read. The list is the *transitive* closure of the build — the file's own source, plus every source reachable through its `import`s — so that one mtime comparison against the whole list catches a change anywhere in the dependency graph.

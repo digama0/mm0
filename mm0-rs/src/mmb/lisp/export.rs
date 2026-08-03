@@ -1011,11 +1011,26 @@ impl<'a> Emitter<'a> {
   }
 }
 
+/// The name of the first global the exporter cannot encode, if any.
+///
+/// [`serialize`] omits such globals with a warning, which is fine for a debugging index
+/// but not for a build cache: a dependent loading the file would silently be missing
+/// definitions. `--cache` checks this first and declines to build the file at all.
+#[must_use]
+pub fn first_unsupported(env: &FrozenEnv) -> Option<ArcString> {
+  for (_, adata) in env.data().enum_iter() {
+    if let Some(data) = adata.lisp() {
+      if !supported(data) { return Some(adata.name().clone()) }
+    }
+  }
+  None
+}
+
 /// Serialize an environment's global lisp definitions to a value stream.
 ///
 /// Span file paths are written relative to `base`, the output file's directory. Globals
 /// whose value the exporter cannot yet encode (containing a `Dyn` procedure) are skipped
-/// with a warning via `report`.
+/// and reported via `report` — see [`first_unsupported`].
 #[must_use]
 pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> Vec<u8> {
   let mut de = Dedup::new(env);

@@ -2,7 +2,7 @@
 //! [`Environment`](crate::Environment) object.
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use mm0b_parser::MAX_BOUND_VARS;
 use zerocopy::{IntoBytes, LE as ZLE, U32, U64};
@@ -55,6 +55,9 @@ pub struct Exporter<'a, W> {
   /// than the current writer location. We buffer these to avoid too many seeks
   /// of the underlying writer.
   fixups: Vec<(u64, Value)>,
+  /// The source files this build (transitively) depends on, written to the `Deps` index
+  /// table for the `--cache` freshness check. `None` for a normal (non-cache) export.
+  deps: Option<Vec<PathBuf>>,
 }
 
 impl<W: std::fmt::Debug> std::fmt::Debug for Exporter<'_, W> {
@@ -274,9 +277,13 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   ) -> Self {
     Self {
       term_reord: TermVec(Vec::with_capacity(env.terms().len())),
-      file, source, env, report, w, pos: 0, fixups: vec![]
+      file, source, env, report, w, pos: 0, fixups: vec![], deps: None
     }
   }
+
+  /// Record the build's transitive source dependencies, to be written to the `Deps`
+  /// index table (only meaningful with the index, i.e. `run(true)`). Used by `--cache`.
+  pub fn set_deps(&mut self, deps: Vec<PathBuf>) { self.deps = Some(deps); }
 
   fn write_u16(&mut self, n: u16) -> io::Result<()> {
     WriteBytesExt::write_u16::<LE>(self, n)
@@ -811,9 +818,9 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       }
       self.write_u8(0)?; // the empty string that ends the overflow list
 
-      // Paths in the file (span files) are stored relative to the file's own directory,
-      // so it stays relocatable and is localized on import like an `import "a/b.mm1"` is
-      // resolved against the importing file's directory.
+      // Paths in the file (span files, dependencies) are stored relative to the file's
+      // own directory, so it stays relocatable and is localized on import like an
+      // `import "a/b.mm1"` is resolved against the importing file's directory.
       let base = self.file.path().parent().unwrap_or_else(|| Path::new("")).to_owned();
 
       // The `Lisp` table: the serialized global lisp environment (see
@@ -827,6 +834,19 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         |msg| (*self.report)(ErrorLevel::Info, msg));
       self.write_all(&lisp)?;
 
+      // The `Deps` table (only under `--cache`): a `u64` count then that many
+      // NUL-terminated source paths (relative to `base`), the transitive dependencies.
+      let p_deps = self.pos;
+      let deps = mem::take(&mut self.deps);
+      if let Some(deps) = &deps {
+        self.write_u64(deps.len() as u64)?;
+        for dep in deps {
+          let rel = pathdiff::diff_paths(dep, &base).unwrap_or_else(|| dep.clone());
+          self.write_all(rel.to_string_lossy().as_bytes())?;
+          self.write_u8(0)?;
+        }
+      }
+
       // The tables end on an arbitrary byte, but the index table is `align(8)`
       // (`TableEntry` holds a `u64`), which the earlier tables got for free by
       // ending on `u64` writes.
@@ -834,11 +854,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       p_index.commit(self);
       // Each entry is `(magic, data, ptr)`; `data` is `0` except the `Lisp` table's
       // format version.
-      let index = [
+      let mut index = vec![
         (INDEX_NAME, 0, p_names), (INDEX_VAR_NAME, 0, p_vars), (INDEX_HYP_NAME, 0, p_hyps),
         (INDEX_DELIMITER, 0, p_delm), (INDEX_NOTATION, 0, p_nota),
         (INDEX_LISP, crate::mmb::lisp::VERSION, p_lisp),
       ];
+      if deps.is_some() { index.push((INDEX_DEP, 0, p_deps)) }
       self.write_u64(index.len() as u64)?;
       for &(name, data, ptr) in &index {
         self.write_all(&name)?;

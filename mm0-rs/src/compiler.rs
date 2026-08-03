@@ -21,7 +21,7 @@ use typed_arena::Arena;
 use mm1_parser::{parse, ErrorLevel, ParseError};
 use crate::elab::{ElabError, ElabErrorKind, ElabResult, ElaborateBuilder};
 use crate::{ArcList, FileRef, FileSpan, FrozenEnv, LinedString, MutexExt, Position, Range, Span};
-use crate::mmb::import::elab as mmb_elab;
+use crate::mmb::import::{elab as mmb_elab, read_deps};
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MmbExporter;
 
@@ -300,6 +300,77 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
   println!("{s}")
 }
 
+/// The sibling `.mmb` cache path for a source file.
+fn cache_path(src: &FileRef) -> PathBuf { src.path().with_extension("mmb") }
+
+/// The sibling `.mmb` of an imported `.mm1` to load in its place, if it is a usable and
+/// up-to-date cache: it must carry a `Deps` table (so it was built by `--cache`) and be
+/// at least as new as *every* source file that transitively went into it. Only `.mm1` is
+/// cached — a `.mm0` shares its stem with a companion `.mm1` and would collide.
+fn fresh_cache(src: &FileRef) -> Option<PathBuf> {
+  if !src.has_extension("mm1") { return None }
+  let mmb = cache_path(src);
+  let mmb_time = fs::metadata(&mmb).ok()?.modified().ok()?;
+  // Peek the recorded dependency closure (which includes `src` itself). No table means a
+  // non-cache build, whose dependencies are unknown — treat it as unusable.
+  let deps = read_deps(&mmb)?;
+  let dir = mmb.parent();
+  for rel in &deps {
+    // Paths are relative to the `.mmb`'s directory; resolve them there to stat them.
+    let dep = dir.map_or_else(|| rel.clone(), |d| d.join(rel));
+    if fs::metadata(&dep).ok()?.modified().ok()? > mmb_time { return None }
+  }
+  Some(mmb)
+}
+
+/// The transitive source-file closure of `src`'s build, as absolute paths: `src` itself,
+/// plus — for each direct import — that dependency's own recorded closure (read from its
+/// `.mmb`). The exporter stores each relative to the output file's directory. Returns
+/// `None` if a `.mm1` dependency has no readable `Deps` table, so `src` is left uncached
+/// rather than recording an unsound (incomplete) closure.
+fn dep_closure(src: &FileRef, imports: &[(Span, Vec<u8>)]) -> Option<Vec<PathBuf>> {
+  let mut set = std::collections::BTreeSet::new();
+  set.insert(src.path().clone());
+  let parent = src.path().parent();
+  for (_, f) in imports {
+    let f = std::str::from_utf8(f).ok()?;
+    let dep = parent.map_or_else(|| PathBuf::from(f), |p| p.join(f)).canonicalize().ok()?;
+    let is_mm1 = dep.extension().is_some_and(|e| e.eq_ignore_ascii_case("mm1"));
+    let dep_mmb = if is_mm1 { dep.with_extension("mmb") } else { dep.clone() };
+    set.insert(dep.clone());
+    match read_deps(&dep_mmb) {
+      // A dependency records its closure relative to its own `.mmb`'s directory; resolve
+      // those back to absolute for our (differently-based) closure.
+      Some(sub) => {
+        let dir = dep_mmb.parent();
+        set.extend(sub.iter().map(|rel| dir.map_or_else(|| rel.clone(), |d| d.join(rel))));
+      }
+      // A `.mm1` dependency must carry its own closure; a directly imported `.mmb` leaf
+      // (no table) contributes only itself, already inserted above.
+      None if is_mm1 => return None,
+      None => {}
+    }
+  }
+  Some(set.into_iter().collect())
+}
+
+/// Write `env` to the sibling `.mmb` cache of the `.mm1` `src`, with the debug index (so
+/// an importer recovers the whole environment, lisp globals included) and the `Deps`
+/// table recording `deps`, the build's transitive source closure.
+fn write_cache(src: &FileRef, source: Option<&LinedString>, env: &FrozenEnv, deps: Vec<PathBuf>)
+  -> io::Result<()> {
+  let mut report = |lvl: ErrorLevel, err: &str| {
+    if !QUIET.load(Ordering::Relaxed) {
+      println!("{}\n", Renderer::styled().render(lvl.to_annotation_type().title(err)));
+    }
+  };
+  let w = io::BufWriter::new(fs::File::create(cache_path(src))?);
+  let mut ex = MmbExporter::new(src.clone(), source, env, &mut report, w);
+  ex.set_deps(deps);
+  ex.run(true)?;
+  ex.finish()
+}
+
 /// Elaborate a file for an [`Environment`](crate::elab::environment::Environment) result.
 ///
 /// This is the main elaboration function, as an `async fn`. Given a `path`,
@@ -318,7 +389,14 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
 /// (**Note**: This can result in deadlock if the import graph has a cycle.)
 ///
 /// [`Ast`]: mm1_parser::Ast
-async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
+async fn elaborate(path: FileRef, rd: ArcList<FileRef>, cache: bool)
+  -> io::Result<ElabResult<()>>
+{
+  // An imported `.mm1` (not the top-level file, which has an empty reader stack) with a
+  // fresh sibling `.mmb` cache is loaded from that cache instead of being rebuilt.
+  let path = if cache && !rd.is_empty() {
+    fresh_cache(&path).map_or(path, FileRef::from)
+  } else { path };
   let (path, file) = VFS.get_or_insert(path)?;
   {
     let mut g = file.parsed.lock().await;
@@ -369,13 +447,40 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
           if rd.contains(&p) {
             send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
           } else {
-            POOL.spawn_ok(elaborate_and_send(p, send, rd.clone()));
+            POOL.spawn_ok(elaborate_and_send(p, send, rd.clone(), cache));
           }
           Ok(recv)
         },
         recv_goal: None,
       }.elab();
     let (cyc, _, errors, env) = fut.await;
+    // Cache a clean build to a sibling `.mmb` (top-level or dependency). Skip files with
+    // an error-level diagnostic: the environment may be incomplete (e.g. a def with no
+    // value), which the exporter cannot write. A `sorry` is only a warning and exports
+    // fine, so it is cached.
+    if cache && cyc.is_none() && path.has_extension("mm1")
+      && !errors.iter().any(|e| e.level == ErrorLevel::Error)
+    {
+      // A global the exporter cannot encode would be silently omitted, leaving a file
+      // that is fine as a debugging index but unusable as a cache — a dependent loading
+      // it would be missing definitions. Abort before building anything.
+      let decline = |why: String| {
+        if !QUIET.load(Ordering::Relaxed) { log_msg(format!("not caching {path}: {why}")) }
+      };
+      if let Some(name) = crate::mmb::lisp::export::first_unsupported(&env) {
+        decline(format!("global '{name}' cannot be serialized"));
+      } else if let Some(deps) = dep_closure(&path, &ast.imports) {
+        // Every direct dependency's `.mmb` already exists here — the elaboration awaited
+        // each one, and each wrote its cache first.
+        if let Err(e) = write_cache(&path, file.text.try_ascii().map(|fc| &**fc), &env, deps) {
+          decline(format!("cache write failed: {e}"));
+        }
+      } else {
+        // The dependency closure can't be made sound: a `.mm1` dependency was itself not
+        // cached, so it has no `Deps` table to union in.
+        decline("a dependency was not cached".to_string());
+      }
+    }
     (cyc, errors, env)
   };
   if !QUIET.load(Ordering::Relaxed) { log_msg(format!("elabbed {path}")) }
@@ -419,10 +524,11 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
 /// See [`elaborate`] for details on elaboration. This function encapsulates
 /// the `async fn` into a [`BoxFuture`], in order to avoid a recursion between
 /// this function and [`elaborate`] resulting in infinite sized futures.
-fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<FileRef>) ->
-  BoxFuture<'static, ()> {
-  async {
-    if let Ok(env) = elaborate(path, rd).await {
+fn elaborate_and_send(
+  path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<FileRef>, cache: bool
+) -> BoxFuture<'static, ()> {
+  async move {
+    if let Ok(env) = elaborate(path, rd, cache).await {
       drop(send.send(env));
     }
   }.boxed()
@@ -430,9 +536,11 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 
 /// Elaborate a file, and return the completed [`FrozenEnv`] result, along with the
 /// file contents.
-pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
+pub(crate) fn elab_for_result(
+  path: FileRef, cache: bool
+) -> io::Result<(FileContents, Option<FrozenEnv>)> {
   let (path, file) = VFS.get_or_insert(path)?;
-  let env = match block_on(elaborate(path, Default::default()))? {
+  let env = match block_on(elaborate(path, Default::default(), cache))? {
     ElabResult::Ok((), _, env) => Some(env),
     _ => None
   };
@@ -455,6 +563,10 @@ pub struct Args {
   /// Don't add debugging data to .mmb files
   #[clap(short, long)]
   pub strip: bool,
+  /// Cache each elaborated `.mm1` to a sibling `.mmb`
+  #[clap(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true,
+    default_value_t = false, default_missing_value = "true")]
+  pub cache: bool,
   /// Report error code 1 for warnings
   #[clap(short = 'W', long)]
   pub warn_as_error: bool,
@@ -481,7 +593,7 @@ impl Args {
   pub fn main(self) -> io::Result<()> {
     let path: FileRef = fs::canonicalize(self.input)?.into();
     QUIET.store(self.quiet, Ordering::Relaxed);
-    let (file, env) = elab_for_result(path.clone())?;
+    let (file, env) = elab_for_result(path.clone(), self.cache)?;
     let env = env.unwrap_or_else(|| std::process::exit(1));
     if let Some(s) = self.output_str {
       if let Err((fsp, e)) =

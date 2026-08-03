@@ -163,6 +163,9 @@ pub mod cmd {
   pub const INDEX_DELIMITER: [u8; 4] = *b"Delm";
   /// `"Lisp"` is the magic number for the serialized lisp table.
   pub const INDEX_LISP: [u8; 4] = *b"Lisp";
+  /// `"Deps"` is the magic number for the build-dependency table: the source files that
+  /// (transitively) went into this build, used by the `--cache` freshness check.
+  pub const INDEX_DEP: [u8; 4] = *b"Deps";
 }
 
 #[inline]
