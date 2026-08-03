@@ -2,7 +2,7 @@
 
 This document specifies the `Lisp` debugging-index table of the [MMB file format](../mm0-c/mmb.md). It is an extension used by `mm0-rs`, not part of what a verifier such as `mm0-c` checks: like the other index tables (`Name`, `VarN`, `Nota`) it lives off the file's `p_index` and a verifier skips it. Unlike those, it is not merely advisory to `mm0-rs`; it is what makes *separate compilation* possible. Compiling an `.mm1` file currently requires re-elaborating every file it depends on, because the global lisp environment those files build up (the `(def ...)`s, tables, and tactics they leave behind) lives only in memory. The `Lisp` table serializes that environment into the `.mmb` so a later file can load it directly.
 
-The table is a single stream, read once to rebuild the environment. A recursive-descent reader walks it: `read_value` reads one value and calls itself for that value's parts, so the encoding is *prefix* — a constructor precedes its children. Sharing is recovered by a heap with `Save`/`Ref`, as in the [proof stream](../mm0-c/mmb.md#proof-stream)'s DAG encoding, so a value is written once however often it is referenced; and because lisp values can hold mutable references, and so form *cycles*, `NewRef` installs a heap cell before reading its contents, letting a child point back at it. The top-level reader loops to `END`, reconstructing one global — a name and its value — per turn; a global needs no opcode of its own, since it begins with its name and a name can never be `END`.
+The table is a single stream, read once to rebuild the environment. A recursive-descent reader walks it: `read_value` reads one value and calls itself for that value's parts, so the encoding is *prefix* — a constructor precedes its children. Sharing is recovered by a heap with `Save`/`Ref`, as in the [proof stream](../mm0-c/mmb.md#proof-stream)'s DAG encoding, so a value is written once however often it is referenced; and because lisp values can hold mutable references, and so form *cycles*, `NewRef` installs a heap cell before reading its contents, letting a child point back at it. The top-level reader loops to `END`, reconstructing the *statement trace* — the source order of the file's sorts, terms, theorems and lisp globals — and supplying for each declaration the metadata the proof stream does not carry: its doc comment, its source span, and whether a `def` was `abstract`.
 
 [`LispData`]: https://github.com/digama0/mm0/blob/master/mm0-rs/src/elab/environment.rs
 
@@ -44,24 +44,53 @@ As with `uleb` this minimal form is what a writer emits, and longer sign-extende
 
 ## The value stream
 
-`val_stream` is an unaligned stream of `(cmd, data)` pairs, in the same [command encoding](../mm0-c/mmb.md#encoding-and-types) as the proof stream. It is read by three mutually recursive functions over the byte cursor: `read_globals` at the top level, `read_value` for one value, and [`read_ir`](#the-ir-sub-stream) for one lambda-code instruction. The encoding is recursive-descent and *prefix* — a command precedes its children, each read by a recursive call — and a byte's meaning is fixed by which function is reading it, so the three opcode spaces are independent. Sharing is by a heap `H`, initially empty: some reads *save* their result, appending it at the next index (from `0`), and a later `Ref i` returns `H[i]`.
+`val_stream` is an unaligned stream of `(cmd, data)` pairs, in the same [command encoding](../mm0-c/mmb.md#encoding-and-types) as the proof stream. It is read by three mutually recursive functions over the byte cursor: `read_stmts` at the top level, `read_value` for one value, and [`read_ir`](#the-ir-sub-stream) for one lambda-code instruction. The encoding is recursive-descent and *prefix* — a command precedes its children, each read by a recursive call — and a byte's meaning is fixed by which function is reading it, so the three opcode spaces are independent. Sharing is by a heap `H`, initially empty: some reads *save* their result, appending it at the next index (from `0`), and a later `Ref i` returns `H[i]`.
 
-### `read_globals`
+### `read_stmts`
 
-The top level reads one global per turn until `END` (`0x00`). A global has no introducing opcode — it is a fixed record whose first field is the name, a `read_value` yielding an atom, so its first byte is a value opcode, never `0x00`; a `0x00` there is therefore unambiguously `END`. One other command may appear at this level, distinguished from a name by its opcode: `SetWeak i` (`0x1C`), which reads a `value` and stores a weak link to it in the `ref!` cell `H[i]`. These are emitted after every global (once every target has been written), to fill the weak-reference cells that [`NewRef` set up](#references-and-cycles).
+The top level reconstructs the *statement trace*: the order in which an `.mm1` declared its sorts, terms, theorems and global lisp definitions. The proof stream already carries the declarations themselves, but not their source metadata — the doc comment, the source span, and whether a `def` was `abstract` — nor where the `do` blocks that produced the lisp globals sat among them. This table supplies both, one entry per statement, in trace order, until `END` (`0x00`).
+
+A declaration entry says nothing about *which* declaration it describes. It does not need to: the exporter writes the proof stream by walking this same trace, so the two agree on the sequence of declarations, and a reader that walks them together knows each entry's kind and id already. An entry therefore just consumes the next declaration. A table whose declaration count differs from the proof stream's is malformed.
+
+A global has no introducing opcode — it is a fixed record whose first field is the name, a `read_value` yielding an atom, so its first byte is a value opcode, never `0x00`; a `0x00` there is unambiguously `END`. The other commands are distinguished from a name by their opcodes, all of which lie above the value opcodes (`0x1B` is the highest a `value` can begin with):
+
+| Name         | Value  | `data`  | Reads                                | Effect
+| ------------ | ------ | ------- | ------------------------------------ | ------
+| ~~`END`~~    | `0x00` | `0`     |                                      | not a statement; ends the table
+| *(a global)* |        |         | the record below                     | a global lisp definition
+| `SetWeak`    | `0x1C` | `i`     | `value`                              | not a statement; fills the `ref!` cell `H[i]` with a weak link
+| `Decl`       | `0x1D` | `flags` | `full, span, doc: value`    | the next declaration; `flags` bit `0` marks an `abstract` def
+| `Decls`      | `0x1E` | `n`     |                                      | the next `n` declarations, with no span and no doc
+| `Spans`      | `0x1F` | `n`     | `full, span: value`, `[uleb; 4n]`    | a run of `n+1` declarations with sequential spans and no doc
+
+`SetWeak`s are emitted after every statement, once every target has been written, to fill the weak-reference cells that [`NewRef` set up](#references-and-cycles).
+
+A global's record is:
 
 | Field      | Type          | Note
 | ---------- | ------------- | ----
-| `name`     | `value`       | an atom; also what distinguishes a global from `END` / `SetWeak`
+| `name`     | `value`       | an atom; also what distinguishes a global from `END` and the commands above
 | `lo`, `hi` | `u32`, `u32`  | the name's byte range within its file
 | `value`    | `value`       | the value bound to the name
 | `span`     | `value`       | the source `FileSpan`, or `#undef`
 | `merge`    | `value`       | the merge strategy, or `#undef`
 | `doc`      | `value`       | the doc string, or `#undef`
 
+A `Decl`'s `span` is the declaration's *name* as a `FileSpan`, and `full` bounds the whole declaration — every modifier through the semicolon — in that same file, which a reader must check. `full` comes first because it is the one that fixes the file; `span` then names it again by `Ref`. Both are needed: the name span is what a jump-to-definition lands on, and the full span is the range an editor highlights and the doc generator renders from source. A `Spans` run opens with this same pair, so the two are read by the same code.
+
+<a id="spans-runs"></a>Most declarations have a span and no doc comment, so `Spans` encodes them by their structure instead of one record each. The four positions of a declaration nest,
+
+    full.lo <= span.lo < span.hi <= full.hi
+
+and consecutive declarations in one file do not overlap, so a run of them is a single ascending sequence of positions. `Spans` writes the first declaration in full — the same `full, span` pair a lone `Decl` carries — and then a `uleb` per position thereafter, each the gap from the position before it, in the order `full.lo`, `span.lo`, `span.hi`, `full.hi`. The `data` field is the number of further declarations `n`, so the run is `4n` deltas long. It cannot instead be closed by an `END`: a delta is a raw `uleb`, and any byte whose low six bits are zero — `0x40` is a delta of 64 — would read as an `END` command. Every delta is a local gap: the two inside a declaration are a keyword and a name, and the two between them are the tail of one declaration and the whitespace before the next.
+
+A run is confined to one file and to ascending positions, since it carries neither. A `.mmb` holds the declarations of the file's imports as well as its own, so a writer starts a new run wherever the source file changes, and wherever a position would go backwards.
+
+Neither `Decls` nor `Spans` can carry a doc comment or the `abstract` flag, so a documented or abstract declaration is written as its own `Decl` and interrupts the run. Both are rare next to the bulk of a library, which is what makes the runs worth having.
+
 ### `read_value`
 
-`read_value` reads one value (or `END`): a command, and for a constructor a recursive call per child. Some reads *save*: `Atom`, `String`, and `Span` always do — a symbol, string, or span recurs constantly, so each is written once and reached again by `Ref` — and `Save` saves the one value after it, `ListSave`/`DottedListSave` fusing the save of a freshly read list. There is no string or number pool; the heap is one. Any value may also be saved by prefixing `Save` to it, and that is the only way the rules with no save of their own reach the heap. Small values like `#undef`, `#t` and `#f`, `BuiltinProc` and small numbers are not saved even if shared, since repeating them costs less than referencing them. `List`, `DottedList`, and `Map` read their children until `END` (`0x00`) — a value never begins with `0x00`, so a parent peeks for it, just as `read_globals` does — rather than counting them. And `Code` reads a lambda's *core* — its arity spec and its body ([`read_code`](#the-ir-sub-stream)) — and saves it, so the core a literal shares with the closures made from it is written once and reached by `Ref`.
+`read_value` reads one value (or `END`): a command, and for a constructor a recursive call per child. Some reads *save*: `Atom`, `String`, and `Span` always do — a symbol, string, or span recurs constantly, so each is written once and reached again by `Ref` — and `Save` saves the one value after it, `ListSave`/`DottedListSave` fusing the save of a freshly read list. There is no string or number pool; the heap is one. Any value may also be saved by prefixing `Save` to it, and that is the only way the rules with no save of their own reach the heap. Small values like `#undef`, `#t` and `#f`, `BuiltinProc` and small numbers are not saved even if shared, since repeating them costs less than referencing them. `List`, `DottedList`, and `Map` read their children until `END` (`0x00`) — a value never begins with `0x00`, so a parent peeks for it, just as `read_stmts` does — rather than counting them. And `Code` reads a lambda's *core* — its arity spec and its body ([`read_code`](#the-ir-sub-stream)) — and saves it, so the core a literal shares with the closures made from it is written once and reached by `Ref`.
 
 The recursion here describes the *grammar*, not the implementation: values may nest arbitrarily deep, so a reader (and a writer) must take care to avoid stack overflow in the below recursive implementations of `read_value` and `read_code`.
 
@@ -97,6 +126,9 @@ Each command's arguments follow it in the order shown under **Reads**, each writ
 | `Goal`           | `0x1A` | `0`    |   | `value`                        | a goal
 | `DeadWeak`       | `0x1B` | `0`    |   |                                | a weak reference with no target
 | ~~`SetWeak`~~    | `0x1C` | `i`    |   | `value`                        | not a value; sets weak ref `H[i]` to `value`
+| ~~`Decl`~~       | `0x1D` | flags  |   | `full, span, doc: value`       | not a value; the next declaration; `flags` bit `0` marks an `abstract` def
+| ~~`Decls`~~      | `0x1E` | `n`    |   |                                | not a value; the next `n` declarations, with no span and no doc
+| ~~`Spans`~~      | `0x1F` | `n`    |   | `full, span: value`, `[uleb; 4n]` | not a value; a run of `n+1` declarations with sequential spans and no doc
 
 The **Save** (**S**) column specifies when a saving command takes its heap index, relative to its arguments: → afterwards, ← beforehand, empty for not at all. Every saving command is → except `NewRef`, which pre-initializes the cell so that it can encode [a cycle](#references-and-cycles). The → on `Atom`, `AtomZ`, `String` and `StringZ` is nominal, since they have no contents to be after.
 

@@ -38,6 +38,9 @@ mod op {
   pub(super) const GOAL: u8 = 0x1A;
   pub(super) const DEAD_WEAK: u8 = 0x1B;
   pub(super) const SET_WEAK: u8 = 0x1C;
+  pub(super) const DECL: u8 = 0x1D;
+  pub(super) const DECLS: u8 = 0x1E;
+  pub(super) const SPANS: u8 = 0x1F;
 }
 
 /// `Ir` sub-stream opcodes (see the `Ir` table in `mmb-lisp.md`). Its space is

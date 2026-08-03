@@ -27,7 +27,8 @@ use crate::elab::frozen::{
 };
 use crate::elab::lisp::parser::{Ir, MVarPattern};
 use crate::elab::lisp::{Annot, BuiltinProc, InferTarget, Proc, ProcPos, ProcSpec};
-use mm0_util::{ArcString, AtomId, FileRef, FileSpan, Span};
+use crate::elab::environment::{DeclKey, StmtTrace};
+use mm0_util::{ArcString, AtomId, FileRef, FileSpan, Modifiers, Span};
 
 use super::{custom, infer, ir, op, pat_mvar, spec, LAMBDA_NAMED};
 
@@ -494,6 +495,24 @@ struct Global {
   span: u32,
   merge: u32,
   doc: u32,
+}
+
+/// One declaration's source metadata: what the proof stream does not carry.
+struct Decl {
+  /// `true` for an `abstract` def.
+  abstract_: bool,
+  /// The whole declaration's byte range, as a `Span` node.
+  full: u32,
+  /// The declaration's name, as a `Span` node, in the same file as [`full`](Self::full).
+  span: u32,
+  /// The doc comment, as a `Str` node, or [`Dedup::undef`].
+  doc: u32,
+}
+
+/// One entry of the statement trace, in source order.
+enum Entry {
+  Global(Global),
+  Decl(Decl),
 }
 
 /// Phase two: walk the [`Dedup`] DAG and write the byte stream.
@@ -999,15 +1018,19 @@ impl<'a> Emitter<'a> {
     }
   }
 
-  /// Emit one global record: name, the name's byte range, value, span, merge, doc.
-  fn emit_global(&mut self, g: &Global) {
-    self.emit_value(g.name); // a non-`END` first byte identifies a record
-    self.out.extend_from_slice(&g.lo.to_le_bytes());
-    self.out.extend_from_slice(&g.hi.to_le_bytes());
-    self.emit_value(g.value);
-    self.emit_value(g.span);
-    self.emit_value(g.merge);
-    self.emit_value(g.doc);
+  fn emit_spans(&mut self, de: &Dedup<'_>, entries: &[Entry]) {
+    let Some((&Entry::Decl(Decl { full, span, .. }), rest)) = entries.split_first()
+    else { unreachable!() };
+    self.cmd(op::SPANS, u32::try_from(rest.len()).expect("run too long"));
+    self.emit_value(full);
+    self.emit_value(span);
+    let Node::Span(_, _, mut cur) = *de.vec[full as usize].0 else { unreachable!() };
+    for entry in rest {
+      let Entry::Decl(Decl { full, span, .. }) = *entry else { unreachable!() };
+      let Node::Span(_, full_lo, full_hi) = *de.vec[full as usize].0 else { unreachable!() };
+      let Node::Span(_, span_lo, span_hi) = *de.vec[span as usize].0 else { unreachable!() };
+      for p in [full_lo, span_lo, span_hi, full_hi] { self.uleb(u64::from(p - cur)); cur = p }
+    }
   }
 }
 
@@ -1034,26 +1057,62 @@ pub fn first_unsupported(env: &FrozenEnv) -> Option<ArcString> {
 #[must_use]
 pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> Vec<u8> {
   let mut de = Dedup::new(env);
-  let mut globals = Vec::new();
-  for (a, adata) in env.data().enum_iter() {
-    let Some(data) = adata.lisp() else { continue };
-    if !supported(data) {
-      report(&format!("global '{}' cannot yet be serialized and was omitted", adata.name()));
-      continue
-    }
-    let name = de.dedup_atom(a);
-    let value = de.dedup_value(data);
-    #[allow(clippy::cast_possible_truncation)]
-    let (lo, hi, span) = match data.src() {
-      Some((fsp, sp)) => (sp.start as u32, sp.end as u32, de.dedup_fspan(fsp)),
-      None => (0, 0, de.undef),
+  let mut entries = Vec::new();
+
+  // Walk the statement trace, not the atom table: its order *is* what the table records,
+  // and it is the order the proof stream was written in, so a reader stepping the two
+  // together knows which declaration each `Decl` entry describes.
+  for stmt in env.stmts() {
+    let (span, full, doc, abstract_) = match *stmt {
+      StmtTrace::Sort(a) => {
+        let sd = env.sort(env.data()[a].sort().expect("a Sort trace entry names a sort"));
+        (&sd.span, sd.full, &sd.doc, false)
+      }
+      StmtTrace::Decl(a) => match env.data()[a].decl().expect("a Decl trace entry names a decl") {
+        DeclKey::Term(t) => {
+          let td = env.term(t);
+          (&td.span, td.full, &td.doc, td.vis.contains(Modifiers::ABSTRACT))
+        }
+        DeclKey::Thm(t) => {
+          let td = env.thm(t);
+          (&td.span, td.full, &td.doc, false)
+        }
+      },
+      StmtTrace::Global(a) => {
+        let adata = &env.data()[a];
+        let Some(data) = adata.lisp() else { continue };
+        if !supported(data) {
+          report(&format!("global '{}' cannot yet be serialized and was omitted", adata.name()));
+          continue
+        }
+        let name = de.dedup_atom(a);
+        let value = de.dedup_value(data);
+        #[allow(clippy::cast_possible_truncation)]
+        let (lo, hi, span) = match data.src() {
+          Some((fsp, sp)) => (sp.start as u32, sp.end as u32, de.dedup_fspan(fsp)),
+          None => (0, 0, de.undef),
+        };
+        let merge = de.dedup_merge(data.merge());
+        let doc = match data.doc() {
+          Some(d) => de.dedup_str(d.as_bytes()),
+          None => de.undef,
+        };
+        entries.push(Entry::Global(Global { name, lo, hi, value, span, merge, doc }));
+        continue
+      }
+      // Verifier-relevant, so it belongs in the proof stream rather than here; the
+      // proof stream has no command for it, so it is dropped (see `mmb-lisp.md`).
+      StmtTrace::OutputString(_) => continue,
     };
-    let merge = de.dedup_merge(data.merge());
-    let doc = match data.doc() {
+    let file = de.dedup_fileref(&span.file);
+    let name = span.span;
+    let span = de.dedup_span(file, name);
+    let doc = match doc {
       Some(d) => de.dedup_str(d.as_bytes()),
       None => de.undef,
     };
-    globals.push(Global { name, lo, hi, value, span, merge, doc });
+    let full = de.dedup_span(file, full);
+    entries.push(Entry::Decl(Decl { abstract_, full, span, doc }));
   }
 
   // A weak reference's target is only in the DAG if a strong path reached it; mark
@@ -1063,7 +1122,44 @@ pub fn serialize(env: &FrozenEnv, base: &Path, mut report: impl FnMut(&str)) -> 
   }
 
   let mut em = Emitter::new(&de, base);
-  for g in &globals { em.emit_global(g) }
+  let mut run = None;
+  for (i, entry) in entries.iter().enumerate() {
+    if let Entry::Decl(Decl { abstract_: false, doc, full, span }) = *entry {
+      if doc == de.undef {
+        let Node::Span(f1, full_lo, full_hi) = *de.vec[full as usize].0 else { unreachable!() };
+        let Node::Span(f2, span_lo, span_hi) = *de.vec[span as usize].0 else { unreachable!() };
+        assert!(f1 == f2 && span_lo <= span_hi);
+        let Some((j, file, hi)) = run else { run = Some((i, f1, full_hi)); continue };
+        if file == f1 && hi <= full_lo && full_lo <= span_lo && span_hi <= full_hi {
+          run = Some((j, file, full_hi))
+        } else {
+          em.emit_spans(&de, &entries[j..i]);
+          run = Some((i, f1, full_hi))
+        }
+        continue
+      }
+    }
+    if let Some((j, _, _)) = run.take() { em.emit_spans(&de, &entries[j..i]) }
+    match entry {
+      Entry::Global(g) => {
+        em.emit_value(g.name);
+        em.out.extend_from_slice(&g.lo.to_le_bytes());
+        em.out.extend_from_slice(&g.hi.to_le_bytes());
+        em.emit_value(g.value);
+        em.emit_value(g.span);
+        em.emit_value(g.merge);
+        em.emit_value(g.doc);
+      }
+      Entry::Decl(d) => {
+        em.cmd(op::DECL, u32::from(d.abstract_));
+        em.emit_value(d.full);
+        em.emit_value(d.span);
+        em.emit_value(d.doc);
+      }
+    }
+  }
+  if let Some((j, _, _)) = run { em.emit_spans(&de, &entries[j..]) }
+
   // Every target is now written, so close the weak links: fill each cell with a weak
   // reference to its (already-emitted) target.
   for (cell, target) in std::mem::take(&mut em.deferred_weak) {

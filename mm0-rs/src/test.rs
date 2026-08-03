@@ -281,6 +281,154 @@ do {{
     let _ = fs::remove_dir_all(&dir);
   }
 
+  /// The statement trace — the source order in which a file declared its sorts, terms,
+  /// theorems and lisp globals — survives a round trip through an `.mmb`. The proof
+  /// stream carries the declarations in order but says nothing about where the `do`
+  /// blocks sat among them, so before the `Lisp` table recorded the trace the globals
+  /// all landed at the end.
+  #[test]
+  fn stmt_trace_order_through_mmb() {
+    use crate::{compiler::elab_for_result, elab::environment::StmtTrace, FrozenEnv};
+    /// The trace as `(kind, name)`, so two environments compare regardless of atom ids.
+    fn shape(env: &FrozenEnv) -> Vec<(&'static str, String)> {
+      env.stmts().iter().filter_map(|s| {
+        let (k, a) = match *s {
+          StmtTrace::Sort(a) => ("sort", a),
+          StmtTrace::Decl(a) => ("decl", a),
+          StmtTrace::Global(a) => ("global", a),
+          StmtTrace::OutputString(_) => return None,
+        };
+        Some((k, String::from_utf8_lossy(env.data()[a].name()).into_owned()))
+      }).collect()
+    }
+    let dir = tmp("stmt-order");
+    let (a, a_mmb, c) = (dir.join("a.mm1"), dir.join("a.mmb"), dir.join("c.mm1"));
+    // Globals deliberately interleaved with declarations, and one of each kind after
+    // the last global, so a trace that merely appends the globals cannot match.
+    fs::write(&a, "\
+strict provable sort wff;
+do { (def g1 1) };
+term im: wff > wff > wff; infixr im: $->$ prec 25;
+do { (def g2 2) };
+axiom ax_1 (a b: wff): $ a -> b -> a $;
+term t: wff;
+").expect("write a.mm1");
+    fs::write(&c, "import \"a.mmb\";\n").expect("write c.mm1");
+
+    Args { input: a.clone(), quiet: true, output: Some(a_mmb), ..<_>::default() }
+      .main().expect("compile a.mm1");
+    let (_, direct) = elab_for_result(a.into(), false).expect("io failure");
+    let (_, viammb) = elab_for_result(c.into(), false).expect("io failure");
+    let (direct, viammb) = (direct.expect("a.mm1 failed"), viammb.expect("c.mm1 failed"));
+    assert_eq!(shape(&direct), shape(&viammb), "the statement trace did not round-trip");
+    // Ground truth, so an empty-vs-empty comparison cannot pass vacuously.
+    assert_eq!(shape(&direct).iter().map(|p| p.0).collect::<Vec<_>>(),
+      ["sort", "global", "decl", "global", "decl", "decl"], "a.mm1's own trace");
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  /// Everything the proof stream does not carry about a declaration — its doc comment,
+  /// its name span, the full range of the declaration, and whether a `def` was `abstract`
+  /// — survives the round trip, for every declaration kind. This is the whole point of
+  /// the `Decl` entries, and the failure it guards is silent: a lost doc or span reads
+  /// back as a declaration that is simply undocumented, and a lost `abstract` as a `def`
+  /// whose value has escaped into the `.mm0`.
+  #[test]
+  fn decl_metadata_through_mmb() {
+    use crate::{compiler::elab_for_result, elab::environment::{DeclKey, StmtTrace},
+      FrozenEnv, Modifiers, Span};
+    /// Per declaration: name, doc, name span, full span, and `abstract`. Ranges are
+    /// compared, not files, since the two environments read them from different paths.
+    fn shape(env: &FrozenEnv) -> Vec<(String, Option<String>, Span, Span, bool)> {
+      env.stmts().iter().filter_map(|s| {
+        let (a, doc, span, full, abs) = match *s {
+          StmtTrace::Sort(a) => {
+            let sd = env.sort(env.data()[a].sort().expect("a sort"));
+            (a, &sd.doc, &sd.span, sd.full, false)
+          }
+          StmtTrace::Decl(a) => match env.data()[a].decl().expect("a declaration") {
+            DeclKey::Term(t) => {
+              let td = env.term(t);
+              (a, &td.doc, &td.span, td.full, td.vis.contains(Modifiers::ABSTRACT))
+            }
+            DeclKey::Thm(t) => {
+              let td = env.thm(t);
+              (a, &td.doc, &td.span, td.full, false)
+            }
+          },
+          StmtTrace::Global(_) | StmtTrace::OutputString(_) => return None,
+        };
+        Some((String::from_utf8_lossy(env.data()[a].name()).into_owned(),
+          doc.as_ref().map(|d| (**d).to_owned()), span.span, full, abs))
+      }).collect()
+    }
+    let dir = tmp("decl-meta");
+    let (a, a_mmb, c) = (dir.join("a.mm1"), dir.join("a.mmb"), dir.join("c.mm1"));
+    // One documented declaration of each kind, an `abstract` def, and a plain
+    // declaration between them so the documented ones cannot ride a `Spans` run.
+    fs::write(&a, "\
+--| a documented sort
+strict provable sort wff;
+term im: wff > wff > wff; infixr im: $->$ prec 25;
+--| a documented term
+term t: wff;
+--| a documented axiom
+axiom ax_1 (a: wff): $ a -> a $;
+abstract def d: wff = $ t $;
+--| a documented abstract def
+abstract def d2: wff = $ t -> t $;
+").expect("write a.mm1");
+    fs::write(&c, "import \"a.mmb\";\n").expect("write c.mm1");
+
+    Args { input: a.clone(), quiet: true, output: Some(a_mmb), ..<_>::default() }
+      .main().expect("compile a.mm1");
+    let (_, direct) = elab_for_result(a.into(), false).expect("io failure");
+    let (_, viammb) = elab_for_result(c.into(), false).expect("io failure");
+    let (direct, viammb) = (direct.expect("a.mm1 failed"), viammb.expect("c.mm1 failed"));
+    assert_eq!(shape(&direct), shape(&viammb), "declaration metadata did not round-trip");
+    // Ground truth, so the comparison cannot pass on two environments that both lost it.
+    let got = shape(&direct);
+    assert_eq!(got.iter().filter(|d| d.1.is_some()).count(), 4, "documented declarations");
+    assert_eq!(got.iter().filter(|d| d.4).count(), 2, "abstract defs");
+    assert!(got.iter().all(|d| d.3.start <= d.2.start && d.2.end <= d.3.end),
+      "every name span sits inside its full span");
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  /// A `Spans` run's deltas are raw `uleb`s, so the run carries its length rather than an
+  /// `END` terminator: any byte whose low six bits are zero parses as a command, and a
+  /// delta of 64 is exactly `0x40`, an `END` with one data byte. A reader scanning for a
+  /// terminator therefore ends the run early and resumes mid-stream.
+  ///
+  /// Declarations spaced more than 64 bytes apart are what produce such a delta; a
+  /// fixture whose declarations are packed together stays under the threshold and the bug
+  /// hides, which is why the small ones above never saw it.
+  #[test]
+  fn spans_run_with_large_gaps() {
+    use std::fmt::Write;
+    let dir = tmp("spans-gaps");
+    let (a, a_mmb, c) = (dir.join("a.mm1"), dir.join("a.mmb"), dir.join("c.mm1"));
+    // A run of declarations (none documented or `abstract`, so none interrupts it) whose
+    // gaps sweep a range of widths, by padding each with a comment one byte longer than
+    // the last. The delta between two of them is then exactly 64 — the `0x40` that reads
+    // as `END` — and between two others exactly 128, whose first `uleb` byte is `0x80`,
+    // the same command with a two-byte operand. Sweeping is what makes the fixture robust:
+    // it does not depend on counting the fixture's own bytes to land on either value.
+    let mut src = String::from("strict provable sort wff;\n");
+    for i in 0..200 {
+      writeln!(src, "--{}\nterm t{i}: wff;", "x".repeat(i)).expect("write to a string");
+    }
+    fs::write(&a, src).expect("write a.mm1");
+    fs::write(&c, "import \"a.mmb\";\n").expect("write c.mm1");
+
+    Args { input: a, quiet: true, output: Some(a_mmb), ..<_>::default() }
+      .main().expect("compile a.mm1");
+    // The import re-reads the whole table; a desync inside the run derails everything
+    // after it, so this failing at all is the signal.
+    Args { input: c, quiet: true, ..<_>::default() }.main().expect("import a.mmb");
+    let _ = fs::remove_dir_all(&dir);
+  }
+
   /// `read_deps` seeks through a file it did not write, sizing an allocation from a count
   /// stored in it, so every malformed shape must decline rather than panic or allocate
   /// wildly. A `None` here is the safe answer: the caller treats it as "not a cache".

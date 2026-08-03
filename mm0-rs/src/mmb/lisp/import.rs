@@ -17,12 +17,12 @@ use std::sync::Arc;
 
 use num::{BigInt, FromPrimitive};
 
-use crate::elab::environment::{Environment, LispData, StmtTrace};
+use crate::elab::environment::{DeclKey, Environment, LispData, StmtTrace};
 use crate::elab::lisp::parser::{Ir, MVarPattern};
 use crate::elab::lisp::{
   BuiltinProc, InferTarget, LispKind, LispVal, Proc, ProcPos, ProcSpec, Syntax};
 use crate::DocComment;
-use mm0_util::{ArcString, AtomId, FileRef, FileSpan, Span};
+use mm0_util::{ArcString, AtomId, FileRef, FileSpan, Modifiers, Span};
 use mm0b_parser::{parse_cmd, BasicMmbFile, ParseError};
 
 use super::{custom, infer, ir, op, pat_mvar, spec, LAMBDA_NAMED, VERSION};
@@ -38,7 +38,22 @@ pub fn deserialize(
   if version != VERSION {
     return Err(ParseError::StrError("unsupported Lisp table version", ptr))
   }
-  Reader { env, buf: file.buf, pos: ptr, heap: Vec::new(), base }.read_globals()?;
+  // The proof-stream walk pushed one trace entry per declaration, in order. The table
+  // replays them interleaved with the globals, so hand them over as a queue and take
+  // back the trace it rebuilds.
+  let decls = std::mem::take(&mut env.stmts).into_iter();
+  let mut r = Reader {
+    env, buf: file.buf, pos: ptr, heap: Vec::new(), base, decls, stmts: Vec::new()
+  };
+  let res = r.read_stmts();
+  // Whatever happened, the queue's tail goes back on the end. On the success path there is none.
+  let left = r.decls.len();
+  r.env.stmts = std::mem::take(&mut r.stmts);
+  r.env.stmts.extend(&mut r.decls);
+  res?;
+  if left != 0 {
+    return Err(ParseError::StrError("fewer declaration entries than declarations", ptr))
+  }
   Ok(true)
 }
 
@@ -46,7 +61,12 @@ pub fn deserialize(
 /// [`serialize`]. `deserialize` is this preceded by locating the table.
 #[cfg(test)]
 fn deserialize_stream(env: &mut Environment, buf: &[u8], base: &Path) -> Result<(), ParseError> {
-  Reader { env, buf, pos: 0, heap: Vec::new(), base }.read_globals()
+  let decls = std::mem::take(&mut env.stmts).into_iter();
+  let mut r = Reader { env, buf, pos: 0, heap: Vec::new(), base, decls, stmts: Vec::new() };
+  let res = r.read_stmts();
+  r.env.stmts = std::mem::take(&mut r.stmts);
+  r.env.stmts.extend(&mut r.decls);
+  res
 }
 
 /// Find the `Lisp` [`index_entry`](../../../mm0-c/mmb.md), returning its
@@ -166,6 +186,12 @@ struct Reader<'a> {
   /// The `.mmb`'s directory: span file paths are stored relative to it and localized
   /// against it on the way back in.
   base: &'a Path,
+  /// The declarations the proof stream produced, in order. Each `Decl` entry in the
+  /// table consumes one, which is how an entry knows which declaration it describes.
+  decls: std::vec::IntoIter<StmtTrace>,
+  /// The statement trace being rebuilt: declarations and globals interleaved as the
+  /// table records them, which the proof stream alone cannot say.
+  stmts: Vec<StmtTrace>,
 }
 
 impl<'a> Reader<'a> {
@@ -637,9 +663,64 @@ impl<'a> Reader<'a> {
     }
   }
 
+  /// Read the `full, span` pair a declaration is introduced by: two span `value`s in one
+  /// file. `full` comes first because it is the one that fixes the file — `span` names
+  /// it again by `Ref` — and a `Spans` run opens with the same pair.
+  fn read_decl_spans(&mut self) -> Result<(FileSpan, FileSpan), ParseError> {
+    let RVal::Span(full) = self.read_value()? else {
+      return Err(self.err("a declaration must open with a span"))
+    };
+    let RVal::Span(name) = self.read_value()? else {
+      return Err(self.err("a declaration must open with two spans"))
+    };
+    if !full.file.ptr_eq(&name.file) { return Err(self.err("a declaration cannot change file")) }
+    Ok((full, name))
+  }
+
+  /// Apply one `Decl` entry to the next declaration the proof stream produced. The
+  /// entry carries no id: the exporter wrote the proof stream by walking this same
+  /// trace, so the two agree on the sequence and position alone identifies it.
+  fn apply_decl(
+    &mut self, abstract_: bool, span: Option<(FileSpan, Span)>, doc: Option<DocComment>
+  ) -> Result<(), ParseError> {
+    let stmt = self.decls.next()
+      .ok_or_else(|| self.err("more declaration entries than declarations"))?;
+    let res = (|| {
+      match stmt {
+        StmtTrace::Sort(a) => {
+          let id = self.env.data[a].sort.ok_or_else(|| self.err("not a sort"))?;
+          let sd = &mut self.env.sorts[id];
+          if let Some(span) = span { (sd.span, sd.full) = span }
+          sd.doc = doc;
+        }
+        StmtTrace::Decl(a) => {
+          match self.env.data[a].decl.ok_or_else(|| self.err("not a declaration"))? {
+            DeclKey::Term(t) => {
+              let td = &mut self.env.terms[t];
+              if let Some(span) = span { (td.span, td.full) = span }
+              td.doc = doc;
+              // `abstract` is not in the proof stream: it distinguishes neither statement
+              // command, so without this the def would come back plain.
+              if abstract_ { td.vis |= Modifiers::ABSTRACT }
+            }
+            DeclKey::Thm(t) => {
+              let td = &mut self.env.thms[t];
+              if let Some(span) = span { (td.span, td.full) = span }
+              td.doc = doc;
+            }
+          }
+        }
+        _ => return Err(self.err("proof stream trace entry is not a declaration"))
+      }
+      Ok(())
+    })();
+    self.stmts.push(stmt);
+    res
+  }
+
   /// The top level: one global record per turn (a name-first record) or a `SetWeak`,
   /// until `END`.
-  fn read_globals(&mut self) -> Result<(), ParseError> {
+  fn read_stmts(&mut self) -> Result<(), ParseError> {
     loop {
       let pos = self.pos;
       let (op, data, next) = parse_cmd(self.buf, self.pos)?;
@@ -657,6 +738,35 @@ impl<'a> Reader<'a> {
           };
           r.set_weak(&target)
         }
+        op::SPANS => {
+          self.pos = next;
+          // A run opens with the first declaration's own pair, exactly as a lone `Decl`
+          // writes it. Everything after is a gap along the one ascending chain the four
+          // positions of each declaration form.
+          let (full, name) = self.read_decl_spans()?;
+          let mut cur = full.span.end;
+          self.apply_decl(false, Some((name, full.span)), None)?;
+          for _ in 0..data {
+            let mut pos = [0usize; 4];
+            for p in &mut pos {
+              cur += usize::try_from(self.uleb()?).map_err(|_| self.err("span overflow"))?;
+              *p = cur;
+            }
+            let [full_lo, span_lo, span_hi, full_hi] = pos;
+            let fsp = FileSpan { file: full.file.clone(), span: (span_lo..span_hi).into() };
+            self.apply_decl(false, Some((fsp, (full_lo..full_hi).into())), None)?
+          }
+        }
+        op::DECLS => {
+          self.pos = next;
+          for _ in 0..data { self.apply_decl(false, None, None)? }
+        }
+        op::DECL => {
+          self.pos = next;
+          let (full, name) = self.read_decl_spans()?;
+          let doc = doc_of(&self.read_value()?.val(pos)?);
+          self.apply_decl(data & 1 != 0, Some((name, full.span)), doc)?
+        }
         _ => {
           // leave the name for `read_value`
           let name = atom_of(&self.read_value()?.val(pos)?, pos)?;
@@ -672,7 +782,7 @@ impl<'a> Reader<'a> {
           self.env.data[name].lisp = Some(LispData { src, doc, val, merge });
           // Record the global in the statement trace, like `global_def` does, so a
           // dependent file's `EnvMergeIter` (which walks `stmts`) picks it up.
-          self.env.stmts.push(StmtTrace::Global(name));
+          self.stmts.push(StmtTrace::Global(name));
         }
       }
     }
@@ -779,7 +889,7 @@ mod test {
   use std::sync::Arc;
 
   use super::{deserialize_stream, super::export::serialize};
-  use crate::elab::environment::{Environment, LispData};
+  use crate::elab::environment::{Environment, LispData, StmtTrace};
   use crate::elab::lisp::{
     LispKind, LispVal, LispWeak, Proc, ProcPos, ProcSpec, parser::{Ir, MVarPattern}};
   use crate::FrozenEnv;
@@ -790,6 +900,9 @@ mod test {
   fn str(s: &str) -> LispVal { LispVal::string(ArcString::from(s.as_bytes())) }
   fn put(env: &mut Environment, name: &[u8], val: LispVal) {
     let a = env.get_atom(name);
+    // Record it in the trace as `global_def` does — on first definition only — since
+    // that trace is what the exporter walks.
+    if env.data[a].lisp.is_none() { env.stmts.push(StmtTrace::Global(a)) }
     env.data[a].lisp = Some(LispData { src: None, doc: None, val, merge: None });
   }
   fn get(env: &mut Environment, name: &[u8]) -> LispVal {
@@ -950,6 +1063,25 @@ mod test {
     assert_eq!(bytes, bytes2);
   }
 
+  /// A read that fails partway must not take the statement trace with it. The
+  /// declarations are moved out of the environment to be replayed as the table names
+  /// them, and an mmb import keeps its environment even when this errors — so a dropped
+  /// tail leaves declarations that exist in the environment but appear nowhere in its
+  /// trace, which is what a dependent walks to find them.
+  #[test]
+  fn a_failed_read_keeps_the_trace() {
+    let mut env = Environment::new();
+    let atoms: Vec<_> = [&b"s1"[..], b"s2", b"s3"].iter().map(|n| env.get_atom(n)).collect();
+    env.stmts = atoms.iter().map(|&a| StmtTrace::Sort(a)).collect();
+    // `0x20` is not a value opcode, so the read fails before consuming any of them.
+    let err = deserialize_stream(&mut env, &[0x20], std::path::Path::new(""));
+    assert!(err.is_err(), "the stream should not have read");
+    let left: Vec<_> = env.stmts.iter()
+      .map(|s| match *s { StmtTrace::Sort(a) => a, _ => panic!("not a sort entry") })
+      .collect();
+    assert_eq!(left, atoms, "the unread declarations were dropped from the trace");
+  }
+
   /// A deeply nested value must read back without overflowing the machine stack: the
   /// reader's work stack lives on the heap, so nesting depth costs heap, not stack. A
   /// recursive reader would overflow here. We build the byte stream by hand and `forget`
@@ -967,7 +1099,7 @@ mod test {
     bytes.extend_from_slice(&[op::NUMBER, 0]); // the innermost element, `0`
     bytes.extend(std::iter::repeat_n(op::END, DEPTH)); // and their terminators
     bytes.extend_from_slice(&[op::UNDEF, op::UNDEF, op::UNDEF]); // src, merge, doc
-    bytes.push(op::END); // the `read_globals` terminator
+    bytes.push(op::END); // the `read_stmts` terminator
 
     let mut env = Environment::new();
     deserialize_stream(&mut env, &bytes, std::path::Path::new("")).expect("deep read");
