@@ -160,6 +160,34 @@ pub struct FrozenMergeStrategyInner(MergeStrategyInner);
 #[derive(Debug)]
 pub struct FrozenMergeStrategy(MergeStrategy);
 
+/// The shapes a [`FrozenMergeStrategy`] can take.
+#[derive(Debug)]
+pub enum FrozenMergeStrategyView<'a> {
+  /// No merge strategy (serialized as `#undef`).
+  None,
+  /// `(merge-map s)`, wrapping the nested strategy `s`.
+  AtomMap(&'a FrozenMergeStrategy),
+  /// A custom merge procedure.
+  Custom(&'a FrozenLispVal),
+}
+
+impl FrozenMergeStrategy {
+  /// Inspect the strategy without unfreezing it.
+  #[must_use] pub fn view(&self) -> FrozenMergeStrategyView<'_> {
+    match &self.0 {
+      None => FrozenMergeStrategyView::None,
+      // Safety: Input is frozen already
+      Some(inner) => unsafe {
+        match &**inner {
+          MergeStrategyInner::AtomMap(m) =>
+            FrozenMergeStrategyView::AtomMap(freeze_merge_strategy(m)),
+          MergeStrategyInner::Custom(f) => FrozenMergeStrategyView::Custom(f.freeze()),
+        }
+      }
+    }
+  }
+}
+
 /// A wrapper around a [`LispData`] that is frozen.
 #[derive(Debug)]
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
@@ -486,11 +514,18 @@ impl FrozenLispRef {
   /// [`Rc::clone()`] should be avoided because it could race with other readers.
   #[must_use] pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
 
+  /// Dereference a [`FrozenLispRef`], also reporting whether the link is weak.
+  /// Returns `None` for a dead weak reference.
+  #[must_use] pub fn get_weak(&self) -> Option<(bool, &FrozenLispKind)> {
+    // Safety: We ensure `LispWeak` are valid pointers or null, so they are safe to read
+    unsafe { self.thaw().get_unsafe().map(|(w, e)| (w, e.freeze())) }
+  }
+
   /// Dereference a [`FrozenLispRef`]. This can fail if the reference
   /// is a weak reference and the target is gone.
   #[must_use] pub fn get(&self) -> Option<&FrozenLispKind> {
     // Safety: We ensure `LispWeak` are valid pointers or null, so they are safe to read
-    unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
+    self.get_weak().map(|(_, e)| e)
   }
 }
 

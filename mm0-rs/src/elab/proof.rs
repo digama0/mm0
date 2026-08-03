@@ -1,15 +1,12 @@
 //! The proof compacter, which takes an elaborated lisp proof s-expr and produces
 //! a [`Proof`](super::environment::Proof) object that will be stored in the environment.
 
-use std::rc::Rc;
-use std::hash::Hash;
-use std::ops::Index;
-use std::mem;
+use std::{mem, rc::Rc, hash::Hash, ops::Index, cell::RefCell};
 use std::collections::{HashMap, hash_map::Entry};
 use crate::{AtomId, Type};
 use super::{LocalContext, ElabError, Result, Environment,
   SortId, TermId, ThmId, ExprNode, ProofNode, DeclKey, Modifiers};
-use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
+use super::lisp::{LispVal, LispKind, Uncons, InferTarget, Proc, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::{BoxError, FileSpan};
 
@@ -570,6 +567,14 @@ impl Environment {
         Type::Reg(s, xs) => vec![a, LispVal::atom(self.sorts[s].atom), Self::deps(bvars, xs)]
       }
     })).collect::<Vec<_>>())
+  }
+
+  /// Construct an unevaluated proof thunk for a theorem `a`.
+  #[must_use] pub fn proof_thunk(&self, a: AtomId) -> LispVal {
+    let Some(DeclKey::Thm(t)) = self.data[a].decl else { panic!("ProofThunk on non-thm") };
+    let mut heap = Vec::new();
+    self.binders(&self.thms[t].args, &mut heap, &mut vec![]);
+    LispVal::proc(Proc::ProofThunk(a, RefCell::new(Err(heap.into()))))
   }
 
   /// Convert an [`ExprNode`] object to a [`LispVal`], under a context `heap`. If

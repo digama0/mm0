@@ -2,6 +2,7 @@
 //! [`Environment`](crate::Environment) object.
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
+use std::path::Path;
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use mm0b_parser::MAX_BOUND_VARS;
 use zerocopy::{IntoBytes, LE as ZLE, U32, U64};
@@ -810,6 +811,22 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       }
       self.write_u8(0)?; // the empty string that ends the overflow list
 
+      // Paths in the file (span files) are stored relative to the file's own directory,
+      // so it stays relocatable and is localized on import like an `import "a/b.mm1"` is
+      // resolved against the importing file's directory.
+      let base = self.file.path().parent().unwrap_or_else(|| Path::new("")).to_owned();
+
+      // The `Lisp` table: the serialized global lisp environment (see
+      // `mm0-rs/mmb-lisp.md`), a self-contained, unaligned value stream.
+      let p_lisp = self.pos;
+      // Informational, not a warning: an unserializable global is a gap in the exporter
+      // (a `Dyn` procedure, see `serialize`), not a defect in the source, and there is
+      // nothing the author can do about it — so it must not fail a `-W` build, which
+      // every file reaching the MMC compiler object otherwise would.
+      let lisp = crate::mmb::lisp::export::serialize(self.env, &base,
+        |msg| (*self.report)(ErrorLevel::Info, msg));
+      self.write_all(&lisp)?;
+
       // The tables end on an arbitrary byte, but the index table is `align(8)`
       // (`TableEntry` holds a `u64`), which the earlier tables got for free by
       // ending on `u64` writes.
@@ -817,15 +834,16 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       p_index.commit(self);
       // Each entry is `(magic, data, ptr)`; `data` is `0` except the `Lisp` table's
       // format version.
-      let index = vec![
-        (INDEX_NAME, p_names), (INDEX_VAR_NAME, p_vars), (INDEX_HYP_NAME, p_hyps),
-        (INDEX_DELIMITER, p_delm), (INDEX_NOTATION, p_nota),
+      let index = [
+        (INDEX_NAME, 0, p_names), (INDEX_VAR_NAME, 0, p_vars), (INDEX_HYP_NAME, 0, p_hyps),
+        (INDEX_DELIMITER, 0, p_delm), (INDEX_NOTATION, 0, p_nota),
+        (INDEX_LISP, crate::mmb::lisp::VERSION, p_lisp),
       ];
       self.write_u64(index.len() as u64)?;
-      for (name, ptr) in &index {
-        self.write_all(name)?;
-        self.write_u32(0)?;
-        self.write_u64(*ptr)?;
+      for &(name, data, ptr) in &index {
+        self.write_all(&name)?;
+        self.write_u32(data)?;
+        self.write_u64(ptr)?;
       }
     } else {
       p_index.cancel();

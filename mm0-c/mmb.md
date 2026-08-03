@@ -30,6 +30,8 @@ Command pairs are denoted `(cmd, data)` and use a variable length encoding, from
 * `10xxxxxx yyyyyyyy yyyyyyyy: cmd = x, data = y` (2 byte `data` field)
 * `11xxxxxx yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy: cmd = x, data = y` (4 byte `data` field)
 
+Two orderings are in play here and they are independent. *Within* a byte, bit patterns like these are drawn most significant bit first, so the leftmost bits of the first byte are bits 7 and 6, the ones giving the `data` size. *Across* bytes, a multi-byte value is little-endian as above, least significant byte first, so the leftmost `yyyyyyyy` is the low byte of `data`.
+
 ## Header
 
 The file header contains basic information about the format and pointers to the other tables in the file, and starts at the first byte of the file.
@@ -486,6 +488,7 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 | `"HypN" = 0x4E707948` | `0`    | `p64<hyp_names>` | String names for hypotheses
 | `"Delm" = 0x6D6C6544` | `0`    | `p64<delimiters>` | Delimiter characters for tokenization
 | `"Nota" = 0x61746F4E` | `0`    | `p64<notations>` | Notations for terms
+| `"Lisp" = 0x7073694C` | version| `p64<lisp_stream>` | Serialized global lisp definitions ([spec](../mm0-rs/mmb-lisp.md))
 
 ## The `Name` table: names for statements
 
@@ -584,3 +587,7 @@ To print `(t e1 ... en)` at precedence `p`, where `nota` is the first entry for 
 * Otherwise print each literal in order: a constant as its token, and a variable as its argument printed at the literal's own precedence. Wrap the result in parentheses if `p` is greater than the notation's `prec`.
 
 Note that the literals are the *whole* notation, including the leading or infix constant.
+
+## The `Lisp` table: serialized global lisp definitions
+
+The `Lisp` table serializes the global lisp environment an `.mm1` file builds up — its `(def ...)`s, tables, and tactics — so that a file depending on it can be compiled without re-elaborating it. It is an `mm0-rs` extension: like the other index tables it is reached through `p_index` and a verifier such as `mm0-c` skips it, and unlike the [`Nota`](#the-nota-table-notations-for-terms) table it versions independently, through its `index_entry`'s `data` field. Its format is specified separately, in [`mm0-rs/mmb-lisp.md`](../mm0-rs/mmb-lisp.md).

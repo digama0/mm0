@@ -224,6 +224,9 @@ impl From<Box<[u8]>> for ArcString {
 impl From<Vec<u8>> for ArcString {
   fn from(s: Vec<u8>) -> Self { s.into_boxed_slice().into() }
 }
+impl From<Arc<str>> for ArcString {
+  fn from(s: Arc<str>) -> Self { Self(s.into()) }
+}
 impl From<String> for ArcString {
   fn from(s: String) -> Self { s.into_bytes().into() }
 }

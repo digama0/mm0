@@ -77,6 +77,14 @@ macro_rules! str_enum {
         }
       }
     }
+
+    impl num::FromPrimitive for $name {
+      fn from_i64(n: i64) -> Option<Self> { u64::try_from(n).ok().and_then(Self::from_u64) }
+      fn from_u64(n: u64) -> Option<Self> {
+        $($(#[cfg($($cfgs)*)])* if n == Self::$e as u64 { return Some(Self::$e) })*
+        None
+      }
+    }
   }
 }
 
@@ -620,23 +628,25 @@ impl LispRef {
     unsafe { &*(&raw const self.0).cast::<RefCell2<LispWeak>>() }.borrow.get() > 30
   }
 
-  /// Get the value of this reference without changing the reference count.
+  /// Get the value of this reference without changing the reference count, along
+  /// with a flag that is `true` for a weak reference and `false` for a strong one.
+  ///
   /// # Safety
   /// This function should not be used unless the value is frozen
   /// (in which case you should use [`FrozenLispRef::get`] instead).
   ///
   /// [`FrozenLispRef::get`]: super::frozen::FrozenLispRef::get
-  pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
+  pub(crate) unsafe fn get_unsafe(&self) -> Option<(bool, &LispKind)> {
     // Safety: we can't modify the borrow flag because the data is frozen
     match unsafe { self.0.try_borrow_unguarded() }.unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
       // Safety: we can't modify the borrow flag because the data is frozen
       unsafe { self.0.try_borrow_unguarded() }.expect("could not deref refcell")
     }) {
-      LispWeak::Strong(e) => Some(e),
+      LispWeak::Strong(e) => Some((false, e)),
       LispWeak::Weak(e) if e.strong_count() == 0 => None,
       // Safety: `LispWeak` are null or valid so `as_ptr` is safe
-      LispWeak::Weak(e) => Some(unsafe { &*e.as_ptr() })
+      LispWeak::Weak(e) => Some((true, unsafe { &*e.as_ptr() }))
     }
   }
 }
@@ -930,7 +940,7 @@ pub enum ProcPos {
 
 impl ProcPos {
   /// Get the file span for a procedure.
-  fn fspan(&self) -> Option<&FileSpan> {
+  #[must_use] pub fn fspan(&self) -> Option<&FileSpan> {
     match self {
       ProcPos::Named(fsp, _, _) | ProcPos::Unnamed(fsp) => Some(fsp),
       ProcPos::Builtin(_) => None,

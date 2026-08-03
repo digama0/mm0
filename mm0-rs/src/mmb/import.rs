@@ -10,7 +10,6 @@ use crate::{ArcString, Literal, NotaInfo};
 use mm0b_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile, NotaLit,
   ParseError, UnifyIter, ProofIter, exhausted};
 
-
 type Result<T> = std::result::Result<T, ParseError>;
 
 fn parse_unify(
@@ -518,6 +517,8 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       drop(if prefix { env.pe.add_prefix(tk, info) } else { env.pe.add_infix(tk, info) });
     }
   }
+  let base = fref.path().parent().unwrap_or_else(|| std::path::Path::new(""));
+  crate::mmb::lisp::import::deserialize(env, &file, base)?;
   Ok(())
 }
 

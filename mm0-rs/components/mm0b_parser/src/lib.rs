@@ -161,6 +161,8 @@ pub mod cmd {
   pub const INDEX_NOTATION: [u8; 4] = *b"Nota";
   /// `"Delm"` is the magic number for the delimiter table.
   pub const INDEX_DELIMITER: [u8; 4] = *b"Delm";
+  /// `"Lisp"` is the magic number for the serialized lisp table.
+  pub const INDEX_LISP: [u8; 4] = *b"Lisp";
 }
 
 #[inline]

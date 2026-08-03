@@ -159,3 +159,56 @@ mod delim_roundtrip {
     assert_eq!(ar, b"),]}".to_vec(), "peano's right delimiters");
   }
 }
+
+/// A multi-file build where the dependency's whole environment — sorts, terms, and the
+/// global lisp definitions — travels through an `.mmb` on disk instead of the in-memory
+/// `FrozenEnv` merge path. `a.mm1` defines lisp procedures (including a recursive one
+/// that references itself by name, plus builtin arithmetic); it is compiled to `a.mmb`
+/// with its debug index. `b.mm1` then `import`s that `.mmb` and *runs* those procedures,
+/// erroring if a reconstructed closure computes the wrong result. Because an
+/// elaboration error `panic!`s under `cfg(test)`, a faithful mmb round-trip of the lisp
+/// environment is exactly what lets this test pass.
+mod mmb_dependency {
+  use crate::compiler::Args;
+  use std::fs;
+
+  const A_SRC: &str = "\
+strict provable sort wff;
+term wi: wff > wff > wff; infixr wi: $->$ prec 25;
+axiom ax_id: $ a -> a $;
+do {
+  (def (my-id x) x)
+  (def (my-sum n) (if {n = 0} 0 {n + (my-sum {n - 1})}))
+};
+";
+
+  const B_SRC: &str = "\
+import \"a.mmb\";
+do {
+  (if {(my-id 7) = 7} #undef (error \"my-id did not survive the mmb round-trip\"))
+  (if {(my-sum 4) = 10} #undef (error \"my-sum did not survive the mmb round-trip\"))
+};
+";
+
+  #[test]
+  fn lisp_env_through_mmb() {
+    let dir = std::env::temp_dir().join(format!("mm0rs-mmb-dep-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("create temp dir");
+    let (dep_src, dep_mmb, main_src) =
+      (dir.join("a.mm1"), dir.join("a.mmb"), dir.join("b.mm1"));
+    fs::write(&dep_src, A_SRC).expect("write a.mm1");
+    fs::write(&main_src, B_SRC).expect("write b.mm1");
+
+    // Compile the dependency to `a.mmb`, index (and thus the `Lisp` table) included.
+    Args { input: dep_src, output: Some(dep_mmb.clone()), quiet: true, ..<_>::default() }
+      .main().expect("compile a.mm1");
+    assert!(dep_mmb.exists(), "a.mmb was not written");
+
+    // Compile the dependent: `import "a.mmb"` reads the dependency straight from the
+    // `.mmb`, and the `do` block runs its lisp procedures. Any mismatch `error`s, which
+    // `panic!`s the elaboration under `cfg(test)`.
+    Args { input: main_src, quiet: true, ..<_>::default() }.main().expect("compile b.mm1");
+
+    let _ = fs::remove_dir_all(&dir);
+  }
+}

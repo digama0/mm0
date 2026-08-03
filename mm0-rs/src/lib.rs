@@ -70,7 +70,7 @@ pub mod doc;
 /// See [`mm0-c/verifier.c`] for information on the MMB format.
 ///
 /// [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
-pub mod mmb { pub mod export; pub mod import; }
+pub mod mmb { pub mod export; pub mod import; pub mod lisp; }
 /// Import and export functionality for MMU ascii proof format
 ///
 /// See [The `.mmu` file format] for information on the MMU format.
