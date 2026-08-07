@@ -67,11 +67,12 @@ typedef struct {
 } PACKED header;
 
 // The term arguments table is composed of 64 bit values, where:
-// * the low 55 bits (7 bytes) are used for encoding the list of bound variables
-//   this variable depends on. bit i is 1 if this is a regular var and
-//   depends on the ith *bound* variable
-// * bit 56 is reserved and must be set to 0
-// * Bits 57-62 (the 7 low bits of the high byte) encode the sort of the expression
+// * Bits 0-54 (the low 55 bits) are used for encoding the list of bound
+//   variables this variable depends on. bit i is 1 if this is a regular var
+//   and depends on the ith *bound* variable. This caps the number of bound
+//   variables in a declaration at 55.
+// * Bit 55 is reserved and must be set to 0
+// * Bits 56-62 (the 7 low bits of the high byte) encode the sort of the expression
 // * Bit 63 (the MSB / sign bit) is 1 if this is a bound var
 #define TYPE_DEPS_MASK (((u64)1<<55)-1)
 #define TYPE_UPPER_MASK ~(((u64)1<<56)-1)

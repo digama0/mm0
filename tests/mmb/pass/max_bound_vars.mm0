@@ -1,0 +1,27 @@
+-- A def with exactly 55 dummy variables, the largest number the MMB type
+-- encoding can represent (bits 0-54 of a type word are the dependency
+-- bitset, and bit 55 is reserved). This pins the boundary of the `Dummy`
+-- bound check in mm0-c: this file must verify, while
+-- fail/gi_dummy_reserved_bit.mmb, which uses 56 dummies, must not.
+delimiter $ + $;
+sort s;
+provable sort wff;
+term base: s;
+term step (a: s) {b: s}: s; infixl step: $+$ prec 1;
+def choose
+  (.x00 .x01 .x02 .x03 .x04 .x05 .x06 .x07
+   .x08 .x09 .x10 .x11 .x12 .x13 .x14 .x15
+   .x16 .x17 .x18 .x19 .x20 .x21 .x22 .x23
+   .x24 .x25 .x26 .x27 .x28 .x29 .x30 .x31
+   .x32 .x33 .x34 .x35 .x36 .x37 .x38 .x39
+   .x40 .x41 .x42 .x43 .x44 .x45 .x46 .x47
+   .x48 .x49 .x50 .x51 .x52 .x53 .x54: s): s =
+  $ base + x00 + x01 + x02 + x03 + x04 + x05 + x06 + x07 +
+    x08 + x09 + x10 + x11 + x12 + x13 + x14 + x15 +
+    x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 +
+    x24 + x25 + x26 + x27 + x28 + x29 + x30 + x31 +
+    x32 + x33 + x34 + x35 + x36 + x37 + x38 + x39 +
+    x40 + x41 + x42 + x43 + x44 + x45 + x46 + x47 +
+    x48 + x49 + x50 + x51 + x52 + x53 + x54 $;
+term pred (a: s): wff;
+axiom seed: $ pred choose $;

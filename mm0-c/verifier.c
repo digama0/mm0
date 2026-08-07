@@ -398,8 +398,12 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         ENSURE("bad dummy sort", data < g_num_sorts);
         ENSURE("dummy variable in strict or free sort",
           (g_sorts[data] & (SORT_STRICT | SORT_FREE)) == 0);
+        // Only the low 55 bits of a type are dependency bits, so g_next_bv
+        // must fit in TYPE_DEPS_MASK: if it were allowed to reach 1<<55 the
+        // dependency on this dummy would be masked off everywhere it is
+        // consulted, and the dummy would look free-variable-clean.
         ENSURE("too many bound variables, please rewrite the verifier",
-          (g_next_bv >> 56) == 0);
+          (g_next_bv >> 55) == 0);
         u64 type = TYPE_BOUND_MASK | ((u64)data << 56) | g_next_bv;
         g_next_bv *= 2;
         u32 e = STACK_TYPE_EXPR |

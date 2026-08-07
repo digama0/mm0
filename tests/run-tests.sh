@@ -57,6 +57,12 @@ done; echo
 cd ..
 
 cd mmb
+for test in pass/*.mmb; do
+  run_test ./run.sh mmb/ ${test%.*} mmb 0
+done; echo
+for test in fail/*.mmb; do
+  run_test ./run.sh mmb/ ${test%.*} mmb "1 2 255"
+done; echo
 for test in run/*.mmb; do
   run_test ./run.sh mmb/ ${test%.*} mmb "0 1 2 3 4 255"
 done; echo

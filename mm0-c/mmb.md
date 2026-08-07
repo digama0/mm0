@@ -221,7 +221,7 @@ The proof stream is a sequence of commands that are designed to operate on a sta
   * `e1 =?= e2`: A conversion obligation
 * `H`: The heap, which is initialized to the list of all the variables, and can contain all kinds of stack elements except `e1 =?= e2`.
 * `HS`: The list of hypotheses to the current theorem, which starts empty and grows on `Hyp` commands.
-* `next_bv`: The number of active bound variables, which is initialized to the number of bound variables in the declaration and is incremented on `Dummy` calls
+* `next_bv`: The number of active bound variables, which is initialized to the number of bound variables in the declaration and is incremented on `Dummy` calls. It may never exceed 55, since a dependency on the `i`th bound variable is recorded in bit `i` of an `arg`, and bit 55 is reserved.
 
 The backing store is not mentioned explicitly in the description but holds the memory for all constructed s-expressions. In particular, operations like `Term` that allocate a new expression are considered distinct from any previously constructed expression, so equality testing, such as is required by the `Refl` command and in unification, is pointer equality, not structural equality. For example, `Term 0, Term 0` constructs `t0, t0'` on the stack, but if these ended up in a reflexivity obligation `t0 =?= t0'` then a proof that applied `Refl` would not be valid. To actually get the same term twice it is required to use `Save` and `Ref`, as in `TermSave(0), Ref(0)` which puts `t0, t0` on the stack.
 
@@ -275,6 +275,7 @@ The proof opcodes have the following operation on the state:
   ```
   `Dummy s` does the following:
   * Look up `sort[s]`, which must be a valid `sort` such that `!sort[s].strict`.
+  * Ensure that `next_bv < 55`, so that the new variable has a representable dependency bit.
   * Let `x = var(next_bv)` be a new bound variable, and increment `next_bv`
   * Allocate `x` with `sort(x) = s`
   * Push `x` on the stack and the heap
