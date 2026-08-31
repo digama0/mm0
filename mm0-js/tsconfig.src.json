@@ -1,0 +1,12 @@
+{
+  // `src/` is browser code and must never reach for a node API. Typechecking
+  // it with `types: []` makes that a compiler error rather than a convention:
+  // `readFileSync`, `process`, `Buffer` and friends simply do not exist here.
+  // The root tsconfig, which the tests use, does include @types/node.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "ui/**/*.ts"]
+}

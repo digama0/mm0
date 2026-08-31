@@ -1,0 +1,41 @@
+{
+  // TypeScript is used purely as an erasable type layer: `erasableSyntaxOnly`
+  // rejects any construct that would generate runtime code (enums, namespaces,
+  // parameter properties, decorators), so compilation is exactly "strip the
+  // types" and the emitted .js stays readable and reviewable. That property is
+  // enforced by the compiler rather than by discipline.
+  //
+  // `nodenext` resolution rather than `bundler` because the emitted .js is
+  // served to browsers directly, with no bundler in between: it makes the `.js`
+  // extension on every import a compile error to omit, instead of something
+  // that works in tsc and 404s in the browser.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2022", "dom"],
+    // Only the tests use these; tsconfig.src.json drops them so that browser
+    // code cannot reach for a node API by accident.
+    "types": ["node"],
+
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "tools/**/*.ts", "ui/**/*.ts"]
+}

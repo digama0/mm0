@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MMB Proof Explorer</title>
+<!-- Inline, so the browser doesn't request /favicon.ico and take a 404 on every load. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>⊢</text></svg>">
+<link rel="stylesheet" href="./ui/style.css">
+</head>
+<body>
+<div id="bar"></div>
+<header>
+  <h1><a id="home" href="#">MMB Proof Explorer</a></h1>
+  <span class="meta" id="crumb"></span>
+  <span class="spacer"></span>
+  <span class="meta" id="status"></span>
+  <button id="failures" title="every failure in this file"></button>
+  <span class="meta" id="timing"></span>
+  <span class="nav" id="nav"></span>
+  <!-- Drawn rather than set: the glyphs these replace (⊢ ◐ ? ▤) are drawn at
+       very different sizes within their em, and `ui-monospace` resolves to a
+       different face on every platform, so matching them by font-size only
+       ever looked right on the machine it was tuned on. One 24-unit grid,
+       one stroke weight, `currentColor` throughout. -->
+  <button id="proof" class="tog" title="show only the steps that push a proof (p)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5v14M7.5 12h9"/></svg>
+  </button>
+  <button id="theme" title="light / dark (t)">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="7"/>
+      <path d="M12 5a7 7 0 0 0 0 14z" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+  <button id="help" title="help &amp; keyboard shortcuts (?)">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 9.2a3.1 3.1 0 1 1 3.1 3.1v1.8"/>
+      <circle cx="12.1" cy="17.6" r="1.05" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+  <button id="reload" title="open another .mmb (o)">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="6" y="5" width="12" height="14" rx="1.5"/>
+      <path d="M9 9.5h6M9 12.5h6M9 15.5h3.5"/>
+    </svg>
+  </button>
+</header>
+<div id="error"></div>
+
+<div id="help-modal" class="modal">
+  <div class="box">
+    <button class="close" title="close (Esc)">×</button>
+    <h2>MMB Proof Explorer</h2>
+    <p>Step through an <code>.mmb</code> proof as the verifier's stack machine runs it, one
+      command at a time. The state shown is always <em>before</em> the highlighted step.</p>
+    <p>Everything runs in this tab: the file is parsed, verified and stepped locally, and
+      never uploaded. It is kept in this browser's storage so that reloading the page
+      returns you to the step you were on; <kbd>o</kbd> forgets it and opens another.</p>
+
+    <h3>Getting around</h3>
+    <p>The left <b>list</b> is every declaration — sorts, terms, defs, axioms, theorems. Click a
+      row, or filter by name, to open its proof. Inside a proof, click any <b>term or theorem
+      name</b> — in the listing or inside an expression — to jump to it.</p>
+
+    <h3>The step view</h3>
+    <p>The <b>command listing</b> is on the left, the current step highlighted. On the right,
+      <b>Stack</b>, <b>Heap</b> and <b>Hypotheses</b> show the machine's state: a
+      <span style="color:var(--axiom)">red bar</span> marks what the step is about to consume, a
+      <b>▸</b> what the previous step pushed. The <b>callout</b> (bottom right) says what the
+      active step does, in the applied declaration's own variables.</p>
+
+    <h3>Reading expressions</h3>
+    <p>Expressions print in the source's notation (<code>a -&gt; b</code>), recovered from the
+      mmb — no <code>.mm1</code> needed. Each stack or heap slot is one of:</p>
+    <dl>
+      <dt><span class="turnstile">⊢</span> e</dt><dd>a proof of the expression e</dd>
+      <dt>e<span class="sortann">: wff</span></dt>
+        <dd>a constructed expression, tagged with its sort</dd>
+      <dt>e <span class="conv">≟</span> e&#39;</dt>
+        <dd>a convertibility obligation — e and e&#39; still to be shown equal</dd>
+      <dt>e <span class="conv">≡</span> e&#39;</dt><dd>a convertibility proof</dd>
+    </dl>
+
+    <h3>Keyboard</h3>
+    <dl>
+      <dt><kbd>↑</kbd> <kbd>k</kbd> &nbsp;/&nbsp; <kbd>↓</kbd> <kbd>j</kbd></dt>
+        <dd>step back / forward</dd>
+      <dt><kbd>PgUp</kbd> / <kbd>PgDn</kbd></dt><dd>jump ten steps</dd>
+      <dt><kbd>Home</kbd> <kbd>g</kbd> &nbsp;/&nbsp; <kbd>End</kbd> <kbd>G</kbd></dt>
+        <dd>first / last step</dd>
+      <dt><kbd>p</kbd></dt><dd>proof steps only — hide the expression plumbing, leaving the inferences</dd>
+      <dt><kbd>u</kbd> &nbsp;or&nbsp; <kbd>→</kbd> <kbd>l</kbd> / <kbd>←</kbd> <kbd>h</kbd></dt>
+        <dd>enter / leave the unifier</dd>
+      <dt><kbd>o</kbd></dt><dd>open another <code>.mmb</code></dd>
+      <dt><kbd>r</kbd></dt>
+        <dd>re-read the current one, after recompiling it — whole for a file that came
+          by URL or from <code>npm start file.mmb</code>; one the browser was handed has
+          to be handed over again, since it cannot be re-read without you</dd>
+      <dt><kbd>t</kbd></dt><dd>light / dark — follows the system until you pick one</dd>
+      <dt><kbd>Esc</kbd></dt><dd>leave the unifier, then the declaration</dd>
+      <dt><kbd>?</kbd></dt><dd>this help</dd>
+    </dl>
+
+    <h3>The unifier</h3>
+    <p>A <b>Thm</b> or <b>Unfold</b> step runs a sub-machine that matches the theorem's
+      conclusion against the target. Press <kbd>u</kbd> (or the callout's <b>unify ⌄</b>) to
+      step through it; its own stack and heap appear beside the main ones.</p>
+  </div>
+</div>
+
+<div id="err-modal" class="modal">
+  <div class="box">
+    <button class="close" title="close (Esc)">×</button>
+    <h2 id="err-title"></h2>
+    <p id="err-intro">Everything the verifier rejected, and where. Each part of a
+       trail that names somewhere goes there — the declaration, the step within
+       it, and the unify command within that. A failure in the declaration
+       stream has no declaration to blame, so it is listed on its own.</p>
+    <dl id="err-list"></dl>
+    <div id="note-section">
+      <h3>Notes</h3>
+      <p>Nothing wrong, and no reason to distrust the file — but the index is
+         advisory, so parts of it can be absent while the proofs still verify.
+         Where that leaves a name or an operator missing, it is noted here.</p>
+      <ul id="note-list"></ul>
+    </div>
+  </div>
+</div>
+
+<div id="open" class="on">
+  <h2>Open an <code>.mmb</code></h2>
+  <div id="drop">drop a file here</div>
+  <p>Everything runs in this tab — the file is parsed, verified and stepped
+     locally, and never uploaded. It is kept in this browser's storage so a
+     refresh does not need it again; the file button in the corner forgets it.</p>
+  <p>From a checkout, <code>npm start path/to/file.mmb</code> serves that file and
+     opens it here, and <kbd>r</kbd> re-reads it after a recompile.</p>
+  <div class="examples">
+    <label>choose a file…<input id="file" type="file" accept=".mmb"></label>
+    <button data-example="test/peano.mmb">peano.mmb</button>
+    <button data-example="test/hol.mmb">hol.mmb</button>
+  </div>
+</div>
+
+<div id="list">
+  <div id="searchrow">
+    <input id="search" type="text" placeholder="filter by name, or an exact id like T1…" autocomplete="off">
+    <!-- Shown only when there is something to show: a count of zero failures
+         is not a control, it is noise on every file that verifies. -->
+    <button id="onlybad" title="show only the declarations that failed"></button>
+  </div>
+  <!-- The table scrolls, the search box does not: it is how you get to a
+       declaration, so it has to be reachable from anywhere in 2896 rows. -->
+  <div id="listbody">
+  <table>
+    <colgroup>
+      <col class="c-num"><col class="c-decl"><col class="c-steps">
+    </colgroup>
+    <thead><tr>
+      <th class="num">#</th><th>declaration</th><th class="steps">steps</th>
+    </tr></thead>
+    <tbody id="decls"></tbody>
+  </table>
+  </div>
+</div>
+
+<div id="detail">
+  <div id="stmtbar"></div>
+  <div id="cols">
+  <div id="steps"></div>
+  <div id="right">
+    <div id="errrow"></div>
+    <div class="prow">
+      <section class="pane" id="p-stack">
+        <h2 id="h-stack">Stack</h2>
+        <div class="body" id="b-stack"></div>
+      </section>
+      <section class="pane u" id="p-ustack">
+        <h2 id="h-ustack">Unify stack</h2>
+        <div class="body" id="b-ustack"></div>
+      </section>
+    </div>
+    <div class="prow">
+      <section class="pane" id="p-heap">
+        <h2 id="h-heap">Heap</h2>
+        <div class="body" id="b-heap"></div>
+      </section>
+      <section class="pane u" id="p-uheap">
+        <h2 id="h-uheap">Unify heap</h2>
+        <div class="body" id="b-uheap"></div>
+      </section>
+    </div>
+    <div id="bottom">
+      <section class="pane" id="p-hyps">
+        <h2 id="h-hyps">Hypotheses</h2>
+        <div class="body" id="b-hyps"></div>
+      </section>
+      <section class="pane" id="p-callout">
+        <h2 id="h-callout">This step</h2>
+        <div class="body" id="callout"></div>
+      </section>
+    </div>
+  </div>
+  </div>
+</div>
+
+
+<script type="module" src="./dist/ui/main.js"></script>
+</body>
+</html>

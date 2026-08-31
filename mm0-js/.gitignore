@@ -1,0 +1,5 @@
+node_modules/
+dist/
+test/*.mmb
+!test/peano.mmb
+!test/hol.mmb

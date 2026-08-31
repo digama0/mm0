@@ -1,0 +1,22 @@
+{
+  "name": "mm0-js",
+  "version": "0.1.0",
+  "description": "A client-side MMB proof explorer and verifier",
+  "license": "CC0-1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.src.json",
+    "test": "npm run typecheck && tsc && node dist/test/reader.test.js && node dist/test/nota.test.js && node dist/test/msg.test.js && node dist/test/arena.test.js && node dist/test/types.test.js && node dist/test/unifier.test.js && node dist/test/machine.test.js && node dist/test/printer.test.js && node dist/test/steps.test.js && node dist/test/verify.test.js",
+    "difftest": "tsc && node dist/tools/difftest.js",
+    "start": "tsc && python3 tools/serve.py --open",
+    "serve": "python3 tools/serve.py",
+    "uitest": "tsc && node dist/tools/uitest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "playwright": "^1.61.1",
+    "typescript": "^7.0.2"
+  }
+}
