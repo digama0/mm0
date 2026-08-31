@@ -57,14 +57,29 @@ done; echo
 cd ..
 
 cd mmb
-for test in pass/*.mmb; do
-  run_test ./run.sh mmb/ ${test%.*} mmb 0
-done; echo
-for test in fail/*.mmb; do
-  run_test ./run.sh mmb/ ${test%.*} mmb "1 2 255"
-done; echo
+# The .mmb groups are named for the combination of verdicts they assert, so
+# each one is run under every build that has an opinion about it. A file is
+# only in fail-index/ because the two builds *disagree*, and a group run under
+# one build alone could not say that.
 for test in run/*.mmb; do
   run_test ./run.sh mmb/ ${test%.*} mmb "0 1 2 3 4 255"
+done; echo
+# Rejected by both.
+for test in fail/*.mmb; do
+  run_test ./run-np.sh "mm0-c mmb/" ${test%.*} mmb "1 2 3 4 255"
+  run_test ./run-mm0-js.sh "mm0-js mmb/" ${test%.*} mmb "1 2"
+done; echo
+# Accepted by mm0-c -- the index is advisory, so it never looks -- and
+# rejected by mm0-js, which is asked for the stronger claim.
+for test in fail-index/*.mmb; do
+  run_test ./run-np.sh "mm0-c mmb/" ${test%.*} mmb 0
+  run_test ./run-mm0-js.sh "mm0-js mmb/" ${test%.*} mmb 1
+done; echo
+# Accepted by both. Having no index at all is valid, and this is what keeps
+# fail-index/ from quietly becoming "any file we cannot read".
+for test in pass/*.mmb; do
+  run_test ./run-np.sh "mm0-c mmb/" ${test%.*} mmb 0
+  run_test ./run-mm0-js.sh "mm0-js mmb/" ${test%.*} mmb 0
 done; echo
 cd ..
 
