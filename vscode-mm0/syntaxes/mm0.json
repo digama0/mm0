@@ -271,7 +271,7 @@
 					}
 				},
 				{
-					"match": "(@)(\\s+([\\w!%&*+\\-./:<=>?@^_~]+)?)",
+					"match": "(@)(\\s+((?![0-9])[\\w!%&*+\\-./:<=>?@^_~]+)?)",
 					"captures": {
 						"1": {"name": "keyword.operator.mm0.lisp"},
 						"3": {"name": "entity.name.function.mm0.lisp"}
@@ -290,17 +290,18 @@
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*([\\w!%&*+\\-./:<=>?@^_~]+)?",
+					"begin": "\\(\\s*((?![0-9])[\\w!%&*+\\-./:<=>?@^_~]+)?",
 					"beginCaptures": {"1": {"name": "entity.name.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{"include": "#math-string"},
+				{"match": "0[xX][0-9a-fA-F]+", "name": "constant.numeric.hex.mm0.lisp"},
 				{"match": "[0-9]+", "name": "constant.numeric.mm0.lisp"},
 				{"match": "#(t|f|undef)(?!\\w)", "name": "constant.language.mm0.lisp"},
 				{"include": "#string"},
 				{
-					"begin": "('+)\\(\\s*([\\w!%&*+\\-./:<=>?@^_~]+)?",
+					"begin": "('+)\\(\\s*((?![0-9])[\\w!%&*+\\-./:<=>?@^_~]+)?",
 					"beginCaptures": {
 						"1": {"name": "string.quoted.other.mm0.lisp"},
 						"2": {"name": "entity.name.function.quoted.mm0.lisp"}},
@@ -316,7 +317,7 @@
 		"lisp-annot": {
 			"patterns": [
 				{
-					"begin": "@\\s*\\(\\s*([\\w!%&*/:<=>?^_~+.@-]+)?",
+					"begin": "@\\s*\\(\\s*((?![0-9])[\\w!%&*/:<=>?^_~+.@-]+)?",
 					"beginCaptures": {"1": {"name": "entity.name.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
