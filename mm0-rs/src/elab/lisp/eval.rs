@@ -862,13 +862,13 @@ make_builtins! { self, tail, sp1, sp2, args,
   Max: AtLeast(1) => {
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
-    for e in it { n = n.max(try1!(self.as_int(&e)).clone()) }
+    for e in it { n = n.max(try1!(self.as_int(&e))) }
     LispVal::number(n).into()
   },
   Min: AtLeast(1) => {
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
-    for e in it { n = n.min(try1!(self.as_int(&e)).clone()) }
+    for e in it { n = n.min(try1!(self.as_int(&e))) }
     LispVal::number(n).into()
   },
   Sub: AtLeast(1) => if args.len() == 1 {

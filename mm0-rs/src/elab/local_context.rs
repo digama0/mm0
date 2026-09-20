@@ -1285,7 +1285,7 @@ impl Elaborator {
     let check_vis = proof.is_none() || vis.contains(Modifiers::PUB);
     let e_ret = (|| -> Result<_> {
       for e in Uncons::from(hyps.clone()) {
-        let mut u = Uncons::from(e.clone());
+        let mut u = Uncons::from(e);
         if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
           let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
           let a = if x == AtomId::UNDER {None} else {Some(x)};

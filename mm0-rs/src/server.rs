@@ -529,7 +529,7 @@ impl Vfs {
         #[allow(clippy::mutable_key_type)]
         let deps = file.downstream.ulock().clone();
         for dep in deps {
-          Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Close).spawn();
+          Job::DepChange(path.clone(), dep, DepChangeReason::Close).spawn();
         }
       }
     }

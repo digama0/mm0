@@ -337,7 +337,7 @@ fn dep_closure(src: &FileRef, imports: &[(Span, Vec<u8>)]) -> Option<Vec<PathBuf
     let dep = parent.map_or_else(|| PathBuf::from(f), |p| p.join(f)).canonicalize().ok()?;
     let is_mm1 = dep.extension().is_some_and(|e| e.eq_ignore_ascii_case("mm1"));
     let dep_mmb = if is_mm1 { dep.with_extension("mmb") } else { dep.clone() };
-    set.insert(dep.clone());
+    set.insert(dep);
     match read_deps(&dep_mmb) {
       // A dependency records its closure relative to its own `.mmb`'s directory; resolve
       // those back to absolute for our (differently-based) closure.
