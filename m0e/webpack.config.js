@@ -1,6 +1,7 @@
 const path = require("path");
 const webpack = require("webpack");
 const CopyPlugin = require("copy-webpack-plugin");
+const HtmlPlugin = require("html-webpack-plugin");
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
@@ -26,7 +27,11 @@ module.exports = {
   },
   output: {
     path: dist,
-    filename: "[name].js",
+    // Hashed, and named in the page by HtmlWebpackPlugin below. A fixed name
+    // lets a browser pair a cached copy of the bundle with a fresh index.html,
+    // which is a broken page rather than an old one: the stylesheet and every
+    // handler live in here, so the markup gets neither.
+    filename: "[name].[contenthash].js",
     // Drops stale hashed assets from previous builds. Doing this here rather
     // than with `rimraf dist` means it happens only for a build that writes to
     // dist -- `webpack serve` keeps its output in memory and never does.
@@ -56,9 +61,12 @@ module.exports = {
     syncWebAssembly: true
   },
   plugins: [
+    // static/index.html is the template rather than a file to copy: the script
+    // tag is written here, with the hash the bundle actually got.
+    new HtmlPlugin({ template: "static/index.html" }),
+
     new CopyPlugin({
       patterns: [
-        "static",
         { from: "../examples/*.mm0", to: examples },
         { from: "../examples/*.mm1", to: examples },
         { from: "../examples/*.mmu", to: examples },
