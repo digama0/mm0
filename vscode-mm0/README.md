@@ -2,6 +2,8 @@
 
 This extension provides support for the verification and specification language [Metamath Zero](http://github.com/digama0/mm0). Syntax highlighting is available out of the box, and if [`mm0-rs`](http://github.com/digama0/mm0/tree/master/mm0-rs) is installed, it will use the `mm0-rs server` LSP server to provide additional features.
 
+Those are go-to-definition, hover, and most importantly live diagnostics: red squiggles on errors as you type, which is what makes proof progress visible without running a compile. The `.mm1` files in [`examples/`](http://github.com/digama0/mm0/tree/master/examples) were written this way. The interface is strongly inspired by [`vscode-lean`](https://github.com/leanprover/vscode-lean/).
+
 ## Installation
 
 The extension is available on the VSCode marketplace, under the code `digama0.metamath-zero`.

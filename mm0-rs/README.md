@@ -55,9 +55,18 @@ on Linux/Unix/MacOS).
 The `mm0-rs` program provides a number of modes and options if you
 want to invoke it directly. For example:
 
-* `mm0-rs server` causes it to send and receive LSP server commands via stdin and stdout. This is not used directly from the CLI but rather is invoked by `vscode-mm0` when it is set up to use `mm0-rs` as a language server.
+* `mm0-rs server` causes it to send and receive LSP server commands via stdin and stdout. This is not used directly from the CLI but rather is invoked by `vscode-mm0` when it is set up to use `mm0-rs` as a language server. Any other [LSP-compliant editor](https://microsoft.github.io/language-server-protocol/implementors/tools/) can drive it the same way.
 * `mm0-rs server --debug` is run by `vscode-mm0` when the extension itself is run in debugging mode, and this will enable backtraces and logging.
-* `mm0-rs compile foo.mm1` will compile an MM1 file, reporting errors to the console. This is essentially the console version of the `server` mode.
+* `mm0-rs compile foo.mm1` will compile an MM1 file, reporting errors to the console. This is essentially the console version of the `server` mode. Given an output file, `mm0-rs compile foo.mm1 foo.mmb` writes the proof: `.mmb` for the binary format, `.mmu` for the text one.
+* `mm0-rs join foo.mm0` prints a specification with its imports concatenated in, so that a verifier which reads a single file gets the whole spec.
+* `mm0-rs doc foo.mm1 out/` builds cross-linked documentation pages for a library, one per declaration.
+
+An MM1 file carries the proofs; the specification it is proved against is a separate `.mm0` file (the `pub` declarations of the MM1 file are the ones that have to appear in it, see [`mm1.md`](../mm0-hs/mm1.md)). The two are tied together by the verifier, which reads both:
+
+    mm0-rs compile -W peano.mm1 peano.mmb
+    mm0-c peano.mmb < peano.mm0
+
+(the `.mm0` file of a library with imports is fed through `mm0-rs join` first). This is what CI runs over every file in `examples/`.
 
 You can easily use `mm0-rs` from within Visual Studio Code.
 Start Visual Studio Code, then use File/Open,

@@ -1,87 +1,191 @@
-# Metamath Zero
+<p align="center">
+  <a href="https://digama0.github.io/mm0/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="site/logos/wordmark-dark.svg">
+      <img src="site/logos/wordmark.svg" alt="Metamath Zero" width="420">
+    </picture>
+  </a>
+</p>
 
-The MM0 project consists of a number of tools and verifiers and a specification centered on the language Metamath Zero.
+<p align="center">
+  <b>A language for writing specifications and proofs,<br>
+  checked by a verifier small enough to read.</b>
+</p>
 
+<p align="center">
+  <a href="https://digama0.github.io/mm0/">Website</a> &middot;
+  <a href="https://digama0.github.io/mm0/m0e/">Try it in your browser</a> &middot;
+  <a href="mm0.md">Specification</a> &middot;
+  <a href="https://digama0.github.io/mm0/thesis.pdf">Thesis</a> &middot;
+  <a href="https://www.youtube.com/watch?v=A7WfrW7-ifw">Video tutorial</a>
+</p>
 
-## Quick Start
+<p align="center">
+  <a href="https://github.com/digama0/mm0/actions/workflows/build.yml"><img
+    src="https://github.com/digama0/mm0/actions/workflows/build.yml/badge.svg" alt="CI status"></a>
+</p>
 
-There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-rs` + `vscode-mm0` to get a decent MM0 IDE. There is also a [video tutorial](https://www.youtube.com/watch?v=A7WfrW7-ifw) for this combination.
+## What it is
 
-* `mm0-rs`: An MM0/MM1 server written in Rust. See [`mm0-rs/README.md`](mm0-rs/README.md).
-* `vscode-mm0`: VSCode plugin for MM0/MM1 syntax highlighting, with advanced features enabled via an LSP server (either `mm0-hs` or `mm0-rs`). See [`vscode-mm0/README.md`](vscode-mm0/README.md).
-* `mm0-c`: A bare bones MM0 verifier, intended for formalization. See [`mm0-c/README.md`](mm0-c/README.md).
-* `mm0-hs`: Haskell verifier and toolchain, see [`mm0-hs/README.md`](mm0-hs/README.md). Deprecated, but contains most of the translations.
-* `mm0-lean`: A collection of lean scratch files and minor formalizations. See [`mm0-lean/README.md`](mm0-lean/README.md).
+An `.mm0` file is a specification and nothing else: sorts, term constructors,
+axioms, and the statements of theorems. It contains no proofs, which is what
+keeps it short enough to read, and reading it is the only way to know what a
+formalization actually claims.
 
-## Introduction
+The proofs live in a separate file (the binary `.mmb`, or the text `.mmu`).
+Anything may produce them. Usually that is an `.mm1` file, which is `.mm0`
+extended with a proof syntax and a Scheme-like metaprogramming language for
+writing tactics; `mm0-rs` elaborates it and emits the specification and the
+proof. None of that has to be trusted, because the verifier re-checks every
+step against the specification knowing nothing about where the proof came from.
 
-Metamath Zero is a language for writing specifications and proofs. Its emphasis is on balancing simplicity of verification and human readability of the specification. That is, it should be easy to see what exactly is the meaning of a proven theorem, but at the same time the language is as pared down as possible to minimize the number of complications in potential verifiers.
+That verifier is the only thing you have to believe, so it is kept small: the
+reference implementation, `mm0-c`, is under 3,000 lines of C, and checking a
+library costs about what reading the file costs. It also fixes no logic of its
+own: you supply the axioms (Peano arithmetic, ZFC, higher-order logic, whatever
+the development needs) and it checks proofs in the system you defined.
 
-The language was inspired by Metamath and Lean, two proof languages at opposite ends of a spectrum.
+The project's endpoint is [`verifier.mm0`](examples/verifier.mm0): the statement
+that an MM0 verifier is correct, down to the x86 instructions it executes, to be
+proved in MM0 and checked by an MM0 verifier. The reason to finish it is what
+can be stacked on top: verifiers for more mainstream languages, and verified
+programs generally, resting on a base that has been verified rather than
+assumed.
 
-* [Metamath](http://us.metamath.org/) is a logical framework with a focus on simplicity of the verifier and as a result a multitude of different verifiers exist for it. It has a strong specification, and proof checking is seriously fast (on the order of 1-10s to check the entire considerable library [set.mm](https://github.com/metamath/set.mm/)).
+## Try it
 
-  However, it suffers from a number of soundness issues. These are not bugs because the verifier checks exactly what it claims, but rather issues with the semantics of a reasonable Metamath axiomatization.
-  * Proof expressions in Metamath are strings of symbols, not trees. This is good for verification speed because computers can handle strings well, but it means that if the input expression grammar is ambiguous (and Metamath does not check this), then it is possible for proofs to take advantage of this and possibly derive a contradiction. (So one can view this as a kind of analogue to C "undefined behavior" in that the verifier is not checking this condition but needs it for the intended model to work.)
-  * Definitions are just axioms in Metamath. There are tools in the Metamath ecosystem to check that definitions are conservative, but they are not built in to the verifier and yet are important for the semantic model.
+Nothing is uploaded in any of these; the verifier is compiled to WebAssembly and
+every file is checked in the tab you opened it in.
 
-* [Lean](http://leanprover.github.io/) is an interactive theorem prover based on dependent type theory. It has a robust tactic interface and a server mode for interacting with text editors to give live feedback, which helps considerably with proof authoring.
+* [**Editor**](https://digama0.github.io/mm0/m0e/): `mm0-rs` in the browser,
+  elaborating and reporting errors as you type.
+* [**Proof explorer**](https://digama0.github.io/mm0/mmb/): step a compiled
+  `.mmb` proof the way the verifier's stack machine runs it.
+* [**Documentation**](https://digama0.github.io/mm0/doc/peano/): generated pages
+  for a whole library, every statement and proof tree cross-linked.
 
-  However, it uses a very strong axiomatic framework, which cannot be "turned off", so it's not easy to verify proofs in a weak logic except by deep embedding, where many of the tactic features no longer apply. It is also monolithic - there is only one program that can read `.lean` files (although it does have an export format which can be checked by an external typechecker), and this program is huge and full of bugs. (To date, there have been no proofs of false in the most paranoid mode, but verification of the full program is impractical.)
+To work locally, build the compiler and language server (this needs
+[Rust](https://rustup.rs/)):
 
-Metamath Zero aims to be Metamath without the verification gaps. It is interpretable as a subset of HOL, but with checking times comparable to Metamath. On the other hand, because there is no substitute for human appraisal of the definitions and the endpoint theorems themselves, the specification format is designed to be clear and straightforward, and visually resembles Lean.
+```sh
+git clone https://github.com/digama0/mm0
+cd mm0/mm0-rs
+cargo build --release
+```
 
-We embrace the difference between fully explicit *proofs* that are verified by a trusted verifier, and *proof scripts* that are used by front-end tools like Lean to generate proofs. Metamath Zero is focused on the proof side, with the expectation that proofs will not be written by hand but rather compiled from a more user friendly but untrusted language. So MM0 proofs tend to be very verbose and explicit (but not repetitive, because that is a performance issue).
+then add the editor integration, which gives live diagnostics, go-to-definition
+and hover:
 
-The goal of this project is to build a formally verified (in MM0) verifier for MM0, down to the hardware, to build a strong trust base on which to build verifiers for more mainstream languages or other verified programs. This has lead to a number of subprojects that are contained in this repository.
+```sh
+code --install-extension digama0.metamath-zero
+```
 
-## Metamath One and Metamath Zero
+The [video tutorial](https://www.youtube.com/watch?v=A7WfrW7-ifw) walks through
+that pair. Vim syntax files are in [`vim/`](vim/) (`cp -r vim/* ~/.vim/`).
 
-Metamath zero is a specification-only language, and it is paired with proofs with a defined theory but an implementation-defined concrete syntax. Currently the lisp-like MMU format and the binary MMB format are supported by `mm0-rs` and `mm0-hs`, and the `mm0-c` verifier supports only MMB. But neither of these is intended for being written by humans. If MM0 is the specification, then these are the compiled program meeting the specification.
+Building the reference verifier takes one command, and it is worth doing at
+least once to see how little there is to it:
 
-But then what plays the role of the source text in this analogy? Metamath One is a language which extends the syntax of MM0 with the ability to write proofs, including elaboration and unification, and with a metaprogramming environment to allow the writing of tactics. The result of processing an MM1 file is an MM0 specification file and a MMU or MMB proof file (alternatively, an MM0 file can be written separately and matched against the MM1 file). Because the process is proof producing, it need not be trusted.
+```sh
+gcc mm0-c/main.c -O2 -o mm0-c
+./mm0-c proof.mmb < spec.mm0
+```
 
-The MM1 files in the `examples/` directory have been written using the VSCode extension, which uses the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) to communicate to `mm0-rs server` (`mm0-rs` can also communicate to any other [LSP-compliant editor](https://microsoft.github.io/language-server-protocol/implementors/tools/)), which enables support for syntax highlighting, go-to-definition and hover. Most importantly, it supports live diagnostics (red squiggles on errors), which allows for rapid feedback on proof progress. (The interface is strongly inspired by [`vscode-lean`](https://github.com/leanprover/vscode-lean/).)
+## Why another proof language
 
-## What you will find in this repository
+MM0 was shaped by two systems at opposite ends of a spectrum.
 
-* [`mm0.md`](mm0.md) is an informal specification of the language.
-* The `examples/` directory contains a number of MM0 test files.
-  * [`peano.mm0`](examples/peano.mm0) and its proof [`peano.mm1`](examples/peano.mm1) is a formalization of Peano Arithmetic in MM0. The formalization of MM0 in MM0 occurs in this axiom system, so it is built for practical use.
-    * [`peano_hex.mm1`](examples/peano_hex.mm1), [`mm0.mm1`](examples/mm0.mm1), [`x86.mm1`](examples/x86.mm1), [`compiler.mm1`](examples/compiler.mm1), and [`verifier.mm1`](examples/compiler.mm1) all extend this library of results of PA.
-  * [`hello.mm0`](examples/hello.mm0) / [`hello.mmu`](examples/hello.mmu) is a test of the `output` command of MM0, a somewhat unusual feature for producing verified output.
-  * [`string.mm0`](examples/string.mm0) / [`string.mmu`](examples/string.mmu) is a more elaborate test of the `output` and `input` commands, to build a program that reads its own specification.
-  * [`set.mm0`](examples/set.mm0) is a hand-translation of the axiom system of [`set.mm`](https://github.com/metamath/set.mm/) into MM0. (The corresponding proof file [`set.mmu`](examples/set.mmu) is WIP.)
-  * [`mm0.mm0`](examples/mm0.mm0) and its proof [`mm0.mm1`](examples/mm0.mm1) is a complete formal specification of the `.mm0` specification file format and verification, from input strings, through the parser, to the checking of proofs. For the formally minded this may be a better reference than [`mm0.md`](mm0.md).
-  * [`x86.mm0`](examples/x86.mm0) and its proof [`x86.mm1`](examples/x86.mm1) is a formalization of the x86 architecture, used as the target for the MMC compiler.
-  * [`verifier.mm0`](examples/verifier.mm0) is the main goal theorem of the project, the statement of implementation correctness of an MM0 verifier. Eventually [`verifier.mm1`](examples/verifier.mm1) will be a proof of this statement.
-* `mm0-rs` is a compiler and LSP server for MM1.
-  * [`mm1.md`](mm0-hs/mm1.md) is a description of the MM1 language (this is in the `mm0-hs` directory but it is up to date for `mm0-rs`).
-  * `mm0-rs compile` can be used to run an MM1 file to produce an MMU or MMB output. If there are errors in the file, it will provide similar information to the server mode.
-  * `mm0-rs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
-* `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
-  * [`mmb.md`](mm0-c/mmb.md) is an informal specification of the MMB format.
-  * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
-* The `mm0-hs` program is a verifier written in Haskell that contains most of the "tooling" for MM0. Most importers and exporters are implemented as subparts of this program. See [`mm0-hs/README.md`](mm0-hs/README.md) for a more complete description of capabilities.
-  * [`mm1.md`](mm0-hs/mm1.md) is a description of the MM1 language.
-  * `mm0-hs verify` can be used to check a MM0 specification and MMU proof.
-  * `mm0-hs export` will translate an MMU file to MMB format.
-  * `mm0-hs compile` can be used to run a MM1 file to produce an MMB output, similar to `mm0-rs`. (However, the MM1 implementation is out of date and this will not work on most mm1 files in the examples directory).
-  * `mm0-hs server` is also similar to `mm0-rs server` and also out of date.
-  * `mm0-hs from-mm` performs wholescale translations from Metamath to MM0 + MMU or MM0 + MMB. This is the best way to obtain a large test set, because `set.mm` is quite large and advanced.
-  * `mm0-hs to-hol` will show MM0 theorems and proofs in HOL syntax. Currently the syntax is only meant to be somewhat representative of a HOL based system; this is mostly a IR for other translations.
-  * `mm0-hs to-othy` will translate MM0 theorems into [OpenTheory](http://www.gilith.com/opentheory/), which can be further translated into production systems including [HOL Light](https://www.cl.cam.ac.uk/~jrh13/hol-light/index.html), [HOL4](https://hol-theorem-prover.org/), [ProofPower](http://www.lemma-one.com/ProofPower/index/) and [Isabelle](https://www.cl.cam.ac.uk/research/hvg/Isabelle/). (Unfortunately there is a ~30x blow up in this translation due to limitations of the OpenTheory axiom system. It is possible that the secondary targets can obtain better results by a direct translation.)
-  * `mm0-hs to-lean` translates MM0 into [Lean](leanprover.github.io/) source files.
-* `mm0-lean` contains a tactic framework for writing MM0 proofs using Lean. [WIP]
-  * `mm0-lean/x86.lean` is a Lean formalization of the Intel x86 semantics.
-* `vim` contains some basic vim files for syntax coloring.
-  Copy them into `$HOME/.vim/`
-  (e.g. with `cp -r vim/* ~/.vim/`) to install them.
+[Metamath](http://us.metamath.org/) has a specification so simple that many
+independent verifiers exist for it, and checking all of
+[set.mm](https://github.com/metamath/set.mm/) takes seconds. But a reasonable
+Metamath axiomatization has soundness gaps that the verifier does not close.
+Proof expressions are strings rather than trees, so an ambiguous grammar (which
+Metamath does not check for) can be exploited to derive a contradiction, rather
+as C undefined behavior is a condition the compiler needs but does not verify.
+Definitions are just axioms, and the tools that check them for conservativity
+live outside the verifier.
 
-## Third party MM0 verifiers
+[Lean](http://leanprover.github.io/) has the interactive story: tactics, and a
+server that gives live feedback while you write a proof. But its axiomatic
+framework is strong and cannot be turned off, so proving something in a weak
+logic means a deep embedding, where the tactic machinery no longer applies. It
+is also monolithic: one large program reads `.lean` files, and verifying that
+program is impractical.
 
-Since MM0 has a simple specification, there have been a few alternative verifiers written for MM0. (I ([@digama0](https://github.com/digama0)) am not directly affiliated with these verifier projects, and some of them are in WIP status. See the linked repositories for more information.)
+Metamath Zero aims at Metamath without the verification gaps. It is
+interpretable as a subset of HOL, checks about as fast as Metamath, and because
+no verifier can substitute for a human reading the definitions and the final
+theorem statements, the specification format is built to be read (it looks
+rather like Lean).
 
-* [`ammkrn/second_opinion`](https://github.com/ammkrn/second_opinion) is a third-party alternate verifier for MM0 + MMB, like `mm0-c`, written in Rust by [@ammkrn](https://github.com/ammkrn).
-* [`trivial-rs`](https://github.com/trivial-rs/kernel) contains an MMB verifier, as well as an [`mmb-objdump`](https://github.com/trivial-rs/mmb-binutils/tree/main/objdump) program for debugging MMB files. Written in Rust by [@IvoWingelaar](https://github.com/IvoWingelaar).
-* [`mm0kt`](https://github.com/Lakedaemon/mm0kt/) is a work in progress MM0 + MMU (text mode) verifier, written in Kotlin by [@Lakedaemon](https://github.com/Lakedaemon).
+The split between the two is deliberate. A *proof* is a finished artifact that a
+trusted verifier checks; a *proof script* is what a front end runs to produce
+one. MM0 is concerned only with the first, on the assumption that proofs are
+compiled from something friendlier rather than written by hand, so they tend to
+be verbose and fully explicit (though not repetitive, which would be a
+performance problem).
+
+## What's in this repository
+
+| Path | What it is |
+| --- | --- |
+| [`mm0.md`](mm0.md) | The specification of the MM0 language. [`examples/mm0.mm0`](examples/mm0.mm0) says the same thing formally. |
+| [`mm0-rs/`](mm0-rs/README.md) | Rust: the MM1 compiler, the LSP server, the documentation generator, and the MMC compiler. |
+| [`mm0-c/`](mm0-c/README.md) | The reference verifier, in C. [`mmb.md`](mm0-c/mmb.md) defines the MMB proof format it reads. |
+| [`examples/`](examples/) | The libraries: Peano arithmetic, x86, the MM0 specification, the compiler. |
+| [`m0e/`](m0e/README.md) | The browser editor: `mm0-rs` compiled to WebAssembly behind a Monaco front end. |
+| [`mm0-js/`](mm0-js/) | The MMB proof explorer, a verifier in TypeScript that shows its state at every step. |
+| [`vscode-mm0/`](vscode-mm0/README.md) | The VS Code extension: syntax highlighting, and the LSP client for `mm0-rs server`. |
+| [`mm0-hs/`](mm0-hs/README.md) | Haskell: deprecated as a server, but still where most of the translations live. |
+| [`site/`](site/README.md) | The sources for [digama0.github.io/mm0](https://digama0.github.io/mm0/). |
+| [`tests/`](tests/README.md) | Test suites for MM0, MM1, MMU and MMB, and the x86 specification tests. |
+| [`mm0-lean/`](mm0-lean/README.md), [`mm0-lean4/`](mm0-lean4/README.md) | Lean scratch work, including a Lean formalization of x86 semantics. |
+| [`vim/`](vim/README.md) | Vim syntax files. |
+
+The languages each have their own description: [`mm1.md`](mm0-hs/mm1.md) for the
+proof language (it lives in the `mm0-hs` directory but is current for `mm0-rs`),
+and [`mmc.md`](mm0-rs/mmc.md) for Metamath C, the systems language whose
+compiler emits a proof that the program it produced meets its specification.
+
+`mm0-hs` is out of date as a compiler and server, but it is still the way to get
+a large corpus in and out of MM0: `from-mm` translates wholesale from Metamath,
+and `to-hol`, `to-othy` and `to-lean` translate outward, to HOL syntax, to
+[OpenTheory](http://www.gilith.com/opentheory/) (and from there to HOL Light,
+HOL4, ProofPower and Isabelle), and to Lean.
+
+<details>
+<summary><b>The example libraries in full</b></summary>
+
+| File | What it is |
+| --- | --- |
+| [`peano.mm0`](examples/peano.mm0) / [`peano.mm1`](examples/peano.mm1) | Peano arithmetic, built for practical use: everything else is stacked on it. |
+| [`peano_hex.mm1`](examples/peano_hex.mm1) | Hexadecimal digits and strings on top of `peano`, for talking about concrete input and output. |
+| [`mm0.mm0`](examples/mm0.mm0) / [`mm0.mm1`](examples/mm0.mm1) | A formal specification of the `.mm0` format and of verification itself, from input string through parsing to proof checking. For the formally minded this is a better reference than [`mm0.md`](mm0.md). |
+| [`x86.mm0`](examples/x86.mm0) / [`x86.mm1`](examples/x86.mm1) | The x86 architecture, the target the MMC compiler proves things about. |
+| [`compiler.mm0`](examples/compiler.mm0) / [`compiler.mm1`](examples/compiler.mm1) | The MMC compiler's correctness statement, and the proof in progress (it still admits a `sorry` axiom, so that the partial proof stays checked in CI). |
+| [`verifier.mm0`](examples/verifier.mm0) | The goal theorem: an MM0 verifier is correct. [`verifier.mm1`](examples/verifier.mm1) will be the proof. |
+| [`hol.mm0`](examples/hol.mm0) / [`hol.mm1`](examples/hol.mm1) | Higher-order logic, as a second axiom system to work in. |
+| [`set.mm0`](examples/set.mm0) | The [`set.mm`](https://github.com/metamath/set.mm/) axiom system, hand-translated. The proof file is a work in progress. |
+| [`hello.mm0`](examples/hello.mm0) / [`hello.mmu`](examples/hello.mmu) | A test of the `output` command, MM0's way of producing verified output. |
+| [`string.mm0`](examples/string.mm0) / [`string.mmu`](examples/string.mmu) | `output` and `input` together: a program that reads its own specification. |
+| [`demo.mm1`](examples/demo.mm1), [`miu.mm0`](examples/miu.mm0) | Small self-contained systems, a good place to start reading. |
+
+</details>
+
+## Other verifiers
+
+Because the format is small and precisely specified, more than one program can
+play the role of the verifier, which is the point: no single implementation has
+to be believed. These are third-party projects, some of them work in progress,
+and [@digama0](https://github.com/digama0) is not affiliated with them. See the
+linked repositories for status.
+
+| Verifier | | |
+| --- | --- | --- |
+| [`second_opinion`](https://github.com/ammkrn/second_opinion) | Rust | An MM0 + MMB verifier, like `mm0-c`, by [@ammkrn](https://github.com/ammkrn). |
+| [`trivial-rs`](https://github.com/trivial-rs/kernel) | Rust | An MMB verifier, plus [`mmb-objdump`](https://github.com/trivial-rs/mmb-binutils/tree/main/objdump) for inspecting MMB files, by [@IvoWingelaar](https://github.com/IvoWingelaar). |
+| [`mm0kt`](https://github.com/Lakedaemon/mm0kt/) | Kotlin | An MM0 + MMU verifier, by [@Lakedaemon](https://github.com/Lakedaemon). |
+
+## License
+
+Released to the public domain under [CC0](LICENSE.txt).

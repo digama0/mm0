@@ -10,6 +10,30 @@ To run the program you can use the following:
 
   This verifies the given `.mm0` specification file, and checks the proof file if given. It prints `spec checked` if the `.mm0` file is well formed and typechecks, and if the `.mmu` file is also provided then it prints `verified` if the specification is proven, followed by all the result of all `output` statements.
 
+* `mm0-hs export MMU-FILE [-S] -o MMB-FILE`:
+
+  Translates a `.mmu` proof file into the binary [MMB format](/mm0-c/mmb.md), which is what `mm0-c` reads. `-S` strips the debugging index.
+
+* `mm0-hs from-mm MM-FILE [-o MM0-FILE MMU/MMB-FILE]`:
+
+  Translates a Metamath database wholesale into MM0 + MMU or MM0 + MMB. This is the best way to obtain a large test set, because [`set.mm`](https://github.com/metamath/set.mm/) is quite large and advanced. `mm0-hs show-bundled MM-FILE` lists the database's *bundled* theorems, the ones whose distinct variable conditions allow two variables to be identified, which is the case the translation has to take apart.
+
+* `mm0-hs to-hol MMU-FILE [-o HOL-FILE]`:
+
+  Shows MM0 theorems and proofs in HOL syntax. The syntax is only meant to be somewhat representative of a HOL based system; this is mostly an IR for the translations below. `mm0-hs to-lisp MMU-FILE [-o LISP-FILE]` writes the same IR as lisp s-expressions.
+
+* `mm0-hs to-othy MMU-FILE [-o ART-FILE]`:
+
+  Translates MM0 theorems into [OpenTheory](http://www.gilith.com/opentheory/), which can be further translated into production systems including [HOL Light](https://www.cl.cam.ac.uk/~jrh13/hol-light/index.html), [HOL4](https://hol-theorem-prover.org/), [ProofPower](http://www.lemma-one.com/ProofPower/index/) and [Isabelle](https://www.cl.cam.ac.uk/research/hvg/Isabelle/). Unfortunately there is a ~30x blow up in this translation due to limitations of the OpenTheory axiom system; it is possible that the secondary targets can obtain better results by a direct translation.
+
+* `mm0-hs to-lean MMU-FILE [-o LEAN-FILE]`:
+
+  Translates MM0 into [Lean](https://leanprover.github.io/) source files. [`mm0-lean`](/mm0-lean/README.md) shows this being used on `set.mm`, together with the command lines it was invoked with.
+
+* `mm0-hs compile [MM0/MM1-FILE]` and `mm0-hs server [--debug]`:
+
+  The MM1 compiler and LSP server, which work the same way as [`mm0-rs compile` and `mm0-rs server`](/mm0-rs/README.md). Both are out of date: the MM1 implementation here will not work on most of the `.mm1` files in `examples/`, and `vscode-mm0` expects `mm0-rs`. See [`mm1.md`](mm1.md) for the language itself, which is still current.
+
 The MM0 spec leaves many parts of the language implementation-defined, and most of the specification is optional. This implementation has the following behavior:
 
 * All the primary commands are supported: `sort, term, axiom, def, theorem, delimiter, notation, infixl/r, prefix, coercion, input, output`.
