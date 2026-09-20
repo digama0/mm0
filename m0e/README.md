@@ -4,6 +4,10 @@ These are the sources for the web site version of `mm0-rs`: a Monaco editor in
 the browser, backed by `mm0-rs` compiled to WebAssembly, which elaborates as you
 type and reports diagnostics live.
 
+It follows the system light/dark preference until the toggle in the bar pins
+one. The pin is stored under the key the homepage uses, and both are served
+from the same origin, so a theme chosen on either applies to both.
+
 ### Building
 
 Requires the wasm target and [`wasm-pack`](https://drager.github.io/wasm-pack/):

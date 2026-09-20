@@ -1,22 +1,30 @@
-/* Night Owl, the editor's own palette: the chrome is made of the same
-   material as the code it frames. The accents are not decorative -- each
-   one already means something in the editor, and means the same here. */
+/* Night Owl and its light counterpart, the editor's own palettes: the chrome is
+   made of the same material as the code it frames. The accents are not
+   decorative -- each one already means something in the editor, and means the
+   same here, which is why the same values appear in src/index.js.
+
+   The pair follows the system until the reader pins one, and the toggle pins it
+   by stamping `data-theme` on <html>, as the homepage does. Pinning there pins
+   it here too: both read the same key, from the same origin. */
 :root {
-  --bg: #011627;
-  --raised: #071e33;
-  --line: #1d3b53;
-  --fg: #d6deeb;
-  --muted: #5f7e97;
-  --faint: #486078;
-  --sort: #ffcb8b;
-  --term: #addb67;
-  --axiom: #f78c6c;
-  --theorem: #82aaff;
-  --lisp: #c792ea;
-  --ok: #addb67;
-  --err: #ff5874;
+  color-scheme: light dark;
+  --bg:      light-dark(#fbfbfb, #011627);
+  --raised:  light-dark(#f0f0f0, #071e33);
+  --line:    light-dark(#d9d9d9, #1d3b53);
+  --fg:      light-dark(#403f53, #d6deeb);
+  --muted:   light-dark(#5f7385, #5f7e97);
+  --faint:   light-dark(#97a1b2, #486078);
+  --sort:    light-dark(#8a5d00, #ffcb8b);
+  --term:    light-dark(#3a7420, #addb67);
+  --axiom:   light-dark(#b1511b, #f78c6c);
+  --theorem: light-dark(#4267c9, #82aaff);
+  --lisp:    light-dark(#994cc3, #c792ea);
+  --ok:      light-dark(#3a7420, #addb67);
+  --err:     light-dark(#c5302c, #ff5874);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -74,6 +82,12 @@ body {
 }
 #file:hover { border-color: var(--line); background-color: var(--bg); }
 #file option { background: var(--bg); color: var(--fg); }
+/* When the OS forces colours it does not paint our background images, so the
+   drawn caret is simply missing; hand the control back to the browser, which
+   has a caret of its own and draws it in the system colours. */
+@media (forced-colors: active) {
+  #file { appearance: auto; background-image: none; padding-right: 0.4rem; }
+}
 
 #imports {
   color: var(--muted);
@@ -108,6 +122,23 @@ body {
 #explore:hover:not(:disabled) { background: var(--bg); border-color: var(--theorem); }
 #explore:disabled { color: var(--faint); cursor: default; }
 
+/* Half-filled disc: the same switch the homepage carries, at this bar's scale. */
+#theme {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+#theme:hover { color: var(--fg); border-color: var(--muted); }
+#theme svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+
 /* The one thing this page exists to tell you, so it sits against the name
    of the file it is talking about rather than in the far corner. */
 #state {
@@ -125,6 +156,9 @@ body {
   border-radius: 50%;
   background: currentColor;
 }
+/* Forced colours replace a background with the canvas, which would leave the
+   dot invisible; a system colour is kept as asked for. */
+@media (forced-colors: active) { #state::before { background: CanvasText; } }
 #state[data-state="verified"] { color: var(--ok); }
 #state[data-state="errors"] { color: var(--err); }
 #state[data-state="checking"]::before { animation: pulse 1.2s ease-in-out infinite; }
@@ -247,28 +281,28 @@ body {
 
 /* ---- inline diagnostics ------------------------------------------ */
 
-/* The annotation takes the colour of the squiggle it belongs to. Night
-   Owl sets no diagnostic colours, so these are monaco's own defaults for
-   `editorError`/`editorWarning`/`editorInfo` -- matching them is what ties
-   the message to the underline that put it there. */
+/* The annotation takes the colour of the squiggle it belongs to. Neither
+   palette sets diagnostic colours, so these are monaco's own defaults for
+   `editorError`/`editorWarning`/`editorInfo`, light beside dark -- matching
+   them is what ties the message to the underline that put it there. */
 /* Doubled up on purpose. Monaco also puts its own token class on injected
    text (`mtk1 lens lens-error`), and that rule is a single class too -- with
    equal specificity the winner is whichever stylesheet came last, which is
    monaco's, since it injects its theme at runtime. Two classes settles it
    without reaching for !important. */
-.lens.lens-error { color: #f14c4c; }
-.lens.lens-warning { color: #cca700; }
-.lens.lens-info { color: #3794ff; }
-.lens.lens-hint { color: rgba(238, 238, 238, 0.7); }
+.lens.lens-error { color: light-dark(#e51400, #f14c4c); }
+.lens.lens-warning { color: light-dark(#bf8803, #cca700); }
+.lens.lens-info { color: light-dark(#1a85ff, #3794ff); }
+.lens.lens-hint { color: light-dark(rgba(0, 0, 0, 0.6), rgba(238, 238, 238, 0.7)); }
 
 /* Strong enough to read as a band you can find by scrolling, which is the
    point of the thing, and in the same hue as the message so the two read
    as one annotation. Info gets one too: an MM0 `do` block's output is
    worth spotting, not just its failures. */
-.lens-line-error { background: rgba(241, 76, 76, 0.22); }
-.lens-line-warning { background: rgba(204, 167, 0, 0.20); }
-.lens-line-info { background: rgba(55, 148, 255, 0.18); }
-.lens-line-hint { background: rgba(238, 238, 238, 0.08); }
+.lens-line-error { background: light-dark(rgba(229, 20, 0, 0.11), rgba(241, 76, 76, 0.22)); }
+.lens-line-warning { background: light-dark(rgba(191, 136, 3, 0.15), rgba(204, 167, 0, 0.20)); }
+.lens-line-info { background: light-dark(rgba(26, 133, 255, 0.11), rgba(55, 148, 255, 0.18)); }
+.lens-line-hint { background: light-dark(rgba(0, 0, 0, 0.05), rgba(238, 238, 238, 0.08)); }
 
 #container { flex: 1; min-width: 0; }
 

@@ -26,57 +26,189 @@ const examples = new Map(req.keys()
   .map(key => [key.replace(/^\.\//, ""), req(key).default])
   .sort(([a], [b]) => a.localeCompare(b)));
 
+// One palette per theme, keyed by what a colour means rather than by where it
+// is used, so the two themes are built from one set of rules. The dark column
+// is Night Owl's own; the light column is Night Owl Light's, except for the two
+// roles it has no colour for (this language leans on green and amber, which a
+// javascript theme never needs). Every light value clears 4.8:1 against its
+// #fbfbfb background, about where the dark values sit against #011627.
+//
+// src/ui.css carries the same colours for the chrome: a sort in the Contents
+// panel is the colour a sort is in the editor.
+const palettes = {
+  dark: {
+    fg: 'D6DEEB', param: 'D7DBE0', comment: '637777', teal: '7FDBCA',
+    blue: '82AAFF', green: 'ADDB67', purple: 'C792EA', string: 'ECC48D',
+    number: 'F78C6C', amber: 'FFCB8B', pink: 'FF5874',
+  },
+  light: {
+    fg: '403F53', param: '4B4A5E', comment: '78819A', teal: '0B7F83',
+    blue: '4267C9', green: '3A7420', purple: '994CC3', string: 'B8514F',
+    number: 'AA0982', amber: '8A5D00', pink: 'C2185B',
+  },
+};
+
 // A standalone theme resolves a semantic token type by matching its *name*
 // against these TextMate rules, and the match is by prefix -- so Night Owl's
 // `variable.other` does not answer for `variable`. A type that matches nothing
 // resolves to no styling and monaco then drops the token entirely, which reads
 // as semantic highlighting silently not working. One rule per type in the
-// server's legend, in Night Owl's palette:
-const semanticRules = [
-  { token: 'variable', foreground: '7FDBCA' },   // local / lisp variable
-  { token: 'parameter', foreground: 'F78C6C' },  // dummy variable
-  { token: 'property', foreground: 'FFCB8B' },   // hypothesis / subproof
-  { token: 'method', foreground: '82AAFF' },     // theorem
-  { token: 'function', foreground: 'ADDB67' },   // lisp function
+// server's legend:
+const semanticRules = p => [
+  { token: 'variable', foreground: p.teal },     // local / lisp variable
+  { token: 'parameter', foreground: p.number },  // dummy variable
+  { token: 'property', foreground: p.amber },    // hypothesis / subproof
+  { token: 'method', foreground: p.blue },       // theorem
+  { token: 'function', foreground: p.green },    // lisp function
   // A builtin. Monaco resolves a semantic token by matching
   // `[type, ...modifiers].join('.')` against these rules, with the same
   // dot-prefix fallback as everywhere else -- so this has to be listed after
   // (more specific than) `function`, which would otherwise answer for it.
   // vscode maps `function.defaultLibrary` onto `support.function` by its
-  // standard fallback rules, and 82AAFF is what Night Owl gives that scope.
-  { token: 'function.defaultLibrary', foreground: '82AAFF' },
-  { token: 'macro', foreground: 'C792EA' },      // lisp macro
-  { token: 'keyword', foreground: 'FF5874' },
-  { token: 'comment', foreground: '637777' },
+  // standard fallback rules, which is why it takes the same colour as that
+  // scope does below.
+  { token: 'function.defaultLibrary', foreground: p.blue, fontStyle: 'italic' },
+  { token: 'macro', foreground: p.purple },      // lisp macro
+  { token: 'keyword', foreground: p.pink },
+  { token: 'comment', foreground: p.comment },
 ];
 
-// Theme rules for the scopes the Monarch grammar emits, where Night Owl's own
-// answer is wrong for this language.
+// Every scope the Monarch grammar emits, except the ones a rule below already
+// answers for: `keyword.other` (a declaration keyword, `sort` or `theorem`)
+// takes the semantic `keyword` colour, and a `variable.other` takes the
+// semantic `variable` colour, since nothing here is more specific than those.
+//
+// For dark these restate what Night Owl already says (they are appended to its
+// own rules, so the values have to agree); for light they are the whole theme,
+// since monaco-themes ships no light Night Owl to inherit from and `vs` would
+// answer with its own blue keywords and red strings.
+//
+// Two of them are this language rather than the theme:
 //
 // `entity.name.type` is every sort -- declared by `sort`, and used in binders
-// and return types. Night Owl has no rule for it at all, so it would draw in
-// the default foreground; green is what it uses for `support.type` elsewhere,
-// and it has to read differently from `entity.name.class`, the name a
-// declaration binds.
+// and return types. Neither palette has a rule for it at all, so it would draw
+// in the default foreground; green is what Night Owl uses for `support.type`
+// elsewhere, and it has to read differently from `entity.name.class`, the name
+// a declaration binds.
 //
 // A math string is *not* a string to look at. The TextMate grammar gives the
 // region no scope at all -- only the `$`s are named -- so in vscode a formula
 // draws in the plain foreground and only the semantic tokens inside it have
 // colour. Monarch has to name the region something to track it, and anything
-// containing `string` inherits Night Owl's green, so the colour is put back to
-// the theme's own foreground rather than the token being renamed: that keeps
-// the region a string as far as monaco is concerned, which is what stops
-// bracket matching from reaching inside a formula.
-const grammarRules = data => [
-  { token: 'entity.name.type', foreground: 'ADDB67' },
-  { token: 'string.template', foreground: data.colors['editor.foreground'].replace('#', '') },
+// containing `string` inherits the theme's string colour, so the colour is put
+// back to the foreground rather than the token being renamed: that keeps the
+// region a string as far as monaco is concerned, which is what stops bracket
+// matching from reaching inside a formula.
+const grammarRules = p => [
+  { token: 'comment', foreground: p.comment },
+  // a `--|` doc comment: the text that becomes the declaration's hover and its
+  // documentation page, so it is prose rather than an aside
+  { token: 'comment.special', foreground: p.comment, fontStyle: 'italic' },
+  // `:`, `>`, `=`, `@`. Night Owl paints operators the colour it gives
+  // variables here, which in this language would put the `:` of a binder in the
+  // colour of the names on either side of it; in MM0 they punctuate rather than
+  // compute, so they go with the brackets and the `;`
+  { token: 'keyword.operator', foreground: p.fg },
+  // `pub`, `local`, `strict`, `free`: they qualify the keyword they precede
+  { token: 'keyword.control.modifier', foreground: p.teal, fontStyle: 'italic' },
+  // `notation`, `infixl`, `prefix`, `coercion`: a statement about syntax rather
+  // than about the logic, which is worth telling apart from `theorem` at a glance
+  { token: 'keyword.other.notation', foreground: p.pink, fontStyle: 'italic' },
+  // `#t`, `#f`, `#undef` are values, so they read with the other literals
+  // rather than with the function names Night Owl groups them with
+  { token: 'constant.language', foreground: p.number },
+  { token: 'constant.numeric', foreground: p.number },
+  { token: 'constant.character.escape', foreground: p.number },
+  { token: 'constant.character.escape.invalid', foreground: p.number, fontStyle: 'underline' },
+  { token: 'entity.name.function', foreground: p.blue },
+  // a builtin in head position. Night Owl draws it exactly like a name you
+  // defined; italic is the same cue the semantic layer's `defaultLibrary` gets
+  { token: 'support.function', foreground: p.blue, fontStyle: 'italic' },
+  { token: 'string.quoted', foreground: p.string },
+  { token: 'variable.parameter', foreground: p.param },
+  // `.x`, a dummy: bound in the proof rather than in the statement, which is
+  // what the semantic layer marks it as too (`parameter`, the literal colour)
+  { token: 'variable.parameter.dummy', foreground: p.param, fontStyle: 'italic' },
+  { token: 'delimiter', foreground: p.fg },
+  { token: 'punctuation', foreground: p.fg },
+  { token: 'entity.name.type', foreground: p.green },
+  { token: 'string.template', foreground: p.fg },
 ];
 
+const themeRules = p => [...grammarRules(p), ...semanticRules(p)];
+
+// Night Owl Light's own editor colours; the rest monaco derives from `vs`.
+monaco.editor.defineTheme('mm0-light', {
+  base: 'vs',
+  inherit: true,
+  rules: themeRules(palettes.light),
+  colors: {
+    'editor.background': '#fbfbfb',
+    'editor.foreground': '#403f53',
+    'editor.lineHighlightBackground': '#f0f0f0',
+    'editor.selectionBackground': '#e0e0e0',
+    'editorCursor.foreground': '#403f53',
+    'editorLineNumber.foreground': '#90a7b2',
+    'editorLineNumber.activeForeground': '#403f53',
+    'editorIndentGuide.background': '#d9d9d9',
+    'editorWhitespace.foreground': '#d9d9d9',
+  },
+});
+
+// Which theme is showing, and why: the reader's pin if there is one, the system
+// otherwise. The key is the homepage's, and m0e is served from the same origin
+// as part of the site, so a theme pinned on either is the theme on both.
+const THEME_KEY = 'mm0-theme';
+const prefersDark = matchMedia('(prefers-color-scheme: dark)');
+const pinnedTheme = () => {
+  // a private window can refuse storage outright
+  try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+};
+const themeName = () => pinnedTheme() ?? (prefersDark.matches ? 'dark' : 'light');
+// High contrast is a third setting, crossed with light and dark: the OS can
+// ask for it, and so can the reader, through monaco's own "Toggle High
+// Contrast Theme" in the command palette (F1). Monaco ships a theme for each
+// side of the pair and switches to it, but `setTheme` does not consult any of
+// that -- so any theme set afterwards drops back out of high contrast unless
+// the choice is made here too.
+//
+// Neither source is readable directly (the palette action keeps its state to
+// itself), but both end in a theme whose class monaco puts on the editor, so
+// that is what gets asked.
+const forcedColors = matchMedia('(forced-colors: active)');
+const highContrast = () =>
+  forcedColors.matches ||
+  !!document.querySelector('.monaco-editor.hc-black, .monaco-editor.hc-light');
+// Night Owl arrives in its own chunk, so until it does, dark falls back to the
+// builtin that is closest to it rather than flashing the light theme.
+let darkReady = false;
+const editorTheme = name => highContrast()
+  ? (name === 'light' ? 'hc-light' : 'hc-black')
+  : name === 'light' ? 'mm0-light' : darkReady ? 'mm0-dark' : 'vs-dark';
+const applyTheme = () => {
+  const name = themeName();
+  document.documentElement.dataset.theme = name;
+  monaco.editor.setTheme(editorTheme(name));
+};
+applyTheme();
+
 import('monaco-themes/themes/Night Owl.json').then(data => {
-  monaco.editor.defineTheme('night-owl',
-    {...data, rules: [...data.rules, ...grammarRules(data), ...semanticRules]})
-  monaco.editor.setTheme('night-owl')
+  monaco.editor.defineTheme('mm0-dark',
+    {...data, rules: [...data.rules, ...themeRules(palettes.dark)]})
+  darkReady = true;
+  applyTheme();
 })
+
+document.getElementById("theme").addEventListener("click", () => {
+  const next = themeName() === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  applyTheme();
+});
+// While nothing is pinned the system decides; and a pin made on the homepage,
+// or in another tab of this page, arrives as a storage event.
+prefersDark.addEventListener("change", applyTheme);
+forcedColors.addEventListener("change", applyTheme);
+addEventListener("storage", e => { if (e.key === THEME_KEY) applyTheme(); });
 
 monaco.languages.register({
   id: lang,
@@ -112,7 +244,8 @@ for (const name of examples.keys()) {
 // added. Creating models first means that decision is taken while the setting
 // still says no.
 const editor = monaco.editor.create(document.getElementById("container"), {
-  theme: 'vs-dark',
+  // no `theme`: passing one here would set the global theme, overriding the
+  // one `applyTheme` has already chosen
   // The default is 'configuredByTheme', and a standalone theme's
   // `semanticHighlighting` is hardcoded to false and never read back from the
   // theme data -- so deferring to the theme means it is never on at all.
@@ -127,6 +260,14 @@ const editor = monaco.editor.create(document.getElementById("container"), {
 // into: `mm0-rs` will happily point at a file the user has never opened.
 for (const name of examples.keys()) modelFor(name);
 editor.setModel(modelFor(defaultFile));
+
+// On the way out of high contrast the palette action restores whichever theme
+// was showing when it was turned on, which need not be the one this page is set
+// to by now; the class it writes is the notice that it happened. Setting the
+// theme we already want is a no-op, so this settles in one pass.
+new MutationObserver(() => { if (!highContrast()) applyTheme(); })
+  .observe(document.querySelector(".monaco-editor"),
+    { attributes: true, attributeFilter: ["class"] });
 
 const nameOf = uri => uri.replace(/^.*\//, "");
 const lspPosition = position =>
