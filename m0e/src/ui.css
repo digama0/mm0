@@ -89,7 +89,12 @@ body {
   #file { appearance: auto; background-image: none; padding-right: 0.4rem; }
 }
 
+/* Takes the slack, which is what holds the buttons at the far end of the bar.
+   Doing it here rather than with a margin on the first of them keeps that true
+   whichever of them is present: a build with no explorer has no such button. */
 #imports {
+  flex: 1;
+  min-width: 0;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -106,10 +111,10 @@ body {
 }
 #imports button:hover { border-bottom-color: var(--theorem); }
 
-/* Compile this file and open it in the proof explorer. Sits at the far end of
-   the bar, since it is where you go next rather than something about the file. */
+/* Compile this file and open it in the proof explorer. It is where you go next
+   rather than something about the file, so it sits at the far end of the bar,
+   with the theme switch beyond it. */
 #explore {
-  margin-left: auto;
   font: inherit;
   color: var(--theorem);
   background: transparent;
