@@ -887,7 +887,6 @@ dependencies = [
  "bitflags 2.9.0",
  "byteorder",
  "clap",
- "console_error_panic_hook",
  "crossbeam",
  "debug_derive",
  "futures",
@@ -918,7 +917,6 @@ dependencies = [
  "typed-arena",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "web-sys",
  "zerocopy",
 ]
 
@@ -973,7 +971,6 @@ dependencies = [
  "lsp-types",
  "mm0_util",
  "num",
- "zerocopy",
 ]
 
 [[package]]

@@ -75,7 +75,7 @@ jobs:
             args: --workspace --all-features
           # The configuration m0e builds against
           - name: wasm32
-            args: --no-default-features --features wasm,server
+            args: --no-default-features --features server,mmc
             target: wasm32-unknown-unknown
             rustflags: -Dwarnings
     steps:
