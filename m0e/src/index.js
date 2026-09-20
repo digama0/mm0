@@ -629,33 +629,49 @@ import("../pkg/index.js").then(wasm => {
     }
   }, 50);
 
+  // How far the handoff got, so that a page being shown again can tell a
+  // compile that is still running from one that finished and navigated away.
+  let handoff = "none";
+
   if (EXPLORER_BASE) exploreButton.addEventListener("click", async () => {
     const source = nameOf(editor.getModel().uri.path);
     const mmbName = `${source}.mmb`;
     exploreButton.disabled = true;
     exploreButton.textContent = "compiling…";
+    handoff = "compiling";
     try {
       const bytes = await wasm.export_mmb(source);
       await putInExplorerStore(mmbName, bytes);
       // Same-tab navigation, so the store write is visible: it is the same
       // origin and the write has already committed.
+      handoff = "navigating";
       window.location.href = `${EXPLORER_BASE}#/${encodeURIComponent(mmbName)}`;
     } catch (e) {
+      handoff = "none";
       exploreButton.textContent = "export failed";
       console.error("export_mmb", e);
       setTimeout(() => { exploreButton.textContent = exploreLabel; refreshProblems(); }, 2000);
     }
   });
 
-  // Coming back from the explorer restores this page from the back/forward
-  // cache exactly as it was left, which is mid-handoff: the button still reads
-  // "compiling…" and is still disabled, and nothing recomputes it until the
-  // file is next edited. A restore is the one notice we get, so take it.
-  addEventListener("pageshow", e => {
-    if (!e.persisted) return;
+  // A page navigated away from is kept alive, not torn down, so coming back to
+  // it by the browser's back button restores it exactly as it was left: in the
+  // middle of a handoff, the button disabled and still reading "compiling…",
+  // with nothing due to recompute it until the file is next edited.
+  //
+  // A restore arrives as a pageshow with `persisted` set, in browsers that mark
+  // it; being shown again also makes the page visible and focused, which do not
+  // depend on that. Any of the three is the notice, and `handoff` is what keeps
+  // them from resetting a compile that is still running in a background tab.
+  const unstick = () => {
+    if (handoff !== "navigating") return;
+    handoff = "none";
     exploreButton.textContent = exploreLabel;
     refreshProblems();
-  });
+  };
+  addEventListener("pageshow", e => { if (e.persisted) unstick(); });
+  addEventListener("visibilitychange", () => { if (!document.hidden) unstick(); });
+  addEventListener("focus", unstick);
 
   // After `request` exists: opening a file asks for its outline.
   select.addEventListener("change", () => show(select.value));
