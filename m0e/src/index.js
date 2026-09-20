@@ -312,6 +312,7 @@ const state = document.getElementById("state");
 const importsEl = document.getElementById("imports");
 const outlineFilter = document.getElementById("outline-filter");
 const exploreButton = document.getElementById("explore");
+const exploreLabel = exploreButton.textContent;
 
 // Hand a compiled .mmb to the proof explorer, a sibling app under this same
 // origin (EXPLORER_BASE, set from M0E_EXPLORER_URL; see webpack.config.js). It
@@ -632,7 +633,6 @@ import("../pkg/index.js").then(wasm => {
     const source = nameOf(editor.getModel().uri.path);
     const mmbName = `${source}.mmb`;
     exploreButton.disabled = true;
-    const previous = exploreButton.textContent;
     exploreButton.textContent = "compiling…";
     try {
       const bytes = await wasm.export_mmb(source);
@@ -643,8 +643,18 @@ import("../pkg/index.js").then(wasm => {
     } catch (e) {
       exploreButton.textContent = "export failed";
       console.error("export_mmb", e);
-      setTimeout(() => { exploreButton.textContent = previous; refreshProblems(); }, 2000);
+      setTimeout(() => { exploreButton.textContent = exploreLabel; refreshProblems(); }, 2000);
     }
+  });
+
+  // Coming back from the explorer restores this page from the back/forward
+  // cache exactly as it was left, which is mid-handoff: the button still reads
+  // "compiling…" and is still disabled, and nothing recomputes it until the
+  // file is next edited. A restore is the one notice we get, so take it.
+  addEventListener("pageshow", e => {
+    if (!e.persisted) return;
+    exploreButton.textContent = exploreLabel;
+    refreshProblems();
   });
 
   // After `request` exists: opening a file asks for its outline.
