@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metamath Zero — a proof language you can check</title>
+<meta name="description" content="Metamath Zero is a language for writing specifications and proofs, designed so a skeptical reader can see exactly what was proved and a tiny, independent verifier can confirm the proof.">
+<!-- A real file rather than /favicon.ico, so there is no 404, and an SVG rather
+     than a bitmap so it carries its own prefers-color-scheme and stays legible
+     on a dark tab strip. -->
+<link rel="icon" href="./favicon.svg">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- The mark, defined once and instanced with <use>. Inline rather than an
+     <img> so it takes currentColor and follows the theme. -->
+<svg class="sprite" aria-hidden="true" width="0" height="0">
+<defs>
+  <clipPath id="mk-out"><circle cx="600" cy="600" r="538.188"/></clipPath>
+  <!-- the rect spares the apex, which stands 2.11 outside the circle at x=59.70 -->
+  <clipPath id="mk-chev">
+    <circle cx="600" cy="600" r="538.188"/><rect width="150" height="1200"/>
+  </clipPath>
+  <clipPath id="mk-in"><circle cx="600" cy="600" r="391.25"/></clipPath>
+  <!-- maskUnits explicit: the default bounding-box region would crop the apex.
+       The band is the small cut, 80 clear of the stem rather than 38, because
+       the page only ever draws this at about 20px and the narrower gap closes
+       up below 24px. logos/mark.svg picks between the two by itself; inline here the
+       media query would see the page, so the cut is chosen by hand. -->
+  <mask id="mk-clear" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <rect width="1200" height="1200" fill="#fff"/>
+    <rect x="460" width="280" height="1200" fill="#000"/>
+  </mask>
+  <symbol id="mark" viewBox="59.75 152.5 1078.5 895" fill="none" stroke="currentColor" stroke-width="120">
+    <line x1="600" y1="0" x2="600" y2="1200" clip-path="url(#mk-in)"/>
+    <line x1="600" y1="600" x2="1200" y2="600" clip-path="url(#mk-out)"/>
+    <!-- the chevron is held at .45 of the turnstile's colour, the two-tone of
+         mm0-flat.svg expressed against one inherited colour -->
+    <polyline opacity=".45" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+              clip-path="url(#mk-chev)" mask="url(#mk-clear)"/>
+  </symbol>
+</defs>
+</svg>
+
+<header class="nav">
+  <a class="wordmark" href="#top" aria-label="Metamath Zero home">
+    <svg class="mark" width="24" height="20" viewBox="0 0 1078.5 895" aria-hidden="true"><use href="#mark"/></svg><span class="name">Metamath&nbsp;Zero</span>
+  </a>
+  <nav class="links" aria-label="Primary">
+    <a href="#learn">Learn</a>
+    <a href="#explore">Explore</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/digama0/mm0">GitHub</a>
+  </nav>
+  <button id="theme" class="theme" type="button" title="Light / dark" aria-label="Toggle light and dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="7"/>
+      <path d="M12 5a7 7 0 0 0 0 14z" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+</header>
+
+<main id="main">
+  <span id="top"></span>
+
+  <!-- ============================ HERO ============================ -->
+  <section class="hero">
+    <p class="eyebrow">A proof language</p>
+    <h1>Specifications and proofs, independently checked</h1>
+    <p class="lede">
+      Metamath&nbsp;Zero is designed so that a reader can see <em>exactly</em>
+      what a theorem claims, and a small, independent verifier can confirm its
+      proof.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn" href="./m0e/">Try it in your browser <span aria-hidden="true">→</span></a>
+    </div>
+
+  </section>
+
+  <!-- ============================ CODE ============================ -->
+  <!-- Lifted directly under the hero: the languages themselves are the
+       clearest statement of what MM0 is, so they lead rather than sit
+       mid-page (cf. haskell.org, lean-lang.org). -->
+  <section class="sample" aria-label="What the languages look like">
+    <div class="code">
+      <div class="tabs" role="tablist" aria-label="Language">
+        <button role="tab" id="tab-mm0" aria-controls="p-mm0" aria-selected="true">MM0 <span class="tab-sub">spec</span></button>
+        <button role="tab" id="tab-mm1" aria-controls="p-mm1" aria-selected="false">MM1 <span class="tab-sub">proof</span></button>
+        <button role="tab" id="tab-mmc" aria-controls="p-mmc" aria-selected="false">MMC <span class="tab-sub">program</span></button>
+        <span class="verified" title="checked by the reference verifier"><span aria-hidden="true">⊢</span> verified</span>
+      </div>
+
+      <pre role="tabpanel" id="p-mm0" aria-labelledby="tab-mm0"><code><span class="cm">-- the language of propositional logic, and its rules</span>
+<span class="kw">sort</span> wff;
+<span class="kw">term</span> <span class="c-term">im</span> (p q: wff): wff;   <span class="kw">infixr</span> im: $-&gt;$ <span class="kw">prec</span> 25;
+<span class="kw">term</span> <span class="c-term">not</span> (p: wff): wff;    <span class="kw">prefix</span> not: $~$ <span class="kw">prec</span> 41;
+
+<span class="kw">axiom</span> <span class="c-axiom">ax_1</span> (a b: wff): $ a -&gt; b -&gt; a $;
+<span class="kw">axiom</span> <span class="c-axiom">ax_2</span> (a b c: wff): $ (a -&gt; b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c $;
+<span class="kw">axiom</span> <span class="c-axiom">ax_mp</span> (a b: wff): $ a -&gt; b $ &gt; $ a $ &gt; $ b $;
+
+<span class="cm">-- a claim, with no proof attached: this file only states it</span>
+<span class="kw">theorem</span> <span class="c-thm">id</span> (a: wff): $ a -&gt; a $;</code></pre>
+
+      <pre role="tabpanel" id="p-mm1" aria-labelledby="tab-mm1" hidden><code><span class="cm">-- the same theorem, now proved -- the term after `=` is the proof</span>
+<span class="kw">theorem</span> <span class="c-thm">a1i</span> (<span class="c-sort">h</span>: $ b $): $ a -&gt; b $ =
+  '(<span class="c-axiom">ax_1</span> <span class="c-sort">h</span>);
+<span class="kw">theorem</span> <span class="c-thm">mpd</span> (<span class="c-sort">h1</span>: $ a -&gt; b $) (<span class="c-sort">h2</span>: $ a -&gt; b -&gt; c $): $ a -&gt; c $ =
+  '(<span class="c-axiom">ax_2</span> <span class="c-sort">h2</span> <span class="c-sort">h1</span>);
+<span class="kw">theorem</span> <span class="c-thm">id</span>: $ a -&gt; a $ =
+  '(<span class="c-thm">mpd</span> (! <span class="c-axiom">ax_1</span> _ a) <span class="c-axiom">ax_1</span>);</code></pre>
+
+      <pre role="tabpanel" id="p-mmc" aria-labelledby="tab-mmc" hidden><code><span class="cm">-- Metamath C: a program whose type is a theorem about its output</span>
+(<span class="kw">proc</span> (<span class="c-thm">adder</span> {x : <span class="c-term">u32</span>} {y : <span class="c-term">u32</span>}
+        : {ret : (<span class="kw">sn</span> {(<span class="kw">cast</span> {x + y}) : <span class="c-term">u64</span>})})
+  (<span class="kw">sn</span> {(<span class="kw">cast</span> {x + y}) : <span class="c-term">u64</span>}))</code></pre>
+    </div>
+    <p class="sample-foot dim">
+      A specification states what is true; a proof establishes it; a program can
+      itself be the subject of a theorem — and the same verifier checks all three.
+      Colours carry the ecosystem's meanings:
+      <span class="c-term">terms</span>, <span class="c-axiom">axioms</span>,
+      <span class="c-thm">theorems</span>, <span class="c-sort">hypotheses</span>.
+    </p>
+  </section>
+
+  <!-- ==================== HOW IT WORKS (the pipeline) ==================== -->
+  <section class="how">
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2>One step you have to trust</h2>
+      <p class="dim">Everything that produces a proof is untrusted. Only the
+      verifier has to be believed — and it is small enough to read.</p>
+    </div>
+    <figure class="pipe" aria-label="How a Metamath Zero proof is checked">
+      <div class="pipe-untrusted">
+        <span class="pipe-band" aria-hidden="true"></span>
+        <span class="pipe-label">untrusted — anything may produce these</span>
+        <a class="node" href="./m0e/">
+          <span class="node-kind c-thm">MM1</span>
+          <span class="node-role">you write</span>
+        </a>
+        <span class="arrow" aria-hidden="true">→</span>
+        <span class="node-pair">
+          <a class="node" href="./doc/peano/">
+            <span class="node-kind c-term">MM0</span>
+            <span class="node-role">the spec</span>
+          </a>
+          <a class="node" href="./mmb/">
+            <span class="node-kind c-axiom">MMB</span>
+            <span class="node-role">the proof</span>
+          </a>
+        </span>
+      </div>
+      <span class="arrow big" aria-hidden="true">→</span>
+      <div class="pipe-trusted">
+        <span class="pipe-label">trusted core</span>
+        <a class="node check" href="#install">
+          <span class="node-kind">⊢&nbsp;verify</span>
+          <span class="node-role">under 3,000 lines of C</span>
+        </a>
+      </div>
+    </figure>
+  </section>
+
+  <!-- ============================ PILLARS ============================ -->
+  <section class="pillars" aria-label="Why Metamath Zero">
+    <article>
+      <h2><span class="c-term">A trusted core you can audit</span></h2>
+      <p>The reference verifier, <code>mm0-c</code>, is under 3,000 lines of C.
+      You don't have to trust the tools that wrote a proof — only the small
+      program that checks it, and you can read all of it.</p>
+    </article>
+    <article>
+      <h2><span class="c-sort">No built-in foundation</span></h2>
+      <p>MM0 fixes no logic of its own. You supply the axioms — set theory,
+      higher-order logic, type theory, Peano arithmetic — and it checks proofs in
+      the system you defined.</p>
+    </article>
+    <article>
+      <h2><span class="c-thm">Proof, not proof-script</span></h2>
+      <p>A finished proof is a file, not a session in someone's editor. The
+      untrusted MM1 compiler produces it; the verifier re-checks every step from
+      scratch, knowing nothing about how it was found.</p>
+    </article>
+    <article>
+      <h2><span class="c-axiom">Fast verification</span></h2>
+      <p>Checking is close to the cost of reading the file. A full library
+      verifies in seconds rather than minutes, so re-checking an entire
+      development is routine rather than a bottleneck.</p>
+    </article>
+    <article>
+      <h2><span class="c-term">Verified down to the machine</span></h2>
+      <p>The project's goal theorem is a verifier for MM0, proved correct in MM0
+      itself, down to the x86 instructions it runs on — so the trust base
+      terminates in a verified artifact rather than an assumption.</p>
+    </article>
+    <article>
+      <h2><span class="c-thm">A root of trust</span></h2>
+      <p>A small trusted kernel matters for what is built on it. MM0 is intended
+      as a common substrate: other proof systems can translate their results into
+      it and have them re-checked, terminating in a verifier that is itself
+      proved correct.</p>
+    </article>
+  </section>
+
+  <!-- ============================ EXPLORE ============================ -->
+  <section id="explore" class="explore">
+    <div class="section-head">
+      <p class="eyebrow">Tools</p>
+      <h2>The tools run in the browser</h2>
+      <p class="dim">The verifier is small enough to compile to WebAssembly. Nothing
+      is uploaded; every file is checked in the tab it's opened in.</p>
+    </div>
+    <div class="cards">
+      <a class="card" href="./m0e/">
+        <span class="card-mark c-thm" aria-hidden="true">MM1</span>
+        <h3>Editor</h3>
+        <p>An in-browser IDE — the real <code>mm0-rs</code> compiled to wasm,
+        elaborating and reporting errors as you type.</p>
+        <span class="card-go">Open the editor <span aria-hidden="true">→</span></span>
+      </a>
+      <a class="card" href="./mmb/">
+        <span class="card-mark c-axiom" aria-hidden="true">MMB</span>
+        <h3>Proof explorer</h3>
+        <p>Step a compiled <code>.mmb</code> proof the way the verifier's stack
+        machine runs it — one command at a time, state shown before each step.</p>
+        <span class="card-go">Step a proof <span aria-hidden="true">→</span></span>
+      </a>
+      <a class="card" href="./doc/peano/">
+        <span class="card-mark c-term" aria-hidden="true">MM0</span>
+        <h3>Documentation</h3>
+        <p>Generated pages for a whole library: every theorem's statement and
+        proof tree, cross-linked, from <code>mm0-rs doc</code>.</p>
+        <span class="card-go">Browse the docs <span aria-hidden="true">→</span></span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============================ LEARN + INSTALL ============================ -->
+  <section id="learn" class="learn">
+    <div class="learn-docs">
+      <div class="section-head">
+        <p class="eyebrow">Learn</p>
+        <h2>Read the languages</h2>
+      </div>
+      <ul class="doclist">
+        <li>
+          <a href="https://github.com/digama0/mm0/blob/master/mm0.md">
+            <span class="doc-name"><span class="c-term">MM0</span> — the specification language</span>
+            <span class="doc-desc">Sorts, terms, axioms and theorem statements. The whole format.</span>
+          </a>
+        </li>
+        <li>
+          <a href="https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md">
+            <span class="doc-name"><span class="c-thm">MM1</span> — the proof language</span>
+            <span class="doc-desc">MM0 plus a Scheme-like metaprogramming language for writing proofs and tactics.</span>
+          </a>
+        </li>
+        <li>
+          <a href="https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md">
+            <span class="doc-name"><span class="c-axiom">MMC</span> — Metamath C</span>
+            <span class="doc-desc">A verified systems language: total functions, separation logic, predictable lowering to x86.</span>
+          </a>
+        </li>
+        <li>
+          <a href="https://www.youtube.com/watch?v=A7WfrW7-ifw">
+            <span class="doc-name">Video tutorial</span>
+            <span class="doc-desc">A walkthrough of <code>mm0-rs</code> with the VS Code extension.</span>
+          </a>
+        </li>
+        <li>
+          <a href="./thesis.pdf">
+            <span class="doc-name">The thesis <span class="doc-tag">PDF</span></span>
+            <span class="doc-desc"><em>Metamath Zero: From Logic, to Proof Assistant, to Verified Compiler</em> — the whole design, start to finish.</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <div id="install" class="learn-install">
+      <div class="section-head">
+        <p class="eyebrow">Install</p>
+        <h2>Build the toolchain</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <span class="step-note">Get the compiler and language server (needs <a href="https://rustup.rs/">Rust</a>):</span>
+<pre><code><span class="cm"># clone and build mm0-rs</span>
+git clone https://github.com/digama0/mm0
+cd mm0/mm0-rs
+cargo build --release</code></pre>
+        </li>
+        <li>
+          <span class="step-note">Add the editor integration:</span>
+<pre><code><span class="cm"># the "Metamath Zero" VS Code extension</span>
+code --install-extension digama0.metamath-zero</code></pre>
+        </li>
+        <li>
+          <span class="step-note">Want the smallest possible checker? The reference
+          verifier is a single C file:</span>
+<pre><code><span class="cm"># build mm0-c and check a proof</span>
+gcc mm0-c/main.c -O2 -o mm0-c
+./mm0-c proof.mmb &lt; spec.mm0</code></pre>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============================ TRUST ============================ -->
+  <section class="trust">
+    <div class="section-head center">
+      <p class="eyebrow">Trust</p>
+      <h2>No single point of trust</h2>
+      <p class="dim">Because the format is small and precisely specified, more than
+      one program can play the role of "the verifier" — so no single implementation
+      has to be believed.</p>
+    </div>
+
+    <div class="trust-grid">
+      <div class="verifiers">
+        <h3>Independent verifiers</h3>
+        <ul>
+          <li><a href="https://github.com/digama0/mm0/tree/master/mm0-c"><code>mm0-c</code></a> <span class="dim">C — the reference</span></li>
+          <li><a href="https://github.com/digama0/mm0/tree/master/mm0-rs"><code>mm0-rs</code></a> <span class="dim">Rust — compiler + server</span></li>
+          <li><a href="https://github.com/digama0/mm0/tree/master/mm0-hs"><code>mm0-hs</code></a> <span class="dim">Haskell — toolchain</span></li>
+          <li><a href="https://github.com/ammkrn/second_opinion"><code>second_opinion</code></a> <span class="dim">Rust — third party</span></li>
+          <li><a href="https://github.com/trivial-rs/kernel"><code>trivial-rs</code></a> <span class="dim">Rust — third party</span></li>
+          <li><a href="https://github.com/Lakedaemon/mm0kt"><code>mm0kt</code></a> <span class="dim">Kotlin — third party</span></li>
+        </ul>
+      </div>
+      <div class="landmarks">
+        <h3>What has been built in it</h3>
+        <ul>
+          <li><span class="c-sort">Peano arithmetic</span> — the base library, formalized for real use.</li>
+          <li><span class="c-term">The x86 architecture</span> — a machine-code semantics, the MMC compiler's target.</li>
+          <li><span class="c-axiom">The MMC compiler</span> — producing MM0 proofs about the programs it compiles.</li>
+          <li><span class="c-thm">MM0 itself</span> — a full formal spec of the format and its verification.</li>
+        </ul>
+        <p class="dim endgoal">The endpoint: <code>verifier.mm1</code>, a proof that an MM0
+        verifier is correct — checked by an MM0 verifier.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="foot-mark">
+    <svg class="mark" width="24" height="20" viewBox="0 0 1078.5 895" aria-hidden="true"><use href="#mark"/></svg><span>Metamath Zero</span>
+  </div>
+  <nav class="foot-links" aria-label="Footer">
+    <a href="https://github.com/digama0/mm0">Repository</a>
+    <a href="https://github.com/digama0/mm0/blob/master/mm0.md">Specification</a>
+    <a href="./thesis.pdf">Thesis</a>
+    <a href="./m0e/">Editor</a>
+    <a href="./mmb/">Proof explorer</a>
+    <a href="./doc/peano/">Docs</a>
+  </nav>
+  <p class="foot-note">Released to the public domain under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.
+  Created by <a href="https://github.com/digama0">Mario&nbsp;Carneiro</a>.</p>
+</footer>
+
+<script>
+// Theme: follow the system until the reader pins it; a stamp on <html> wins and
+// also tells the browser which way to draw form controls and scrollbars.
+(function () {
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem("mm0-theme"); } catch (e) {}
+  if (saved) root.setAttribute("data-theme", saved);
+  document.getElementById("theme").addEventListener("click", function () {
+    var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    var cur = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    var next = cur === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("mm0-theme", next); } catch (e) {}
+  });
+})();
+
+// Code sample tabs. One panel visible at a time; arrow keys move between tabs.
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    });
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { select(tab); });
+    tab.addEventListener("keydown", function (e) {
+      var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      e.preventDefault();
+      var next = tabs[(i + d + tabs.length) % tabs.length];
+      select(next); next.focus();
+    });
+  });
+})();
+</script>
+</body>
+</html>

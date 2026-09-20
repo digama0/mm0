@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="59.75 152.5 1078.5 895">
+<!--
+  A turnstile over a chevron, both stroked, all of it struck from one centre.
+
+    centre         600, 600
+    stroke width   120, in the stylesheet
+    outer circle   caps the chevron's far ends and the bar
+    inner circle   caps the stem
+    chevron        a polyline: vertex, two far points, mitre join
+    clearance      x 502 to 699, widened to 460 to 740 below 30px
+
+  Two optical cuts in one file. An svg used as an image gets its own viewport,
+  so the media query below sees the size this is drawn at: under 30px the
+  chevron is moved further off the stem, because the -38px gap closes up around
+  24px and the mark turns into a blob. Inline in a document the query would see
+  the page instead, so size it there and pick a cut by hand.
+
+  Two tones, as mm0-flat.svg is. Both take currentColor and the chevron is held
+  at 0.45 of it, so one inherited colour gives the pair and the relationship
+  survives either theme.
+-->
+<style>
+  .t, .c { fill: none; stroke: #2b2b2b; stroke-width: 120 }
+  .c { opacity: 0.45 }
+  @media (prefers-color-scheme: dark) { .t, .c { stroke: #d8d8d8 } }
+  .cut-sm { opacity: 0 }
+  @media (max-width: 30px), (max-height: 25px) {
+    .cut { opacity: 0 } .cut-sm { opacity: 1 }
+  }
+</style>
+<defs>
+  <clipPath id="f-out"><circle cx="600" cy="600" r="538.188"/></clipPath>
+  <!-- the rect spares the apex, which stands 2.11 outside the circle at x=59.70 -->
+  <clipPath id="f-chev">
+    <circle cx="600" cy="600" r="538.188"/><rect width="150" height="1200"/>
+  </clipPath>
+  <clipPath id="f-in"><circle cx="600" cy="600" r="391.25"/></clipPath>
+  <!-- maskUnits explicit: the default bounding-box region would crop the apex -->
+  <mask id="f-clear" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <rect width="1200" height="1200" fill="#fff"/>
+    <rect class="cut" x="502" width="197" height="1200" fill="#000"/>
+    <rect class="cut-sm" x="460" width="280" height="1200" fill="#000"/>
+  </mask>
+</defs>
+  <line class="t" x1="600" y1="0" x2="600" y2="1200" clip-path="url(#f-in)"/>
+  <line class="t" x1="600" y1="600" x2="1200" y2="600" clip-path="url(#f-out)"/>
+  <polyline class="c" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+            clip-path="url(#f-chev)" mask="url(#f-clear)"/>
+</svg>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-label="MM2">
+<title>MM2</title>
+<!--
+  A turnstile over a chevron, both stroked, all of it struck from one centre.
+
+    centre         600, 600
+    stroke width   120, in the stylesheet
+    outer circle   caps the chevron's far ends and the bar
+    inner circle   caps the stem
+    chevron        a polyline: vertex, two far points, mitre join
+    clearance      the band where the stem crosses the chevron
+
+  Split: each stroke halved on its centreline, lit half up-left. The
+  chevron's lit half is the same polyline shifted 63.7761 along the axis.
+-->
+<style>
+  .s { fill: none; stroke-width: 120; stroke: #333333 }
+  .lit { fill: none; stroke-width: 60; stroke: #505050 }
+</style>
+<defs>
+  <clipPath id="mm2-split-outer"><circle cx="600" cy="600" r="538.188"/></clipPath>
+  <!-- the rect spares the apex, which stands 2.11 outside the circle at x=59.70 -->
+  <clipPath id="mm2-split-outer-chev">
+    <circle cx="600" cy="600" r="538.188"/>
+    <rect width="150" height="1200"/>
+  </clipPath>
+  <clipPath id="mm2-split-inner"><circle cx="600" cy="600" r="391.25"/></clipPath>
+  <!-- maskUnits explicit: the default bounding-box region would crop the apex -->
+  <mask id="mm2-split-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <rect width="1200" height="1200" fill="#fff"/>
+    <rect x="502" width="197" height="1200" fill="#000"/>
+  </mask>
+</defs>
+<line class="s" x1="600" y1="0" x2="600" y2="1200" clip-path="url(#mm2-split-inner)"/>
+<line class="s" x1="600" y1="600" x2="1200" y2="600" clip-path="url(#mm2-split-outer)"/>
+<!-- vertex 187.25,600; arms rise 479.7481 over 900 = 28.06 deg -->
+<polyline class="s" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+          clip-path="url(#mm2-split-outer-chev)" mask="url(#mm2-split-clearance)"/>
+<line class="lit" x1="570" y1="0" x2="570" y2="1200" clip-path="url(#mm2-split-inner)"/>
+<line class="lit" x1="600" y1="570" x2="1200" y2="570" clip-path="url(#mm2-split-outer)"/>
+<!-- vertex 123.4739,600; arms rise 479.7481 over 900 = 28.06 deg -->
+<polyline class="lit" points="1023.4739,120.2519 123.4739,600 1023.4739,1079.7481" stroke-linejoin="miter"
+          clip-path="url(#mm2-split-outer-chev)" mask="url(#mm2-split-clearance)"/>
+</svg>

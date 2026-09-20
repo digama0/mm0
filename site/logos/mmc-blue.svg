@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 1200" role="img" aria-label="MMC">
+<title>MMC</title>
+<!--
+  A turnstile over a chevron, both stroked, all of it struck from one centre.
+
+    centre         600, 600
+    stroke width   120, in the stylesheet
+    outer circle   caps the chevron's far ends and the bar
+    inner circle   caps the stem
+    chevron        a polyline: vertex, two far points, mitre join
+    clearance      the band where the stem crosses the chevron
+
+  Badge: the mark knocked white out of the hexagon.
+-->
+<style>
+  .s { fill: none; stroke-width: 120; stroke: #ffffff }
+  .hex { fill: #659ad2; stroke: #659ad2; stroke-width: 118; stroke-linejoin: round }
+  .mid { fill: #2753a8 }
+  .dark { fill: #124091 }
+</style>
+<defs>
+  <clipPath id="mmc-blue-outer"><circle cx="600" cy="600" r="538.188"/></clipPath>
+  <!-- the rect spares the apex, which stands 2.11 outside the circle at x=59.70 -->
+  <clipPath id="mmc-blue-outer-chev">
+    <circle cx="600" cy="600" r="538.188"/>
+    <rect width="150" height="1200"/>
+  </clipPath>
+  <clipPath id="mmc-blue-inner"><circle cx="600" cy="600" r="391.25"/></clipPath>
+  <!-- maskUnits explicit: the default bounding-box region would crop the apex -->
+  <mask id="mmc-blue-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <rect width="1200" height="1200" fill="#fff"/>
+    <rect x="502" width="197" height="1200" fill="#000"/>
+  </mask>
+  <!-- hexagon, half-width 500 and half-height 560.5, side vertices at half the
+       height, eroded by the corner radius 59; the round-joined stroke of twice
+       that width restores the corners -->
+  <polygon id="mmc-blue-hex" points="1041,354.3162 1041,845.6838 600,1092.8643 159,845.6838 159,354.3162 600,107.1357"/>
+  <mask id="mmc-blue-inhex" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <use href="#mmc-blue-hex" xlink:href="#mmc-blue-hex" fill="#fff" stroke="#fff" stroke-width="118" stroke-linejoin="round"/>
+  </mask>
+</defs>
+<use href="#mmc-blue-hex" xlink:href="#mmc-blue-hex" class="hex"/>
+<!-- the hexagon's vertices pushed outside it, so the mask cuts them -->
+<g mask="url(#mmc-blue-inhex)">
+  <g transform="translate(600 600) scale(1.6) translate(-600 -600)">
+    <polygon class="dark" points="600,600 1100,880.25 600,1160.5 100,880.25"/>
+    <polygon class="mid" points="600,600 1100,319.75 1100,880.25"/>
+  </g>
+</g>
+<g transform="translate(600 600) scale(0.8335) translate(-600 -600)">
+  <line class="s" x1="600" y1="0" x2="600" y2="1200" clip-path="url(#mmc-blue-inner)"/>
+  <line class="s" x1="600" y1="600" x2="1200" y2="600" clip-path="url(#mmc-blue-outer)"/>
+  <!-- vertex 187.25,600; arms rise 479.7481 over 900 = 28.06 deg -->
+  <polyline class="s" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+            clip-path="url(#mmc-blue-outer-chev)" mask="url(#mmc-blue-clearance)"/>
+</g>
+</svg>

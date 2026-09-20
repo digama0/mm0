@@ -5,6 +5,7 @@ on:
     branches: "**"
   pull_request:
     branches: [master]
+  workflow_dispatch:      # so the site can be redeployed without a commit
 
 env:
   CARGO_TERM_COLOR: always
@@ -388,3 +389,67 @@ jobs:
             sleep 0.5
           done
           node dist/tools/uitest.js
+
+  # Publishes the homepage with the three tools as siblings, the layout
+  # site/build-local.sh assembles and serves locally. Pages must be set to
+  # deploy from GitHub Actions in the repository settings for this to land.
+  deploy-site:
+    name: Deploy site
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    needs: build-mm0-rs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      # The same binary the rest of the workflow built: it compiles the
+      # explorer's libraries from examples/ and generates /doc.
+      - run: mkdir -p "$GITHUB_WORKSPACE/bin"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mm0-rs
+          path: ./bin
+      - run: chmod +x "$GITHUB_WORKSPACE/bin/mm0-rs"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the editor's wasm build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            m0e/target
+          key: ${{ runner.os }}-m0e-${{ hashFiles('m0e/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-m0e-
+      - name: Install wasm-pack
+        run: |
+          curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the site
+        env:
+          MM0RS: ${{ github.workspace }}/bin/mm0-rs
+        run: ./site/build-local.sh --no-serve
+      # Publishing from a workflow rather than from the gh-pages branch, so
+      # nothing built is committed. `enablement` asks GitHub to switch the
+      # source over; if it declines, set Settings > Pages > Source to GitHub
+      # Actions once by hand.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/_site
+      - id: deploy
+        uses: actions/deploy-pages@v4

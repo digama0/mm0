@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-label="MM1">
+<title>MM1</title>
+<!--
+  A turnstile over a chevron, both stroked, all of it struck from one centre.
+
+    centre         600, 600
+    stroke width   120, in the stylesheet
+    outer circle   caps the chevron's far ends and the bar
+    inner circle   caps the stem
+    chevron        a polyline: vertex, two far points, mitre join
+    clearance      the band where the stem crosses the chevron
+
+  Keyline 22.5 wide around a core: the core's circles shrink with it, the
+  clearance band does not.
+-->
+<style>
+  .s { fill: none; stroke-width: 120; stroke: #333333 }
+  .core { fill: none; stroke-width: 75; stroke: #505050 }
+</style>
+<defs>
+  <clipPath id="mm1-keyline-outer"><circle cx="600" cy="600" r="538.188"/></clipPath>
+  <!-- the rect spares the apex, which stands 2.11 outside the circle at x=59.70 -->
+  <clipPath id="mm1-keyline-outer-chev">
+    <circle cx="600" cy="600" r="538.188"/>
+    <rect width="150" height="1200"/>
+  </clipPath>
+  <clipPath id="mm1-keyline-inner"><circle cx="600" cy="600" r="391.25"/></clipPath>
+  <!-- maskUnits explicit: the default bounding-box region would crop the apex -->
+  <mask id="mm1-keyline-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="1200">
+    <rect width="1200" height="1200" fill="#fff"/>
+    <rect x="502" width="197" height="1200" fill="#000"/>
+  </mask>
+  <!-- the core is the same geometry inset by 22.5: the circles shrink with it,
+       but the clearance band does not, so the cut faces carry no border -->
+  <clipPath id="mm1-keyline-outer-core"><circle cx="600" cy="600" r="515.688"/></clipPath>
+  <clipPath id="mm1-keyline-inner-core"><circle cx="600" cy="600" r="368.75"/></clipPath>
+</defs>
+<line class="s" x1="600" y1="0" x2="600" y2="1200" clip-path="url(#mm1-keyline-inner)"/>
+<line class="s" x1="600" y1="600" x2="1200" y2="600" clip-path="url(#mm1-keyline-outer)"/>
+<!-- vertex 187.25,600; arms rise 479.7481 over 900 = 28.06 deg -->
+<polyline class="s" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+          clip-path="url(#mm1-keyline-outer-chev)" mask="url(#mm1-keyline-clearance)"/>
+<line class="core" x1="600" y1="0" x2="600" y2="1200" clip-path="url(#mm1-keyline-inner-core)"/>
+<line class="core" x1="600" y1="600" x2="1200" y2="600" clip-path="url(#mm1-keyline-outer-core)"/>
+<!-- vertex 187.25,600; arms rise 479.7481 over 900 = 28.06 deg -->
+<polyline class="core" points="1087.25,120.2519 187.25,600 1087.25,1079.7481" stroke-linejoin="miter"
+          clip-path="url(#mm1-keyline-outer-core)" mask="url(#mm1-keyline-clearance)"/>
+</svg>

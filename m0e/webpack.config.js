@@ -73,8 +73,15 @@ module.exports = {
       "process.env.EXPLORER_URL": JSON.stringify(explorerUrl),
     }),
 
+    // `M0E_FAST=1` passes `--no-opt`, which skips wasm-opt. wasm-pack runs it on
+    // every build with no cache of its own and it is three to five minutes of
+    // the wall clock; the cost of skipping is a wasm about a quarter larger,
+    // which matters for a deploy and not at all for a local preview.
+    // It goes in `extraArgs`, not `args`: the plugin puts `args` before the
+    // `build` subcommand, where a build option is not a valid argument.
     new WasmPackPlugin({
       crateDirectory: __dirname,
+      extraArgs: process.env.M0E_FAST ? '--no-opt' : '',
     }),
     new MonacoWebpackPlugin({languages: []})
   ]
