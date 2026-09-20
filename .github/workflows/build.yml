@@ -323,14 +323,30 @@ jobs:
         with:
           enable-stack: true
           stack-no-global: true
-      - name: Cache stack
+      # A cache entry is immutable, and one whose key is hit exactly is not
+      # written back, so a key decides its contents once and for all: it has to
+      # move with whatever the contents are built from, or they are frozen.
+      #
+      # GHC and the snapshot are built from the resolver and the dependency
+      # list, which is what this key hashes.
+      - name: Cache the stack snapshot
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.stack
-            mm0-hs/.stack-work
-          key: ${{ runner.os }}-stack-${{ hashFiles('mm0-hs/stack.yaml.lock', 'mm0-hs/package.yaml') }}
+          path: ~/.stack
+          key: ${{ runner.os }}-stack-${{ hashFiles('mm0-hs/stack.yaml', 'mm0-hs/stack.yaml.lock', 'mm0-hs/package.yaml') }}
           restore-keys: ${{ runner.os }}-stack-
+      # The package's own build products, which stack holds against the files of
+      # the package -- a set that reaches further than the sources (README.md is
+      # in it, by way of extra-source-files in the cabal file). Hashing the whole
+      # directory is the reading of that which cannot be too narrow: too narrow
+      # and a run rebuilds, cannot save what it built because its key was hit,
+      # and leaves the next run to do it again.
+      - name: Cache the mm0-hs build
+        uses: actions/cache@v4
+        with:
+          path: mm0-hs/.stack-work
+          key: ${{ runner.os }}-stack-work-${{ hashFiles('mm0-hs/**') }}
+          restore-keys: ${{ runner.os }}-stack-work-
       - name: Build and test mm0-hs
         working-directory: mm0-hs
         run: stack test --install-ghc
