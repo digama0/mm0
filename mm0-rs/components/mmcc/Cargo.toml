@@ -15,7 +15,6 @@ categories = ["compilers", "mathematics"]
 [dependencies]
 bitflags = "2.6"
 byteorder = "1.5"
-hex = "0.4"
 num = "0.4"
 itertools = "0.14"
 if_chain = "1.0"
@@ -25,7 +24,6 @@ im = "15.1"
 bit-vec = "0.8"
 bit-set = "0.8"
 hashbrown = "0.15"
-typed-arena = "2.0"
 pathdiff = "0.2"
 mmcc_derive = { path = "../mmcc_derive" }
 # simplelog = "0.12"
@@ -35,6 +33,9 @@ mm0_util = { path = "../mm0_util", default-features = false, features = ["lined_
 mm0_deepsize = { path = "../mm0_deepsize", optional = true, features = [
   "num", "typed-arena", "smallvec", "bit-vec", "bit-set"] }
 mm0_deepsize_derive = { path = "../mm0_deepsize_derive", optional = true }
+
+[dev-dependencies]
+hex = "0.4"
 
 [features]
 memory = ["mm0_util/memory", "mm0_deepsize", "mm0_deepsize_derive"]

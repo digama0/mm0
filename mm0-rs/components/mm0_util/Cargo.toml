@@ -31,5 +31,5 @@ procfs = { version = "0.17", optional = true }
 [features]
 default = ["lined_string"]
 memory = ["mm0_deepsize", "mm0_deepsize_derive", "libc", "procfs"]
-server = ["lsp-types", "mm0_deepsize/lsp-types", "url"]
+server = ["lsp-types", "mm0_deepsize?/lsp-types", "url"]
 lined_string = ["pathdiff"]

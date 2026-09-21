@@ -27,10 +27,11 @@ members = [
 [features]
 default = ["server", "doc", "mmc"]
 server = [
-  "lsp-types", "mm0_deepsize/lsp-types",
+  "lsp-types", "mm0_deepsize?/lsp-types",
   "lsp-server", "crossbeam", "simplelog", "log",
+  "serde", "serde_json", "serde_repr",
   "mm0_util/server", "mm1_parser/server"]
-doc = ["lsp-types", "url", "pulldown-cmark", "pulldown-cmark-escape", "webbrowser"]
+doc = ["url", "pulldown-cmark", "pulldown-cmark-escape", "webbrowser"]
 memory = [
   "mm0_deepsize", "mm0_deepsize_derive",
   "mm0_util/memory", "mm1_parser/memory", "mmcc/memory"]
@@ -53,16 +54,12 @@ num = "0.4"
 pretty = "0.12"
 clap = { version = "4.5", features = ["derive"] }
 futures = { version = "0.3", features = ["thread-pool"] }
-serde = "1.0"
-serde_json = "1.0"
-serde_repr = "0.1"
 annotate-snippets = "0.11"
 libc = "0.2"
 zerocopy = "0.8"
 memchr = "2.7"
 bit-set = "0.8"
 typed-arena = "2.0"
-test_each_file = "0.3"
 mm0_deepsize_derive = { path = "components/mm0_deepsize_derive", optional = true }
 debug_derive = { path = "components/debug_derive" }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = [
@@ -73,7 +70,9 @@ mm1_parser = { path = "components/mm1_parser" }
 
 # For "server" feature
 log = { version = "0.4", optional = true }
-simplelog = { version = "0.12", optional = true }
+serde = { version = "1.0", optional = true }
+serde_json = { version = "1.0", optional = true }
+serde_repr = { version = "0.1", optional = true }
 crossbeam = { version = "0.8", optional = true }
 lsp-types = { version = "0.97", optional = true }
 lsp-server = { version = "0.7", optional = true }
@@ -90,11 +89,14 @@ instant = { version = "0.1", features = ["wasm-bindgen"] }
 mmcc = { path = "components/mmcc", optional = true }
 im = { version = "15.1", optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.17"
+[dev-dependencies]
+test_each_file = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 memmap = "0.7"
+# the `server` feature turns this on, but only `server::main` uses it, and that
+# is not compiled for wasm32 (there is no file to log to)
+simplelog = { version = "0.12", optional = true }
 mm0_deepsize = { path = "components/mm0_deepsize", optional = true, features = ["memmap"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

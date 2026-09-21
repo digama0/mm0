@@ -884,7 +884,6 @@ dependencies = [
  "num",
  "pathdiff",
  "pretty",
- "procfs",
  "pulldown-cmark",
  "pulldown-cmark-escape",
  "serde",
@@ -985,7 +984,6 @@ dependencies = [
  "pathdiff",
  "regalloc2",
  "smallvec",
- "typed-arena",
 ]
 
 [[package]]
