@@ -8,6 +8,21 @@
    The accents are not decoration. Each already means something in the
    ecosystem and means the same here: term = blue, axiom = orange,
    theorem = purple, sort/hypothesis = green. */
+/* The wordmark's face, subset to what a heading can hold. EB Garamond is cut
+   at two optical sizes and this is the one for small text: beside the text cut
+   it carries a x-height .71 of its cap against .62, and a stem 22% heavier, so
+   it holds up at the sizes this page sets and the text cut reads thin. It is
+   held here rather than fetched, so the page makes no third party request.
+   site/README.md has the command that builds it, and its licence sits beside
+   it. */
+@font-face {
+  font-family: "EB Garamond 08";
+  src: url("fonts/EBGaramond08.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light dark;
   --bg:      light-dark(#fbfbfb, #181818);
@@ -27,6 +42,11 @@
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* The headings, and the name in the nav: the readme's wordmark is EB
+     Garamond, and this is that face where it is installed, an old style serif
+     of the same build where it is not. */
+  --serif: "EB Garamond 08", "EB Garamond", Garamond, "Adobe Garamond Pro",
+           "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 
   --edge: clamp(1.1rem, 5vw, 4rem);   /* page side padding */
   --wide: 1080px;                     /* content column */
@@ -88,21 +108,26 @@ code { font-family: var(--mono); font-size: .92em; }
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--hair);
 }
+/* The bar's height is set by the theme switch, 34px, so the lockup has room to
+   be read rather than merely present: at 1.7rem with the line box closed up to
+   the type, it stands 27.9px in a bar that does not move. */
 .wordmark {
   display: block; white-space: nowrap;
-  color: var(--fg); font-family: var(--mono); font-weight: 600;
-  letter-spacing: -.01em;
+  color: var(--fg); font-family: var(--serif); font-size: 1.7rem; line-height: 1;
 }
 .wordmark:hover { text-decoration: none; }
-/* Centre the mark on the M: its own baseline is its bottom edge, so lowering
-   that by half its height less half the cap height (.6875em here) puts its
-   middle on the middle of the M. vertical-align rather than a flex baseline,
-   which chromium and firefox synthesize differently for an inline svg. */
-.wordmark .mark { width: 1.506em; height: 1.25em; vertical-align: -.281em; margin-right: .65rem; }
+/* The readme's lockup, in miniature: the mark stands 1.55 cap heights tall and
+   .85 of one clear of the word, and its middle sits on the middle of the M.
+   EB Garamond 08's cap height is .596em, which is where these numbers come from;
+   the mark's own baseline is its bottom edge, so centring it means lowering
+   that by half its height less half the cap height. vertical-align rather than
+   a flex baseline, which chromium and firefox synthesize differently for an
+   inline svg. */
+.wordmark .mark { width: 1.113em; height: 0.924em; vertical-align: -0.164em; margin-right: 0.507em; }
 .nav .links { margin-left: auto; display: flex; gap: clamp(.8rem, 3vw, 1.7rem); }
 .nav .links a {
-  color: var(--dim); font-family: var(--mono); font-size: .82rem;
-  letter-spacing: .02em; text-transform: lowercase;
+  color: var(--dim); font-family: var(--sans); font-size: .92rem;
+  letter-spacing: .01em;
 }
 .nav .links a:hover { color: var(--fg); text-decoration: none; }
 .theme {
@@ -128,7 +153,7 @@ section { padding-left: var(--edge); padding-right: var(--edge); }
 .section-head h2 { margin: 0 0 .6rem; }
 .section-head p { margin: 0; }
 
-h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; line-height: 1.2; }
 
 /* ---------------------------------------------------------------- hero */
 .hero {
@@ -138,7 +163,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
 }
 .hero h1 {
   margin: 0 0 1rem;
-  font-size: clamp(1.55rem, 3.3vw, 2.25rem);
+  font-size: clamp(1.75rem, 3.7vw, 2.55rem);
 }
 .hero .lede {
   max-width: 42rem; margin: 0 0 1.6rem;
@@ -150,7 +175,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
 .btn {
   display: inline-flex; align-items: center; gap: .45rem;
   padding: .62rem 1.15rem; border-radius: 8px;
-  font-family: var(--mono); font-size: .92rem; font-weight: 500;
+  font-family: var(--sans); font-size: .95rem; font-weight: 500;
   border: 1px solid var(--border); color: var(--fg);
 }
 .btn:hover { text-decoration: none; border-color: var(--dim); }
@@ -212,7 +237,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   overflow: hidden;
 }
 .pillars article { background: var(--bg); padding: clamp(1.3rem, 3vw, 2rem); }
-.pillars h2 { margin: 0 0 .55rem; font-size: 1.12rem; }
+.pillars h2 { margin: 0 0 .55rem; font-size: 1.26rem; }
 .pillars p { margin: 0; color: var(--dim); font-size: .96rem; }
 .pillars code { color: var(--fg); }
 
@@ -229,7 +254,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
 }
 .how .section-head { text-align: center; margin: 0 auto clamp(1.4rem, 3vw, 2rem); }
 .sample-head { max-width: 44rem; margin: 0 0 1.6rem; }
-.sample-head h2 { margin: 0 0 .5rem; font-size: clamp(1.4rem, 3vw, 1.9rem); }
+.sample-head h2 { margin: 0 0 .5rem; font-size: clamp(1.58rem, 3.3vw, 2.15rem); }
 .sample-head p { margin: 0; }
 
 .code { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--raised); }
@@ -263,7 +288,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   padding-top: clamp(2.5rem, 6vw, 4rem); padding-bottom: clamp(2.5rem, 6vw, 4rem);
 }
 .explore .section-head { text-align: center; margin-bottom: clamp(1.6rem, 4vw, 2.5rem); }
-.explore .section-head h2 { font-size: clamp(1.5rem, 3.5vw, 2.1rem); }
+.explore .section-head h2 { font-size: clamp(1.7rem, 3.9vw, 2.38rem); }
 .cards {
   max-width: var(--wide); margin: 0 auto;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
@@ -277,10 +302,10 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
 .card:hover { text-decoration: none; border-color: var(--dim); transform: translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .card:hover { transform: none; } }
 .card-mark { font-family: var(--mono); font-weight: 600; font-size: .78rem; letter-spacing: .08em; }
-.card h3 { margin: 0; font-size: 1.15rem; }
+.card h3 { margin: 0; font-size: 1.3rem; }
 .card p { margin: 0; flex: 1; color: var(--dim); font-size: .92rem; }
 .card code { color: var(--fg); }
-.card-go { font-family: var(--mono); font-size: .84rem; color: var(--link); font-weight: 500; }
+.card-go { font-family: var(--sans); font-size: .9rem; color: var(--link); font-weight: 500; }
 
 /* ---------------------------------------------------------------- learn + install */
 .learn {
@@ -290,7 +315,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   align-items: start;
 }
 .learn .section-head { margin: 0 0 1.2rem; }
-.learn .section-head h2 { font-size: 1.5rem; }
+.learn .section-head h2 { font-size: 1.7rem; }
 
 .doclist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
 .doclist a {
@@ -299,7 +324,7 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   color: var(--fg);
 }
 .doclist a:hover { text-decoration: none; border-color: var(--dim); }
-.doc-name { display: block; font-family: var(--mono); font-weight: 600; font-size: .95rem; }
+.doc-name { display: block; font-family: var(--sans); font-weight: 600; font-size: 1rem; }
 .doc-tag {
   margin-left: .45rem; padding: .05rem .4rem; vertical-align: .08em;
   font-size: .64rem; letter-spacing: .06em; font-weight: 600;
@@ -331,12 +356,12 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   padding-top: clamp(2.5rem, 6vw, 4rem); padding-bottom: clamp(2.5rem, 6vw, 4rem);
 }
 .trust .section-head { margin-bottom: clamp(1.8rem, 4vw, 2.6rem); }
-.trust .section-head h2 { font-size: clamp(1.5rem, 3.5vw, 2.1rem); }
+.trust .section-head h2 { font-size: clamp(1.7rem, 3.9vw, 2.38rem); }
 .trust-grid {
   max-width: var(--wide); margin: 0 auto;
   display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1.2rem, 3vw, 2.4rem);
 }
-.trust-grid h3 { margin: 0 0 .8rem; font-size: 1.05rem; color: var(--dim); font-weight: 600; }
+.trust-grid h3 { margin: 0 0 .8rem; font-size: 1.18rem; color: var(--dim); }
 .trust-grid ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .55rem; }
 .verifiers li { font-family: var(--mono); font-size: .9rem; }
 .verifiers .dim { font-family: var(--sans); font-size: .82rem; }
@@ -350,21 +375,27 @@ h1, h2, h3 { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em;
   display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem;
   max-width: var(--wide); margin: 0 auto;
 }
-.foot-mark { display: block; white-space: nowrap; font-family: var(--mono); font-weight: 600; }
-.foot-mark .mark { width: 1.386em; height: 1.15em; vertical-align: -.231em; margin-right: .65rem; }
+.foot-mark { display: block; white-space: nowrap; font-family: var(--serif); font-size: 1.18rem; }
+.foot-mark .mark { width: 1.113em; height: 0.924em; vertical-align: -0.164em; margin-right: 0.507em; }
 .foot-links { display: flex; flex-wrap: wrap; gap: 1rem; }
-.foot-links a { color: var(--dim); font-family: var(--mono); font-size: .82rem; }
+.foot-links a { color: var(--dim); font-family: var(--sans); font-size: .88rem; }
 .foot-links a:hover { color: var(--fg); text-decoration: none; }
 .foot-note { flex-basis: 100%; margin: 0; color: var(--faint); font-size: .82rem; }
 
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 860px) {
-  .learn, .trust-grid { grid-template-columns: 1fr; }
-  .cards { grid-template-columns: 1fr; }
+  /* minmax(0, 1fr), not 1fr: a grid track is at least as wide as the widest
+     thing in it unless told otherwise, and one column of these holds a command
+     line that does not wrap. The `pre` scrolls; the page should not. */
+  .learn, .trust-grid { grid-template-columns: minmax(0, 1fr); }
+  .cards { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 620px) {
   .pillars { grid-template-columns: 1fr; }
-  .nav .links { gap: .8rem; }
+  /* The name, four links and the switch do not fit on one line at this width:
+     the links take a row of their own rather than pushing the page sideways. */
+  .nav { flex-wrap: wrap; row-gap: .45rem; }
+  .nav .links { order: 3; width: 100%; margin-left: 0; gap: .8rem; justify-content: space-between; }
   .arrow.big { width: 100%; text-align: center; transform: rotate(90deg); }
   .pipe { flex-direction: column; align-items: stretch; }
   .node { min-width: 0; }

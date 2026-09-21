@@ -37,9 +37,11 @@ homepage() {
   echo "==> homepage"
   mkdir -p "$out"
   cp "$here/index.html" "$here/style.css" "$out/"
-  # the only asset the page fetches; the mark itself is inlined, and logos/ is
-  # a repo directory rather than something the site serves
+  # the assets the page fetches: the favicon and the heading face. The mark
+  # itself is inlined, and logos/ is a repo directory rather than something the
+  # site serves. OFL.txt travels with the font, as its licence requires.
   cp "$here/favicon.svg" "$out/"
+  mkdir -p "$out/fonts"; cp "$here"/fonts/* "$out/fonts/"
   cp "$here"/*.pdf "$out/"
 }
 
