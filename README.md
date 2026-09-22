@@ -185,6 +185,7 @@ linked repositories for status.
 | [`second_opinion`](https://github.com/ammkrn/second_opinion) | Rust | An MM0 + MMB verifier, like `mm0-c`, by [@ammkrn](https://github.com/ammkrn). |
 | [`trivial-rs`](https://github.com/trivial-rs/kernel) | Rust | An MMB verifier, plus [`mmb-objdump`](https://github.com/trivial-rs/mmb-binutils/tree/main/objdump) for inspecting MMB files, by [@IvoWingelaar](https://github.com/IvoWingelaar). |
 | [`mm0kt`](https://github.com/Lakedaemon/mm0kt/) | Kotlin | An MM0 + MMU verifier, by [@Lakedaemon](https://github.com/Lakedaemon). |
+| [`mm0-zig`](https://github.com/gleachkr/Aufbau) | Zig | An MM0 + MMB verifier; part of a suite including an mmb compiler with integrated lsp and proof search support, by [@gleachkr](https://github.com/gleachkr)]
 
 ## License
 
