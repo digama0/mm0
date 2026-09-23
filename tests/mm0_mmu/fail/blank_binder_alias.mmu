@@ -1,0 +1,7 @@
+(sort wff provable)
+(term unit () (wff ()))
+(term empty () (wff ()))
+(axiom proof_of_unit () () (unit))
+(axiom cast ((a wff ()) (b wff ())) (a) b)
+(theorem proof_of_empty () () (empty) ()
+  (cast ((unit) (empty)) (proof_of_unit ())))

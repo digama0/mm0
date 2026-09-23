@@ -410,13 +410,17 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
         i = arg_idx++;
       }
       ident_blank x = parse_new_ident_(gt_terms, &gt_terms_end, TERM_TRIE_SIZE);
-      if (!x.blank && !is_hyp) {
+      if (!is_hyp) {
         ENSURE("hypotheses must follow variables", p_hyps == (u32)-1);
-        u32* p = &x.x->next[0];
-        u32* dat = &extend(gt_terms, p, &gt_terms_end, TERM_TRIE_SIZE)->data;
-        ENSURE("variable shadowing is not allowed", *dat == 0);
-        *dat = ~i;
-        g_var_nodes[i].trie = *p;
+        if (x.blank) {
+          g_var_nodes[i].trie = 0;
+        } else {
+          u32* p = &x.x->next[0];
+          u32* dat = &extend(gt_terms, p, &gt_terms_end, TERM_TRIE_SIZE)->data;
+          ENSURE("variable shadowing is not allowed", *dat == 0);
+          *dat = ~i;
+          g_var_nodes[i].trie = *p;
+        }
         g_var_nodes[i].var = ALLOC(((parse_var){EXPR_VAR, i}), sizeof(parse_var));
       }
     }

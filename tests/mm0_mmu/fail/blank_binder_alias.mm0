@@ -1,0 +1,10 @@
+-- The first argument of `cast` is blank, so the proof below, whose `cast`
+-- takes `$ a $` to `$ b $`, must not match it (issue #211).
+provable sort wff;
+term unit: wff;
+term empty: wff;
+
+axiom proof_of_unit: $ unit $;
+axiom cast (_ b: wff): $ b $ > $ b $;
+
+theorem proof_of_empty: $ empty $;

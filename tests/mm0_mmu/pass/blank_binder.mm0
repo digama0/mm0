@@ -1,0 +1,8 @@
+-- Control for fail/blank_binder_alias: the same blank binder, used honestly.
+provable sort wff;
+term unit: wff;
+
+axiom proof_of_unit: $ unit $;
+axiom cast (_ b: wff): $ b $ > $ b $;
+
+theorem unit_again: $ unit $;
