@@ -1,0 +1,99 @@
+delimiter $ ( [ . $ $ ) ] . $;
+
+--| Hilbert-style proposition
+provable sort prop;
+--| SK-combinator expression
+sort expr;
+
+--| K combinator
+term K: expr;
+--| S combinator
+term S: expr;
+--| Combinator application
+term ap: expr > expr > expr; infixl ap: $.$ prec 25;
+
+--| Conversion relation for SK-combinator expressions. Establishes a pre-order.
+term conv: expr > expr > prop; infixl conv: $->$ prec 15;
+--| Reflexivity
+axiom refl (a: expr): $ a -> a $;
+--| Transitivity
+axiom trans (a b c: expr): $ a -> b $ > $ b -> c $ > $ a -> c $;
+--| Continuity, e.g. combinator application preserves conversion relation
+axiom apc (a b c d: expr): $ a -> b $ > $ c -> d $ > $ a.c -> b.d $;
+--| Left continuity
+theorem apl (a b c: expr) (lhs: $ a -> b $): $ a.c -> b.c $ = '(apc lhs refl);
+--| Right continuity
+theorem apr (a b c: expr) (rhs: $ b -> c $): $ a.b -> a.c $ = '(apc refl rhs);
+
+--| Conversion rule for the K combinator
+axiom K_c (a b: expr): $ K.a.b -> a $;
+--| Conversion rule for the S combinator
+axiom S_c (a b c: expr): $ S.a.b.c -> (a.c).(b.c) $;
+
+do {
+  --| Known definitions table
+  (def def-map (atom-map!))
+  (set-merge-strategy def-map merge-map)
+
+  --| Unfolds expr's definitions which are present in def-map and removes unnecessary parentheses
+  (def (unfold c) @
+    if (atom? c) (match (lookup def-map c) [#undef c] [a (unfold a)]) @
+    match c
+      [(a) (unfold a)]
+      [$ ,a . ,b $ $ ,(unfold a) . ,(unfold b) $]
+      [a a])
+
+  --| Computes unfolded SK-combinator expr
+  (def (compute c) @ match (compute-with-cod c) [(conv cod) conv])
+
+  --| Computes unfolded SK-combinator expr with converion's resulting "codomain", aka right hand side expression
+  (def (compute-with-cod c) @
+    match c
+      [(c) @ compute-with-cod c]
+      [$ K. ,a $ @ list '(! refl ,c) c]
+      [$ S. ,a $ @ list '(! refl ,c) c]
+      [$ S. ,a . ,b $ @ list '(! refl ,c) c]
+      [$ K. ,a . ,b $ @ match (compute-with-cod a) [(conv cod) @ list '(! trans ,c _ _ K_c ,conv) cod]]
+      [$ S. ,a . ,b . ,c $ @ match (compute-with-cod $ (,a . ,c).(,b . ,c) $) [(conv cod) @ list '(trans S_c ,conv) cod]]
+      [$ ,lhs . ,rhs $ @
+        match (compute-with-cod lhs) [(convl codl) @
+          if {lhs == codl}
+            -- Handle irreducible left hand side
+            (match (compute-with-cod rhs) [(convr codr) @
+              list '(apc ,convl ,convr) $ ,codl . ,codr $])
+            (let ([new_cod $ ,codl . ,rhs $]) @
+              match (compute-with-cod new_cod) [(next_conv next_cod) @
+                list '(trans (apl ,convl) ,next_conv) next_cod])]]
+      [a @ list '(! refl ,a) a])
+
+  --| Tactic for SK-combinator conversion relations
+  (def (reduce refine c) @
+    match c
+      [$ ,a -> ,b $ @ let ([unfolded @ unfold a]) @ match (compute-with-cod unfolded) [(conv cod) @
+        if {cod == b}
+          -- Glue conversion's domain before and after unfolding of definitions 
+          (refine '(! trans ,a ,unfolded _ refl ,(compute unfolded)))
+          (error (string-append "Reduced expression to `" (->string cod) "` but expected `" (->string b) "`"))]])
+};
+
+do (insert! def-map $ I $ $ S.K.K $);
+def I: expr = $ S.K.K $;
+theorem I_c (a: expr): $ I.a -> a $ = reduce;
+
+do (insert! def-map $ true $ $ K $);
+def true: expr = $ K $;
+theorem true_c (a b: expr): $ true.a.b -> a $ = reduce;
+
+do (insert! def-map $ false $ $ K.I $);
+def false: expr = $ K.I $;
+theorem false_c (a b: expr): $ false.a.b -> b $ = reduce;
+
+do (insert! def-map $ if $ $ I $);
+def if: expr = $ I $;
+theorem if_true_c (a b: expr): $ if.true.a.b -> a $ = reduce;
+theorem if_false_c (a b: expr): $ if.false.a.b -> b $ = reduce;
+
+do (insert! def-map $ rev_ap $ $ S.(K.(S.I)).K $);
+--| Reverse application combinator
+def rev_ap: expr = $ S.(K.(S.I)).K $;
+theorem rev_ap_c_1 (a b: expr): $ rev_ap.a.b -> b.a $ = reduce;
