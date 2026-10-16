@@ -1,0 +1,14 @@
+-- Control for fail/dummy_collapse: the same proof, with `f` renamed, its
+-- dummies reordered and an unused dummy added.
+strict provable sort wff;
+sort set;
+term wn (a: wff): wff;
+prefix wn: $~$ prec 40;
+term wal {x: set} (a: wff x): wff;
+prefix wal: $A.$ prec 41;
+term weq (a b: set): wff;
+infixl weq: $=$ prec 50;
+axiom two {x y: set}: $ ~ A. x A. y x = y $;
+axiom refl {x: set}: $ A. x A. x x = x $;
+def f {.v .u .w: set}: wff = $ A. u A. v u = v $;
+theorem foo: $ ~ f $;

@@ -573,6 +573,12 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
         ENSURE("expected a dummy", e->var >= num_vars);
         ENSURE("unify failure at dummy",
           data == g_var_sorts[e->var]);
+        // each dummy can be matched only once (skip saved terms in the heap)
+        for (u32 i = num_vars; i < g_uheap_size; i++) {
+          parse_var* prev = (parse_var*)&g_store[g_uheap[i]];
+          ENSURE("dummy matched more than once",
+            prev->tag != EXPR_VAR || prev->var != e->var);
+        }
         push_uheap(p);
       } break;
 

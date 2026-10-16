@@ -1,0 +1,8 @@
+(sort wff strict provable)
+(sort set)
+(term wn ((a wff ())) (wff ()))
+(term wal ((x set) (a wff (x))) (wff ()))
+(term weq ((a set ()) (b set ())) (wff ()))
+(term both ((a wff ()) (b wff ())) (wff ()))
+(def g () (wff ()) ((x set) (y set) (z set))
+  (both (wn (wal x (weq x x))) (wal z (both (wal y (weq y z)) (wn (wal x (weq x x)))))))

@@ -1,0 +1,14 @@
+-- Control for fail/dummy_collapse_saved: the same proof, renamed and
+-- reordered. Saved subterms precede the dummies on the unify heap.
+delimiter $ ( $ $ ) $;
+strict provable sort wff;
+sort set;
+term wn (a: wff): wff;
+prefix wn: $~$ prec 40;
+term wal {x: set} (a: wff x): wff;
+prefix wal: $A.$ prec 41;
+term weq (a b: set): wff;
+infixl weq: $=$ prec 50;
+term both (a b: wff): wff;
+def g {.c .a .b: set}: wff =
+  $ both (~ A. a a = a) (A. c (both (A. b b = c) (~ A. a a = a))) $;

@@ -1,0 +1,14 @@
+-- As fail/dummy_collapse, but `a` is matched a second time after saved
+-- subterms and another dummy are on the unify heap.
+delimiter $ ( $ $ ) $;
+strict provable sort wff;
+sort set;
+term wn (a: wff): wff;
+prefix wn: $~$ prec 40;
+term wal {x: set} (a: wff x): wff;
+prefix wal: $A.$ prec 41;
+term weq (a b: set): wff;
+infixl weq: $=$ prec 50;
+term both (a b: wff): wff;
+def g {.c .a .b: set}: wff =
+  $ both (~ A. a a = a) (A. c (both (A. a a = c) (~ A. a a = a))) $;
