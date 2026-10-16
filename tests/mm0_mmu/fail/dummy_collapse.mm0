@@ -1,0 +1,15 @@
+-- The .mmu defines `f` with two distinct dummies, which must not both
+-- match `d`: when `set` has two elements, both axioms and this `f` hold,
+-- and `~ f` does not.
+strict provable sort wff;
+sort set;
+term wn (a: wff): wff;
+prefix wn: $~$ prec 40;
+term wal {x: set} (a: wff x): wff;
+prefix wal: $A.$ prec 41;
+term weq (a b: set): wff;
+infixl weq: $=$ prec 50;
+axiom two {x y: set}: $ ~ A. x A. y x = y $;
+axiom refl {x: set}: $ A. x A. x x = x $;
+def f {.d: set}: wff = $ A. d A. d d = d $;
+theorem foo: $ ~ f $;
