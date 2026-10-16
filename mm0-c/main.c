@@ -13,6 +13,10 @@
 #define ERR_READ 2
 #define ERR_MMAP 3
 
+#ifndef MAP_FILE
+#define MAP_FILE 0
+#endif
+
 int main(int argc, char** argv) {
   if (sizeof(cmd32) != 5) {
     fprintf(stderr, "Static assert: __attribute__((packed)) fail\n");
