@@ -146,7 +146,7 @@ axiom repT (G: wff) (A: type) (P t: term):
   $ G |- rep P: tydef P -> A $;
 axiom abs_rep (G: wff) (A: type) (P t a: term):
   $ T |- P: A -> bool $ > $ G |- P @ t $ >
-  $ G; a: tydef P |- =[A] abs P @ (rep P @ a) = a $;
+  $ G; a: tydef P |- =[tydef P] abs P @ (rep P @ a) = a $;
 axiom rep_abs (G: wff) (A: type) (P t r: term):
   $ T |- P: A -> bool $ > $ G |- P @ t $ >
   $ G; r: A |- P @ r <=> =[A] rep P @ (abs P @ r) = r $;
